@@ -203,7 +203,7 @@ function Home() {
           orderNo: r.sale_id,
           date: r.date,
           reason: r.reason,
-          refundAmount: r.refund_amount,
+          refundAmount: Number(r.refund_amount || 0),
           status: r.status
         })));
       }
