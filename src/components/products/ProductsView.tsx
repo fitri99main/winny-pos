@@ -155,23 +155,23 @@ export function ProductsView({
     const renderProductsTable = () => (
         <div className="bg-white rounded-[32px] shadow-sm border border-gray-100 overflow-hidden">
             <div className="p-6 border-b border-gray-100 bg-gray-50/30 flex gap-4">
-                <div className="relative flex-1 max-w-md">
+                <div className="relative flex-1 max-w-xs">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input type="text" placeholder="Cari kode atau nama produk..." className="w-full pl-12 pr-4 py-3 text-sm bg-white border border-gray-200 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all" />
+                    <input type="text" placeholder="Cari..." className="w-full pl-12 pr-4 py-3 text-sm bg-white border border-gray-200 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all" />
                 </div>
-                <Button onClick={() => handleOpenForm()} className="gap-2 h-12 rounded-2xl px-6"><Plus className="w-4 h-4" /> Tambah Produk</Button>
+                <Button onClick={() => handleOpenForm()} className="gap-2 h-12 rounded-2xl px-6"><Plus className="w-4 h-4" /> Tambah</Button>
             </div>
             <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                     <thead className="bg-gray-50/50 text-gray-400 text-left border-b border-gray-100">
                         <tr>
-                            <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px]">Kode</th>
-                            <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px]">Nama Produk</th>
-                            <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px]">Kategori</th>
-                            <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px] text-right">Modal (HPP)</th>
-                            <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px] text-right">Harga Jual</th>
-                            <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px] text-right">Stok</th>
-                            <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px] text-center">Aksi</th>
+                            <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px]">Kode</th>
+                            <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px]">Nama Produk</th>
+                            <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px]">Kategori</th>
+                            <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px] text-right">Modal</th>
+                            <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px] text-right">Harga</th>
+                            <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px] text-right">Stok</th>
+                            <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px] text-center">Aksi</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -180,27 +180,27 @@ export function ProductsView({
                             const margin = p.price - currentHPP;
                             return (
                                 <tr key={p.id} className="group hover:bg-gray-50/50 transition-all">
-                                    <td className="px-8 py-5 font-mono text-gray-400 text-xs">{p.code}</td>
-                                    <td className="px-8 py-5">
+                                    <td className="px-4 py-5 font-mono text-gray-400 text-xs">{p.code}</td>
+                                    <td className="px-4 py-5">
                                         <div className="font-bold text-gray-800">{p.name}</div>
                                         <div className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">{p.brand}</div>
                                     </td>
-                                    <td className="px-8 py-5">
+                                    <td className="px-4 py-5">
                                         <span className="px-2.5 py-1 bg-primary/5 text-primary rounded-lg text-[10px] font-black uppercase tracking-widest ring-1 ring-primary/10">
                                             {p.category}
                                         </span>
                                     </td>
-                                    <td className="px-8 py-5 text-right font-black text-orange-600">
+                                    <td className="px-4 py-5 text-right font-black text-orange-600">
                                         Rp {currentHPP.toLocaleString()}
                                     </td>
-                                    <td className="px-8 py-5 text-right font-black text-blue-600">
+                                    <td className="px-4 py-5 text-right font-black text-blue-600">
                                         Rp {p.price.toLocaleString()}
                                     </td>
-                                    <td className="px-8 py-5 text-right">
+                                    <td className="px-4 py-5 text-right">
                                         <span className={`font-black ${p.stock < 10 ? 'text-red-500' : 'text-gray-700'}`}>{p.stock}</span>
                                         <span className="text-gray-400 text-[10px] ml-1 uppercase font-bold">{p.unit}</span>
                                     </td>
-                                    <td className="px-8 py-5 flex justify-center gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <td className="px-4 py-5 flex justify-center gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
                                         <button onClick={() => { setSelectedProduct(p); setIsRecipeOpen(true); }} className="p-2.5 bg-orange-50 text-orange-600 rounded-xl hover:bg-orange-100 transition-colors" title="Atur Resep & HPP"><ChefHat className="w-4.5 h-4.5" /></button>
                                         <button onClick={() => { setSelectedProduct(p); setIsAddonOpen(true); }} className="p-2.5 bg-purple-50 text-purple-600 rounded-xl hover:bg-purple-100 transition-colors" title="Atur Toping / Add-ons"><Puzzle className="w-4.5 h-4.5" /></button>
                                         <button onClick={() => handleOpenForm(p)} className="p-2.5 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors" title="Edit"><Edit className="w-4.5 h-4.5" /></button>
@@ -251,10 +251,10 @@ export function ProductsView({
     return (
         <div className="flex h-full bg-gray-50/50 relative overflow-hidden">
             {/* Sidebar */}
-            <div className="w-72 bg-white border-r border-gray-100 p-8 flex flex-col gap-3 shadow-[10px_0_30px_rgba(0,0,0,0.02)] z-20">
-                <div className="mb-6">
-                    <h2 className="text-2xl font-black text-gray-800 tracking-tight">Master Data</h2>
-                    <p className="text-xs text-gray-400 font-medium tracking-wide">Katalog Produk & Inventaris</p>
+            <div className="w-64 bg-white border-r border-gray-100 p-5 flex flex-col gap-2 shadow-[10px_0_30px_rgba(0,0,0,0.02)] z-20">
+                <div className="mb-4">
+                    <h2 className="text-xl font-black text-gray-800 tracking-tight">Master Data</h2>
+                    <p className="text-[10px] text-gray-400 font-medium tracking-wide">Katalog Produk & Inventaris</p>
                 </div>
                 {[
                     { id: 'products', label: 'Daftar Produk', icon: Package, desc: 'Harga Jual & Stok' },
@@ -265,11 +265,11 @@ export function ProductsView({
                     <button
                         key={item.id}
                         onClick={() => setActiveTab(item.id as any)}
-                        className={`w-full flex items-center gap-4 px-5 py-4 rounded-[24px] transition-all group ${activeTab === item.id ? 'bg-primary text-white shadow-xl shadow-primary/20' : 'text-gray-500 hover:bg-gray-100'
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all group ${activeTab === item.id ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-gray-500 hover:bg-gray-100'
                             }`}
                     >
-                        <div className={`p-2.5 rounded-xl transition-colors ${activeTab === item.id ? 'bg-white/20' : 'bg-gray-50 group-hover:bg-white'}`}>
-                            <item.icon className="w-5 h-5" />
+                        <div className={`p-2 rounded-xl transition-colors ${activeTab === item.id ? 'bg-white/20' : 'bg-gray-50 group-hover:bg-white'}`}>
+                            <item.icon className="w-4 h-4" />
                         </div>
                         <div className="text-left">
                             <div className="text-sm font-black tracking-tight">{item.label}</div>
@@ -280,7 +280,7 @@ export function ProductsView({
             </div>
 
             {/* Content */}
-            <div className="flex-1 p-10 overflow-y-auto">
+            <div className="flex-1 p-6 overflow-y-auto">
                 {activeTab === 'products' && renderProductsTable()}
                 {activeTab === 'categories' && renderSimpleTable(categories, 'category', 'Kategori')}
                 {activeTab === 'units' && renderSimpleTable(units, 'unit', 'Satuan')}
