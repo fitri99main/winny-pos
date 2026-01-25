@@ -29,19 +29,23 @@ export function DashboardView({ contacts = [], sales = [], returns = [], product
     const todayStr = today.toISOString().split('T')[0];
 
     // --- Real Stats Calculation ---
-    const salesToday = (sales || []).filter(s => s.date && s.date.startsWith(todayStr) && s.status !== 'Returned');
-    const revenueToday = salesToday.reduce((sum, s) => sum + (s.totalAmount || 0), 0);
+    const salesToday = (sales || []).filter(s => s && s.date && s.date.startsWith(todayStr) && s.status !== 'Returned');
+    const revenueToday = salesToday.reduce((sum, s) => sum + (s && s.totalAmount ? s.totalAmount : 0), 0);
     const transactionsToday = salesToday.length;
 
     // New Customers (mock data assumption: created at matches today? Or just count total for now)
     // Since contacts don't store "createdAt", we'll just show total active customers for now or diff
     // A better approach for "New Customers" would require a date field in ContactData.
     // For now, let's show Total Customers.
-    const totalCustomers = (contacts || []).filter(c => c.type === 'Customer').length;
+    const totalCustomers = (contacts || []).filter(c => c && c.type === 'Customer').length;
 
-    const lowStockItems = [...(products || []).filter(p => (p.stock || 0) <= 5), ...(ingredients || []).filter(i => (i.currentStock || 0) <= (i.minStock || 0))];
+    const lowStockItems = [
+        ...(products || []).filter(p => p && (p.stock || 0) <= 5),
+        ...(ingredients || []).filter(i => i && (i.currentStock || 0) <= (i.minStock || 0))
+    ];
 
     const birthdaysToday = (contacts || []).filter(c =>
+        c &&
         c.type === 'Customer' &&
         c.birthday &&
         new Date(c.birthday).getMonth() === today.getMonth() &&
@@ -53,10 +57,10 @@ export function DashboardView({ contacts = [], sales = [], returns = [], product
         const d = new Date();
         d.setDate(d.getDate() - (6 - i));
         const dateStr = d.toISOString().split('T')[0];
-        const daySales = (sales || []).filter(s => s.date && s.date.startsWith(dateStr) && s.status !== 'Returned');
+        const daySales = (sales || []).filter(s => s && s.date && s.date.startsWith(dateStr) && s.status !== 'Returned');
         return {
             name: d.toLocaleDateString('id-ID', { weekday: 'short' }),
-            total: daySales.reduce((sum, s) => sum + (s.totalAmount || 0), 0)
+            total: daySales.reduce((sum, s) => sum + (s && s.totalAmount ? s.totalAmount : 0), 0)
         };
     });
 
@@ -198,7 +202,9 @@ export function DashboardView({ contacts = [], sales = [], returns = [], product
                                 </div>
                                 <div className="flex-1 overflow-hidden">
                                     <h5 className="font-bold text-gray-800 text-sm truncate">{sale.orderNo}</h5>
-                                    <p className="text-xs text-gray-400 truncate">{(sale.items || 0)} items • {sale.paymentMethod}</p>
+                                    <p className="text-xs text-gray-400 truncate">
+                                        {(Array.isArray(sale.items) ? sale.items.length : (sale.items || 0))} items • {sale.paymentMethod}
+                                    </p>
                                 </div>
                                 <span className="font-bold text-sm text-gray-800 whitespace-nowrap">Rp {(sale.totalAmount || 0).toLocaleString()}</span>
                             </div>
