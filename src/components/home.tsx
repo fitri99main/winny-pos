@@ -501,7 +501,16 @@ function Home() {
 
   const renderActiveModule = () => {
     switch (activeModule) {
-      case 'dashboard': return <DashboardView contacts={contacts} />;
+      case 'dashboard': return (
+        <DashboardView
+          contacts={contacts}
+          sales={sales}
+          returns={returns}
+          products={products}
+          ingredients={inventoryIngredients}
+          onNavigate={(module) => setActiveModule(module)}
+        />
+      );
       case 'users': return <UsersView />;
       case 'contacts': return <ContactsView contacts={contacts} setContacts={setContacts} />;
       case 'products': return (
