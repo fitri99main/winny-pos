@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Package, Tags, Scale, Ticket, Plus, Search, Edit, Trash2, Filter, ChefHat, Info, Calculator, Puzzle, Settings2 } from 'lucide-react';
+import { Package, Tags, Scale, Ticket, Plus, Search, Edit, Trash2, Filter, ChefHat, Info, Calculator, Puzzle, Settings2, X } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
 
@@ -99,10 +99,11 @@ export function ProductsView({
     };
 
     const calculateHPP = (recipe?: RecipeItem[]) => {
-        if (!recipe || recipe.length === 0) return 0;
+        if (!recipe || !Array.isArray(recipe) || recipe.length === 0) return 0;
         return recipe.reduce((total, item) => {
             const ingredient = ingredients.find(i => i.id === item.ingredientId);
-            return total + (ingredient ? ingredient.costPerUnit * item.amount : 0);
+            const cost = (ingredient?.costPerUnit || 0) * (item.amount || 0);
+            return total + cost;
         }, 0);
     };
 
@@ -287,92 +288,95 @@ export function ProductsView({
             </div>
 
             {/* Modal Form */}
-            {isFormOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-xl animate-in zoom-in-95 duration-300 overflow-hidden">
-                        <div className="px-10 py-8 border-b bg-gray-50/50 flex justify-between items-center">
-                            <div>
-                                <h3 className="font-black text-2xl text-gray-800 tracking-tight">
-                                    {formData.id ? 'Edit Data' : 'Tambah'} {activeTab === 'products' ? 'Produk' : activeTab === 'categories' ? 'Kategori' : activeTab === 'units' ? 'Satuan' : 'Merek'}
-                                </h3>
-                                <p className="text-sm text-gray-500 font-medium">Lengkapi rincian informasi di bawah ini.</p>
+            {isFormOpen && (() => {
+                const currentLabel = activeTab === 'products' ? 'Produk' : activeTab === 'categories' ? 'Kategori' : activeTab === 'units' ? 'Satuan' : 'Merek';
+                return (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+                        <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-xl animate-in zoom-in-95 duration-300 overflow-hidden">
+                            <div className="px-10 py-8 border-b bg-gray-50/50 flex justify-between items-center">
+                                <div>
+                                    <h3 className="font-black text-2xl text-gray-800 tracking-tight">
+                                        {formData.id ? 'Edit Data' : 'Tambah'} {currentLabel}
+                                    </h3>
+                                    <p className="text-sm text-gray-500 font-medium">Lengkapi rincian informasi di bawah ini.</p>
+                                </div>
                             </div>
-                        </div>
-                        <form onSubmit={handleSubmit} className="p-10 space-y-6">
-                            {activeTab === 'products' ? (
-                                <>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Kode Produk (SKU)</label>
-                                            <input className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-mono font-bold" value={formData.code || ''} onChange={e => setFormData({ ...formData, code: e.target.value })} placeholder="Ex: P001" required />
+                            <form onSubmit={handleSubmit} className="p-10 space-y-6">
+                                {activeTab === 'products' ? (
+                                    <>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Kode Produk (SKU)</label>
+                                                <input className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-mono font-bold" value={formData.code || ''} onChange={e => setFormData({ ...formData, code: e.target.value })} placeholder="Ex: P001" required />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Nama Produk</label>
+                                                <input className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-black" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="Exp: Es Kopi Gula Aren" required />
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Kategori Produk</label>
+                                                <select className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold" value={formData.category || ''} onChange={e => setFormData({ ...formData, category: e.target.value })}>
+                                                    <option value="">Pilih Kategori...</option>
+                                                    {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                                                </select>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Satuan Dasar</label>
+                                                <select className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold" value={formData.unit || ''} onChange={e => setFormData({ ...formData, unit: e.target.value })}>
+                                                    <option value="">Pilih Satuan...</option>
+                                                    {units.map(u => <option key={u.id} value={u.abbreviation}>{u.name} ({u.abbreviation})</option>)}
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Merek</label>
+                                                <select className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold" value={formData.brand || ''} onChange={e => setFormData({ ...formData, brand: e.target.value })}>
+                                                    <option value="">Pilih Merek...</option>
+                                                    {brands.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
+                                                </select>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Harga Jual (IDR)</label>
+                                                <input type="number" className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-black text-blue-600" value={formData.price || ''} onChange={e => setFormData({ ...formData, price: parseInt(e.target.value) })} />
+                                            </div>
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Nama Produk</label>
-                                            <input className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-black" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="Exp: Es Kopi Gula Aren" required />
+                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Stok Awal Inventaris</label>
+                                            <input type="number" className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-black" value={formData.stock || ''} onChange={e => setFormData({ ...formData, stock: parseInt(e.target.value) })} />
                                         </div>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-4">
+                                    </>
+                                ) : (
+                                    <>
                                         <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Kategori Produk</label>
-                                            <select className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold" value={formData.category || ''} onChange={e => setFormData({ ...formData, category: e.target.value })}>
-                                                <option value="">Pilih Kategori...</option>
-                                                {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                                            </select>
+                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Nama {currentLabel}</label>
+                                            <input className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-bold" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} required />
                                         </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Satuan Dasar</label>
-                                            <select className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold" value={formData.unit || ''} onChange={e => setFormData({ ...formData, unit: e.target.value })}>
-                                                <option value="">Pilih Satuan...</option>
-                                                {units.map(u => <option key={u.id} value={u.abbreviation}>{u.name} ({u.abbreviation})</option>)}
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Merek</label>
-                                            <select className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold" value={formData.brand || ''} onChange={e => setFormData({ ...formData, brand: e.target.value })}>
-                                                <option value="">Pilih Merek...</option>
-                                                {brands.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
-                                            </select>
-                                        </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Harga Jual (IDR)</label>
-                                            <input type="number" className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-black text-blue-600" value={formData.price || ''} onChange={e => setFormData({ ...formData, price: parseInt(e.target.value) })} />
-                                        </div>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Stok Awal Inventaris</label>
-                                        <input type="number" className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-black" value={formData.stock || ''} onChange={e => setFormData({ ...formData, stock: parseInt(e.target.value) })} />
-                                    </div>
-                                </>
-                            ) : (
-                                <>
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Nama {label}</label>
-                                        <input className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-bold" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} required />
-                                    </div>
-                                    {activeTab === 'units' ? (
-                                        <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Singkatan Satuan</label>
-                                            <input className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-bold" value={formData.abbreviation || ''} onChange={e => setFormData({ ...formData, abbreviation: e.target.value })} placeholder="cth: kg, L, pcs" />
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Deskripsi Tambahan</label>
-                                            <textarea className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm" rows={4} value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} />
-                                        </div>
-                                    )}
-                                </>
-                            )}
+                                        {activeTab === 'units' ? (
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Singkatan Satuan</label>
+                                                <input className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-bold" value={formData.abbreviation || ''} onChange={e => setFormData({ ...formData, abbreviation: e.target.value })} placeholder="cth: kg, L, pcs" />
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Deskripsi Tambahan</label>
+                                                <textarea className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm" rows={4} value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} />
+                                            </div>
+                                        )}
+                                    </>
+                                )}
 
-                            <div className="flex justify-end gap-3 pt-6 border-t border-gray-50">
-                                <Button type="button" variant="outline" className="h-14 px-8 rounded-2xl font-bold" onClick={() => setIsFormOpen(false)}>Batal</Button>
-                                <Button type="submit" className="h-14 px-10 rounded-2xl font-black shadow-xl shadow-primary/20">Simpan Data</Button>
-                            </div>
-                        </form>
+                                <div className="flex justify-end gap-3 pt-6 border-t border-gray-50">
+                                    <Button type="button" variant="outline" className="h-14 px-8 rounded-2xl font-bold" onClick={() => setIsFormOpen(false)}>Batal</Button>
+                                    <Button type="submit" className="h-14 px-10 rounded-2xl font-black shadow-xl shadow-primary/20">Simpan Data</Button>
+                                </div>
+                            </form>
+                        </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
 
             {/* Recipe Modal */}
             {isRecipeOpen && selectedProduct && (
