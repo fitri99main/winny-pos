@@ -108,7 +108,15 @@ function Home() {
   const [categories, setCategories] = useState<any[]>([]);
   const [units, setUnits] = useState<any[]>([]);
   const [brands, setBrands] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<any[]>([
+    { id: 1, name: 'Operations' },
+    { id: 2, name: 'Kitchen' },
+    { id: 3, name: 'Finance' },
+    { id: 4, name: 'HR' },
+  ]);
   const [products, setProducts] = useState<any[]>([]);
+  const [purchases, setPurchases] = useState<any[]>([]);
+  const [purchaseReturns, setPurchaseReturns] = useState<any[]>([]);
 
   // --- Master Data Integration ---
   const fetchMasterData = async () => {
@@ -140,8 +148,23 @@ function Home() {
       supabase.channel('brands_all').on('postgres_changes', { event: '*', schema: 'public', table: 'brands' }, fetchMasterData).subscribe(),
     ];
 
+    // --- Purchases Integration ---
+    const fetchPurchases = async () => {
+      const { data: pData } = await supabase.from('purchases').select('*').order('created_at', { ascending: false });
+      const { data: rData } = await supabase.from('purchase_returns').select('*').order('created_at', { ascending: false });
+      if (pData) setPurchases(pData);
+      if (rData) setPurchaseReturns(rData);
+    };
+
+    fetchPurchases();
+    const purchaseChannels = [
+      supabase.channel('purchases_all').on('postgres_changes', { event: '*', schema: 'public', table: 'purchases' }, fetchPurchases).subscribe(),
+      supabase.channel('returns_all').on('postgres_changes', { event: '*', schema: 'public', table: 'purchase_returns' }, fetchPurchases).subscribe(),
+    ];
+
     return () => {
       channels.forEach(ch => ch.unsubscribe());
+      purchaseChannels.forEach(ch => ch.unsubscribe());
     };
   }, []);
 
@@ -639,7 +662,13 @@ function Home() {
           onBrandCRUD={(action, data) => handleMasterDataCRUD('brands', action, data)}
         />
       );
-      case 'purchases': return <PurchasesView />;
+      case 'purchases': return (
+        <PurchasesView
+          purchases={purchases}
+          returns={purchaseReturns}
+          onCRUD={(table, action, data) => handleMasterDataCRUD(table, action, data)}
+        />
+      );
       case 'kds': return <KDSView pendingOrders={pendingOrders} setPendingOrders={setPendingOrders} />;
       case 'pos':
         return (

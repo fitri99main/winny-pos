@@ -35,12 +35,14 @@ const INITIAL_RETURNS: PurchaseReturn[] = [
     { id: 1, returnNo: 'RET-2026-001', purchaseNo: 'PO-2026-001', date: '2026-01-16', reason: 'Barang rusak saat pengiriman', status: 'Processed' },
 ];
 
-export function PurchasesView() {
-    const [activeTab, setActiveTab] = useState<'history' | 'input' | 'returns'>('history');
+interface PurchasesViewProps {
+    purchases: any[];
+    returns: any[];
+    onCRUD: (table: string, action: 'create' | 'update' | 'delete', data: any) => void;
+}
 
-    // Lists
-    const [purchases, setPurchases] = useState<PurchaseOrder[]>(INITIAL_PURCHASES);
-    const [returns, setReturns] = useState<PurchaseReturn[]>(INITIAL_RETURNS);
+export function PurchasesView({ purchases = [], returns = [], onCRUD }: PurchasesViewProps) {
+    const [activeTab, setActiveTab] = useState<'history' | 'input' | 'returns'>('history');
     const [searchQuery, setSearchQuery] = useState('');
     const [returnSearchQuery, setReturnSearchQuery] = useState('');
 
@@ -57,18 +59,16 @@ export function PurchasesView() {
             return;
         }
 
-        const newPurchase: PurchaseOrder = {
-            id: Date.now(),
-            purchaseNo: `PO-2026-${String(purchases.length + 1).padStart(3, '0')}`,
-            supplierName: inputForm.supplierName,
+        const newPurchase = {
+            purchase_no: `PO-2026-${String(purchases.length + 1).padStart(3, '0')}`,
+            supplier_name: inputForm.supplierName,
             date: inputForm.date || new Date().toISOString().split('T')[0],
-            items: inputForm.items || 1,
-            totalAmount: Number(inputForm.totalAmount),
+            items_count: inputForm.items || 1,
+            total_amount: Number(inputForm.totalAmount),
             status: 'Pending'
         };
 
-        setPurchases([newPurchase, ...purchases]);
-        toast.success(`Pembelian ${newPurchase.purchaseNo} berhasil dibuat`);
+        onCRUD('purchases', 'create', newPurchase);
         setInputForm({ date: new Date().toISOString().split('T')[0], supplierName: '', totalAmount: 0 });
         setActiveTab('history');
     };
@@ -80,34 +80,31 @@ export function PurchasesView() {
             return;
         }
 
-        const newReturn: PurchaseReturn = {
-            id: Date.now(),
-            returnNo: `RET-2026-${String(returns.length + 1).padStart(3, '0')}`,
-            purchaseNo: returnForm.purchaseNo,
+        const newReturn = {
+            return_no: `RET-${Date.now().toString().slice(-4)}`,
+            purchase_no: returnForm.purchaseNo,
             date: returnForm.date || new Date().toISOString().split('T')[0],
             reason: returnForm.reason,
             status: 'Pending'
         };
 
-        setReturns([newReturn, ...returns]);
-        toast.success(`Retur ${newReturn.returnNo} berhasil diajukan`);
+        onCRUD('purchase_returns', 'create', newReturn);
         setReturnForm({ date: new Date().toISOString().split('T')[0], purchaseNo: '', reason: '' });
     };
 
-    const handleMarkCompleted = (id: number) => {
-        setPurchases(purchases.map(p => p.id === id ? { ...p, status: 'Completed' } : p));
-        toast.success('Status pembelian diubah menjadi Selesai');
+    const handleMarkCompleted = (po: any) => {
+        onCRUD('purchases', 'update', { id: po.id, status: 'Completed' });
     };
 
     const filteredPurchases = purchases.filter(p =>
-        p.purchaseNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.supplierName.toLowerCase().includes(searchQuery.toLowerCase())
+        (p.purchase_no || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (p.supplier_name || '').toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     const filteredReturns = returns.filter(r =>
-        r.returnNo.toLowerCase().includes(returnSearchQuery.toLowerCase()) ||
-        r.purchaseNo.toLowerCase().includes(returnSearchQuery.toLowerCase()) ||
-        r.reason.toLowerCase().includes(returnSearchQuery.toLowerCase())
+        (r.return_no || '').toLowerCase().includes(returnSearchQuery.toLowerCase()) ||
+        (r.purchase_no || '').toLowerCase().includes(returnSearchQuery.toLowerCase()) ||
+        (r.reason || '').toLowerCase().includes(returnSearchQuery.toLowerCase())
     );
 
     // --- Renderers ---
@@ -141,11 +138,11 @@ export function PurchasesView() {
                 <tbody className="divide-y divide-gray-100">
                     {filteredPurchases.map(po => (
                         <tr key={po.id} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 font-mono font-medium text-blue-600">{po.purchaseNo}</td>
-                            <td className="px-6 py-4 font-bold text-gray-700">{po.supplierName}</td>
+                            <td className="px-6 py-4 font-mono font-medium text-blue-600">{po.purchase_no}</td>
+                            <td className="px-6 py-4 font-bold text-gray-700">{po.supplier_name}</td>
                             <td className="px-6 py-4 text-gray-500">{po.date}</td>
-                            <td className="px-6 py-4 text-center">{po.items}</td>
-                            <td className="px-6 py-4 text-right font-bold">Rp {po.totalAmount.toLocaleString()}</td>
+                            <td className="px-6 py-4 text-center">{po.items_count}</td>
+                            <td className="px-6 py-4 text-right font-bold">Rp {(po.total_amount || 0).toLocaleString()}</td>
                             <td className="px-6 py-4 text-center">
                                 <span className={`px-2 py-1 rounded-full text-xs font-medium border ${po.status === 'Completed' ? 'bg-green-50 text-green-700 border-green-200' :
                                     po.status === 'Returned' ? 'bg-red-50 text-red-700 border-red-200' :
@@ -156,7 +153,7 @@ export function PurchasesView() {
                             </td>
                             <td className="px-6 py-4 flex justify-center gap-2">
                                 {po.status === 'Pending' && (
-                                    <button onClick={() => handleMarkCompleted(po.id)} className="p-2 hover:bg-green-50 text-green-600 rounded-lg" title="Tandai Selesai">
+                                    <button onClick={() => handleMarkCompleted(po)} className="p-2 hover:bg-green-50 text-green-600 rounded-lg" title="Tandai Selesai">
                                         <CheckCircle className="w-4 h-4" />
                                     </button>
                                 )}
@@ -271,7 +268,7 @@ export function PurchasesView() {
                         >
                             <option value="">Pilih PO...</option>
                             {purchases.filter(p => p.status === 'Completed').map(p => (
-                                <option key={p.id} value={p.purchaseNo}>{p.purchaseNo} - {p.supplierName}</option>
+                                <option key={p.id} value={p.purchase_no}>{p.purchase_no} - {p.supplier_name}</option>
                             ))}
                         </select>
                     </div>
@@ -317,8 +314,8 @@ export function PurchasesView() {
                     <tbody className="divide-y divide-gray-100">
                         {filteredReturns.map(ret => (
                             <tr key={ret.id} className="hover:bg-gray-50">
-                                <td className="px-6 py-4 font-mono text-red-600">{ret.returnNo}</td>
-                                <td className="px-6 py-4 font-mono text-gray-600">{ret.purchaseNo}</td>
+                                <td className="px-6 py-4 font-mono text-red-600">{ret.return_no}</td>
+                                <td className="px-6 py-4 font-mono text-gray-600">{ret.purchase_no}</td>
                                 <td className="px-6 py-4 text-gray-500">{ret.date}</td>
                                 <td className="px-6 py-4 text-gray-700">{ret.reason}</td>
                                 <td className="px-6 py-4 text-center">
