@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Calculator, TrendingUp, TrendingDown, DollarSign, Wallet, FileText, Plus, BookOpen, LayoutDashboard, Settings, Edit, Trash2, Download } from 'lucide-react';
+import { Calculator, TrendingUp, TrendingDown, DollarSign, Wallet, FileText, Plus, BookOpen, LayoutDashboard, Settings, Edit, Trash2, Download, CalendarCheck } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -308,6 +308,18 @@ export function AccountingView() {
     const [accounts, setAccounts] = useState<Account[]>(INITIAL_COA);
     const [transactions, setTransactions] = useState<JournalEntry[]>(INITIAL_TRANSACTIONS);
 
+    // --- Date Filtering State ---
+    const [startDate, setStartDate] = useState(() => {
+        const date = new Date();
+        return new Date(date.getFullYear(), date.getMonth(), 1).toISOString().split('T')[0];
+    });
+    const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+
+    // --- Filtered Transactions for Reports ---
+    const filteredTransactions = useMemo(() => {
+        return transactions.filter(tx => tx.date >= startDate && tx.date <= endDate);
+    }, [transactions, startDate, endDate]);
+
     // --- CRUD Actions ---
     const addAccount = (acc: Account) => setAccounts([...accounts, acc]);
     const updateAccount = (updatedAcc: Account) => setAccounts(accounts.map(a => a.code === updatedAcc.code ? updatedAcc : a));
@@ -327,12 +339,12 @@ export function AccountingView() {
         const balances: Record<string, number> = {};
         accounts.forEach(acc => balances[acc.code] = 0);
 
-        transactions.forEach(tx => {
+        filteredTransactions.forEach(tx => {
             balances[tx.debitAccount] = (balances[tx.debitAccount] || 0) + tx.amount;
             balances[tx.creditAccount] = (balances[tx.creditAccount] || 0) - tx.amount;
         });
         return balances;
-    }, [transactions, accounts]);
+    }, [filteredTransactions, accounts]);
 
     const getBalance = (code: string) => accountBalances[code] || 0;
 
@@ -369,7 +381,7 @@ export function AccountingView() {
             const worksheet = XLSX.utils.json_to_sheet(data);
             const workbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(workbook, worksheet, "Laba Rugi");
-            XLSX.writeFile(workbook, `Laba_Rugi_${new Date().toISOString().split('T')[0]}.xlsx`);
+            XLSX.writeFile(workbook, `Laba_Rugi_${startDate}_to_${endDate}.xlsx`);
             toast.success('Laporan Laba Rugi berhasil diunduh (Excel)');
         } catch (error) {
             toast.error('Gagal mengekspor laporan');
@@ -382,7 +394,7 @@ export function AccountingView() {
             doc.setFontSize(18);
             doc.text('LAPORAN LABA RUGI', 105, 20, { align: 'center' });
             doc.setFontSize(11);
-            doc.text(`Per Tanggal: ${new Date().toLocaleDateString('id-ID')}`, 105, 28, { align: 'center' });
+            doc.text(`Periode: ${startDate} s/d ${endDate}`, 105, 28, { align: 'center' });
 
             const incomeData = accounts.filter(a => a.type === 'Income').map(a => [a.code, a.name, `Rp ${getDisplayBalance(a.code).toLocaleString()}`]);
             const expenseData = accounts.filter(a => a.type === 'Expense').map(a => [a.code, a.name, `Rp ${getDisplayBalance(a.code).toLocaleString()}`]);
@@ -415,7 +427,7 @@ export function AccountingView() {
             doc.text('LABA BERSIH:', 14, finalY);
             doc.text(`Rp ${netProfit.toLocaleString()}`, 200, finalY, { align: 'right' });
 
-            doc.save(`Laba_Rugi_${new Date().toISOString().split('T')[0]}.pdf`);
+            doc.save(`Laba_Rugi_${startDate}_to_${endDate}.pdf`);
             toast.success('Laporan Laba Rugi berhasil diunduh (PDF)');
         } catch (error) {
             toast.error('Gagal mengekspor laporan');
@@ -443,7 +455,7 @@ export function AccountingView() {
             const worksheet = XLSX.utils.json_to_sheet(data);
             const workbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(workbook, worksheet, "Neraca");
-            XLSX.writeFile(workbook, `Neraca_${new Date().toISOString().split('T')[0]}.xlsx`);
+            XLSX.writeFile(workbook, `Neraca_${startDate}_to_${endDate}.xlsx`);
             toast.success('Laporan Neraca berhasil diunduh (Excel)');
         } catch (error) {
             toast.error('Gagal mengekspor laporan');
@@ -456,7 +468,7 @@ export function AccountingView() {
             doc.setFontSize(18);
             doc.text('LAPORAN NERACA', 105, 20, { align: 'center' });
             doc.setFontSize(11);
-            doc.text(`Per Tanggal: ${new Date().toLocaleDateString('id-ID')}`, 105, 28, { align: 'center' });
+            doc.text(`Periode: ${startDate} s/d ${endDate}`, 105, 28, { align: 'center' });
 
             const assetData = accounts.filter(a => a.type === 'Asset').map(a => [a.code, a.name, `Rp ${getDisplayBalance(a.code).toLocaleString()}`]);
             const liabilityData = accounts.filter(a => a.type === 'Liability').map(a => [a.code, a.name, `Rp ${getDisplayBalance(a.code).toLocaleString()}`]);
@@ -486,7 +498,7 @@ export function AccountingView() {
                 headStyles: { fillColor: [75, 85, 99] }
             });
 
-            doc.save(`Neraca_${new Date().toISOString().split('T')[0]}.pdf`);
+            doc.save(`Neraca_${startDate}_to_${endDate}.pdf`);
             toast.success('Laporan Neraca berhasil diunduh (PDF)');
         } catch (error) {
             toast.error('Gagal mengekspor laporan');
@@ -534,7 +546,7 @@ export function AccountingView() {
                         </tr>
                     </thead>
                     <tbody>
-                        {transactions.slice().reverse().slice(0, 5).map(tx => (
+                        {filteredTransactions.slice().reverse().slice(0, 5).map(tx => (
                             <tr key={tx.id} className="border-b last:border-0 hover:bg-gray-50">
                                 <td className="py-3 text-gray-600">{tx.date}</td>
                                 <td className="py-3 font-medium text-gray-800">{tx.description}</td>
@@ -555,7 +567,7 @@ export function AccountingView() {
                         <h2 className="text-2xl font-bold text-gray-900 uppercase tracking-widest">
                             {type === 'income' ? 'Laporan Laba Rugi' : 'Laporan Neraca'}
                         </h2>
-                        <p className="text-gray-500">WinPOS Enterprise • Per {new Date().toLocaleDateString('id-ID', { dateStyle: 'long' })}</p>
+                        <p className="text-gray-500">WinPOS Enterprise • {startDate} s/d {endDate}</p>
                     </div>
                     <div className="flex gap-2">
                         <Button
@@ -680,32 +692,53 @@ export function AccountingView() {
                 <p className="text-sm text-gray-500">Pencatatan keuangan standar akuntansi Indonesia.</p>
             </div>
 
-            {/* Navigation Tabs */}
-            <div className="flex space-x-1 bg-gray-200/50 p-1 rounded-xl w-fit">
-                {tabs.map((tab) => (
-                    <button
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id)}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === tab.id
-                            ? 'bg-white text-primary shadow-sm'
-                            : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
-                            }`}
-                    >
-                        <tab.icon className="w-4 h-4" />
-                        {tab.label}
-                    </button>
-                ))}
+            {/* Navigation Tabs & Date Filters */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex space-x-1 bg-gray-200/50 p-1 rounded-xl w-fit">
+                    {tabs.map((tab) => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === tab.id
+                                ? 'bg-white text-primary shadow-sm'
+                                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
+                                }`}
+                        >
+                            <tab.icon className="w-4 h-4" />
+                            {tab.label}
+                        </button>
+                    ))}
+                </div>
+
+                <div className="flex items-center gap-2 bg-white p-2 rounded-xl border border-gray-100 shadow-sm">
+                    <CalendarCheck className="w-4 h-4 text-gray-400 ml-2" />
+                    <div className="flex items-center gap-1">
+                        <input
+                            type="date"
+                            className="text-xs p-1 border-none focus:ring-0 cursor-pointer"
+                            value={startDate}
+                            onChange={(e) => setStartDate(e.target.value)}
+                        />
+                        <span className="text-gray-400 text-xs">-</span>
+                        <input
+                            type="date"
+                            className="text-xs p-1 border-none focus:ring-0 cursor-pointer"
+                            value={endDate}
+                            onChange={(e) => setEndDate(e.target.value)}
+                        />
+                    </div>
+                </div>
             </div>
 
             {/* Content Area */}
             <div className="min-h-[500px]">
                 {activeTab === 'overview' && renderOverview()}
-                {activeTab === 'journal' && <JournalTab transactions={transactions} accounts={accounts} onAddTransaction={(tx) => setTransactions([...transactions, tx])} />}
+                {activeTab === 'journal' && <JournalTab transactions={filteredTransactions} accounts={accounts} onAddTransaction={(tx) => setTransactions([...transactions, tx])} />}
                 {activeTab === 'ledger' && (
                     <div className="bg-white p-8 rounded-2xl shadow-sm border text-center">
                         <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                         <h3 className="text-lg font-bold text-gray-800">Buku Besar</h3>
-                        <p className="text-gray-500">Pilih akun untuk melihat detail pergerakan saldo.</p>
+                        <p className="text-gray-500">Pilih akun untuk melihat detail pergerakan saldo periode {startDate} s/d {endDate}.</p>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-8 text-left">
                             {accounts.map(acc => (
                                 <div key={acc.code} className="p-4 border rounded-xl hover:bg-gray-50 cursor-pointer group">
