@@ -552,16 +552,7 @@ function Home() {
   */
   const { user, role, permissions } = useAuth(); // Get extended auth info
 
-  // RESTORED FUNCTIONS
-  const handleUpdateSale = (updatedSale: SalesOrder) => {
-    setSales(prev => prev.map(s => s.id === updatedSale.id ? updatedSale : s));
-    toast.success(`Transaksi ${updatedSale.orderNo} berhasil diperbarui`);
-  };
 
-  const handleDeleteSale = (saleId: number) => {
-    setSales(prev => prev.filter(s => s.id !== saleId));
-    toast.success('Transaksi berhasil dihapus');
-  };
 
   // NEW PERMISSION-BASED LOGIC
   // We check if the user has the specific permission ID.
