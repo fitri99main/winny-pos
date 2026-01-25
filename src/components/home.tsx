@@ -537,7 +537,7 @@ function Home() {
             onExit={() => setActiveModule('dashboard')}
           />
         );
-      case 'reports': return <ReportsView />;
+      case 'reports': return <ReportsView sales={sales} returns={returns} />;
       case 'accounting': return <AccountingView />;
       case 'employees': return (
         <EmployeesView

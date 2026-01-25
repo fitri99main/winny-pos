@@ -1,7 +1,10 @@
 import { useState, useMemo } from 'react';
-import { Calculator, TrendingUp, TrendingDown, DollarSign, Wallet, FileText, Plus, BookOpen, LayoutDashboard, Settings, Edit, Trash2 } from 'lucide-react';
+import { Calculator, TrendingUp, TrendingDown, DollarSign, Wallet, FileText, Plus, BookOpen, LayoutDashboard, Settings, Edit, Trash2, Download } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // --- Types & Constants ---
 
@@ -346,6 +349,150 @@ export function AccountingView() {
 
     // --- Renderers ---
 
+    const exportIncomeStatementToExcel = () => {
+        try {
+            const incomeAccounts = accounts.filter(a => a.type === 'Income');
+            const expenseAccounts = accounts.filter(a => a.type === 'Expense');
+
+            const data = [
+                { 'Kategori': 'PENDAPATAN', 'Kode': '', 'Nama': '', 'Jumlah': '' },
+                ...incomeAccounts.map(a => ({ 'Kategori': '', 'Kode': a.code, 'Nama': a.name, 'Jumlah': getDisplayBalance(a.code) })),
+                { 'Kategori': 'Total Pendapatan', 'Kode': '', 'Nama': '', 'Jumlah': totalRevenue },
+                { 'Kategori': '', 'Kode': '', 'Nama': '', 'Jumlah': '' },
+                { 'Kategori': 'BEBAN OPERASIONAL', 'Kode': '', 'Nama': '', 'Jumlah': '' },
+                ...expenseAccounts.map(a => ({ 'Kategori': '', 'Kode': a.code, 'Nama': a.name, 'Jumlah': getDisplayBalance(a.code) })),
+                { 'Kategori': 'Total Beban', 'Kode': '', 'Nama': '', 'Jumlah': totalExpenses },
+                { 'Kategori': '', 'Kode': '', 'Nama': '', 'Jumlah': '' },
+                { 'Kategori': 'LABA BERSIH', 'Kode': '', 'Nama': '', 'Jumlah': netProfit }
+            ];
+
+            const worksheet = XLSX.utils.json_to_sheet(data);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Laba Rugi");
+            XLSX.writeFile(workbook, `Laba_Rugi_${new Date().toISOString().split('T')[0]}.xlsx`);
+            toast.success('Laporan Laba Rugi berhasil diunduh (Excel)');
+        } catch (error) {
+            toast.error('Gagal mengekspor laporan');
+        }
+    };
+
+    const exportIncomeStatementToPDF = () => {
+        try {
+            const doc = new jsPDF();
+            doc.setFontSize(18);
+            doc.text('LAPORAN LABA RUGI', 105, 20, { align: 'center' });
+            doc.setFontSize(11);
+            doc.text(`Per Tanggal: ${new Date().toLocaleDateString('id-ID')}`, 105, 28, { align: 'center' });
+
+            const incomeData = accounts.filter(a => a.type === 'Income').map(a => [a.code, a.name, `Rp ${getDisplayBalance(a.code).toLocaleString()}`]);
+            const expenseData = accounts.filter(a => a.type === 'Expense').map(a => [a.code, a.name, `Rp ${getDisplayBalance(a.code).toLocaleString()}`]);
+
+            autoTable(doc, {
+                startY: 40,
+                head: [['Kode', 'Akun Pendapatan', 'Jumlah']],
+                body: [
+                    ...incomeData,
+                    [{ content: 'Total Pendapatan', colSpan: 2, styles: { fontStyle: 'bold' } }, { content: `Rp ${totalRevenue.toLocaleString()}`, styles: { fontStyle: 'bold' } }]
+                ],
+                theme: 'striped',
+                headStyles: { fillColor: [22, 163, 74] }
+            });
+
+            autoTable(doc, {
+                startY: (doc as any).lastAutoTable.finalY + 10,
+                head: [['Kode', 'Akun Beban', 'Jumlah']],
+                body: [
+                    ...expenseData,
+                    [{ content: 'Total Beban', colSpan: 2, styles: { fontStyle: 'bold' } }, { content: `Rp ${totalExpenses.toLocaleString()}`, styles: { fontStyle: 'bold' } }]
+                ],
+                theme: 'striped',
+                headStyles: { fillColor: [220, 38, 38] }
+            });
+
+            const finalY = (doc as any).lastAutoTable.finalY + 15;
+            doc.setFontSize(14);
+            doc.setFont('helvetica', 'bold');
+            doc.text('LABA BERSIH:', 14, finalY);
+            doc.text(`Rp ${netProfit.toLocaleString()}`, 200, finalY, { align: 'right' });
+
+            doc.save(`Laba_Rugi_${new Date().toISOString().split('T')[0]}.pdf`);
+            toast.success('Laporan Laba Rugi berhasil diunduh (PDF)');
+        } catch (error) {
+            toast.error('Gagal mengekspor laporan');
+        }
+    };
+
+    const exportBalanceSheetToExcel = () => {
+        try {
+            const assetAccounts = accounts.filter(a => a.type === 'Asset');
+            const liabilityAccounts = accounts.filter(a => a.type === 'Liability');
+            const equityAccounts = accounts.filter(a => a.type === 'Equity');
+
+            const data = [
+                { 'Kategori': 'AKTIVA (ASSETS)', 'Kode': '', 'Nama': '', 'Jumlah': '' },
+                ...assetAccounts.map(a => ({ 'Kategori': '', 'Kode': a.code, 'Nama': a.name, 'Jumlah': getDisplayBalance(a.code) })),
+                { 'Kategori': 'Total Aktiva', 'Kode': '', 'Nama': '', 'Jumlah': assetAccounts.reduce((s, a) => s + getDisplayBalance(a.code), 0) },
+                { 'Kategori': '', 'Kode': '', 'Nama': '', 'Jumlah': '' },
+                { 'Kategori': 'KEWAJIBAN & EKUITAS', 'Kode': '', 'Nama': '', 'Jumlah': '' },
+                ...liabilityAccounts.map(a => ({ 'Kategori': 'Kewajiban', 'Kode': a.code, 'Nama': a.name, 'Jumlah': getDisplayBalance(a.code) })),
+                ...equityAccounts.map(a => ({ 'Kategori': 'Ekuitas', 'Kode': a.code, 'Nama': a.name, 'Jumlah': getDisplayBalance(a.code) })),
+                { 'Kategori': 'Laba Tahun Berjalan', 'Kode': '', 'Nama': '', 'Jumlah': netProfit },
+                { 'Kategori': 'Total Pasiva', 'Kode': '', 'Nama': '', 'Jumlah': liabilityAccounts.reduce((s, a) => s + getDisplayBalance(a.code), 0) + equityAccounts.reduce((s, a) => s + getDisplayBalance(a.code), 0) + netProfit }
+            ];
+
+            const worksheet = XLSX.utils.json_to_sheet(data);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Neraca");
+            XLSX.writeFile(workbook, `Neraca_${new Date().toISOString().split('T')[0]}.xlsx`);
+            toast.success('Laporan Neraca berhasil diunduh (Excel)');
+        } catch (error) {
+            toast.error('Gagal mengekspor laporan');
+        }
+    };
+
+    const exportBalanceSheetToPDF = () => {
+        try {
+            const doc = new jsPDF();
+            doc.setFontSize(18);
+            doc.text('LAPORAN NERACA', 105, 20, { align: 'center' });
+            doc.setFontSize(11);
+            doc.text(`Per Tanggal: ${new Date().toLocaleDateString('id-ID')}`, 105, 28, { align: 'center' });
+
+            const assetData = accounts.filter(a => a.type === 'Asset').map(a => [a.code, a.name, `Rp ${getDisplayBalance(a.code).toLocaleString()}`]);
+            const liabilityData = accounts.filter(a => a.type === 'Liability').map(a => [a.code, a.name, `Rp ${getDisplayBalance(a.code).toLocaleString()}`]);
+            const equityData = accounts.filter(a => a.type === 'Equity').map(a => [a.code, a.name, `Rp ${getDisplayBalance(a.code).toLocaleString()}`]);
+
+            autoTable(doc, {
+                startY: 40,
+                head: [['Kode', 'Aktiva (Assets)', 'Jumlah']],
+                body: [
+                    ...assetData,
+                    [{ content: 'Total Aktiva', colSpan: 2, styles: { fontStyle: 'bold' } }, { content: `Rp ${accounts.filter(a => a.type === 'Asset').reduce((s, a) => s + getDisplayBalance(a.code), 0).toLocaleString()}`, styles: { fontStyle: 'bold' } }]
+                ],
+                theme: 'striped',
+                headStyles: { fillColor: [37, 99, 235] }
+            });
+
+            autoTable(doc, {
+                startY: (doc as any).lastAutoTable.finalY + 10,
+                head: [['Kode', 'Kewajiban & Ekuitas', 'Jumlah']],
+                body: [
+                    ...liabilityData,
+                    ...equityData,
+                    ['-', 'Laba Tahun Berjalan', `Rp ${netProfit.toLocaleString()}`],
+                    [{ content: 'Total Pasiva', colSpan: 2, styles: { fontStyle: 'bold' } }, { content: `Rp ${(accounts.filter(a => a.type === 'Liability' || a.type === 'Equity').reduce((s, a) => s + getDisplayBalance(a.code), 0) + netProfit).toLocaleString()}`, styles: { fontStyle: 'bold' } }]
+                ],
+                theme: 'striped',
+                headStyles: { fillColor: [75, 85, 99] }
+            });
+
+            doc.save(`Neraca_${new Date().toISOString().split('T')[0]}.pdf`);
+            toast.success('Laporan Neraca berhasil diunduh (PDF)');
+        } catch (error) {
+            toast.error('Gagal mengekspor laporan');
+        }
+    };
+
     const renderOverview = () => (
         <div className="space-y-6 animate-in fade-in">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -403,11 +550,31 @@ export function AccountingView() {
     const renderReports = (type: 'income' | 'balance') => {
         return (
             <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4">
-                <div className="text-center mb-8">
-                    <h2 className="text-2xl font-bold text-gray-900 uppercase tracking-widest">
-                        {type === 'income' ? 'Laporan Laba Rugi' : 'Laporan Neraca'}
-                    </h2>
-                    <p className="text-gray-500">WinPOS Enterprise • Per {new Date().toLocaleDateString('id-ID', { dateStyle: 'long' })}</p>
+                <div className="flex justify-between items-center mb-8">
+                    <div>
+                        <h2 className="text-2xl font-bold text-gray-900 uppercase tracking-widest">
+                            {type === 'income' ? 'Laporan Laba Rugi' : 'Laporan Neraca'}
+                        </h2>
+                        <p className="text-gray-500">WinPOS Enterprise • Per {new Date().toLocaleDateString('id-ID', { dateStyle: 'long' })}</p>
+                    </div>
+                    <div className="flex gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex items-center gap-2 border-green-200 text-green-700 hover:bg-green-50"
+                            onClick={type === 'income' ? exportIncomeStatementToExcel : exportBalanceSheetToExcel}
+                        >
+                            <Download className="w-4 h-4" /> Excel
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex items-center gap-2 border-red-200 text-red-700 hover:bg-red-50"
+                            onClick={type === 'income' ? exportIncomeStatementToPDF : exportBalanceSheetToPDF}
+                        >
+                            <FileText className="w-4 h-4" /> PDF
+                        </Button>
+                    </div>
                 </div>
 
                 <div className="space-y-6">
