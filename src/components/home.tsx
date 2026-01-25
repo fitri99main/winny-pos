@@ -29,7 +29,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from './auth/AuthProvider';
 import { DashboardView } from './dashboard/DashboardView';
 import { UsersView, branchList } from './users/UsersView';
-import { ContactsView, INITIAL_CONTACTS, ContactData } from './contacts/ContactsView';
+import { ContactsView, ContactData } from './contacts/ContactsView';
 import { ProductsView } from './products/ProductsView';
 import { PurchasesView } from './purchases/PurchasesView';
 import { ReportsView } from './reports/ReportsView';
@@ -71,7 +71,7 @@ function Home() {
   const [isCashierOpen, setIsCashierOpen] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  const [contacts, setContacts] = useState<ContactData[]>(INITIAL_CONTACTS);
+  const [contacts, setContacts] = useState<ContactData[]>([]);
 
   // Centralized State for Integration
   const [attendanceLogs, setAttendanceLogs] = useState<any[]>([
@@ -104,35 +104,73 @@ function Home() {
     { id: 2, ingredientId: 2, ingredientName: 'Susu Fresh Milk', type: 'OUT', quantity: 4, unit: 'Liter', reason: 'Pemakaian Harian', date: '2026-01-25 08:15', user: 'Barista' },
   ]);
 
-  // Master Data State
-  const [categories, setCategories] = useState<any[]>([
-    { id: 1, name: 'Kopi', description: 'Biji kopi dan bubuk kopi' },
-    { id: 2, name: 'Susu', description: 'Susu segar, UHT, dan kental manis' },
-    { id: 3, name: 'Sirup', description: 'Sirup perasa untuk minuman' },
-  ]);
-  const [units, setUnits] = useState<any[]>([
-    { id: 1, name: 'Kilogram', abbreviation: 'kg' },
-    { id: 2, name: 'Liter', abbreviation: 'L' },
-    { id: 3, name: 'Botol', abbreviation: 'btl' },
-    { id: 4, name: 'Pcs', abbreviation: 'pcs' },
-  ]);
-  const [brands, setBrands] = useState<any[]>([
-    { id: 1, name: 'Winny Coffee', description: 'Private label coffee beans' },
-    { id: 2, name: 'Ultra Milk', description: 'Dairy products' },
-    { id: 3, name: 'Monin', description: 'Premium syrups' },
-  ]);
-  const [departments, setDepartments] = useState<any[]>([
-    { id: 1, name: 'Operations' },
-    { id: 2, name: 'Kitchen' },
-    { id: 3, name: 'Finance' },
-    { id: 4, name: 'HR' },
-  ]);
+  // --- Master Data State ---
+  const [categories, setCategories] = useState<any[]>([]);
+  const [units, setUnits] = useState<any[]>([]);
+  const [brands, setBrands] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
 
-  const [products, setProducts] = useState<any[]>([
-    { id: 1, name: 'Kopi Arabika Gayo', category: 'Kopi', brand: 'Winny Coffee', unit: 'kg', price: 150000, cost: 90000, stock: 25, code: 'P001' },
-    { id: 2, name: 'Susu UHT Full Cream', category: 'Susu', brand: 'Ultra Milk', unit: 'Liter', price: 22000, cost: 18000, stock: 48, code: 'P002' },
-  ]);
+  // --- Master Data Integration ---
+  const fetchMasterData = async () => {
+    try {
+      const [productsRes, categoriesRes, unitsRes, brandsRes] = await Promise.all([
+        supabase.from('products').select('*').order('created_at', { ascending: false }),
+        supabase.from('categories').select('*').order('name'),
+        supabase.from('units').select('*').order('name'),
+        supabase.from('brands').select('*').order('name')
+      ]);
 
+      if (productsRes.data) setProducts(productsRes.data);
+      if (categoriesRes.data) setCategories(categoriesRes.data);
+      if (unitsRes.data) setUnits(unitsRes.data);
+      if (brandsRes.data) setBrands(brandsRes.data);
+    } catch (err) {
+      console.error('Error loading master data:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchMasterData();
+
+    // Subscribe to all master data changes
+    const channels = [
+      supabase.channel('products_all').on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, fetchMasterData).subscribe(),
+      supabase.channel('categories_all').on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, fetchMasterData).subscribe(),
+      supabase.channel('units_all').on('postgres_changes', { event: '*', schema: 'public', table: 'units' }, fetchMasterData).subscribe(),
+      supabase.channel('brands_all').on('postgres_changes', { event: '*', schema: 'public', table: 'brands' }, fetchMasterData).subscribe(),
+    ];
+
+    return () => {
+      channels.forEach(ch => ch.unsubscribe());
+    };
+  }, []);
+
+  // Generic CRUD Handler
+  const handleMasterDataCRUD = async (
+    table: string,
+    action: 'create' | 'update' | 'delete',
+    data: any
+  ) => {
+    try {
+      if (action === 'create') {
+        const { id, ...payload } = data; // Strip ID for auto-generation
+        const { error } = await supabase.from(table).insert([payload]);
+        if (error) throw error;
+        toast.success(`Data berhasil ditambahkan`);
+      } else if (action === 'update') {
+        const { error } = await supabase.from(table).update(data).eq('id', data.id);
+        if (error) throw error;
+        toast.success(`Data berhasil diperbarui`);
+      } else if (action === 'delete') {
+        const { error } = await supabase.from(table).delete().eq('id', data.id);
+        if (error) throw error;
+        toast.success(`Data berhasil dihapus`);
+      }
+    } catch (err) {
+      console.error(`Error ${action} ${table}:`, err);
+      toast.error(`Gagal memproses data`);
+    }
+  };
   const [receiptSettings, setReceiptSettings] = useState({
     header: 'WINNY CAFE',
     address: 'Jl. Contoh No. 123, Kota',
@@ -595,6 +633,10 @@ function Home() {
           setUnits={setUnits}
           brands={brands}
           setBrands={setBrands}
+          onProductCRUD={(action, data) => handleMasterDataCRUD('products', action, data)}
+          onCategoryCRUD={(action, data) => handleMasterDataCRUD('categories', action, data)}
+          onUnitCRUD={(action, data) => handleMasterDataCRUD('units', action, data)}
+          onBrandCRUD={(action, data) => handleMasterDataCRUD('brands', action, data)}
         />
       );
       case 'purchases': return <PurchasesView />;
@@ -676,7 +718,16 @@ function Home() {
           onUpdateSettings={setReceiptSettings}
         />
       );
-      default: return <DashboardView contacts={contacts} />;
+      default: return (
+        <DashboardView
+          contacts={contacts}
+          sales={sales}
+          returns={returns}
+          products={products}
+          ingredients={inventoryIngredients}
+          onNavigate={(module) => setActiveModule(module)}
+        />
+      );
     }
   };
 
