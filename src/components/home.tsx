@@ -176,11 +176,11 @@ function Home() {
       if (salesData) {
         const formattedSales = salesData.map(s => ({
           ...s,
-          items: s.items || [],
+          items: (s.items || []).length,
           id: s.id,
           orderNo: s.order_no,
           date: s.date,
-          totalAmount: s.total_amount,
+          totalAmount: Number(s.total_amount || 0),
           paymentMethod: s.payment_method,
           status: s.status,
           branchId: s.branch_id,
