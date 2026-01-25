@@ -38,15 +38,18 @@ export const INITIAL_CONTACTS: ContactData[] = [
 interface ContactsViewProps {
     contacts: ContactData[];
     setContacts: React.Dispatch<React.SetStateAction<ContactData[]>>;
+    onAdd: (contact: Partial<ContactData>) => void;
+    onUpdate: (contact: Partial<ContactData>) => void;
+    onDelete: (id: number) => void;
 }
 
-export function ContactsView({ contacts, setContacts }: ContactsViewProps) {
+export function ContactsView({ contacts, setContacts, onAdd, onUpdate, onDelete }: ContactsViewProps) {
     const [activeTab, setActiveTab] = useState<ContactType>('Customer');
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [formData, setFormData] = useState<Partial<ContactData>>({});
     const [selectedCard, setSelectedCard] = useState<ContactData | null>(null);
 
-    const filteredContacts = contacts.filter(c => c.type === activeTab);
+    const filteredContacts = (contacts || []).filter(c => c.type === activeTab);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -56,17 +59,14 @@ export function ContactsView({ contacts, setContacts }: ContactsViewProps) {
         }
 
         if (formData.id) {
-            setContacts(contacts.map(c => c.id === formData.id ? { ...c, ...formData } as ContactData : c));
-            toast.success('Data kontak diperbarui');
+            onUpdate(formData);
         } else {
             const newContact = {
                 ...formData,
-                id: Date.now(),
                 type: activeTab,
                 status: 'Active'
-            } as ContactData;
-            setContacts([...contacts, newContact]);
-            toast.success('Kontak baru ditambahkan');
+            };
+            onAdd(newContact);
         }
         setIsFormOpen(false);
         setFormData({});
@@ -74,8 +74,7 @@ export function ContactsView({ contacts, setContacts }: ContactsViewProps) {
 
     const handleDelete = (id: number) => {
         if (confirm('Yakin ingin menghapus kontak ini?')) {
-            setContacts(contacts.filter(c => c.id !== id));
-            toast.success('Kontak dihapus');
+            onDelete(id);
         }
     };
 

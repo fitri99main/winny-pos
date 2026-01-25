@@ -499,6 +499,69 @@ function Home() {
   });
 
 
+  // --- Contacts Integration ---
+  const fetchContacts = async () => {
+    const { data, error } = await supabase.from('contacts').select('*').order('created_at', { ascending: false });
+    if (error) {
+      console.error('Error fetching contacts:', error);
+      toast.error('Gagal memuat kontak');
+    } else {
+      setContacts(data || []);
+    }
+  };
+
+  useEffect(() => {
+    fetchContacts();
+
+    // Subscribe to realtime changes
+    const subscription = supabase
+      .channel('contacts_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'contacts' }, () => {
+        fetchContacts();
+      })
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleCreateContact = async (newContact: any) => {
+    // Remove id if it's a placeholder (like Date.now()) to let DB generate it, 
+    // BUT since the UI might pass 'id' from formData, we should sanitize it.
+    // Actually, ContactsView passes everything including Date.now() id if we don't change it there.
+    // Let's expect the view to pass data without ID for new creation, OR we strip it here.
+    const { id, ...contactData } = newContact;
+
+    const { error } = await supabase.from('contacts').insert([contactData]);
+    if (error) {
+      console.error('Error creating contact:', error);
+      toast.error('Gagal membuat kontak');
+    } else {
+      toast.success('Kontak berhasil dibuat');
+    }
+  };
+
+  const handleUpdateContact = async (updatedContact: any) => {
+    const { error } = await supabase.from('contacts').update(updatedContact).eq('id', updatedContact.id);
+    if (error) {
+      console.error('Error updating contact:', error);
+      toast.error('Gagal memperbarui kontak');
+    } else {
+      toast.success('Kontak berhasil diperbarui');
+    }
+  };
+
+  const handleDeleteContact = async (id: number) => {
+    const { error } = await supabase.from('contacts').delete().eq('id', id);
+    if (error) {
+      console.error('Error deleting contact:', error);
+      toast.error('Gagal menghapus kontak');
+    } else {
+      toast.success('Kontak berhasil dihapus');
+    }
+  };
+
   const renderActiveModule = () => {
     switch (activeModule) {
       case 'dashboard': return (
@@ -512,7 +575,15 @@ function Home() {
         />
       );
       case 'users': return <UsersView />;
-      case 'contacts': return <ContactsView contacts={contacts} setContacts={setContacts} />;
+      case 'contacts': return (
+        <ContactsView
+          contacts={contacts}
+          setContacts={setContacts}
+          onAdd={handleCreateContact}
+          onUpdate={handleUpdateContact}
+          onDelete={handleDeleteContact}
+        />
+      );
       case 'products': return (
         <ProductsView
           products={products}
