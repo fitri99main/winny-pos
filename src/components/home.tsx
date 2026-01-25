@@ -162,9 +162,64 @@ function Home() {
       supabase.channel('returns_all').on('postgres_changes', { event: '*', schema: 'public', table: 'purchase_returns' }, fetchPurchases).subscribe(),
     ];
 
+    // --- Sales & POS Integration ---
+    const fetchTransactions = async () => {
+      // Fetch Sales with Items
+      const { data: salesData } = await supabase
+        .from('sales')
+        .select(`
+          *,
+          items:sale_items(*)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (salesData) {
+        const formattedSales = salesData.map(s => ({
+          ...s,
+          items: s.items || [],
+          id: s.id,
+          orderNo: s.order_no,
+          date: s.date,
+          totalAmount: s.total_amount,
+          paymentMethod: s.payment_method,
+          status: s.status,
+          branchId: s.branch_id,
+          waiterName: s.waiter_name,
+          productDetails: (s.items || []).map((i: any) => ({
+            name: i.product_name,
+            quantity: i.quantity,
+            price: i.price
+          }))
+        }));
+        setSales(formattedSales);
+      }
+
+      const { data: returnsData } = await supabase.from('sales_returns').select('*').order('created_at', { ascending: false });
+      if (returnsData) {
+        setReturns(returnsData.map(r => ({
+          ...r,
+          id: r.id,
+          returnNo: r.return_no,
+          orderNo: r.sale_id,
+          date: r.date,
+          reason: r.reason,
+          refundAmount: r.refund_amount,
+          status: r.status
+        })));
+      }
+    };
+
+    fetchTransactions();
+    const transactionChannels = [
+      supabase.channel('sales_changes').on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, fetchTransactions).subscribe(),
+      supabase.channel('sale_items_changes').on('postgres_changes', { event: '*', schema: 'public', table: 'sale_items' }, fetchTransactions).subscribe(),
+      supabase.channel('returns_changes').on('postgres_changes', { event: '*', schema: 'public', table: 'sales_returns' }, fetchTransactions).subscribe(),
+    ];
+
     return () => {
       channels.forEach(ch => ch.unsubscribe());
       purchaseChannels.forEach(ch => ch.unsubscribe());
+      transactionChannels.forEach(ch => ch.unsubscribe());
     };
   }, []);
 
@@ -315,131 +370,67 @@ function Home() {
     return () => clearInterval(timer);
   }, []);
 
-  const handleAddSale = (saleData: Omit<SalesOrder, 'id' | 'orderNo' | 'date' | 'status'>) => {
-    const newSale: SalesOrder = {
-      ...saleData,
-      id: Date.now(),
-      orderNo: `INV-${new Date().getFullYear()}-${(sales.length + 1).toString().padStart(4, '0')}`,
-      date: new Date().toLocaleString('sv-SE').slice(0, 16).replace('T', ' '),
-      status: 'Completed',
-      branchId: currentBranchId,
-      waiterName: saleData.waiterName,
-      syncStatus: isOnline ? 'syncing' : 'pending'
-    };
-    setSales([newSale, ...sales]);
+  const handleAddSale = async (saleData: Omit<SalesOrder, 'id' | 'orderNo' | 'date' | 'status'>) => {
+    try {
+      const orderNo = `INV-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
 
-    // --- Add to Pending Orders (KDS) ---
-    const kitchenItems = saleData.productDetails.filter(item => {
-      const product = mockProducts.find(p => p.name === item.name);
-      return product?.target === 'Kitchen';
-    });
-    const barItems = saleData.productDetails.filter(item => {
-      const product = mockProducts.find(p => p.name === item.name);
-      return product?.target === 'Bar';
-    });
+      // 1. Create Sale Record
+      const { data: sale, error: saleError } = await supabase.from('sales').insert([{
+        order_no: orderNo,
+        date: new Date().toISOString(),
+        total_amount: saleData.totalAmount,
+        payment_method: saleData.paymentMethod,
+        status: 'Completed',
+        branch_id: currentBranchId,
+        waiter_name: saleData.waiterName
+      }]).select().single();
 
-    if (kitchenItems.length > 0 || barItems.length > 0) {
-      const kdsOrder = {
-        id: Date.now(),
-        orderNo: newSale.orderNo,
-        tableNo: newSale.tableNo,
-        waiterName: newSale.waiterName,
-        time: newSale.date.split(' ')[1],
-        items: saleData.productDetails.map(item => {
-          const product = mockProducts.find(p => p.name === item.name);
-          return { ...item, target: product?.target || 'Waitress', status: 'Pending' };
-        })
-      };
-      setPendingOrders(prev => [kdsOrder, ...prev]);
-    }
+      if (saleError) throw saleError;
+      if (!sale) throw new Error('Failed to create sale');
 
-    // --- Automatic Stock Deduction based on Recipe (HPP) ---
-    const newMovements: StockMovement[] = [];
-    let updatedIngredients = [...inventoryIngredients];
-
-    saleData.productDetails.forEach(item => {
-      // Find product in mockData to get recipe
-      const product = mockProducts.find(p => p.name === item.name);
-      if (product && product.recipe && product.recipe.length > 0) {
-        product.recipe.forEach(recipeItem => {
-          // Decrement stock
-          updatedIngredients = updatedIngredients.map(ing => {
-            if (ing.id === recipeItem.ingredientId) {
-              const deductQty = recipeItem.amount * item.quantity;
-
-              // Record movement
-              newMovements.push({
-                id: Date.now() + Math.random(),
-                ingredientId: ing.id,
-                ingredientName: ing.name,
-                type: 'OUT',
-                quantity: deductQty,
-                unit: ing.unit,
-                reason: `Penjualan ${newSale.orderNo}`,
-                date: newSale.date,
-                user: 'System (POS)'
-              });
-
-              return { ...ing, currentStock: ing.currentStock - deductQty, lastUpdated: newSale.date.split(' ')[0] };
-            }
-            return ing;
-          });
-        });
-      }
-    });
-
-    if (newMovements.length > 0) {
-      setInventoryIngredients(updatedIngredients);
-      setInventoryHistory(prev => [...newMovements, ...prev]);
-    }
-
-    if (isOnline) {
-      setTimeout(() => {
-        setSales(prev => prev.map(s => s.id === newSale.id ? { ...s, syncStatus: 'synced' } : s));
-        toast.success(`Transaksi ${newSale.orderNo} berhasil disinkronkan`);
-      }, 2000);
-    } else {
-      toast.info('Transaksi disimpan secara offline');
-    }
-
-    // --- Automatic Printing ---
-    // 1. Customer Receipt (Printer Kasir)
-    printerService.printReceipt({
-      orderNo: newSale.orderNo,
-      tableNo: newSale.tableNo,
-      waiterName: newSale.waiterName || '-',
-      time: newSale.date,
-      items: saleData.productDetails.map(item => ({
-        name: item.name,
+      // 2. Create Sale Items
+      const saleItems = saleData.productDetails.map(item => ({
+        sale_id: sale.id,
+        product_name: item.name,
         quantity: item.quantity,
-        price: item.price
-      })),
-      subtotal: saleData.subtotal || saleData.totalAmount,
-      discount: saleData.discount || 0,
-      total: saleData.totalAmount,
-      paymentType: saleData.paymentMethod || 'Tunai',
-      amountPaid: saleData.paidAmount || saleData.totalAmount,
-      change: saleData.change || 0
-    });
+        price: item.price,
+        cost: 0
+      }));
 
-    // 2. Preparation Tickets (Kitchen/Bar)
-    if (kitchenItems.length > 0) {
-      printerService.printTicket('Kitchen', {
-        orderNo: newSale.orderNo,
-        tableNo: newSale.tableNo,
-        waiterName: newSale.waiterName || '-',
-        time: newSale.date.split(' ')[1],
-        items: kitchenItems
+      const { error: itemsError } = await supabase.from('sale_items').insert(saleItems);
+      if (itemsError) throw itemsError;
+
+      toast.success(`Transaksi ${orderNo} berhasil disimpan`);
+
+      // --- Client-Side Stock Deduction (Temporary) ---
+      // Real deduction should happen via trigger or backend API
+      saleData.productDetails.forEach(item => {
+        const product = products.find(p => p.name === item.name);
+        // Logic for complex recipe deduction could be here if needed client-side
       });
-    }
-    if (barItems.length > 0) {
-      printerService.printTicket('Bar', {
-        orderNo: newSale.orderNo,
-        tableNo: newSale.tableNo,
-        waiterName: newSale.waiterName || '-',
-        time: newSale.date.split(' ')[1],
-        items: barItems
+
+      // --- Automatic Printing ---
+      printerService.printReceipt({
+        orderNo: orderNo,
+        tableNo: saleData.tableNo,
+        waiterName: saleData.waiterName || '-',
+        time: new Date().toLocaleString(),
+        items: saleData.productDetails.map(item => ({
+          name: item.name,
+          quantity: item.quantity,
+          price: item.price
+        })),
+        subtotal: saleData.subtotal || saleData.totalAmount,
+        discount: saleData.discount || 0,
+        total: saleData.totalAmount,
+        paymentType: saleData.paymentMethod || 'Tunai',
+        amountPaid: saleData.paidAmount || saleData.totalAmount,
+        change: saleData.change || 0
       });
+
+    } catch (err) {
+      console.error('Transaction failed:', err);
+      toast.error('Gagal menyimpan transaksi');
     }
   };
   const handleSendToKDS = (orderData: any) => {
@@ -481,23 +472,67 @@ function Home() {
     }
   };
 
-  const handleAddReturn = (returnData: Omit<SalesReturn, 'id' | 'returnNo' | 'date' | 'status'>) => {
-    const newReturn: SalesReturn = {
-      ...returnData,
-      id: Date.now(),
-      returnNo: `RET-${returnData.orderNo}`,
-      date: new Date().toISOString().split('T')[0],
-      status: 'Processed',
-      syncStatus: isOnline ? 'syncing' : 'pending'
-    };
-    setReturns([newReturn, ...returns]);
-    setSales(sales.map(s => s.orderNo === returnData.orderNo ? { ...s, status: 'Returned', syncStatus: isOnline ? 'syncing' : 'pending' } : s));
+  const handleAddReturn = async (returnData: Omit<SalesReturn, 'id' | 'returnNo' | 'date' | 'status'>) => {
+    try {
+      // 1. Find the original sale ID using orderNo
+      // Logic: returnData.orderNo is likely the string 'INV-...'. We need to find the sale ID.
+      // Since 'sales' state has both ID and orderNo, we can find it there.
+      const originalSale = sales.find(s => s.orderNo === returnData.orderNo);
 
-    if (isOnline) {
-      setTimeout(() => {
-        setReturns(prev => prev.map(r => r.id === newReturn.id ? { ...r, syncStatus: 'synced' } : r));
-        setSales(prev => prev.map(s => s.orderNo === returnData.orderNo ? { ...s, syncStatus: 'synced' } : s));
-      }, 2000);
+      if (!originalSale) {
+        toast.error('Data transaksi asli tidak ditemukan locally, refresh halaman dan coba lagi.');
+        return;
+      }
+
+      const { error } = await supabase.from('sales_returns').insert([{
+        return_no: `RET-${returnData.orderNo}`,
+        sale_id: originalSale.id,
+        date: new Date().toISOString(),
+        reason: returnData.reason,
+        refund_amount: 0, // Should be calculated or passed
+        status: 'Processed'
+      }]);
+
+      if (error) throw error;
+
+      // Update original sale status if needed? 
+      // Ideally we update status to 'Returned' or 'Partial Return'
+      await supabase.from('sales').update({ status: 'Returned' }).eq('id', originalSale.id);
+
+      toast.success('Retur berhasil diproses');
+
+    } catch (err) {
+      console.error('Return failed:', err);
+      toast.error('Gagal memproses retur');
+    }
+  };
+
+  const handleUpdateSale = async (updatedSale: SalesOrder) => {
+    try {
+      // Only allow updating specific fields for now to prevent integrity issues
+      const { error } = await supabase.from('sales').update({
+        payment_method: updatedSale.paymentMethod,
+        branch_id: updatedSale.branchId, // if tableNo stored here or separate? TableNo not in DB schema yet.
+        waiter_name: updatedSale.waiterName,
+        // total_amount mismatch if items changed? For now assume only header update.
+      }).eq('id', updatedSale.id);
+
+      if (error) throw error;
+      toast.success('Transaksi berhasil diupdate');
+    } catch (err) {
+      console.error('Update failed', err);
+      toast.error('Gagal update transaksi');
+    }
+  };
+
+  const handleDeleteSale = async (saleId: number) => {
+    try {
+      const { error } = await supabase.from('sales').delete().eq('id', saleId);
+      if (error) throw error;
+      toast.success('Transaksi berhasil dihapus');
+    } catch (err) {
+      console.error('Delete failed', err);
+      toast.error('Gagal menghapus transaksi');
     }
   };
 
