@@ -25,34 +25,7 @@ interface JournalEntry {
     amount: number;
 }
 
-const INITIAL_COA: Account[] = [
-    // Assets
-    { code: '101', name: 'Kas', type: 'Asset' },
-    { code: '102', name: 'Bank', type: 'Asset' },
-    { code: '103', name: 'Piutang Usaha', type: 'Asset' },
-    { code: '104', name: 'Persediaan', type: 'Asset' },
-    // Liabilities
-    { code: '201', name: 'Hutang Usaha', type: 'Liability' },
-    // Equity
-    { code: '301', name: 'Modal', type: 'Equity' },
-    { code: '302', name: 'Prive', type: 'Equity' },
-    // Income
-    { code: '401', name: 'Pendapatan Penjualan', type: 'Income' },
-    { code: '402', name: 'Pendapatan Lain-lain', type: 'Income' },
-    // Expenses
-    { code: '501', name: 'Beban Pembelian', type: 'Expense' },
-    { code: '502', name: 'Beban Gaji', type: 'Expense' },
-    { code: '503', name: 'Beban Sewa', type: 'Expense' },
-    { code: '504', name: 'Beban Listrik & Air', type: 'Expense' },
-    { code: '505', name: 'Beban Lain-lain', type: 'Expense' },
-];
-
-const INITIAL_TRANSACTIONS: JournalEntry[] = [
-    { id: 1, date: '2023-10-01', description: 'Setoran Modal Awal', debitAccount: '102', creditAccount: '301', amount: 100000000 },
-    { id: 2, date: '2023-10-02', description: 'Pembelian Perlengkapan', debitAccount: '505', creditAccount: '101', amount: 500000 },
-    { id: 3, date: '2023-10-03', description: 'Penjualan Tunai', debitAccount: '101', creditAccount: '401', amount: 2500000 },
-    { id: 4, date: '2023-10-05', description: 'Bayar Listrik', debitAccount: '504', creditAccount: '102', amount: 1200000 },
-];
+// --- Sub-Components ---
 
 // --- Sub-Components ---
 
@@ -303,10 +276,25 @@ function AccountManagementTab({ accounts, getBalance, onAddAccount, onUpdateAcco
 
 // --- Main Component ---
 
-export function AccountingView() {
+interface AccountingViewProps {
+    accounts?: Account[]; // Made optional to prevent crash if not passed immediately
+    transactions?: JournalEntry[];
+    onAddAccount?: (acc: Account) => Promise<void>;
+    onUpdateAccount?: (acc: Account) => Promise<void>;
+    onDeleteAccount?: (code: string) => Promise<void>;
+    onAddTransaction?: (tx: JournalEntry) => Promise<void>;
+}
+
+export function AccountingView({
+    accounts = [],
+    transactions = [],
+    onAddAccount = async () => { },
+    onUpdateAccount = async () => { },
+    onDeleteAccount = async () => { },
+    onAddTransaction = async () => { }
+}: AccountingViewProps) {
     const [activeTab, setActiveTab] = useState('overview');
-    const [accounts, setAccounts] = useState<Account[]>(INITIAL_COA);
-    const [transactions, setTransactions] = useState<JournalEntry[]>(INITIAL_TRANSACTIONS);
+
 
     // --- Date Filtering State ---
     const [startDate, setStartDate] = useState(() => {
@@ -320,9 +308,9 @@ export function AccountingView() {
         return transactions.filter(tx => tx.date >= startDate && tx.date <= endDate);
     }, [transactions, startDate, endDate]);
 
-    // --- CRUD Actions ---
-    const addAccount = (acc: Account) => setAccounts([...accounts, acc]);
-    const updateAccount = (updatedAcc: Account) => setAccounts(accounts.map(a => a.code === updatedAcc.code ? updatedAcc : a));
+    // --- CRUD Actions (Wrappers) ---
+    const addAccount = (acc: Account) => onAddAccount(acc);
+    const updateAccount = (updatedAcc: Account) => onUpdateAccount(updatedAcc);
     const deleteAccount = (code: string) => {
         // Prevent deletion if account is used in transactions
         const isUsed = transactions.some(t => t.debitAccount === code || t.creditAccount === code);
@@ -330,8 +318,7 @@ export function AccountingView() {
             toast.error('Gagal menghapus: Akun ini sudah digunakan dalam transaksi.');
             return;
         }
-        setAccounts(accounts.filter(a => a.code !== code));
-        toast.success('Akun berhasil dihapus');
+        onDeleteAccount(code);
     };
 
     // --- Derived State for Reports ---
@@ -733,7 +720,8 @@ export function AccountingView() {
             {/* Content Area */}
             <div className="min-h-[500px]">
                 {activeTab === 'overview' && renderOverview()}
-                {activeTab === 'journal' && <JournalTab transactions={filteredTransactions} accounts={accounts} onAddTransaction={(tx) => setTransactions([...transactions, tx])} />}
+                {activeTab === 'journal' && <JournalTab transactions={filteredTransactions} accounts={accounts} onAddTransaction={(tx) => onAddTransaction(tx)} />}
+
                 {activeTab === 'ledger' && (
                     <div className="bg-white p-8 rounded-2xl shadow-sm border text-center">
                         <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-4" />

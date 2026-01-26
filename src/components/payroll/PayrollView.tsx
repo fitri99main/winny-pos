@@ -20,26 +20,34 @@ const INITIAL_PAYROLL: PayrollItem[] = [
     { id: 2, employeeName: 'Siti Aminah', position: 'Cashier', basicSalary: 3200000, allowance: 400000, deduction: 100000, status: 'Pending', period: 'Januari 2026' },
 ];
 
-export function PayrollView({ payroll: payrollData, setPayroll: setPayrollData }: { payroll: PayrollItem[], setPayroll: any }) {
+export function PayrollView({
+    payroll: payrollData,
+    setPayroll: setPayrollData,
+    employees = [], // Receive from Home
+    onPayrollAction = async () => { }
+}: {
+    payroll: PayrollItem[],
+    setPayroll: any,
+    employees?: any[],
+    onPayrollAction?: (action: 'create' | 'update' | 'delete', data: any) => Promise<void>
+}) {
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [formData, setFormData] = useState<Partial<PayrollItem>>({});
     const [filterPeriod, setFilterPeriod] = useState('Januari 2026');
     const [searchQuery, setSearchQuery] = useState('');
 
-    // --- Mock Employees for Dropdown ---
-    const employees = [
-        { name: 'Budi Santoso', position: 'Barista' },
-        { name: 'Siti Aminah', position: 'Cashier' },
-        { name: 'Rudi Hermawan', position: 'Kitchen Staff' },
-        { name: 'Andi Pratama', position: 'Server' },
-    ];
+    // --- Mock Employees Removed, using props ---
 
     const handleProcessPayment = (id: number) => {
         if (!confirm('Konfirmasi pembayaran gaji untuk karyawan ini?')) return;
-        setPayrollData(payrollData.map(item =>
-            item.id === id ? { ...item, status: 'Paid', paymentDate: new Date().toISOString().split('T')[0] } : item
-        ));
-        toast.success('Gaji telah dibayarkan');
+        const item = payrollData.find(p => p.id === id);
+        if (item) {
+            onPayrollAction('update', {
+                ...item,
+                status: 'Paid',
+                paymentDate: new Date().toISOString().split('T')[0]
+            });
+        }
     };
 
     const handlePrintSlip = (item: PayrollItem) => {
@@ -55,19 +63,16 @@ export function PayrollView({ payroll: payrollData, setPayroll: setPayrollData }
         }
 
         if (formData.id) {
-            setPayrollData(payrollData.map(item => item.id === formData.id ? { ...item, ...formData } as PayrollItem : item));
-            toast.success('Data gaji diperbarui');
+            onPayrollAction('update', formData);
         } else {
-            const newItem: PayrollItem = {
+            const newItem = {
                 ...formData,
-                id: Date.now(),
                 status: 'Pending',
-                period: filterPeriod, // Default to current view period
+                period: filterPeriod,
                 allowance: formData.allowance || 0,
                 deduction: formData.deduction || 0
-            } as PayrollItem;
-            setPayrollData([...payrollData, newItem]);
-            toast.success('Data gaji ditambahkan');
+            };
+            onPayrollAction('create', newItem);
         }
         setIsFormOpen(false);
         setFormData({});
@@ -82,8 +87,7 @@ export function PayrollView({ payroll: payrollData, setPayroll: setPayrollData }
 
     const handleDelete = (id: number) => {
         if (confirm('Hapus data gaji ini?')) {
-            setPayrollData(payrollData.filter(item => item.id !== id));
-            toast.success('Data dihapus');
+            onPayrollAction('delete', { id });
         }
     };
 

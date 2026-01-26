@@ -11,11 +11,13 @@ interface Branch {
     status: 'Active' | 'Inactive';
 }
 
-export function BranchesView() {
-    const [branches, setBranches] = useState<Branch[]>([
-        { id: 'b1', name: 'Winny Cafe Pusat', address: 'Jl. Ahmad Yani No. 1, Jakarta', phone: '021-1234567', status: 'Active' },
-        { id: 'b2', name: 'Winny Cafe Cabang 02', address: 'Jl. Sudirman No. 45, Bandung', phone: '022-7654321', status: 'Active' },
-    ]);
+export function BranchesView({
+    branches = [],
+    onBranchAction = async () => { }
+}: {
+    branches?: any[],
+    onBranchAction?: (action: 'create' | 'update' | 'delete', data: any) => Promise<void>
+}) {
 
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -28,23 +30,21 @@ export function BranchesView() {
             return;
         }
 
-        const branch: Branch = {
-            id: `b${branches.length + 1}`,
+        onBranchAction('create', {
             name: newBranch.name,
             address: newBranch.address,
             phone: newBranch.phone,
             status: 'Active'
-        };
+        });
 
-        setBranches([...branches, branch]);
         setNewBranch({ name: '', address: '', phone: '' });
         setIsAddModalOpen(false);
-        toast.success(`Cabang ${newBranch.name} berhasil ditambahkan`);
     };
 
     const handleDeleteBranch = (id: string) => {
-        setBranches(branches.filter(b => b.id !== id));
-        toast.success('Cabang berhasil dihapus');
+        if (confirm('Hapus cabang ini?')) {
+            onBranchAction('delete', { id });
+        }
     };
 
     const filteredBranches = branches.filter(b =>

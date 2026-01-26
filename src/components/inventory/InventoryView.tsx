@@ -56,8 +56,8 @@ const INITIAL_MOVEMENTS: StockMovement[] = [
 interface InventoryViewProps {
     ingredients: Ingredient[];
     movements: StockMovement[];
-    onUpdateIngredients: React.Dispatch<React.SetStateAction<Ingredient[]>>;
-    onUpdateHistory: React.Dispatch<React.SetStateAction<StockMovement[]>>;
+    onIngredientAction: (action: 'create' | 'update' | 'delete', data: any) => Promise<void>;
+    onStockAdjustment: (adjustment: any) => Promise<void>;
     categories: any[];
     units: any[];
 }
@@ -65,8 +65,8 @@ interface InventoryViewProps {
 export function InventoryView({
     ingredients,
     movements,
-    onUpdateIngredients,
-    onUpdateHistory,
+    onIngredientAction,
+    onStockAdjustment,
     categories,
     units
 }: InventoryViewProps) {
@@ -89,59 +89,38 @@ export function InventoryView({
         reason: ''
     });
 
-    const handleAddIngredient = (e: React.FormEvent) => {
+    const handleAddIngredient = async (e: React.FormEvent) => {
         e.preventDefault();
-        const ingredient: Ingredient = {
-            ...newIngredient,
-            id: Date.now(),
-            currentStock: 0,
-            lastUpdated: new Date().toISOString().split('T')[0]
-        } as Ingredient;
-
-        onUpdateIngredients(prev => [...prev, ingredient]);
+        await onIngredientAction('create', {
+            name: newIngredient.name,
+            unit: newIngredient.unit,
+            category: newIngredient.category,
+            min_stock: newIngredient.minStock,
+            current_stock: 0,
+            cost_per_unit: 0
+        });
         setIsAddModalOpen(false);
         setNewIngredient({ name: '', unit: 'kg', category: 'Coffee', minStock: 1 });
-        toast.success(`Bahan ${ingredient.name} berhasil ditambahkan`);
     };
 
-    const handleUpdateStock = (e: React.FormEvent) => {
+    const handleUpdateStock = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedIngredient) return;
 
         const qty = Number(stockForm.quantity);
-        const newStock = stockAction === 'IN'
-            ? selectedIngredient.currentStock + qty
-            : selectedIngredient.currentStock - qty;
 
-        if (newStock < 0) {
-            toast.error('Gagal: Stok tidak cukup!');
-            return;
-        }
-
-        // Update Ingredient
-        onUpdateIngredients(prev => prev.map(ing =>
-            ing.id === selectedIngredient.id
-                ? { ...ing, currentStock: newStock, lastUpdated: new Date().toISOString().split('T')[0] }
-                : ing
-        ));
-
-        // Record Movement
-        const movement: StockMovement = {
-            id: Date.now(),
+        await onStockAdjustment({
             ingredientId: selectedIngredient.id,
             ingredientName: selectedIngredient.name,
             type: stockAction,
             quantity: qty,
             unit: selectedIngredient.unit,
             reason: stockForm.reason || (stockAction === 'IN' ? 'Penyesuaian Masuk' : 'Pemakaian/Terbuang'),
-            date: new Date().toLocaleString('sv-SE').slice(0, 16).replace('T', ' '),
-            user: user?.user_metadata?.name || 'Staff' // USE REAL NAME
-        };
-        onUpdateHistory(prev => [movement, ...prev]);
+            user: 'Staff' // Ideally from prop or context
+        });
 
         setIsStockModalOpen(false);
         setStockForm({ quantity: 0, reason: '' });
-        toast.success(`Stok ${selectedIngredient.name} diperbarui`);
     };
 
     const filteredIngredients = ingredients.filter(ing =>

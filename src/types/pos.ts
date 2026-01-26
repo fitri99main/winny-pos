@@ -1,4 +1,4 @@
-export type ProductCategory = 'Semua' | 'Makanan' | 'Minuman' | 'Camilan' | 'Pencuci Mulut';
+export type ProductCategory = string;
 
 export interface Addon {
   id: string;

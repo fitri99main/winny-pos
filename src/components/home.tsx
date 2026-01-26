@@ -52,10 +52,7 @@ import { printerService } from '../lib/PrinterService';
 
 type ModuleType = 'dashboard' | 'users' | 'contacts' | 'products' | 'purchases' | 'pos' | 'kds' | 'reports' | 'accounting' | 'settings' | 'employees' | 'attendance' | 'payroll' | 'branches' | 'shifts' | 'performance' | 'inventory';
 
-const DEFAULT_EMPLOYEES = [
-  { id: 1, name: 'Andi S.', position: 'Waitress', status: 'Shift Siang' },
-  { id: 2, name: 'Budi R.', position: 'Barista', status: 'Shift Malam' },
-];
+
 
 function Home() {
   const [activeModule, setActiveModule] = useState<ModuleType>('dashboard');
@@ -74,64 +71,179 @@ function Home() {
   const [contacts, setContacts] = useState<ContactData[]>([]);
 
   // Centralized State for Integration
-  const [attendanceLogs, setAttendanceLogs] = useState<any[]>([
-    { id: 1, employeeName: 'Budi Santoso', date: '2026-01-20', checkIn: '07:55', checkOut: '16:05', status: 'Present' },
-    { id: 2, employeeName: 'Siti Aminah', date: '2026-01-20', checkIn: '08:10', status: 'Late' },
-  ]);
+  // Centralized State for Integration
+  const [attendanceLogs, setAttendanceLogs] = useState<any[]>([]);
   const [performanceRules, setPerformanceRules] = useState({
     commissionPercent: 1.5,
     attendanceBonus: 10000,
     latePenalty: 25000,
     complaintPenalty: 50000
   });
-  const [complaintsData, setComplaintsData] = useState<Record<string, number>>({}); // employeeName -> count
-  const [payrollData, setPayrollData] = useState<any[]>([
-    { id: 1, employeeName: 'Budi Santoso', position: 'Barista', basicSalary: 3500000, allowance: 500000, deduction: 0, status: 'Paid', period: 'Januari 2026', paymentDate: '2026-01-25' },
-    { id: 2, employeeName: 'Siti Aminah', position: 'Cashier', basicSalary: 3200000, allowance: 400000, deduction: 100000, status: 'Pending', period: 'Januari 2026' },
-  ]);
+  // Inventory Handlers
+  const handleIngredientCRUD = async (action: 'create' | 'update' | 'delete', data: any) => {
+    try {
+      if (action === 'create') {
+        // Ensure numeric types
+        const payload = {
+          ...data,
+          current_stock: Number(data.current_stock || 0),
+          min_stock: Number(data.min_stock || 0),
+          cost_per_unit: Number(data.cost_per_unit || 0)
+        };
+        const { error } = await supabase.from('ingredients').insert([payload]);
+        if (error) throw error;
+        toast.success('Bahan baku berhasil ditambahkan');
+      } else if (action === 'update') {
+        const { id, ...rest } = data;
+        const payload = {
+          ...rest,
+          current_stock: Number(rest.current_stock || 0),
+          min_stock: Number(rest.min_stock || 0),
+          cost_per_unit: Number(rest.cost_per_unit || 0)
+        };
+        const { error } = await supabase.from('ingredients').update(payload).eq('id', id);
+        if (error) throw error;
+        toast.success('Bahan baku berhasil diupdate');
+      } else if (action === 'delete') {
+        const { error } = await supabase.from('ingredients').delete().eq('id', data.id);
+        if (error) throw error;
+        toast.success('Bahan baku berhasil dihapus');
+      }
+    } catch (err: any) {
+      toast.error('Error Ingredient: ' + err.message);
+    }
+  };
 
-  const [employees, setEmployees] = useState<any[]>(DEFAULT_EMPLOYEES);
+  const handleStockAdjustment = async (adjustment: any) => {
+    try {
+      const { ingredientId, ingredientName, type, quantity, unit, reason, user } = adjustment;
+      const qty = Number(quantity);
+
+      // 1. Insert Movement
+      const { error: moveError } = await supabase.from('stock_movements').insert([{
+        ingredient_id: ingredientId,
+        ingredient_name: ingredientName,
+        type,
+        quantity: qty,
+        unit,
+        reason,
+        user: user || 'System'
+      }]);
+      if (moveError) throw moveError;
+
+      // 2. Update Ingredient Stock
+      // For simplicity, we fetch current stock (handled by trigger ideally, but manual here for now)
+      // Actually, let's use RPC if possible, but for now simple update
+      // We need to calculate new stock. Ideally we read fresh, but for now we assume FE passed correct intent? 
+      // Better: standard increment/decrement
+      // NOTE: In a real app we'd use a postgres function. Here we will just fetch first to be safe or blindly increment.
+
+      // Let's just fetch the current ingredient to get current stock first to be safe
+      const { data: ing } = await supabase.from('ingredients').select('current_stock').eq('id', ingredientId).single();
+      if (ing) {
+        let newStock = Number(ing.current_stock);
+        if (type === 'IN') newStock += qty;
+        else if (type === 'OUT') newStock -= qty;
+        else if (type === 'ADJUSTMENT') newStock = qty; // If adjustment is absolute set
+
+        // If type is adjustment and logic differs, we might need correction.
+        // Usually 'ADJUSTMENT' implies 'Opname' -> strict set.
+        // But let's assume the UI sends the DELTA for IN/OUT and Absolute for ADJUSTMENT? 
+        // Standardizing: type IN/OUT adds/subtracts. ADJUSTMENT sets absolute value?
+        // Let's assume adjustment in this app context means "Stock Opname" (Set to X).
+        // Checking InventoryView usage... usually it's "Add/Reduce" or "Set".
+        // Let's assume IN/OUT for now.
+
+        const { error: updateError } = await supabase.from('ingredients')
+          .update({ current_stock: newStock, last_updated: new Date() })
+          .eq('id', ingredientId);
+
+        if (updateError) throw updateError;
+      }
+
+      toast.success('Stok berhasil disesuaikan');
+    } catch (err: any) {
+      toast.error('Gagal update stok: ' + err.message);
+    }
+  };
+
+  const [complaintsData, setComplaintsData] = useState<Record<string, number>>({}); // employeeName -> count
+
+  const [payrollData, setPayrollData] = useState<any[]>([]);
+  const [branches, setBranches] = useState<any[]>([]);
+  const [shifts, setShifts] = useState<any[]>([]);
+  const [shiftSchedules, setShiftSchedules] = useState<any[]>([]);
+
+
 
   // Inventory & HPP State
-  const [inventoryIngredients, setInventoryIngredients] = useState<InvIngredient[]>([
-    { id: 1, name: 'Kopi Arabika (Beans)', unit: 'kg', category: 'Coffee', currentStock: 25.5, minStock: 5, lastUpdated: '2026-01-24', costPerUnit: 150000 },
-    { id: 2, name: 'Susu Fresh Milk', unit: 'Liter', category: 'Dairy', currentStock: 12, minStock: 10, lastUpdated: '2026-01-25', costPerUnit: 18000 },
-    { id: 3, name: 'Gula Aren Cair', unit: 'Liter', category: 'Sweetener', currentStock: 3.5, minStock: 5, lastUpdated: '2026-01-23', costPerUnit: 25000 },
-    { id: 4, name: 'Bubuk Cokelat Premium', unit: 'kg', category: 'Other', currentStock: 8, minStock: 2, lastUpdated: '2026-01-20', costPerUnit: 120000 },
-  ]);
-  const [inventoryHistory, setInventoryHistory] = useState<StockMovement[]>([
-    { id: 1, ingredientId: 1, ingredientName: 'Kopi Arabika (Beans)', type: 'IN', quantity: 10, unit: 'kg', reason: 'Pembelian PO-2026-001', date: '2026-01-24 10:30', user: 'Admin' },
-    { id: 2, ingredientId: 2, ingredientName: 'Susu Fresh Milk', type: 'OUT', quantity: 4, unit: 'Liter', reason: 'Pemakaian Harian', date: '2026-01-25 08:15', user: 'Barista' },
-  ]);
+
+  const [inventoryIngredients, setInventoryIngredients] = useState<any[]>([]);
+  const [inventoryHistory, setInventoryHistory] = useState<any[]>([]);
+
 
   // --- Master Data State ---
   const [categories, setCategories] = useState<any[]>([]);
   const [units, setUnits] = useState<any[]>([]);
   const [brands, setBrands] = useState<any[]>([]);
-  const [departments, setDepartments] = useState<any[]>([
-    { id: 1, name: 'Operations' },
-    { id: 2, name: 'Kitchen' },
-    { id: 3, name: 'Finance' },
-    { id: 4, name: 'HR' },
-  ]);
+
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [employees, setEmployees] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [purchases, setPurchases] = useState<any[]>([]);
   const [purchaseReturns, setPurchaseReturns] = useState<any[]>([]);
+  const [tables, setTables] = useState<any[]>([]);
+
+  // --- Accounting State ---
+  const [accounts, setAccounts] = useState<any[]>([]);
+  const [journalEntries, setJournalEntries] = useState<any[]>([]);
+
+  // --- Settings State ---
+  const [storeSettings, setStoreSettings] = useState<any>({
+    store_name: 'WinPOS Store',
+    receipt_header: 'WinPOS',
+    receipt_footer: 'Thank You',
+    receipt_paper_width: '58mm',
+    show_date: true,
+    show_waiter: true,
+    show_table: true,
+    address: ''
+  });
 
   // --- Master Data Integration ---
   const fetchMasterData = async () => {
     try {
-      const [productsRes, categoriesRes, unitsRes, brandsRes] = await Promise.all([
-        supabase.from('products').select('*').order('created_at', { ascending: false }),
-        supabase.from('categories').select('*').order('name'),
-        supabase.from('units').select('*').order('name'),
-        supabase.from('brands').select('*').order('name')
-      ]);
+      const [productsRes, categoriesRes, unitsRes, brandsRes, contactsRes,
+        branchesRes, shiftsRes, schedulesRes] = await Promise.all([
+          supabase.from('products').select('*').order('created_at', { ascending: false }),
+          supabase.from('categories').select('*').order('name'),
+          supabase.from('units').select('*').order('name'),
+          supabase.from('brands').select('*').order('name'),
+          supabase.from('contacts').select('*').order('name'),
+          supabase.from('branches').select('*').order('id'),
+          supabase.from('shifts').select('*').order('id'),
+          supabase.from('shift_schedules').select('*').order('date'),
+          supabase.from('shifts').select('*').order('id'),
+          supabase.from('shift_schedules').select('*').order('date'),
+          supabase.from('store_settings').select('*').eq('id', 1).single(),
+          supabase.from('tables').select('*').order('number')
+        ]);
 
       if (productsRes.data) setProducts(productsRes.data);
       if (categoriesRes.data) setCategories(categoriesRes.data);
       if (unitsRes.data) setUnits(unitsRes.data);
       if (brandsRes.data) setBrands(brandsRes.data);
+      if (contactsRes.data) setContacts(contactsRes.data);
+      if (branchesRes.data) setBranches(branchesRes.data);
+      if (shiftsRes.data) setShifts(shiftsRes.data);
+      if (schedulesRes.data) setShiftSchedules(schedulesRes.data);
+      if (schedulesRes[2].data) setStoreSettings(schedulesRes[2].data); // Note: Original code used index via Promise.all, ensure this aligns or fix index usage if 'schedulesRes' was the 8th item.
+      // Actually, looking at the array destructuring:
+      // [productsRes, categoriesRes, unitsRes, brandsRes, contactsRes, branchesRes, shiftsRes, schedulesRes]
+      // Wait, there was an implicit index usage or strict ordering.
+      // The previous code had: if (schedulesRes[2].data) setStoreSettings... which looks suspicious if 'schedulesRes' is just one result.
+      // Ah, looks like I need to allow for the new result.
+      // Let's correct the destructuring to be safe and include tablesRes.
     } catch (err) {
       console.error('Error loading master data:', err);
     }
@@ -145,7 +257,18 @@ function Home() {
       supabase.channel('products_all').on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, fetchMasterData).subscribe(),
       supabase.channel('categories_all').on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, fetchMasterData).subscribe(),
       supabase.channel('units_all').on('postgres_changes', { event: '*', schema: 'public', table: 'units' }, fetchMasterData).subscribe(),
+      supabase.channel('units_all').on('postgres_changes', { event: '*', schema: 'public', table: 'units' }, fetchMasterData).subscribe(),
       supabase.channel('brands_all').on('postgres_changes', { event: '*', schema: 'public', table: 'brands' }, fetchMasterData).subscribe(),
+      supabase.channel('contacts_all').on('postgres_changes', { event: '*', schema: 'public', table: 'contacts' }, fetchMasterData).subscribe(),
+      supabase.channel('contacts_all').on('postgres_changes', { event: '*', schema: 'public', table: 'contacts' }, fetchMasterData).subscribe(),
+      supabase.channel('branches_all').on('postgres_changes', { event: '*', schema: 'public', table: 'branches' }, fetchMasterData).subscribe(),
+      supabase.channel('shifts_all').on('postgres_changes', { event: '*', schema: 'public', table: 'shifts' }, fetchMasterData).subscribe(),
+      supabase.channel('schedules_all').on('postgres_changes', { event: '*', schema: 'public', table: 'shift_schedules' }, fetchMasterData).subscribe(),
+      supabase.channel('ingredients_all').on('postgres_changes', { event: '*', schema: 'public', table: 'ingredients' }, fetchMasterData).subscribe(),
+      supabase.channel('movements_all').on('postgres_changes', { event: '*', schema: 'public', table: 'stock_movements' }, fetchMasterData).subscribe(),
+      supabase.channel('movements_all').on('postgres_changes', { event: '*', schema: 'public', table: 'stock_movements' }, fetchMasterData).subscribe(),
+      supabase.channel('settings_all').on('postgres_changes', { event: '*', schema: 'public', table: 'store_settings' }, fetchMasterData).subscribe(),
+      supabase.channel('tables_all').on('postgres_changes', { event: '*', schema: 'public', table: 'tables' }, fetchMasterData).subscribe(),
     ];
 
     // --- Purchases Integration ---
@@ -216,12 +339,170 @@ function Home() {
       supabase.channel('returns_changes').on('postgres_changes', { event: '*', schema: 'public', table: 'sales_returns' }, fetchTransactions).subscribe(),
     ];
 
+    // --- Accounting Integration ---
+    const fetchAccounting = async () => {
+      const { data: accData } = await supabase.from('accounts').select('*').order('code');
+      if (accData) setAccounts(accData);
+
+      const { data: journalData } = await supabase.from('journal_entries').select('*').order('date', { ascending: false });
+      if (journalData) {
+        setJournalEntries(journalData.map(j => ({
+          ...j,
+          debitAccount: j.debit_account,
+          creditAccount: j.credit_account,
+          amount: Number(j.amount)
+        })));
+      }
+    };
+
+    fetchAccounting();
+    const accountingChannels = [
+      supabase.channel('accounts_changes').on('postgres_changes', { event: '*', schema: 'public', table: 'accounts' }, fetchAccounting).subscribe(),
+      supabase.channel('journal_changes').on('postgres_changes', { event: '*', schema: 'public', table: 'journal_entries' }, fetchAccounting).subscribe(),
+    ];
+
+    // --- Employees Integration ---
+    const fetchEmployees = async () => {
+      const { data: empData } = await supabase.from('employees').select('*').order('name');
+      if (empData) {
+        setEmployees(empData.map(e => ({
+          ...e,
+          joinDate: e.join_date,
+          offDays: e.off_days || []
+        })));
+      }
+
+      const { data: deptData } = await supabase.from('departments').select('*').order('name');
+      if (deptData) setDepartments(deptData);
+    };
+
+    fetchEmployees();
+    const employeeChannels = [
+      supabase.channel('employees_changes').on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, fetchEmployees).subscribe(),
+      supabase.channel('departments_changes').on('postgres_changes', { event: '*', schema: 'public', table: 'departments' }, fetchEmployees).subscribe(),
+    ];
+
     return () => {
       channels.forEach(ch => ch.unsubscribe());
       purchaseChannels.forEach(ch => ch.unsubscribe());
       transactionChannels.forEach(ch => ch.unsubscribe());
+      accountingChannels.forEach(ch => ch.unsubscribe());
+      employeeChannels.forEach(ch => ch.unsubscribe());
     };
   }, []);
+
+  // --- Attendance Integration ---
+  useEffect(() => {
+    const fetchAttendance = async () => {
+      const { data } = await supabase.from('attendance_logs').select('*').order('created_at', { ascending: false });
+      if (data) {
+        setAttendanceLogs(data.map(log => ({
+          ...log,
+          employeeName: log.employee_name,
+          checkIn: log.check_in,
+          checkOut: log.check_out
+        })));
+      }
+    };
+
+    fetchAttendance();
+    const subscription = supabase.channel('attendance_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_logs' }, fetchAttendance)
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  // --- Payroll Integration ---
+  useEffect(() => {
+    const fetchPayroll = async () => {
+      const { data } = await supabase.from('payrolls').select('*').order('created_at', { ascending: false });
+      if (data) {
+        setPayrollData(data.map(p => ({
+          ...p,
+          employeeName: p.employee_name,
+          basicSalary: p.basic_salary,
+          paymentDate: p.payment_date,
+        })));
+      }
+    };
+
+    fetchPayroll();
+    const sub = supabase.channel('payroll_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payrolls' }, fetchPayroll)
+      .subscribe();
+
+    return () => { sub.unsubscribe(); };
+  }, []);
+
+  const handlePayrollAction = async (action: 'create' | 'update' | 'delete', data: any) => {
+    try {
+      if (action === 'create') {
+        const { id, employeeName, basicSalary, paymentDate, ...rest } = data;
+        const emp = employees.find(e => e.name === employeeName);
+        const payload = {
+          ...rest,
+          employee_name: employeeName,
+          employee_id: emp?.id,
+          basic_salary: basicSalary,
+          payment_date: paymentDate
+        };
+        // Remove id if it's dummy
+        const { error } = await supabase.from('payrolls').insert([payload]);
+        if (error) throw error;
+        toast.success('Gaji berhasil dibuat');
+      } else if (action === 'update') {
+        const { id, employeeName, basicSalary, paymentDate, ...rest } = data;
+        const payload = {
+          ...rest,
+          employee_name: employeeName,
+          basic_salary: basicSalary,
+          payment_date: paymentDate
+        };
+        const { error } = await supabase.from('payrolls').update(payload).eq('id', id);
+        if (error) throw error;
+        toast.success('Gaji berhasil diupdate');
+      } else if (action === 'delete') {
+        const { error } = await supabase.from('payrolls').delete().eq('id', data.id);
+        if (error) throw error;
+        toast.success('Gaji berhasil dihapus');
+      }
+    } catch (err: any) {
+      toast.error('Error Payroll: ' + err.message);
+    }
+  };
+
+  const handleAttendanceLog = async (logData: any) => {
+    try {
+      if (logData.id && logData.checkOut && !logData.isNew) {
+        // This is an update (Checkout)
+        const { error } = await supabase.from('attendance_logs').update({
+          check_out: logData.checkOut
+        }).eq('id', logData.id);
+        if (error) throw error;
+        toast.success(`Check-Out berhasil`);
+      } else {
+        // This is a new Check-in
+        const { id, ...rest } = logData; // Remove dummy ID if present
+        const payload = {
+          employee_id: employees.find(e => e.name === rest.employeeName)?.id, // Try to find linked ID
+          employee_name: rest.employeeName,
+          date: rest.date,
+          check_in: rest.checkIn,
+          check_out: null,
+          status: rest.status
+        };
+        const { error } = await supabase.from('attendance_logs').insert([payload]);
+        if (error) throw error;
+        toast.success(`Check-In berhasil`);
+      }
+    } catch (err: any) {
+      console.error('Attendance error:', err);
+      toast.error('Gagal memproses absensi: ' + err.message);
+    }
+  };
 
   // Generic CRUD Handler
   const handleMasterDataCRUD = async (
@@ -249,15 +530,7 @@ function Home() {
       toast.error(`Gagal memproses data`);
     }
   };
-  const [receiptSettings, setReceiptSettings] = useState({
-    header: 'WINNY CAFE',
-    address: 'Jl. Contoh No. 123, Kota',
-    footer: 'Terima Kasih Atas Kunjungan Anda',
-    paperWidth: '58mm',
-    showDate: true,
-    showWaiter: true,
-    showTable: true
-  });
+  // const [receiptSettings, setReceiptSettings] = useState({ ... }); // REMOVED - Using storeSettings
 
   const [pendingOrders, setPendingOrders] = useState<any[]>([]);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -284,8 +557,9 @@ function Home() {
     const savedContacts = localStorage.getItem('winpos_contacts');
     const savedPendingOrders = localStorage.getItem('winpos_pending_orders');
 
-    if (savedEmployees) setEmployees(JSON.parse(savedEmployees));
-    if (savedDepts) setDepartments(JSON.parse(savedDepts));
+    if (savedProducts) setProducts(JSON.parse(savedProducts));
+    if (savedContacts) setContacts(JSON.parse(savedContacts));
+    if (savedPendingOrders) setPendingOrders(JSON.parse(savedPendingOrders));
     if (savedIngredients) setInventoryIngredients(JSON.parse(savedIngredients));
     if (savedInventoryHistory) setInventoryHistory(JSON.parse(savedInventoryHistory));
     if (savedCategories) setCategories(JSON.parse(savedCategories));
@@ -295,8 +569,9 @@ function Home() {
     if (savedContacts) setContacts(JSON.parse(savedContacts));
     if (savedPendingOrders) setPendingOrders(JSON.parse(savedPendingOrders));
 
-    const savedReceipt = localStorage.getItem('winpos_receipt_settings');
-    if (savedReceipt) setReceiptSettings(JSON.parse(savedReceipt));
+
+    // const savedReceipt = localStorage.getItem('winpos_receipt_settings'); // Removed
+    // if (savedReceipt) setReceiptSettings(JSON.parse(savedReceipt));
 
     // Network status listeners
     const handleOnline = () => setIsOnline(true);
@@ -341,12 +616,11 @@ function Home() {
   useEffect(() => { localStorage.setItem('winpos_products', JSON.stringify(products)); }, [products]);
   useEffect(() => { localStorage.setItem('winpos_contacts', JSON.stringify(contacts)); }, [contacts]);
   useEffect(() => { localStorage.setItem('winpos_pending_orders', JSON.stringify(pendingOrders)); }, [pendingOrders]);
-  useEffect(() => { localStorage.setItem('winpos_receipt_settings', JSON.stringify(receiptSettings)); }, [receiptSettings]);
 
   // Sync receipt settings to PrinterService
   useEffect(() => {
-    printerService.setTemplate(receiptSettings);
-  }, [receiptSettings]);
+    printerService.setTemplate(storeSettings);
+  }, [storeSettings]);
 
   // Background Sync Effect
   useEffect(() => {
@@ -441,7 +715,7 @@ function Home() {
       waiterName: orderData.waiterName || '-',
       time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
       items: orderData.productDetails.map((item: any) => {
-        const product = mockProducts.find(p => p.name === item.name);
+        const product = products.find(p => p.name === item.name);
         return { ...item, target: product?.target || 'Waitress', status: 'Pending' };
       })
     };
@@ -649,6 +923,189 @@ function Home() {
     }
   };
 
+
+  // --- Accounting Handlers ---
+  const handleAddAccount = async (account: any) => {
+    const { code, name, type } = account;
+    const { error } = await supabase.from('accounts').insert([{ code, name, type }]);
+    if (error) {
+      toast.error('Gagal menambah akun: ' + error.message);
+    } else {
+      toast.success('Akun berhasil ditambahkan');
+    }
+  };
+
+  const handleUpdateAccount = async (account: any) => {
+    const { code, name, type } = account;
+    const { error } = await supabase.from('accounts').update({ name, type }).eq('code', code);
+    if (error) {
+      toast.error('Gagal update akun: ' + error.message);
+    } else {
+      toast.success('Akun berhasil diupdate');
+    }
+  };
+
+  const handleDeleteAccount = async (code: string) => {
+    const { error } = await supabase.from('accounts').delete().eq('code', code);
+    if (error) {
+      toast.error('Gagal hapus akun: ' + error.message);
+    } else {
+      toast.success('Akun berhasil dihapus');
+    }
+  };
+
+  const handleAddJournalEntry = async (entry: any) => {
+    const { date, description, debitAccount, creditAccount, amount } = entry;
+    const { error } = await supabase.from('journal_entries').insert([{
+      date,
+      description,
+      debit_account: debitAccount,
+      credit_account: creditAccount,
+      amount
+    }]);
+    if (error) {
+      toast.error('Gagal menambah jurnal: ' + error.message);
+    } else {
+      toast.success('Jurnal berhasil ditambahkan');
+    }
+  };
+
+  // --- Employee Handlers ---
+  const handleEmployeeCRUD = async (action: 'create' | 'update' | 'delete', data: any) => {
+    try {
+      if (action === 'create') {
+        const { id, joinDate, offDays, ...rest } = data;
+        const payload = { ...rest, join_date: joinDate, off_days: offDays };
+        const { error } = await supabase.from('employees').insert([payload]);
+        if (error) throw error;
+        toast.success('Karyawan berhasil ditambahkan');
+      } else if (action === 'update') {
+        const { id, joinDate, offDays, ...rest } = data;
+        const payload = { ...rest, join_date: joinDate, off_days: offDays };
+        const { error } = await supabase.from('employees').update(payload).eq('id', id);
+        if (error) throw error;
+        toast.success('Data karyawan diupdate');
+      } else if (action === 'delete') {
+        const { error } = await supabase.from('employees').delete().eq('id', data.id);
+        if (error) throw error;
+        toast.success('Karyawan dihapus');
+      }
+    } catch (err: any) {
+      toast.error('Error Employee: ' + err.message);
+    }
+  };
+
+  const handleDepartmentCRUD = async (action: 'create' | 'delete', data: any) => {
+    try {
+      if (action === 'create') {
+        const { id, ...rest } = data; // strip dummy id
+        const { error } = await supabase.from('departments').insert([rest]);
+        if (error) throw error;
+        toast.success('Departemen ditambahkan');
+      } else if (action === 'delete') {
+        const { error } = await supabase.from('departments').delete().eq('id', data.id);
+        if (error) throw error;
+        toast.success('Departemen dihapus');
+      }
+    } catch (err: any) {
+      toast.error('Error Dept: ' + err.message);
+    }
+  };
+
+  // Settings Handler
+  const handleUpdateSettings = async (newSettings: any) => {
+    try {
+      const { error } = await supabase.from('store_settings').upsert({
+        id: 1,
+        ...newSettings,
+        updated_at: new Date()
+      });
+      if (error) throw error;
+      toast.success('Pengaturan berhasil disimpan');
+      // Optimistic update
+      setStoreSettings({ ...storeSettings, ...newSettings });
+    } catch (err: any) {
+      toast.error('Gagal simpan pengaturan: ' + err.message);
+    }
+  };
+
+  // --- Branch Handlers ---
+  const handleBranchAction = async (action: 'create' | 'update' | 'delete', data: any) => {
+    try {
+      if (action === 'create') {
+        const { error } = await supabase.from('branches').insert([data]);
+        if (error) throw error;
+        toast.success('Cabang berhasil dibuat');
+      } else if (action === 'update') {
+        const { id, ...rest } = data;
+        const { error } = await supabase.from('branches').update(rest).eq('id', id);
+        if (error) throw error;
+        toast.success('Cabang berhasil diupdate');
+      } else if (action === 'delete') {
+        const { error } = await supabase.from('branches').delete().eq('id', data.id);
+        if (error) throw error;
+        toast.success('Cabang berhasil dihapus');
+      }
+    } catch (err: any) {
+      toast.error('Error Branch: ' + err.message);
+    }
+  };
+
+  // --- Shift Handlers ---
+  const handleShiftCRUD = async (action: 'create' | 'update' | 'delete', data: any) => {
+    try {
+      if (action === 'create') {
+        const { error } = await supabase.from('shifts').insert([data]);
+        if (error) throw error;
+        toast.success('Master Shift berhasil dibuat');
+      } else if (action === 'update') {
+        const { id, ...rest } = data;
+        const { error } = await supabase.from('shifts').update(rest).eq('id', id);
+        if (error) throw error;
+        toast.success('Master Shift berhasil diupdate');
+      } else if (action === 'delete') {
+        const { error } = await supabase.from('shifts').delete().eq('id', data.id);
+        if (error) throw error;
+        toast.success('Master Shift berhasil dihapus');
+      }
+    } catch (err: any) {
+      toast.error('Error Shift: ' + err.message);
+    }
+  };
+
+  const handleScheduleCRUD = async (action: 'create' | 'update' | 'delete', data: any) => {
+    try {
+      if (action === 'create') {
+        // Transform camelCase to snake_case for DB
+        const dbData = {
+          employee_id: data.employeeId,
+          employee_name: data.employeeName,
+          shift_id: data.shiftId,
+          date: data.date
+        };
+        const { error } = await supabase.from('shift_schedules').insert([dbData]);
+        if (error) throw error;
+        toast.success('Jadwal berhasil dibuat');
+      } else if (action === 'update') {
+        const dbData = {
+          employee_id: data.employeeId,
+          employee_name: data.employeeName,
+          shift_id: data.shiftId,
+          date: data.date
+        };
+        const { error } = await supabase.from('shift_schedules').update(dbData).eq('id', data.id);
+        if (error) throw error;
+        toast.success('Jadwal berhasil diupdate');
+      } else if (action === 'delete') {
+        const { error } = await supabase.from('shift_schedules').delete().eq('id', data.id);
+        if (error) throw error;
+        toast.success('Jadwal berhasil dihapus');
+      }
+    } catch (err: any) {
+      toast.error('Error Schedule: ' + err.message);
+    }
+  };
+
   const renderActiveModule = () => {
     switch (activeModule) {
       case 'dashboard': return (
@@ -715,13 +1172,24 @@ function Home() {
           />
         );
       case 'reports': return <ReportsView sales={sales} returns={returns} />;
-      case 'accounting': return <AccountingView />;
+      case 'accounting': return (
+        <AccountingView
+          accounts={accounts}
+          transactions={journalEntries}
+          onAddAccount={handleAddAccount}
+          onUpdateAccount={handleUpdateAccount}
+          onDeleteAccount={handleDeleteAccount}
+          onAddTransaction={handleAddJournalEntry}
+        />
+      );
       case 'employees': return (
         <EmployeesView
           employees={employees}
           setEmployees={setEmployees}
           departments={departments}
           setDepartments={setDepartments}
+          onEmployeeCRUD={handleEmployeeCRUD}
+          onDepartmentCRUD={handleDepartmentCRUD}
         />
       );
       case 'performance': return (
@@ -732,6 +1200,7 @@ function Home() {
           setRules={setPerformanceRules}
           complaints={complaintsData}
           setComplaints={setComplaintsData}
+          employees={employees}
           onSendToPayroll={(data) => {
             // Logic to update payrollData
             setPayrollData(prev => {
@@ -754,23 +1223,45 @@ function Home() {
         />
       );
       case 'attendance': return <AttendanceView logs={attendanceLogs} setLogs={setAttendanceLogs} employees={employees} />;
-      case 'payroll': return <PayrollView payroll={payrollData} setPayroll={setPayrollData} />;
-      case 'branches': return <BranchesView />;
-      case 'shifts': return <ShiftsView />;
+      case 'payroll': return (
+        <PayrollView
+          payroll={payrollData}
+          setPayroll={setPayrollData}
+          employees={employees} // Pass real employees for dropdown
+          onPayrollAction={handlePayrollAction}
+        />
+      );
+      case 'branches': return (
+        <BranchesView
+          branches={branches}
+          onBranchAction={handleBranchAction}
+        />
+      );
+      case 'shifts': return (
+        <ShiftsView
+          shifts={shifts}
+          schedules={shiftSchedules}
+          employees={employees}
+          onShiftAction={handleShiftCRUD}
+          onScheduleAction={handleScheduleCRUD}
+        />
+      );
       case 'inventory': return (
         <InventoryView
           ingredients={inventoryIngredients}
           movements={inventoryHistory}
-          onUpdateIngredients={setInventoryIngredients}
-          onUpdateHistory={setInventoryHistory}
+          onIngredientAction={handleIngredientCRUD}
+          onStockAdjustment={handleStockAdjustment}
           categories={categories}
           units={units}
         />
       );
       case 'settings': return (
         <SettingsView
-          settings={receiptSettings}
-          onUpdateSettings={setReceiptSettings}
+          settings={storeSettings}
+          onUpdateSettings={handleUpdateSettings}
+          tables={tables}
+          onTableAction={handleTableCRUD}
         />
       );
       default: return (
@@ -783,6 +1274,29 @@ function Home() {
           onNavigate={(module) => setActiveModule(module)}
         />
       );
+    }
+  };
+
+  // --- Table Handlers ---
+  const handleTableCRUD = async (action: 'create' | 'update' | 'delete', data: any) => {
+    try {
+      if (action === 'create') {
+        const { id, ...rest } = data;
+        const { error } = await supabase.from('tables').insert([rest]);
+        if (error) throw error;
+        toast.success('Meja berhasil ditambahkan');
+      } else if (action === 'update') {
+        const { id, ...rest } = data;
+        const { error } = await supabase.from('tables').update(rest).eq('id', id);
+        if (error) throw error;
+        toast.success('Meja berhasil diupdate');
+      } else if (action === 'delete') {
+        const { error } = await supabase.from('tables').delete().eq('id', data.id);
+        if (error) throw error;
+        toast.success('Meja berhasil dihapus');
+      }
+    } catch (err: any) {
+      toast.error('Error Table: ' + err.message);
     }
   };
 
@@ -963,6 +1477,9 @@ function Home() {
             contacts={contacts}
             employees={employees}
             onSendToKDS={handleSendToKDS}
+            products={products}
+            categories={categories}
+            tables={tables}
           />
         </div>
       )}

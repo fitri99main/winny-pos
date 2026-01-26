@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Settings, User, Monitor, Globe, Bell, Shield, Save, Clock, Calendar, Printer, FileText } from 'lucide-react';
+import { Settings, User, Monitor, Globe, Bell, Shield, Save, Clock, Calendar, Printer, FileText, LayoutGrid, Plus, Trash2, Edit } from 'lucide-react';
 import { printerService } from '../../lib/PrinterService';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -9,15 +9,18 @@ import { Label } from '../ui/label';
 interface SettingsViewProps {
     settings: any;
     onUpdateSettings: (settings: any) => void;
+    tables?: any[];
+    onTableAction?: (action: 'create' | 'update' | 'delete', data: any) => void;
 }
 
-export function SettingsView({ settings, onUpdateSettings }: SettingsViewProps) {
+export function SettingsView({ settings, onUpdateSettings, tables = [], onTableAction }: SettingsViewProps) {
     const [activeTab, setActiveTab] = useState('general');
 
     const tabs = [
         { id: 'general', label: 'Umum', icon: Globe },
         { id: 'account', label: 'Akun', icon: User },
         { id: 'hours', label: 'Jam Kerja', icon: Clock },
+        { id: 'tables', label: 'Meja', icon: LayoutGrid },
         { id: 'appearance', label: 'Tampilan', icon: Monitor },
         { id: 'notifications', label: 'Notifikasi', icon: Bell },
         { id: 'printer', label: 'Printer', icon: Printer },
@@ -33,6 +36,36 @@ export function SettingsView({ settings, onUpdateSettings }: SettingsViewProps) 
     });
 
     const days = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+
+    // Table Management State
+    const [isTableModalOpen, setIsTableModalOpen] = useState(false);
+    const [editingTable, setEditingTable] = useState<any>(null);
+    const [tableForm, setTableForm] = useState({ number: '', capacity: 4 });
+
+    const handleOpenTableModal = (table?: any) => {
+        if (table) {
+            setEditingTable(table);
+            setTableForm({ number: table.number, capacity: table.capacity });
+        } else {
+            setEditingTable(null);
+            setTableForm({ number: '', capacity: 4 });
+        }
+        setIsTableModalOpen(true);
+    };
+
+    const handleSubtitleTable = () => {
+        if (!tableForm.number) return toast.error('Nomor meja harus diisi');
+        if (tableForm.capacity < 1) return toast.error('Kapasitas minimal 1');
+
+        if (onTableAction) {
+            if (editingTable) {
+                onTableAction('update', { id: editingTable.id, ...tableForm });
+            } else {
+                onTableAction('create', tableForm);
+            }
+        }
+        setIsTableModalOpen(false);
+    };
 
     const handleSave = () => {
         toast.success('Pengaturan berhasil disimpan!');
@@ -427,8 +460,8 @@ export function SettingsView({ settings, onUpdateSettings }: SettingsViewProps) 
                                     <Label className="text-sm font-bold text-gray-700">Nama Toko (Header)</Label>
                                     <input
                                         type="text"
-                                        value={settings.header}
-                                        onChange={e => onUpdateSettings({ ...settings, header: e.target.value })}
+                                        value={settings.receipt_header || ''}
+                                        onChange={e => onUpdateSettings({ ...settings, receipt_header: e.target.value })}
                                         className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 outline-none"
                                         placeholder="Contoh: WINNY CAFE"
                                     />
@@ -446,8 +479,8 @@ export function SettingsView({ settings, onUpdateSettings }: SettingsViewProps) 
                                     <Label className="text-sm font-bold text-gray-700">Pesan Penutup (Footer)</Label>
                                     <input
                                         type="text"
-                                        value={settings.footer}
-                                        onChange={e => onUpdateSettings({ ...settings, footer: e.target.value })}
+                                        value={settings.receipt_footer || ''}
+                                        onChange={e => onUpdateSettings({ ...settings, receipt_footer: e.target.value })}
                                         className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 outline-none"
                                         placeholder="Contoh: Terima Kasih, Datang Lagi ya!"
                                     />
@@ -456,8 +489,8 @@ export function SettingsView({ settings, onUpdateSettings }: SettingsViewProps) 
                                     <Label className="text-sm font-bold text-gray-700">Ukuran Kertas Printer</Label>
                                     <div className="flex gap-4">
                                         <button
-                                            onClick={() => onUpdateSettings({ ...settings, paperWidth: '58mm' })}
-                                            className={`flex-1 py-3 px-4 rounded-xl border-2 transition-all font-bold text-sm ${settings.paperWidth === '58mm'
+                                            onClick={() => onUpdateSettings({ ...settings, receipt_paper_width: '58mm' })}
+                                            className={`flex-1 py-3 px-4 rounded-xl border-2 transition-all font-bold text-sm ${settings.receipt_paper_width === '58mm'
                                                 ? 'border-primary bg-primary/5 text-primary'
                                                 : 'border-gray-100 bg-white text-gray-400 hover:border-gray-200'
                                                 }`}
@@ -465,8 +498,8 @@ export function SettingsView({ settings, onUpdateSettings }: SettingsViewProps) 
                                             58mm (Kecil)
                                         </button>
                                         <button
-                                            onClick={() => onUpdateSettings({ ...settings, paperWidth: '80mm' })}
-                                            className={`flex-1 py-3 px-4 rounded-xl border-2 transition-all font-bold text-sm ${settings.paperWidth === '80mm'
+                                            onClick={() => onUpdateSettings({ ...settings, receipt_paper_width: '80mm' })}
+                                            className={`flex-1 py-3 px-4 rounded-xl border-2 transition-all font-bold text-sm ${settings.receipt_paper_width === '80mm'
                                                 ? 'border-primary bg-primary/5 text-primary'
                                                 : 'border-gray-100 bg-white text-gray-400 hover:border-gray-200'
                                                 }`}
@@ -484,24 +517,24 @@ export function SettingsView({ settings, onUpdateSettings }: SettingsViewProps) 
                                         <Label htmlFor="show-date" className="cursor-pointer">Tampilkan Tanggal & Waktu</Label>
                                         <Switch
                                             id="show-date"
-                                            checked={settings.showDate}
-                                            onCheckedChange={checked => onUpdateSettings({ ...settings, showDate: checked })}
+                                            checked={settings.show_date}
+                                            onCheckedChange={checked => onUpdateSettings({ ...settings, show_date: checked })}
                                         />
                                     </div>
                                     <div className="flex items-center justify-between">
                                         <Label htmlFor="show-waiter" className="cursor-pointer">Tampilkan Nama Pelayan</Label>
                                         <Switch
                                             id="show-waiter"
-                                            checked={settings.showWaiter}
-                                            onCheckedChange={checked => onUpdateSettings({ ...settings, showWaiter: checked })}
+                                            checked={settings.show_waiter}
+                                            onCheckedChange={checked => onUpdateSettings({ ...settings, show_waiter: checked })}
                                         />
                                     </div>
                                     <div className="flex items-center justify-between">
                                         <Label htmlFor="show-table" className="cursor-pointer">Tampilkan Nomor Meja</Label>
                                         <Switch
                                             id="show-table"
-                                            checked={settings.showTable}
-                                            onCheckedChange={checked => onUpdateSettings({ ...settings, showTable: checked })}
+                                            checked={settings.show_table}
+                                            onCheckedChange={checked => onUpdateSettings({ ...settings, show_table: checked })}
                                         />
                                     </div>
                                 </div>
@@ -510,21 +543,21 @@ export function SettingsView({ settings, onUpdateSettings }: SettingsViewProps) 
 
                         {/* Preview */}
                         <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm space-y-4">
-                            <h4 className="font-bold text-gray-800 text-sm">Pratinjau Struk ({settings.paperWidth})</h4>
-                            <div className={`border border-dashed border-gray-300 p-6 bg-gray-50/50 text-center font-mono text-[10px] space-y-1 text-gray-600 mx-auto transition-all ${settings.paperWidth === '80mm' ? 'max-w-xs' : 'max-w-[200px]'
+                            <h4 className="font-bold text-gray-800 text-sm">Pratinjau Struk ({settings.receipt_paper_width})</h4>
+                            <div className={`border border-dashed border-gray-300 p-6 bg-gray-50/50 text-center font-mono text-[10px] space-y-1 text-gray-600 mx-auto transition-all ${settings.receipt_paper_width === '80mm' ? 'max-w-xs' : 'max-w-[200px]'
                                 }`}>
-                                <p className="font-bold text-xs uppercase text-gray-800">{settings.header || 'NAMA TOKO'}</p>
+                                <p className="font-bold text-xs uppercase text-gray-800">{settings.receipt_header || 'NAMA TOKO'}</p>
                                 <p className="whitespace-pre-line">{settings.address || 'Alamat Toko'}</p>
-                                <p>{settings.paperWidth === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
+                                <p>{settings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
                                 <div className="text-left flex justify-between"><span>KOPI SUSU GULA AREN</span> <span>25.000</span></div>
                                 <div className="text-left flex justify-between"><span>PISANG GORENG</span> <span>15.000</span></div>
-                                <p>{settings.paperWidth === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
+                                <p>{settings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
                                 <div className="font-bold flex justify-between text-xs text-gray-800"><span>TOTAL</span> <span>40.000</span></div>
-                                <p>{settings.paperWidth === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
-                                {settings.showDate && <p>{new Date().toLocaleDateString()} {new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p>}
-                                {settings.showWaiter && <p>Pelayan: Budi R.</p>}
-                                {settings.showTable && <p>Meja: T-05</p>}
-                                <p className="italic mt-4 text-gray-500">{settings.footer || 'Terima Kasih'}</p>
+                                <p>{settings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
+                                {settings.show_date && <p>{new Date().toLocaleDateString()} {new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p>}
+                                {settings.show_waiter && <p>Pelayan: Budi R.</p>}
+                                {settings.show_table && <p>Meja: T-05</p>}
+                                <p className="italic mt-4 text-gray-500">{settings.receipt_footer || 'Terima Kasih'}</p>
                             </div>
                         </div>
                     </div>

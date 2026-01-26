@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { ProductCategory, OrderItem, Product } from '@/types/pos';
-import { mockProducts } from '@/data/products';
+// import { mockProducts } from '@/data/products'; // REMOVED
 import { SearchBar } from './SearchBar';
 import { CategoryTabs } from './CategoryTabs';
 import { ProductTile } from './ProductTile';
@@ -18,7 +18,7 @@ import { Store, ArrowLeft, ShoppingCart, Users, Cake, CreditCard, ChevronDown, S
 import { ContactData } from '../contacts/ContactsView';
 import { Addon } from '@/types/pos';
 
-const categories: ProductCategory[] = ['Semua', 'Makanan', 'Minuman', 'Camilan', 'Pencuci Mulut'];
+// const categories: ProductCategory[] = ['Semua', 'Makanan', 'Minuman', 'Camilan', 'Pencuci Mulut']; // REMOVED
 
 interface CashierInterfaceProps {
   onBack?: () => void;
@@ -42,6 +42,9 @@ interface CashierInterfaceProps {
   contacts: ContactData[];
   employees: any[];
   onSendToKDS?: (order: any) => void;
+  products: Product[];
+  categories: any[];
+  tables: any[];
 }
 
 interface HeldOrder {
@@ -61,7 +64,10 @@ export function CashierInterface({
   setOrderDiscount,
   contacts,
   employees,
-  onSendToKDS
+  onSendToKDS,
+  products = [],
+  categories = [],
+  tables = []
 }: CashierInterfaceProps) {
   const [activeCategory, setActiveCategory] = useState<ProductCategory>('Semua');
   const [searchQuery, setSearchQuery] = useState('');
@@ -96,24 +102,24 @@ export function CashierInterface({
     [selectedCustomerId, contacts]
   );
 
-  const tables = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'B1', 'B2', 'B3'];
+  // const tables = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'B1', 'B2', 'B3']; // REMOVED
 
   // Filter products
   const filteredProducts = useMemo(() => {
-    let products = mockProducts;
+    let currentProducts = products;
 
     if (activeCategory !== 'Semua') {
-      products = products.filter((p) => p.category === activeCategory);
+      currentProducts = currentProducts.filter((p) => p.category === activeCategory);
     }
 
     if (searchQuery) {
-      products = products.filter((p) =>
+      currentProducts = currentProducts.filter((p) =>
         p.name.toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
 
-    return products;
-  }, [activeCategory, searchQuery]);
+    return currentProducts;
+  }, [activeCategory, searchQuery, products]);
 
   // Calculate totals
   const subtotal = useMemo(() => {
@@ -411,7 +417,7 @@ export function CashierInterface({
               >
                 <option value="">-- No Meja --</option>
                 {tables.map(t => (
-                  <option key={t} value={t}>{t}</option>
+                  <option key={t.id} value={t.number}>{t.number} ({t.capacity})</option>
                 ))}
               </select>
             </div>
@@ -535,7 +541,7 @@ export function CashierInterface({
           {/* Category Tabs */}
           <div className="mb-6">
             <CategoryTabs
-              categories={categories}
+              categories={['Semua', ...categories.map(c => c.name)]}
               activeCategory={activeCategory}
               onCategoryChange={setActiveCategory}
             />

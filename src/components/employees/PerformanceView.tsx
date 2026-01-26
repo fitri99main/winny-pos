@@ -13,14 +13,24 @@ interface EmployeePerformance {
     complaints: number;
 }
 
-export function PerformanceView({ sales, attendanceLogs, rules, setRules, complaints, setComplaints, onSendToPayroll }: {
+export function PerformanceView({
+    sales,
+    attendanceLogs,
+    rules,
+    setRules,
+    complaints,
+    setComplaints,
+    onSendToPayroll,
+    employees = []
+}: {
     sales: any[],
     attendanceLogs: any[],
     rules: any,
     setRules: any,
     complaints: Record<string, number>,
     setComplaints: any,
-    onSendToPayroll: (data: any) => void
+    onSendToPayroll: (data: any) => void,
+    employees?: any[]
 }) {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedEmp, setSelectedEmp] = useState<EmployeePerformance | null>(null);
@@ -28,12 +38,9 @@ export function PerformanceView({ sales, attendanceLogs, rules, setRules, compla
     const [complaintReason, setComplaintReason] = useState('');
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-    // Aggregating real data instead of mock
-    const employees = [
-        { name: 'Budi Santoso', position: 'Barista' },
-        { name: 'Siti Aminah', position: 'Cashier' },
-        { name: 'Andi Pratama', position: 'Server' },
-    ];
+    // Using real employees from props
+    // We map the incoming employee data to the structure needed for calculation if necessary,
+    // but the logic below simply iterates over 'employees' prop.
 
     const performanceData: EmployeePerformance[] = employees.map((emp, idx) => {
         const totalSales = sales

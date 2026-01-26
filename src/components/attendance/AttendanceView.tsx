@@ -32,7 +32,7 @@ const MOCK_SCHEDULES: Record<string, string> = {
 
 const DAYS_NAME = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 
-export function AttendanceView({ logs, setLogs, employees }: { logs: AttendanceLog[], setLogs: any, employees: Employee[] }) {
+export function AttendanceView({ logs, setLogs, employees, onLogAttendance }: { logs: AttendanceLog[], setLogs: any, employees: Employee[], onLogAttendance?: (log: any) => Promise<void> }) {
     const [tab, setTab] = useState<'scan' | 'history'>('scan');
     const [isCameraEnabled, setIsCameraEnabled] = useState(false);
     const [cameraActive, setCameraActive] = useState(false);
@@ -118,7 +118,12 @@ export function AttendanceView({ logs, setLogs, employees }: { logs: AttendanceL
             const existingLog = logs.find(l => l.employeeName === employee.name && l.date === today);
 
             if (existingLog && !existingLog.checkOut) {
-                setLogs(prev => prev.map(l => l.id === existingLog.id ? { ...l, checkOut: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) } : l));
+                const checkOutTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+                if (onLogAttendance) {
+                    onLogAttendance({ ...existingLog, checkOut: checkOutTime, isNew: false });
+                } else {
+                    setLogs(prev => prev.map(l => l.id === existingLog.id ? { ...l, checkOut: checkOutTime } : l));
+                }
                 toast.success(`Check-Out Berhasil: ${employee.name}`);
             } else if (existingLog && existingLog.checkOut) {
                 toast.info(`${employee.name} sudah selesai bekerja hari ini.`);
@@ -146,7 +151,12 @@ export function AttendanceView({ logs, setLogs, employees }: { logs: AttendanceL
                     checkIn: checkInTime,
                     status: isOffDay ? 'Off Day Work' : (isLate ? 'Late' : 'Present')
                 };
-                setLogs([newLog, ...logs]);
+
+                if (onLogAttendance) {
+                    onLogAttendance({ ...newLog, isNew: true });
+                } else {
+                    setLogs([newLog, ...logs]);
+                }
 
                 if (isOffDay) {
                     toast.warning(`${employee.name} hadir di hari libur (Off Day: ${DAYS_NAME[dayOfWeek]})`);
@@ -166,7 +176,12 @@ export function AttendanceView({ logs, setLogs, employees }: { logs: AttendanceL
         const existingLog = logs.find(l => l.employeeName === employee.name && l.date === today);
 
         if (existingLog && !existingLog.checkOut) {
-            setLogs(prev => prev.map(l => l.id === existingLog.id ? { ...l, checkOut: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) } : l));
+            const checkOutTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+            if (onLogAttendance) {
+                onLogAttendance({ ...existingLog, checkOut: checkOutTime, isNew: false });
+            } else {
+                setLogs(prev => prev.map(l => l.id === existingLog.id ? { ...l, checkOut: checkOutTime } : l));
+            }
             toast.success(`Check-Out Berhasil: ${employee.name}`);
         } else if (existingLog && existingLog.checkOut) {
             toast.info(`Sudah selesai bekerja hari ini.`);
@@ -179,7 +194,12 @@ export function AttendanceView({ logs, setLogs, employees }: { logs: AttendanceL
                 checkIn: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
                 status: isOffDay ? 'Off Day Work' : 'Present'
             };
-            setLogs([newLog, ...logs]);
+
+            if (onLogAttendance) {
+                onLogAttendance({ ...newLog, isNew: true });
+            } else {
+                setLogs([newLog, ...logs]);
+            }
             if (isOffDay) {
                 toast.warning(`Absensi Manual: ${employee.name} masuk di hari libur.`);
             } else {
@@ -293,8 +313,8 @@ export function AttendanceView({ logs, setLogs, employees }: { logs: AttendanceL
                                                 <td className="px-8 py-5 font-black text-red-600">{log.checkOut || '--:--'}</td>
                                                 <td className="px-8 py-5 text-center">
                                                     <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ring-1 ${isOffDayWork ? 'bg-orange-50 text-orange-600 ring-orange-100' :
-                                                            log.status === 'Late' ? 'bg-yellow-50 text-yellow-600 ring-yellow-100' :
-                                                                'bg-emerald-50 text-emerald-600 ring-emerald-100'
+                                                        log.status === 'Late' ? 'bg-yellow-50 text-yellow-600 ring-yellow-100' :
+                                                            'bg-emerald-50 text-emerald-600 ring-emerald-100'
                                                         }`}>
                                                         {isOffDayWork ? (
                                                             <span className="flex items-center gap-1 justify-center">

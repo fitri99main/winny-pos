@@ -25,12 +25,21 @@ const DAYS_NAME = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu
 
 interface EmployeesViewProps {
     employees: Employee[];
-    setEmployees: React.Dispatch<React.SetStateAction<Employee[]>>;
+    setEmployees: React.Dispatch<React.SetStateAction<Employee[]>>; // Keep for compatibility or remove if unused
     departments: Department[];
-    setDepartments: React.Dispatch<React.SetStateAction<Department[]>>;
+    setDepartments: React.Dispatch<React.SetStateAction<Department[]>>; // Keep for compatibility
+    onEmployeeCRUD?: (action: 'create' | 'update' | 'delete', data: any) => Promise<void>;
+    onDepartmentCRUD?: (action: 'create' | 'delete', data: any) => Promise<void>;
 }
 
-export function EmployeesView({ employees, setEmployees, departments, setDepartments }: EmployeesViewProps) {
+export function EmployeesView({
+    employees,
+    setEmployees,
+    departments,
+    setDepartments,
+    onEmployeeCRUD = async () => { },
+    onDepartmentCRUD = async () => { }
+}: EmployeesViewProps) {
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [isDeptModalOpen, setIsDeptModalOpen] = useState(false);
     const [formData, setFormData] = useState<Partial<Employee>>({});
@@ -46,18 +55,18 @@ export function EmployeesView({ employees, setEmployees, departments, setDepartm
         }
 
         if (formData.id) {
-            setEmployees(employees.map(emp => emp.id === formData.id ? { ...emp, ...formData } as Employee : emp));
-            toast.success('Data karyawan diperbarui');
+            // Update
+            onEmployeeCRUD('update', formData);
         } else {
+            // Create
             const newEmp = {
                 ...formData,
-                id: Date.now(),
+                // id: Date.now(), // Handled by DB or stripped in Home
                 status: 'Active',
                 joinDate: new Date().toISOString().split('T')[0],
                 offDays: formData.offDays || []
-            } as Employee;
-            setEmployees([...employees, newEmp]);
-            toast.success('Karyawan baru ditambahkan');
+            };
+            onEmployeeCRUD('create', newEmp);
         }
         setIsFormOpen(false);
         setFormData({});
@@ -66,17 +75,15 @@ export function EmployeesView({ employees, setEmployees, departments, setDepartm
     const handleAddDept = (e: React.FormEvent) => {
         e.preventDefault();
         if (!newDeptName.trim()) return;
-        const newDept = { id: Date.now(), name: newDeptName.trim() };
-        setDepartments([...departments, newDept]);
+        const newDept = { name: newDeptName.trim() };
+        onDepartmentCRUD('create', newDept);
         setNewDeptName('');
-        toast.success(`Departemen ${newDeptName} ditambahkan`);
     };
 
     const handleDeleteDept = (id: number) => {
         const deptToDelete = departments.find(d => d.id === id);
         if (confirm(`Yakin ingin menghapus departemen ${deptToDelete?.name}?`)) {
-            setDepartments(departments.filter(d => d.id !== id));
-            toast.success('Departemen dihapus');
+            onDepartmentCRUD('delete', { id });
         }
     };
 
@@ -91,8 +98,7 @@ export function EmployeesView({ employees, setEmployees, departments, setDepartm
 
     const handleDelete = (id: number) => {
         if (confirm('Yakin ingin menghapus data karyawan ini?')) {
-            setEmployees(employees.filter((e: Employee) => e.id !== id));
-            toast.success('Data karyawan dihapus');
+            onEmployeeCRUD('delete', { id });
         }
     };
 
