@@ -6,12 +6,12 @@ import { toast } from 'sonner';
 import { useAuth } from '../auth/AuthProvider';
 import { supabase } from '../../lib/supabase';
 
-export const branchList = [
-    { id: 'b1', name: 'Winny Cafe Pusat' },
-    { id: 'b2', name: 'Winny Cafe Cabang 02' },
-];
+// branchList removed - usage replaced by props or dynamic fetch if needed
+// However, since UsersView is used inside Home which has branches, we should pass it down.
+// But UsersView signature is currently empty argument. To minimize refactor impact, let's fetch branches internally if not passed, or just accept prop.
 
-export function UsersView() {
+
+export function UsersView({ branches = [] }: { branches?: any[] }) {
     const { user } = useAuth();
     // DEFINISI HAK AKSES (PERMISSIONS)
     const AVAILABLE_PERMISSIONS = [
@@ -628,7 +628,7 @@ export function UsersView() {
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <span className="text-gray-600 text-xs">
-                                                        {branchList.find(b => b.id === branchId)?.name || 'N/A'}
+                                                        {branches.find(b => b.id == branchId)?.name || 'N/A'}
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4">

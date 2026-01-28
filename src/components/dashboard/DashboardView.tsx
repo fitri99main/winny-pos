@@ -12,8 +12,8 @@ import {
 } from 'lucide-react';
 import { ContactData } from '../contacts/ContactsView';
 
-import { SalesOrder } from '../pos/SalesView';
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { SalesOrder, SalesReturn } from '../pos/SalesView';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar } from 'recharts';
 
 interface DashboardViewProps {
     contacts: ContactData[];
@@ -64,6 +64,23 @@ export function DashboardView({ contacts = [], sales = [], returns = [], product
         };
     });
 
+    // --- Best Sellers Calculation ---
+    const productSales: Record<string, number> = {};
+    (sales || []).forEach(sale => {
+        if (sale.status !== 'Returned' && Array.isArray(sale.productDetails)) {
+            sale.productDetails.forEach((item: any) => {
+                if (item && item.name) {
+                    productSales[item.name] = (productSales[item.name] || 0) + (item.quantity || 0);
+                }
+            });
+        }
+    });
+
+    const bestSellers = Object.entries(productSales)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 5);
+
     const stats = [
         {
             label: 'Total Penjualan Hari Ini',
@@ -104,68 +121,59 @@ export function DashboardView({ contacts = [], sales = [], returns = [], product
     ];
 
     return (
-        <div className="p-8 space-y-8 min-h-full">
-            <div className="flex items-end justify-between">
+        <div className="p-4 h-full flex flex-col gap-3 overflow-hidden">
+            {/* 1. Header Section - Fixed Height */}
+            <div className="flex items-center justify-between shrink-0">
                 <div>
-                    <h2 className="text-3xl font-bold text-gray-800">Ringkasan</h2>
-                    <p className="text-gray-500 mt-1">Berikut adalah apa yang terjadi dengan toko Anda hari ini.</p>
+                    <h2 className="text-xl font-bold text-gray-800">Ringkasan</h2>
+                    <p className="text-xs text-gray-500">Overview Toko</p>
                 </div>
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-full shadow-sm border border-gray-100 text-sm font-medium text-gray-600 animate-pulse">
-                    <div className="w-2 h-2 rounded-full bg-green-500" />
-                    Live Data
+                <div className="flex items-center gap-2 px-3 py-1 bg-white rounded-full shadow-sm border border-gray-100 text-[10px] font-bold text-gray-600">
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                    LIVE
                 </div>
             </div>
 
+            {/* Birthday Alert - Conditional */}
             {birthdaysToday.length > 0 && (
-                <div className="bg-gradient-to-r from-pink-500/10 to-orange-500/10 border border-pink-200 rounded-3xl p-6 flex items-center justify-between animate-in slide-in-from-top duration-500 text-sm">
-                    <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-pink-500 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-pink-200">
-                            <Cake className="w-6 h-6" />
+                <div className="bg-gradient-to-r from-pink-500/10 to-orange-500/10 border border-pink-200 rounded-xl p-3 flex items-center justify-between animate-in slide-in-from-top duration-500 mb-1 shrink-0">
+                    <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-pink-500 rounded-lg flex items-center justify-center text-white shadow-sm">
+                            <Cake className="w-4 h-4" />
                         </div>
-                        <div>
-                            <h3 className="font-bold text-gray-800">Ulang Tahun Hari Ini! 🎂</h3>
-                            <p className="text-sm text-gray-600">
-                                Ada {birthdaysToday.length} pelanggan yang sedang berulang tahun:
-                                <span className="font-bold ml-1">{birthdaysToday.map(c => c.name).join(', ')}</span>
-                            </p>
+                        <div className="text-xs">
+                            <span className="font-bold text-gray-800">Ulang Tahun:</span> {birthdaysToday.map(c => c.name).join(', ')}
                         </div>
                     </div>
                 </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+
+            {/* 2. Stats Grid - Fixed Height */}
+            <div className="grid grid-cols-4 gap-3 shrink-0">
                 {stats.map((stat, index) => (
-                    <div key={index} className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 hover:shadow-xl transition-all duration-300 group">
-                        <div className="flex justify-between items-start mb-4">
-                            <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${stat.gradient} flex items-center justify-center text-white shadow-lg ${stat.shadow} group-hover:scale-110 transition-transform duration-300`}>
-                                <stat.icon className="w-6 h-6" />
-                            </div>
-                            <div className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full bg-gray-50 text-gray-600`}>
-                                {stat.trend}
-                            </div>
+                    <div key={index} className="bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${stat.gradient} flex items-center justify-center text-white shadow-sm shrink-0`}>
+                            <stat.icon className="w-5 h-5" />
                         </div>
-                        <div>
-                            <p className="text-sm text-gray-400 font-medium mb-1">{stat.label}</p>
-                            <h3 className="text-2xl font-bold text-gray-800 tracking-tight">{stat.value}</h3>
+                        <div className="min-w-0">
+                            <p className="text-[10px] text-gray-400 font-medium truncate">{stat.label}</p>
+                            <h3 className="text-lg font-bold text-gray-800 leading-tight">{stat.value}</h3>
+                            <span className="text-[10px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-md inline-block mt-0.5">{stat.trend}</span>
                         </div>
                     </div>
                 ))}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Main Chart Card */}
-                <div className="lg:col-span-2 bg-white p-8 rounded-3xl shadow-sm border border-gray-100 flex flex-col min-h-[400px]">
-                    <div className="flex items-center justify-between mb-8">
-                        <div>
-                            <h3 className="text-xl font-bold text-gray-800">Analitik Penjualan</h3>
-                            <p className="text-sm text-gray-400 mt-1">Tren pendapatan 7 hari terakhir</p>
-                        </div>
-                        <button className="p-2 hover:bg-gray-50 rounded-lg transition-colors">
-                            <Activity className="w-5 h-5 text-gray-400" />
-                        </button>
+            {/* 3. Middle Section: Charts - FLEX GROW (Takes all remaining space) */}
+            <div className="grid grid-cols-3 gap-3 min-h-0 flex-1">
+                {/* Main Chart */}
+                <div className="col-span-2 bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col h-full">
+                    <div className="flex items-center justify-between mb-2 shrink-0">
+                        <h3 className="text-sm font-bold text-gray-800">Analitik Penjualan</h3>
+                        <Activity className="w-4 h-4 text-gray-300" />
                     </div>
-
-                    <div className="flex-1 w-full h-[300px]">
+                    <div className="flex-1 min-h-0 w-full">
                         <ResponsiveContainer width="100%" height="100%">
                             <AreaChart data={chartData}>
                                 <defs>
@@ -175,53 +183,55 @@ export function DashboardView({ contacts = [], sales = [], returns = [], product
                                     </linearGradient>
                                 </defs>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
-                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#9ca3af' }} dy={10} />
-                                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#9ca3af' }} tickFormatter={(val) => `Rp ${val / 1000}k`} />
-                                <Tooltip
-                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                    formatter={(value: number) => [`Rp ${value.toLocaleString()}`, 'Pendapatan']}
-                                />
-                                <Area type="monotone" dataKey="total" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorTotal)" />
+                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} dy={5} />
+                                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} tickFormatter={(val) => `${val / 1000}k`} />
+                                <Tooltip contentStyle={{ borderRadius: '8px', fontSize: '11px' }} />
+                                <Area type="monotone" dataKey="total" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorTotal)" />
                             </AreaChart>
                         </ResponsiveContainer>
                     </div>
                 </div>
 
-                {/* Side Card */}
-                <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 flex flex-col">
-                    <div className="mb-6">
-                        <h3 className="text-xl font-bold text-gray-800">Transaksi Terbaru</h3>
-                        <p className="text-sm text-gray-400 mt-1">5 penjualan terakhir</p>
+                {/* Best Sellers */}
+                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col h-full">
+                    <div className="mb-2 shrink-0">
+                        <h3 className="text-sm font-bold text-gray-800">Top Produk</h3>
                     </div>
-
-                    <div className="space-y-4">
-                        {sales.slice(0, 5).map((sale) => (
-                            <div key={sale.id} className="flex items-center gap-4 p-3 hover:bg-gray-50 rounded-2xl transition-colors cursor-pointer group">
-                                <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center group-hover:bg-white group-hover:shadow-md transition-all">
-                                    <ShoppingBag className="w-4 h-4 text-blue-600" />
-                                </div>
-                                <div className="flex-1 overflow-hidden">
-                                    <h5 className="font-bold text-gray-800 text-sm truncate">{sale.orderNo}</h5>
-                                    <p className="text-xs text-gray-400 truncate">
-                                        {(Array.isArray(sale.items) ? sale.items.length : (sale.items || 0))} items • {sale.paymentMethod}
-                                    </p>
-                                </div>
-                                <span className="font-bold text-sm text-gray-800 whitespace-nowrap">Rp {(sale.totalAmount || 0).toLocaleString()}</span>
-                            </div>
-                        ))}
-                        {sales.length === 0 && (
-                            <div className="text-center py-8 text-gray-400 text-sm italic">Belum ada transaksi hari ini</div>
-                        )}
+                    <div className="flex-1 min-h-0 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart layout="vertical" data={bestSellers} margin={{ left: 0, right: 0 }} barGap={2}>
+                                <XAxis type="number" hide />
+                                <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 10, fill: '#6b7280' }} />
+                                <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '11px' }} />
+                                <Bar dataKey="value" fill="#ec4899" radius={[0, 4, 4, 0]} barSize={12} />
+                            </BarChart>
+                        </ResponsiveContainer>
                     </div>
-
-                    <button
-                        onClick={() => onNavigate('pos')}
-                        className="mt-auto w-full py-3 text-sm font-bold text-primary hover:bg-primary/5 rounded-xl transition-colors flex items-center justify-center gap-2"
-                    >
-                        Lihat Semua Transaksi <ChevronRight className="w-4 h-4" />
-                    </button>
                 </div>
             </div>
-        </div >
+
+            {/* 4. Bottom Section: Transactions - Fixed Height */}
+            <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-100 shrink-0 h-[130px] flex flex-col">
+                <div className="flex items-center justify-between mb-2 shrink-0">
+                    <h3 className="text-sm font-bold text-gray-800">Transaksi Terkini</h3>
+                    <button onClick={() => onNavigate('pos')} className="text-xs font-bold text-primary flex items-center gap-1">
+                        Lihat Semua <ChevronRight className="w-3 h-3" />
+                    </button>
+                </div>
+                <div className="grid grid-cols-4 gap-3 overflow-hidden">
+                    {sales.slice(0, 4).map((sale) => (
+                        <div key={sale.id} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded-lg border border-transparent hover:border-gray-100 transition-colors">
+                            <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+                                <ShoppingBag className="w-3.5 h-3.5 text-blue-600" />
+                            </div>
+                            <div className="min-w-0 overflow-hidden">
+                                <h5 className="font-bold text-gray-800 text-xs truncate">{sale.orderNo}</h5>
+                                <span className="text-[10px] font-bold text-gray-500">Rp {(sale.totalAmount || 0).toLocaleString()}</span>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
     );
 }

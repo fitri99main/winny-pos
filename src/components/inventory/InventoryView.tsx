@@ -42,10 +42,10 @@ export interface StockMovement {
 // --- Initial Mock Data ---
 
 const INITIAL_INGREDIENTS: Ingredient[] = [
-    { id: 1, name: 'Kopi Arabika (Beans)', unit: 'kg', category: 'Coffee', currentStock: 25.5, minStock: 5, lastUpdated: '2026-01-24' },
-    { id: 2, name: 'Susu Fresh Milk', unit: 'Liter', category: 'Dairy', currentStock: 12, minStock: 10, lastUpdated: '2026-01-25' },
-    { id: 3, name: 'Gula Aren Cair', unit: 'Liter', category: 'Sweetener', currentStock: 3.5, minStock: 5, lastUpdated: '2026-01-23' },
-    { id: 4, name: 'Bubuk Cokelat Premium', unit: 'kg', category: 'Other', currentStock: 8, minStock: 2, lastUpdated: '2026-01-20' },
+    { id: 1, name: 'Kopi Arabika (Beans)', unit: 'kg', category: 'Coffee', currentStock: 25.5, minStock: 5, lastUpdated: '2026-01-24', costPerUnit: 120000 },
+    { id: 2, name: 'Susu Fresh Milk', unit: 'Liter', category: 'Dairy', currentStock: 12, minStock: 10, lastUpdated: '2026-01-25', costPerUnit: 18000 },
+    { id: 3, name: 'Gula Aren Cair', unit: 'Liter', category: 'Sweetener', currentStock: 3.5, minStock: 5, lastUpdated: '2026-01-23', costPerUnit: 25000 },
+    { id: 4, name: 'Bubuk Cokelat Premium', unit: 'kg', category: 'Other', currentStock: 8, minStock: 2, lastUpdated: '2026-01-20', costPerUnit: 85000 },
 ];
 
 const INITIAL_MOVEMENTS: StockMovement[] = [
@@ -75,6 +75,7 @@ export function InventoryView({
 
     // Modal states
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false); // NEW
     const [isStockModalOpen, setIsStockModalOpen] = useState(false);
     const [isStockCardOpen, setIsStockCardOpen] = useState(false);
     const [stockAction, setStockAction] = useState<'IN' | 'OUT'>('IN');
@@ -82,8 +83,10 @@ export function InventoryView({
 
     // Form states
     const [newIngredient, setNewIngredient] = useState<Partial<Ingredient>>({
-        name: '', unit: 'kg', category: 'Coffee', minStock: 1
+        name: '', unit: 'kg', category: 'Coffee', minStock: 1, costPerUnit: 0 // Added costPerUnit
     });
+    const [editFormData, setEditFormData] = useState<Partial<Ingredient>>({}); // NEW
+
     const [stockForm, setStockForm] = useState({
         quantity: 0,
         reason: ''
@@ -97,10 +100,27 @@ export function InventoryView({
             category: newIngredient.category,
             min_stock: newIngredient.minStock,
             current_stock: 0,
-            cost_per_unit: 0
+            cost_per_unit: newIngredient.costPerUnit // Send cost
         });
         setIsAddModalOpen(false);
-        setNewIngredient({ name: '', unit: 'kg', category: 'Coffee', minStock: 1 });
+        setNewIngredient({ name: '', unit: 'kg', category: 'Coffee', minStock: 1, costPerUnit: 0 });
+    };
+
+    const handleEditIngredient = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editFormData.id) return;
+
+        await onIngredientAction('update', {
+            id: editFormData.id,
+            name: editFormData.name,
+            unit: editFormData.unit,
+            category: editFormData.category,
+            min_stock: editFormData.minStock,
+            cost_per_unit: editFormData.costPerUnit,
+            current_stock: editFormData.currentStock // Must preserve current stock
+        });
+        setIsEditModalOpen(false);
+        setEditFormData({});
     };
 
     const handleUpdateStock = async (e: React.FormEvent) => {
@@ -182,6 +202,7 @@ export function InventoryView({
                                     <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px]">Nama Bahan</th>
                                     <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px]">Kategori</th>
                                     <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px] text-center">Unit</th>
+                                    <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px] text-right">Harga Beli (HPP)</th>
                                     <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px] text-right">Min. Stok</th>
                                     <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px] text-right">Stok Aktif</th>
                                     <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px] text-center">Status</th>
@@ -199,6 +220,9 @@ export function InventoryView({
                                             <span className="px-3 py-1 bg-gray-100 text-gray-600 rounded-lg text-[11px] font-bold uppercase">{ing.category}</span>
                                         </td>
                                         <td className="px-8 py-5 text-center text-gray-500 font-medium">{ing.unit}</td>
+                                        <td className="px-8 py-5 text-right font-black text-gray-600">
+                                            Rp {(ing.costPerUnit || 0).toLocaleString()} <span className="text-[10px] text-gray-400 font-normal">/{ing.unit}</span>
+                                        </td>
                                         <td className="px-8 py-5 text-right text-gray-400 font-bold">{ing.minStock}</td>
                                         <td className={`px-8 py-5 text-right font-black text-lg ${ing.currentStock <= ing.minStock ? 'text-red-500' : 'text-gray-800'}`}>
                                             {ing.currentStock}
@@ -216,6 +240,13 @@ export function InventoryView({
                                         </td>
                                         <td className="px-8 py-5">
                                             <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button
+                                                    onClick={() => { setEditFormData(ing); setIsEditModalOpen(true); }}
+                                                    className="p-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors"
+                                                    title="Edit Data"
+                                                >
+                                                    <MoreVertical className="w-5 h-5" />
+                                                </button>
                                                 <button
                                                     onClick={() => { setSelectedIngredient(ing); setStockAction('IN'); setIsStockModalOpen(true); }}
                                                     className="p-2 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100 transition-colors"
@@ -331,19 +362,108 @@ export function InventoryView({
                                         </select>
                                     </div>
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Minimum Stok untuk Alert</label>
-                                    <input
-                                        type="number"
-                                        className="w-full p-4 bg-gray-50 border border-gray-100 rounded-[20px] outline-none"
-                                        value={newIngredient.minStock}
-                                        onChange={e => setNewIngredient({ ...newIngredient, minStock: Number(e.target.value) })}
-                                        required
-                                    />
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Minimum Stok untuk Alert</label>
+                                        <input
+                                            type="number"
+                                            className="w-full p-4 bg-gray-50 border border-gray-100 rounded-[20px] outline-none"
+                                            value={newIngredient.minStock}
+                                            onChange={e => setNewIngredient({ ...newIngredient, minStock: Number(e.target.value) })}
+                                            required
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Harga Beli / Unit (HPP)</label>
+                                        <input
+                                            type="number"
+                                            className="w-full p-4 bg-gray-50 border border-gray-100 rounded-[20px] outline-none font-bold text-gray-700"
+                                            placeholder="Rp 0"
+                                            value={newIngredient.costPerUnit || ''}
+                                            onChange={e => setNewIngredient({ ...newIngredient, costPerUnit: Number(e.target.value) })}
+                                        />
+                                    </div>
                                 </div>
                                 <div className="flex gap-4 pt-4">
                                     <Button type="button" variant="outline" className="flex-1 h-14 rounded-[20px]" onClick={() => setIsAddModalOpen(false)}>Batal</Button>
                                     <Button type="submit" className="flex-1 h-14 rounded-[20px] shadow-xl shadow-primary/20">Simpan Bahan</Button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Ingredient Modal */}
+            {isEditModalOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-10 space-y-8">
+                            <div>
+                                <h3 className="text-2xl font-black text-gray-800">Edit Bahan Baku</h3>
+                                <p className="text-gray-500">Perbarui informasi bahan baku.</p>
+                            </div>
+                            <form onSubmit={handleEditIngredient} className="space-y-5">
+                                <div className="space-y-2">
+                                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Nama Bahan</label>
+                                    <input
+                                        className="w-full p-4 bg-gray-50 border border-gray-100 rounded-[20px] focus:ring-4 focus:ring-primary/5 outline-none transition-all"
+                                        value={editFormData.name || ''}
+                                        onChange={e => setEditFormData({ ...editFormData, name: e.target.value })}
+                                        required
+                                    />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Kategori</label>
+                                        <select
+                                            className="w-full p-4 bg-gray-50 border border-gray-100 rounded-[20px] outline-none"
+                                            value={editFormData.category || ''}
+                                            onChange={e => setEditFormData({ ...editFormData, category: e.target.value })}
+                                        >
+                                            <option value="">Pilih Kategori...</option>
+                                            {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                                            <option value="Other">Lainnya</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Satuan/Unit</label>
+                                        <select
+                                            className="w-full p-4 bg-gray-50 border border-gray-100 rounded-[20px] outline-none"
+                                            value={editFormData.unit || ''}
+                                            onChange={e => setEditFormData({ ...editFormData, unit: e.target.value })}
+                                            required
+                                        >
+                                            <option value="">Pilih Satuan...</option>
+                                            {units.map(u => <option key={u.id} value={u.abbreviation}>{u.name} ({u.abbreviation})</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Minimum Stok</label>
+                                        <input
+                                            type="number"
+                                            className="w-full p-4 bg-gray-50 border border-gray-100 rounded-[20px] outline-none"
+                                            value={editFormData.minStock || 0}
+                                            onChange={e => setEditFormData({ ...editFormData, minStock: Number(e.target.value) })}
+                                            required
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Harga Beli / Unit</label>
+                                        <input
+                                            type="number"
+                                            className="w-full p-4 bg-gray-50 border border-gray-100 rounded-[20px] outline-none font-bold text-gray-700"
+                                            placeholder="Rp 0"
+                                            value={editFormData.costPerUnit || 0}
+                                            onChange={e => setEditFormData({ ...editFormData, costPerUnit: Number(e.target.value) })}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="flex gap-4 pt-4">
+                                    <Button type="button" variant="outline" className="flex-1 h-14 rounded-[20px]" onClick={() => setIsEditModalOpen(false)}>Batal</Button>
+                                    <Button type="submit" className="flex-1 h-14 rounded-[20px] shadow-xl shadow-primary/20">Update Bahan</Button>
                                 </div>
                             </form>
                         </div>

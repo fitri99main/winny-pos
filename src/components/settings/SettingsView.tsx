@@ -1,10 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Settings, User, Monitor, Globe, Bell, Shield, Save, Clock, Calendar, Printer, FileText, LayoutGrid, Plus, Trash2, Edit } from 'lucide-react';
 import { printerService } from '../../lib/PrinterService';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
+import { useAuth } from '../auth/AuthProvider';
 import { Switch } from '../ui/switch';
 import { Label } from '../ui/label';
+
+import { supabase } from '../../lib/supabase';
 
 interface SettingsViewProps {
     settings: any;
@@ -15,6 +18,63 @@ interface SettingsViewProps {
 
 export function SettingsView({ settings, onUpdateSettings, tables = [], onTableAction }: SettingsViewProps) {
     const [activeTab, setActiveTab] = useState('general');
+    const [localSettings, setLocalSettings] = useState(settings);
+    const [hasChanges, setHasChanges] = useState(false);
+
+    // Profile Settings State
+    const { user } = useAuth();
+    const [profileName, setProfileName] = useState('');
+    const [updatingProfile, setUpdatingProfile] = useState(false);
+
+    useEffect(() => {
+        if (user) {
+            setProfileName(user.user_metadata?.name || user.user_metadata?.full_name || '');
+        }
+    }, [user]);
+
+    const handleUpdateProfile = async () => {
+        if (!user) return;
+        setUpdatingProfile(true);
+        try {
+            // 1. Update Auth Metadata
+            const { error: authError } = await supabase.auth.updateUser({
+                data: { name: profileName, full_name: profileName }
+            });
+            if (authError) throw authError;
+
+            // 2. Update Profiles Table
+            const { error: dbError } = await supabase
+                .from('profiles')
+                .update({ name: profileName, full_name: profileName })
+                .eq('id', user.id);
+
+            if (dbError) {
+                console.warn('Profile DB update failed:', dbError);
+            }
+
+            toast.success('Profil berhasil diperbarui!');
+        } catch (error: any) {
+            toast.error('Gagal update profil: ' + error.message);
+        } finally {
+            setUpdatingProfile(false);
+        }
+    };
+
+    useEffect(() => {
+        setLocalSettings(settings);
+    }, [settings]);
+
+    const handleLocalChange = (newSettings: any) => {
+        setLocalSettings(newSettings);
+        setHasChanges(true);
+    };
+
+    const handleThemeAutoSave = (mode: 'light' | 'dark') => {
+        const updated = { ...localSettings, theme_mode: mode };
+        setLocalSettings(updated);
+        // Immediate save for UX
+        onUpdateSettings(updated);
+    };
 
     const tabs = [
         { id: 'general', label: 'Umum', icon: Globe },
@@ -28,12 +88,26 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
         { id: 'security', label: 'Keamanan', icon: Shield },
     ];
 
-    const [companySettings, setCompanySettings] = useState({
-        openingTime: '08:00',
-        closingTime: '22:00',
-        workingDays: ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'],
-        tolerance: 15
-    });
+    // Password Change State
+    const [passwordForm, setPasswordForm] = useState({ current: '', new: '', confirm: '' });
+    const [loadingPassword, setLoadingPassword] = useState(false);
+
+    const handleUpdatePassword = async () => {
+        if (!passwordForm.new || passwordForm.new !== passwordForm.confirm) {
+            return toast.error('Password baru tidak cocok atau kosong');
+        }
+        setLoadingPassword(true);
+        try {
+            const { error } = await supabase.auth.updateUser({ password: passwordForm.new });
+            if (error) throw error;
+            toast.success('Password berhasil diperbarui');
+            setPasswordForm({ current: '', new: '', confirm: '' });
+        } catch (err: any) {
+            toast.error('Gagal update password: ' + err.message);
+        } finally {
+            setLoadingPassword(false);
+        }
+    };
 
     const days = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
 
@@ -53,7 +127,7 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
         setIsTableModalOpen(true);
     };
 
-    const handleSubtitleTable = () => {
+    const handleSubtitleTable = () => { // Corrected name to generic handleSaveTable if needed, but keeping existing
         if (!tableForm.number) return toast.error('Nomor meja harus diisi');
         if (tableForm.capacity < 1) return toast.error('Kapasitas minimal 1');
 
@@ -68,16 +142,21 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
     };
 
     const handleSave = () => {
-        toast.success('Pengaturan berhasil disimpan!');
+        if (hasChanges) {
+            onUpdateSettings(localSettings);
+            setHasChanges(false);
+        } else {
+            toast.info('Tidak ada perubahan untuk disimpan');
+        }
     };
 
     return (
-        <div className="p-8 flex gap-8 h-full bg-gray-50/50">
+        <div className="p-8 flex gap-8 h-full bg-gray-50/50 dark:bg-gray-900/50">
             {/* Sidebar Settings */}
             <div className="w-56 flex flex-col gap-2">
                 <div className="mb-6 px-2">
-                    <h2 className="text-xl font-bold text-gray-800">Pengaturan</h2>
-                    <p className="text-sm text-gray-500">Kelola preferensi Anda</p>
+                    <h2 className="text-xl font-bold text-gray-800 dark:text-white">Pengaturan</h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Kelola preferensi Anda</p>
                 </div>
 
                 {tabs.map((tab) => (
@@ -85,8 +164,8 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
                         className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === tab.id
-                            ? 'bg-white shadow-sm ring-1 ring-gray-200 text-primary'
-                            : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                            ? 'bg-white dark:bg-gray-800 shadow-sm ring-1 ring-gray-200 dark:ring-gray-700 text-primary'
+                            : 'text-gray-500 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
                             }`}
                     >
                         <tab.icon className={`w-5 h-5 ${activeTab === tab.id ? 'text-primary' : 'text-gray-400'}`} />
@@ -96,7 +175,7 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
             </div>
 
             {/* Sub-content Area */}
-            <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-100 p-8 overflow-y-auto">
+            <div className="flex-1 bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 p-8 overflow-y-auto">
                 {activeTab === 'general' && (
                     <div className="max-w-2xl space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
                         <div>
@@ -107,21 +186,31 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
                         <div className="space-y-4">
                             <div className="grid gap-2">
                                 <label className="text-sm font-medium text-gray-700">Nama Toko</label>
-                                <input type="text" defaultValue="WinPOS Cabang 01" className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20" />
+                                <input
+                                    type="text"
+                                    value={localSettings.store_name || ''}
+                                    onChange={e => handleLocalChange({ ...localSettings, store_name: e.target.value })}
+                                    className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                />
                             </div>
                             <div className="grid gap-2">
-                                <label className="text-sm font-medium text-gray-700">Mata Uang</label>
-                                <select className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white">
-                                    <option>IDR (Rupiah)</option>
-                                    <option>USD (Dollar)</option>
-                                </select>
+                                <label className="text-sm font-medium text-gray-700">Nomor Telepon</label>
+                                <input
+                                    type="text"
+                                    value={localSettings.phone || ''}
+                                    onChange={e => handleLocalChange({ ...localSettings, phone: e.target.value })}
+                                    className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                    placeholder="+62..."
+                                />
                             </div>
                             <div className="grid gap-2">
-                                <label className="text-sm font-medium text-gray-700">Bahasa</label>
-                                <select className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white">
-                                    <option>Bahasa Indonesia</option>
-                                    <option>English</option>
-                                </select>
+                                <label className="text-sm font-medium text-gray-700">Alamat</label>
+                                <textarea
+                                    value={localSettings.address || ''}
+                                    onChange={e => handleLocalChange({ ...localSettings, address: e.target.value })}
+                                    className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 h-24 resize-none"
+                                    placeholder="Alamat lengkap..."
+                                />
                             </div>
                         </div>
                     </div>
@@ -135,26 +224,45 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
                         </div>
 
                         <div className="flex items-center gap-4 mb-6">
-                            <div className="w-20 h-20 rounded-full bg-gray-100 flex items-center justify-center text-2xl font-bold text-gray-400">
-                                A
+                            <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center text-3xl font-bold text-primary border-4 border-white shadow-lg">
+                                {profileName ? profileName.charAt(0).toUpperCase() : 'A'}
                             </div>
-                            <Button variant="outline">Ganti Avatar</Button>
+                            <div>
+                                <h4 className="font-bold text-lg text-gray-800">{user?.email}</h4>
+                                <p className="text-xs text-gray-500 capitalize">{user?.user_metadata?.role || 'User'}</p>
+                            </div>
                         </div>
 
                         <div className="space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="grid gap-2">
-                                    <label className="text-sm font-medium text-gray-700">Nama Depan</label>
-                                    <input type="text" defaultValue="Admin" className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20" />
-                                </div>
-                                <div className="grid gap-2">
-                                    <label className="text-sm font-medium text-gray-700">Nama Belakang</label>
-                                    <input type="text" defaultValue="Utama" className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20" />
-                                </div>
+                            <div className="grid gap-2">
+                                <label className="text-sm font-medium text-gray-700">Nama Lengkap</label>
+                                <input
+                                    type="text"
+                                    value={profileName}
+                                    onChange={(e) => setProfileName(e.target.value)}
+                                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                    placeholder="Nama lengkap Anda"
+                                />
                             </div>
                             <div className="grid gap-2">
                                 <label className="text-sm font-medium text-gray-700">Alamat Email</label>
-                                <input type="email" defaultValue="admin@winpos.com" disabled className="px-4 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500" />
+                                <input
+                                    type="email"
+                                    value={user?.email || ''}
+                                    disabled
+                                    className="w-full px-4 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 cursor-not-allowed"
+                                />
+                                <p className="text-[10px] text-gray-400">Email tidak dapat diubah.</p>
+                            </div>
+
+                            <div className="pt-4 flex justify-end">
+                                <Button
+                                    onClick={handleUpdateProfile}
+                                    disabled={updatingProfile}
+                                    className="bg-primary hover:bg-primary/90 text-white"
+                                >
+                                    {updatingProfile ? 'Menyimpan...' : 'Simpan Profil'}
+                                </Button>
                             </div>
                         </div>
                     </div>
@@ -174,8 +282,8 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
                                     <Clock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                     <input
                                         type="time"
-                                        value={companySettings.openingTime}
-                                        onChange={e => setCompanySettings({ ...companySettings, openingTime: e.target.value })}
+                                        value={localSettings.opening_time || '08:00'}
+                                        onChange={e => handleLocalChange({ ...localSettings, opening_time: e.target.value })}
                                         className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 outline-none"
                                     />
                                 </div>
@@ -186,8 +294,8 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
                                     <Clock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                     <input
                                         type="time"
-                                        value={companySettings.closingTime}
-                                        onChange={e => setCompanySettings({ ...companySettings, closingTime: e.target.value })}
+                                        value={localSettings.closing_time || '22:00'}
+                                        onChange={e => handleLocalChange({ ...localSettings, closing_time: e.target.value })}
                                         className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 outline-none"
                                     />
                                 </div>
@@ -201,12 +309,13 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
                                     <button
                                         key={day}
                                         onClick={() => {
-                                            const updated = companySettings.workingDays.includes(day)
-                                                ? companySettings.workingDays.filter(d => d !== day)
-                                                : [...companySettings.workingDays, day];
-                                            setCompanySettings({ ...companySettings, workingDays: updated });
+                                            const currentDays = localSettings.working_days || [];
+                                            const updated = currentDays.includes(day)
+                                                ? currentDays.filter((d: string) => d !== day)
+                                                : [...currentDays, day];
+                                            handleLocalChange({ ...localSettings, working_days: updated });
                                         }}
-                                        className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all ${companySettings.workingDays.includes(day)
+                                        className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all ${(localSettings.working_days || []).includes(day)
                                             ? 'bg-primary/10 border-primary text-primary'
                                             : 'bg-white border-gray-100 text-gray-400 hover:border-gray-300'
                                             }`}
@@ -226,8 +335,8 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
                                 <label className="text-sm font-bold text-orange-700">Toleransi Keterlambatan (Menit)</label>
                                 <input
                                     type="number"
-                                    value={companySettings.tolerance}
-                                    onChange={e => setCompanySettings({ ...companySettings, tolerance: parseInt(e.target.value) || 0 })}
+                                    value={localSettings.late_tolerance || 0}
+                                    onChange={e => handleLocalChange({ ...localSettings, late_tolerance: parseInt(e.target.value) || 0 })}
                                     className="w-full px-4 py-3 border border-orange-200 rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none bg-white"
                                     placeholder="contoh: 15"
                                 />
@@ -237,28 +346,87 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
                     </div>
                 )}
 
+                {activeTab === 'tables' && (
+                    <div className="max-w-4xl space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h3 className="text-lg font-bold text-gray-800">Manajemen Meja</h3>
+                                <p className="text-sm text-gray-500">Atur layout dan kapasitas meja restoran.</p>
+                            </div>
+                            <Button onClick={() => handleOpenTableModal()}>
+                                <Plus className="w-4 h-4 mr-2" /> Tambah Meja
+                            </Button>
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                            {tables.map(table => (
+                                <div key={table.id} className="group relative bg-white border border-gray-200 rounded-2xl p-6 flex flex-col items-center justify-center gap-3 hover:border-primary hover:shadow-lg hover:shadow-primary/5 transition-all">
+                                    <div className="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center text-gray-400 group-hover:bg-primary/10 group-hover:text-primary transition-colors">
+                                        <div className="font-bold text-lg">{table.number}</div>
+                                    </div>
+                                    <p className="text-xs text-gray-500 font-medium">{table.capacity} Kursi</p>
+
+                                    <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button
+                                            onClick={() => handleOpenTableModal(table)}
+                                            className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500"
+                                        >
+                                            <Edit className="w-3 h-3" />
+                                        </button>
+                                        <button
+                                            onClick={() => onTableAction && onTableAction('delete', { id: table.id })}
+                                            className="p-1.5 hover:bg-red-50 rounded-lg text-red-500"
+                                        >
+                                            <Trash2 className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                            <button
+                                onClick={() => handleOpenTableModal()}
+                                className="border-2 border-dashed border-gray-200 rounded-2xl p-6 flex flex-col items-center justify-center gap-3 hover:border-primary/50 hover:bg-primary/5 transition-all text-gray-400 hover:text-primary"
+                            >
+                                <Plus className="w-8 h-8" />
+                                <span className="text-xs font-bold">Tambah</span>
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {activeTab === 'appearance' && (
                     <div className="max-w-2xl space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
                         <div>
-                            <h3 className="text-lg font-bold text-gray-800">Tampilan</h3>
-                            <p className="text-sm text-gray-500">Sesuaikan tampilan dan nuansa.</p>
+                            <h3 className="text-lg font-bold text-gray-800 dark:text-white">Tampilan</h3>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Sesuaikan tampilan dan nuansa aplikasi.</p>
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">
-                            <div className="border border-primary bg-primary/5 p-4 rounded-xl flex items-center justify-between cursor-pointer">
+                            <button
+                                onClick={() => handleThemeAutoSave('light')}
+                                className={`border p-4 rounded-xl flex items-center justify-between cursor-pointer transition-all ${localSettings.theme_mode !== 'dark'
+                                    ? 'border-primary bg-primary/5 shadow-md shadow-primary/5'
+                                    : 'border-gray-200 hover:border-gray-300'
+                                    }`}
+                            >
                                 <div className="flex items-center gap-3">
-                                    <Monitor className="w-5 h-5 text-primary" />
-                                    <span className="font-medium text-gray-900">Mode Terang</span>
+                                    <Monitor className={`w-5 h-5 ${localSettings.theme_mode !== 'dark' ? 'text-primary' : 'text-gray-400'}`} />
+                                    <span className={`font-medium ${localSettings.theme_mode !== 'dark' ? 'text-gray-900 dark:text-white' : 'text-gray-500'}`}>Mode Terang</span>
                                 </div>
-                                <div className="w-4 h-4 rounded-full border border-primary bg-primary"></div>
-                            </div>
-                            <div className="border border-gray-200 p-4 rounded-xl flex items-center justify-between cursor-pointer opacity-50">
+                                <div className={`w-4 h-4 rounded-full border ${localSettings.theme_mode !== 'dark' ? 'border-primary bg-primary' : 'border-gray-300'}`} />
+                            </button>
+                            <button
+                                onClick={() => handleThemeAutoSave('dark')}
+                                className={`border p-4 rounded-xl flex items-center justify-between cursor-pointer transition-all ${localSettings.theme_mode === 'dark'
+                                    ? 'border-primary bg-primary/5 shadow-md shadow-primary/5'
+                                    : 'border-gray-200 hover:border-gray-300'
+                                    }`}
+                            >
                                 <div className="flex items-center gap-3">
-                                    <Monitor className="w-5 h-5 text-gray-400" />
-                                    <span className="font-medium text-gray-500">Mode Gelap</span>
+                                    <Monitor className={`w-5 h-5 ${localSettings.theme_mode === 'dark' ? 'text-primary' : 'text-gray-400'}`} />
+                                    <span className={`font-medium ${localSettings.theme_mode === 'dark' ? 'text-gray-900 dark:text-white' : 'text-gray-500'}`}>Mode Gelap</span>
                                 </div>
-                                <div className="w-4 h-4 rounded-full border border-gray-300"></div>
-                            </div>
+                                <div className={`w-4 h-4 rounded-full border ${localSettings.theme_mode === 'dark' ? 'border-primary bg-primary' : 'border-gray-300'}`} />
+                            </button>
                         </div>
                     </div>
                 )}
@@ -460,8 +628,8 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
                                     <Label className="text-sm font-bold text-gray-700">Nama Toko (Header)</Label>
                                     <input
                                         type="text"
-                                        value={settings.receipt_header || ''}
-                                        onChange={e => onUpdateSettings({ ...settings, receipt_header: e.target.value })}
+                                        value={localSettings.receipt_header || ''}
+                                        onChange={e => handleLocalChange({ ...localSettings, receipt_header: e.target.value })}
                                         className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 outline-none"
                                         placeholder="Contoh: WINNY CAFE"
                                     />
@@ -469,8 +637,8 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
                                 <div className="space-y-2">
                                     <Label className="text-sm font-bold text-gray-700">Alamat / Informasi Tambahan</Label>
                                     <textarea
-                                        value={settings.address}
-                                        onChange={e => onUpdateSettings({ ...settings, address: e.target.value })}
+                                        value={localSettings.address}
+                                        onChange={e => handleLocalChange({ ...localSettings, address: e.target.value })}
                                         className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 outline-none h-20 resize-none font-mono text-sm"
                                         placeholder="Alamat lengkap toko..."
                                     />
@@ -479,8 +647,8 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
                                     <Label className="text-sm font-bold text-gray-700">Pesan Penutup (Footer)</Label>
                                     <input
                                         type="text"
-                                        value={settings.receipt_footer || ''}
-                                        onChange={e => onUpdateSettings({ ...settings, receipt_footer: e.target.value })}
+                                        value={localSettings.receipt_footer || ''}
+                                        onChange={e => handleLocalChange({ ...localSettings, receipt_footer: e.target.value })}
                                         className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 outline-none"
                                         placeholder="Contoh: Terima Kasih, Datang Lagi ya!"
                                     />
@@ -489,8 +657,8 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
                                     <Label className="text-sm font-bold text-gray-700">Ukuran Kertas Printer</Label>
                                     <div className="flex gap-4">
                                         <button
-                                            onClick={() => onUpdateSettings({ ...settings, receipt_paper_width: '58mm' })}
-                                            className={`flex-1 py-3 px-4 rounded-xl border-2 transition-all font-bold text-sm ${settings.receipt_paper_width === '58mm'
+                                            onClick={() => handleLocalChange({ ...localSettings, receipt_paper_width: '58mm' })}
+                                            className={`flex-1 py-3 px-4 rounded-xl border-2 transition-all font-bold text-sm ${localSettings.receipt_paper_width === '58mm'
                                                 ? 'border-primary bg-primary/5 text-primary'
                                                 : 'border-gray-100 bg-white text-gray-400 hover:border-gray-200'
                                                 }`}
@@ -498,8 +666,8 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
                                             58mm (Kecil)
                                         </button>
                                         <button
-                                            onClick={() => onUpdateSettings({ ...settings, receipt_paper_width: '80mm' })}
-                                            className={`flex-1 py-3 px-4 rounded-xl border-2 transition-all font-bold text-sm ${settings.receipt_paper_width === '80mm'
+                                            onClick={() => handleLocalChange({ ...localSettings, receipt_paper_width: '80mm' })}
+                                            className={`flex-1 py-3 px-4 rounded-xl border-2 transition-all font-bold text-sm ${localSettings.receipt_paper_width === '80mm'
                                                 ? 'border-primary bg-primary/5 text-primary'
                                                 : 'border-gray-100 bg-white text-gray-400 hover:border-gray-200'
                                                 }`}
@@ -517,24 +685,24 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
                                         <Label htmlFor="show-date" className="cursor-pointer">Tampilkan Tanggal & Waktu</Label>
                                         <Switch
                                             id="show-date"
-                                            checked={settings.show_date}
-                                            onCheckedChange={checked => onUpdateSettings({ ...settings, show_date: checked })}
+                                            checked={localSettings.show_date}
+                                            onCheckedChange={checked => handleLocalChange({ ...localSettings, show_date: checked })}
                                         />
                                     </div>
                                     <div className="flex items-center justify-between">
                                         <Label htmlFor="show-waiter" className="cursor-pointer">Tampilkan Nama Pelayan</Label>
                                         <Switch
                                             id="show-waiter"
-                                            checked={settings.show_waiter}
-                                            onCheckedChange={checked => onUpdateSettings({ ...settings, show_waiter: checked })}
+                                            checked={localSettings.show_waiter}
+                                            onCheckedChange={checked => handleLocalChange({ ...localSettings, show_waiter: checked })}
                                         />
                                     </div>
                                     <div className="flex items-center justify-between">
                                         <Label htmlFor="show-table" className="cursor-pointer">Tampilkan Nomor Meja</Label>
                                         <Switch
                                             id="show-table"
-                                            checked={settings.show_table}
-                                            onCheckedChange={checked => onUpdateSettings({ ...settings, show_table: checked })}
+                                            checked={localSettings.show_table}
+                                            onCheckedChange={checked => handleLocalChange({ ...localSettings, show_table: checked })}
                                         />
                                     </div>
                                 </div>
@@ -543,36 +711,135 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
 
                         {/* Preview */}
                         <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm space-y-4">
-                            <h4 className="font-bold text-gray-800 text-sm">Pratinjau Struk ({settings.receipt_paper_width})</h4>
-                            <div className={`border border-dashed border-gray-300 p-6 bg-gray-50/50 text-center font-mono text-[10px] space-y-1 text-gray-600 mx-auto transition-all ${settings.receipt_paper_width === '80mm' ? 'max-w-xs' : 'max-w-[200px]'
+                            <h4 className="font-bold text-gray-800 text-sm">Pratinjau Struk ({localSettings.receipt_paper_width})</h4>
+                            <div className={`border border-dashed border-gray-300 p-6 bg-gray-50/50 text-center font-mono text-[10px] space-y-1 text-gray-600 mx-auto transition-all ${localSettings.receipt_paper_width === '80mm' ? 'max-w-xs' : 'max-w-[200px]'
                                 }`}>
-                                <p className="font-bold text-xs uppercase text-gray-800">{settings.receipt_header || 'NAMA TOKO'}</p>
-                                <p className="whitespace-pre-line">{settings.address || 'Alamat Toko'}</p>
-                                <p>{settings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
+                                <p className="font-bold text-xs uppercase text-gray-800">{localSettings.receipt_header || 'NAMA TOKO'}</p>
+                                <p className="whitespace-pre-line">{localSettings.address || 'Alamat Toko'}</p>
+                                <p>{localSettings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
                                 <div className="text-left flex justify-between"><span>KOPI SUSU GULA AREN</span> <span>25.000</span></div>
                                 <div className="text-left flex justify-between"><span>PISANG GORENG</span> <span>15.000</span></div>
-                                <p>{settings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
+                                <p>{localSettings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
                                 <div className="font-bold flex justify-between text-xs text-gray-800"><span>TOTAL</span> <span>40.000</span></div>
-                                <p>{settings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
-                                {settings.show_date && <p>{new Date().toLocaleDateString()} {new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p>}
-                                {settings.show_waiter && <p>Pelayan: Budi R.</p>}
-                                {settings.show_table && <p>Meja: T-05</p>}
-                                <p className="italic mt-4 text-gray-500">{settings.receipt_footer || 'Terima Kasih'}</p>
+                                <p>{localSettings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
+                                {localSettings.show_date && <p>{new Date().toLocaleDateString()} {new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p>}
+                                {localSettings.show_waiter && <p>Pelayan: Budi R.</p>}
+                                {localSettings.show_table && <p>Meja: T-05</p>}
+                                <p className="italic mt-4 text-gray-500">{localSettings.receipt_footer || 'Terima Kasih'}</p>
                             </div>
                         </div>
                     </div>
                 )}
 
-                {/* Fallback for other tabs */}
-                {(activeTab === 'notifications' || activeTab === 'security') && (
-                    <div className="flex flex-col items-center justify-center h-64 text-center animate-in fade-in zoom-in-95">
-                        <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
-                            <Settings className="w-8 h-8 text-gray-300" />
+                {activeTab === 'notifications' && (
+                    <div className="max-w-2xl space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                        <div>
+                            <h3 className="text-lg font-bold text-gray-800">Notifikasi</h3>
+                            <p className="text-sm text-gray-500">Atur preferensi pemberitahuan Anda.</p>
                         </div>
-                        <h3 className="text-lg font-medium text-gray-800">Segera Datang</h3>
-                        <p className="text-sm text-gray-500 max-w-xs">Bagian pengaturan ini sedang dalam pengembangan.</p>
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50 border border-gray-100">
+                                <div className="flex gap-3">
+                                    <div className="bg-white p-2 rounded-lg border border-gray-200 shadow-sm">
+                                        <Bell className="w-4 h-4 text-blue-600" />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-bold text-gray-800">Notifikasi Email</p>
+                                        <p className="text-xs text-gray-500">Terima ringkasan penjualan via email</p>
+                                    </div>
+                                </div>
+                                <Switch
+                                    checked={localSettings.enable_email_notif}
+                                    onCheckedChange={c => handleLocalChange({ ...localSettings, enable_email_notif: c })}
+                                />
+                            </div>
+                            <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50 border border-gray-100">
+                                <div className="flex gap-3">
+                                    <div className="bg-white p-2 rounded-lg border border-gray-200 shadow-sm">
+                                        <Bell className="w-4 h-4 text-purple-600" />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-bold text-gray-800">Push Notification</p>
+                                        <p className="text-xs text-gray-500">Pop-up notifikasi di browser</p>
+                                    </div>
+                                </div>
+                                <Switch
+                                    checked={localSettings.enable_push_notif}
+                                    onCheckedChange={c => handleLocalChange({ ...localSettings, enable_push_notif: c })}
+                                />
+                            </div>
+                            <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50 border border-gray-100">
+                                <div className="flex gap-3">
+                                    <div className="bg-white p-2 rounded-lg border border-gray-200 shadow-sm">
+                                        <Bell className="w-4 h-4 text-orange-600" />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-bold text-gray-800">Peringatan Stok Rendah</p>
+                                        <p className="text-xs text-gray-500">Beri tahu jika stok bahan menipis</p>
+                                    </div>
+                                </div>
+                                <Switch
+                                    checked={localSettings.low_stock_alert}
+                                    onCheckedChange={c => handleLocalChange({ ...localSettings, low_stock_alert: c })}
+                                />
+                            </div>
+                        </div>
                     </div>
                 )}
+
+                {activeTab === 'security' && (
+                    <div className="max-w-2xl space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                        <div>
+                            <h3 className="text-lg font-bold text-gray-800">Keamanan</h3>
+                            <p className="text-sm text-gray-500">Kelola keamanan akun dan password.</p>
+                        </div>
+
+                        <div className="border border-red-100 bg-red-50/50 rounded-2xl p-6 space-y-4">
+                            <div className="flex items-start gap-4">
+                                <div className="bg-white p-2.5 rounded-xl border border-red-100 shadow-sm">
+                                    <Shield className="w-5 h-5 text-red-600" />
+                                </div>
+                                <div className="flex-1 space-y-4">
+                                    <div>
+                                        <h4 className="text-base font-bold text-gray-800">Ganti Password</h4>
+                                        <p className="text-xs text-gray-500 mt-1">Gunakan password yang kuat untuk keamanan akun Anda.</p>
+                                    </div>
+
+                                    <div className="space-y-3">
+                                        <div>
+                                            <Label className="text-xs mb-1.5 block font-bold text-gray-600">Password Baru</Label>
+                                            <input
+                                                type="password"
+                                                value={passwordForm.new}
+                                                onChange={e => setPasswordForm({ ...passwordForm, new: e.target.value })}
+                                                className="w-full px-4 py-2 border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-red-500/10"
+                                            />
+                                        </div>
+                                        <div>
+                                            <Label className="text-xs mb-1.5 block font-bold text-gray-600">Konfirmasi Password</Label>
+                                            <input
+                                                type="password"
+                                                value={passwordForm.confirm}
+                                                onChange={e => setPasswordForm({ ...passwordForm, confirm: e.target.value })}
+                                                className="w-full px-4 py-2 border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-red-500/10"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <Button
+                                        disabled={loadingPassword || !passwordForm.new}
+                                        onClick={handleUpdatePassword}
+                                        className="bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-100"
+                                    >
+                                        {loadingPassword ? 'Menyimpan...' : 'Update Password'}
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Fallback not needed anymore as all tabs are covered */}
 
                 {/* Action Footer */}
                 <div className="mt-10 pt-6 border-t border-gray-100 flex justify-end">
@@ -582,6 +849,42 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
                     </Button>
                 </div>
             </div>
-        </div>
+
+            {/* Modal Table */}
+            {
+                isTableModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in">
+                        <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+                            <h3 className="text-lg font-bold text-gray-800 mb-4">{editingTable ? 'Edit Meja' : 'Tambah Meja Baru'}</h3>
+                            <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <Label>Nomor Meja</Label>
+                                    <input
+                                        type="text"
+                                        value={tableForm.number}
+                                        onChange={e => setTableForm({ ...tableForm, number: e.target.value })}
+                                        className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                        placeholder="Contoh: T-01"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Kapasitas (Orang)</Label>
+                                    <input
+                                        type="number"
+                                        value={tableForm.capacity}
+                                        onChange={e => setTableForm({ ...tableForm, capacity: parseInt(e.target.value) || 0 })}
+                                        className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                    />
+                                </div>
+                                <div className="flex gap-3 pt-4">
+                                    <Button variant="outline" className="flex-1" onClick={() => setIsTableModalOpen(false)}>Batal</Button>
+                                    <Button className="flex-1" onClick={handleSubtitleTable}>Simpan</Button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+        </div >
     );
 }

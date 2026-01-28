@@ -1,34 +1,15 @@
 import { useState, useRef, useEffect } from 'react';
 import {
-  LayoutDashboard,
-  Clock,
-  Users,
-  Contact,
-  Package,
-  ShoppingCart,
-  Store,
-  FileText,
-  Calculator,
-  Settings,
-  LogOut,
-  CheckCircle,
-  RefreshCw,
-  Award,
-  ShieldCheck,
-  Coffee,
-  Wallet,
-  MapPin,
-  Archive,
-  CalendarCheck,
-  MonitorCheck,
-  History as ClockHistory,
-  ChefHat
+  LayoutDashboard, Users, ShoppingCart, Settings, Coffee, FileText,
+  LogOut, Bell, Search, Menu, Calculator, ChefHat, MonitorCheck,
+  Contact, Archive, MapPin, CalendarCheck, History as ClockHistory, Wallet, Award,
+  Store, ChevronLeft, ChevronRight, CheckCircle, Package, RefreshCw, ShieldCheck, Clock
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './auth/AuthProvider';
 import { DashboardView } from './dashboard/DashboardView';
-import { UsersView, branchList } from './users/UsersView';
+import { UsersView } from './users/UsersView';
 import { ContactsView, ContactData } from './contacts/ContactsView';
 import { ProductsView } from './products/ProductsView';
 import { PurchasesView } from './purchases/PurchasesView';
@@ -45,6 +26,7 @@ import { BranchesView } from './branches/BranchesView';
 import { ShiftsView } from './shifts/ShiftsView';
 import { InventoryView, Ingredient as InvIngredient, StockMovement } from './inventory/InventoryView';
 import { KDSView } from './pos/KDSView';
+import { DashboardSkeleton } from './skeletons/DashboardSkeleton';
 import { OrderItem } from '@/types/pos';
 import { mockProducts } from '@/data/products';
 import { toast } from 'sonner';
@@ -55,20 +37,42 @@ type ModuleType = 'dashboard' | 'users' | 'contacts' | 'products' | 'purchases' 
 
 
 function Home() {
-  const [activeModule, setActiveModule] = useState<ModuleType>('dashboard');
+  const [activeModule, setActiveModule] = useState<ModuleType>(
+    (localStorage.getItem('winpos_active_module') as ModuleType) || 'dashboard'
+  );
   const [salesViewTab, setSalesViewTab] = useState<'history' | 'returns'>('history');
   const [sales, setSales] = useState<SalesOrder[]>([]);
+
+  // Persist active module
+  useEffect(() => {
+    if (activeModule) {
+      localStorage.setItem('winpos_active_module', activeModule);
+    }
+  }, [activeModule]);
   const [returns, setReturns] = useState<SalesReturn[]>([]);
   const [userRole, setUserRole] = useState<string>('Administrator');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [currentBranchId, setCurrentBranchId] = useState('b1');
+  const [currentBranchId, setCurrentBranchId] = useState('');
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [orderDiscount, setOrderDiscount] = useState(0);
   const [isCashierOpen, setIsCashierOpen] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [contacts, setContacts] = useState<ContactData[]>([]);
+  const [employees, setEmployees] = useState<any[]>([]);
+
+  // POS State
+  const [products, setProducts] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [tables, setTables] = useState<any[]>([]);
+
+  // Restored Missing States
+  const [units, setUnits] = useState<any[]>([]);
+  const [brands, setBrands] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [purchases, setPurchases] = useState<any[]>([]);
+  const [purchaseReturns, setPurchaseReturns] = useState<any[]>([]);
 
   // Centralized State for Integration
   // Centralized State for Integration
@@ -183,16 +187,7 @@ function Home() {
 
 
   // --- Master Data State ---
-  const [categories, setCategories] = useState<any[]>([]);
-  const [units, setUnits] = useState<any[]>([]);
-  const [brands, setBrands] = useState<any[]>([]);
 
-  const [departments, setDepartments] = useState<any[]>([]);
-  const [employees, setEmployees] = useState<any[]>([]);
-  const [products, setProducts] = useState<any[]>([]);
-  const [purchases, setPurchases] = useState<any[]>([]);
-  const [purchaseReturns, setPurchaseReturns] = useState<any[]>([]);
-  const [tables, setTables] = useState<any[]>([]);
 
   // --- Accounting State ---
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -212,38 +207,55 @@ function Home() {
 
   // --- Master Data Integration ---
   const fetchMasterData = async () => {
+    // Helper to log errors but return null so Promise.all doesn't fail
+    // Helper to log errors but return null so Promise.all doesn't fail
+    const safeFetch = async (promise: any, name: string) => {
+      try {
+        const res = await promise;
+        if (res.error) console.warn(`Error fetching ${name}:`, res.error.message);
+        return res;
+      } catch (err) {
+        console.error(`Crash fetching ${name}:`, err);
+        return { data: null, error: err };
+      }
+    };
+
     try {
+      const results = await Promise.all([
+        safeFetch(supabase.from('products').select('*').order('created_at', { ascending: false }), 'products'),
+        safeFetch(supabase.from('categories').select('*').order('name'), 'categories'),
+        safeFetch(supabase.from('units').select('*').order('name'), 'units'),
+        safeFetch(supabase.from('brands').select('*').order('name'), 'brands'),
+        safeFetch(supabase.from('contacts').select('*').order('name'), 'contacts'),
+        safeFetch(supabase.from('branches').select('*').order('id'), 'branches'),
+        safeFetch(supabase.from('shifts').select('*').order('id'), 'shifts'),
+        safeFetch(supabase.from('shift_schedules').select('*').order('date'), 'schedules'),
+        safeFetch(supabase.from('store_settings').select('*').eq('id', 1).maybeSingle(), 'settings'),
+        safeFetch(supabase.from('tables').select('*').order('number'), 'tables'),
+        safeFetch(supabase.from('ingredients').select('*').order('name'), 'ingredients'),
+        safeFetch(supabase.from('stock_movements').select('*').order('date', { ascending: false }), 'movements')
+      ]);
+
       const [productsRes, categoriesRes, unitsRes, brandsRes, contactsRes,
-        branchesRes, shiftsRes, schedulesRes] = await Promise.all([
-          supabase.from('products').select('*').order('created_at', { ascending: false }),
-          supabase.from('categories').select('*').order('name'),
-          supabase.from('units').select('*').order('name'),
-          supabase.from('brands').select('*').order('name'),
-          supabase.from('contacts').select('*').order('name'),
-          supabase.from('branches').select('*').order('id'),
-          supabase.from('shifts').select('*').order('id'),
-          supabase.from('shift_schedules').select('*').order('date'),
-          supabase.from('shifts').select('*').order('id'),
-          supabase.from('shift_schedules').select('*').order('date'),
-          supabase.from('store_settings').select('*').eq('id', 1).single(),
-          supabase.from('tables').select('*').order('number')
-        ]);
+        branchesRes, shiftsRes, schedulesRes, settingsRes, tablesRes, ingredientsRes, movementsRes] = results;
 
       if (productsRes.data) setProducts(productsRes.data);
       if (categoriesRes.data) setCategories(categoriesRes.data);
       if (unitsRes.data) setUnits(unitsRes.data);
       if (brandsRes.data) setBrands(brandsRes.data);
       if (contactsRes.data) setContacts(contactsRes.data);
-      if (branchesRes.data) setBranches(branchesRes.data);
+      if (branchesRes.data) {
+        setBranches(branchesRes.data);
+        if (branchesRes.data.length > 0 && !currentBranchId) {
+          setCurrentBranchId(String(branchesRes.data[0].id));
+        }
+      }
       if (shiftsRes.data) setShifts(shiftsRes.data);
       if (schedulesRes.data) setShiftSchedules(schedulesRes.data);
-      if (schedulesRes[2].data) setStoreSettings(schedulesRes[2].data); // Note: Original code used index via Promise.all, ensure this aligns or fix index usage if 'schedulesRes' was the 8th item.
-      // Actually, looking at the array destructuring:
-      // [productsRes, categoriesRes, unitsRes, brandsRes, contactsRes, branchesRes, shiftsRes, schedulesRes]
-      // Wait, there was an implicit index usage or strict ordering.
-      // The previous code had: if (schedulesRes[2].data) setStoreSettings... which looks suspicious if 'schedulesRes' is just one result.
-      // Ah, looks like I need to allow for the new result.
-      // Let's correct the destructuring to be safe and include tablesRes.
+      if (settingsRes.data) setStoreSettings(settingsRes.data);
+      if (tablesRes.data) setTables(tablesRes.data);
+      if (ingredientsRes.data) setInventoryIngredients(ingredientsRes.data);
+      if (movementsRes.data) setInventoryHistory(movementsRes.data);
     } catch (err) {
       console.error('Error loading master data:', err);
     }
@@ -537,37 +549,39 @@ function Home() {
 
   useEffect(() => {
     // Load data from localStorage
-    const savedSales = localStorage.getItem('winpos_sales');
-    const savedReturns = localStorage.getItem('winpos_returns');
+    const safeLoad = (key: string, setter: (data: any) => void, fallback?: any) => {
+      const item = localStorage.getItem(key);
+      if (item) {
+        try {
+          setter(JSON.parse(item));
+        } catch (e) {
+          console.error(`Failed to parse ${key}`, e);
+          if (fallback) setter(fallback);
+        }
+      } else if (fallback) {
+        setter(fallback);
+      }
+    };
 
-    if (savedSales) setSales(JSON.parse(savedSales));
-    else setSales(INITIAL_SALES);
-
-    if (savedReturns) setReturns(JSON.parse(savedReturns));
+    safeLoad('winpos_sales', setSales, INITIAL_SALES);
+    safeLoad('winpos_returns', setReturns);
 
     // Load other master data
-    const savedEmployees = localStorage.getItem('winpos_employees');
-    const savedDepts = localStorage.getItem('winpos_departments');
-    const savedIngredients = localStorage.getItem('winpos_ingredients');
-    const savedInventoryHistory = localStorage.getItem('winpos_inventory_history');
-    const savedCategories = localStorage.getItem('winpos_categories');
-    const savedUnits = localStorage.getItem('winpos_units');
-    const savedBrands = localStorage.getItem('winpos_brands');
-    const savedProducts = localStorage.getItem('winpos_products');
-    const savedContacts = localStorage.getItem('winpos_contacts');
-    const savedPendingOrders = localStorage.getItem('winpos_pending_orders');
+    safeLoad('winpos_employees', setEmployees);
+    safeLoad('winpos_departments', setDepartments);
+    safeLoad('winpos_ingredients', setInventoryIngredients);
+    safeLoad('winpos_inventory_history', setInventoryHistory);
+    safeLoad('winpos_categories', setCategories);
+    safeLoad('winpos_units', setUnits);
+    safeLoad('winpos_brands', setBrands);
+    safeLoad('winpos_products', setProducts);
+    safeLoad('winpos_contacts', setContacts);
+    safeLoad('winpos_pending_orders', setPendingOrders);
 
-    if (savedProducts) setProducts(JSON.parse(savedProducts));
-    if (savedContacts) setContacts(JSON.parse(savedContacts));
-    if (savedPendingOrders) setPendingOrders(JSON.parse(savedPendingOrders));
-    if (savedIngredients) setInventoryIngredients(JSON.parse(savedIngredients));
-    if (savedInventoryHistory) setInventoryHistory(JSON.parse(savedInventoryHistory));
-    if (savedCategories) setCategories(JSON.parse(savedCategories));
-    if (savedUnits) setUnits(JSON.parse(savedUnits));
-    if (savedBrands) setBrands(JSON.parse(savedBrands));
-    if (savedProducts) setProducts(JSON.parse(savedProducts));
-    if (savedContacts) setContacts(JSON.parse(savedContacts));
-    if (savedPendingOrders) setPendingOrders(JSON.parse(savedPendingOrders));
+    // Auto-select first branch if none selected and branches exist
+    if (!currentBranchId && branches.length > 0) {
+      setCurrentBranchId(String(branches[0].id));
+    }
 
 
     // const savedReceipt = localStorage.getItem('winpos_receipt_settings'); // Removed
@@ -663,13 +677,17 @@ function Home() {
       if (!sale) throw new Error('Failed to create sale');
 
       // 2. Create Sale Items
-      const saleItems = saleData.productDetails.map(item => ({
-        sale_id: sale.id,
-        product_name: item.name,
-        quantity: item.quantity,
-        price: item.price,
-        cost: 0
-      }));
+      const saleItems = saleData.productDetails.map(item => {
+        const product = products.find(p => p.name === item.name);
+        return {
+          sale_id: sale.id,
+          product_id: product?.id,
+          product_name: item.name,
+          quantity: item.quantity,
+          price: item.price,
+          cost: product?.cost || 0 // Snapshot Cost (HPP)
+        };
+      });
 
       const { error: itemsError } = await supabase.from('sale_items').insert(saleItems);
       if (itemsError) throw itemsError;
@@ -824,40 +842,69 @@ function Home() {
     2. Other roles get only what is in their 'permissions' list.
     3. 'dashboard' is always shown acting as Home.
   */
+  /* 
+    3. 'dashboard' is always shown acting as Home.
+  */
   const { user, role, permissions } = useAuth(); // Get extended auth info
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
 
 
-  // NEW PERMISSION-BASED LOGIC
-  // We check if the user has the specific permission ID.
-  const allModules = [
-    { id: 'dashboard', label: 'Winny Cafe', icon: LayoutDashboard, color: 'bg-blue-600' },
-    { id: 'users', label: 'Pengguna', icon: ShieldCheck, color: 'bg-indigo-600' },
-    { id: 'contacts', label: 'Kontak', icon: Contact, color: 'bg-purple-600' },
-    { id: 'products', label: 'Produk', icon: Coffee, color: 'bg-green-600' },
-    { id: 'purchases', label: 'Pembelian', icon: ShoppingCart, color: 'bg-orange-600' },
-    { id: 'pos', label: 'Penjualan', icon: MonitorCheck, color: 'bg-pink-600' },
-    { id: 'kds', label: 'Dapur & Bar', icon: ChefHat, color: 'bg-orange-500' },
-    { id: 'reports', label: 'Laporan', icon: FileText, color: 'bg-teal-600' },
-    { id: 'accounting', label: 'Akuntansi', icon: Calculator, color: 'bg-cyan-600' },
-    { id: 'employees', label: 'Karyawan', icon: Users, color: 'bg-rose-600' },
-    { id: 'attendance', label: 'Absensi', icon: CalendarCheck, color: 'bg-violet-600' },
-    { id: 'payroll', label: 'Payroll', icon: Wallet, color: 'bg-emerald-600' },
-    { id: 'branches', label: 'Cabang', icon: MapPin, color: 'bg-amber-600' },
-    { id: 'performance', label: 'Performa', icon: Award, color: 'bg-yellow-600' },
-    { id: 'shifts', label: 'Shift', icon: ClockHistory, color: 'bg-indigo-700' },
-    { id: 'inventory', label: 'Stok Bahan', icon: Archive, color: 'bg-blue-700' },
-    { id: 'settings', label: 'Pengaturan', icon: Settings, color: 'bg-gray-600' },
+  // NEW PERMISSION-BASED LOGIC WITH GROUPING
+  // 1. Define groups
+  const menuGroups = [
+    {
+      title: 'Utama',
+      modules: [
+        { id: 'dashboard', label: 'Winny Cafe', icon: LayoutDashboard, color: 'text-blue-600', bgColor: 'bg-blue-50' },
+        { id: 'pos', label: 'Penjualan', icon: MonitorCheck, color: 'text-pink-600', bgColor: 'bg-pink-50' },
+        { id: 'kds', label: 'Dapur & Bar', icon: ChefHat, color: 'text-orange-500', bgColor: 'bg-orange-50' },
+      ]
+    },
+    {
+      title: 'Inventori & Produk',
+      modules: [
+        { id: 'products', label: 'Produk', icon: Coffee, color: 'text-green-600', bgColor: 'bg-green-50' },
+        { id: 'inventory', label: 'Stok Bahan', icon: Archive, color: 'text-blue-700', bgColor: 'bg-blue-50' },
+        { id: 'purchases', label: 'Pembelian', icon: ShoppingCart, color: 'text-orange-600', bgColor: 'bg-orange-50' },
+        { id: 'contacts', label: 'Kontak', icon: Contact, color: 'text-purple-600', bgColor: 'bg-purple-50' },
+      ]
+    },
+    {
+      title: 'HRD & Karyawan',
+      modules: [
+        { id: 'employees', label: 'Karyawan', icon: Users, color: 'text-rose-600', bgColor: 'bg-rose-50' },
+        { id: 'attendance', label: 'Absensi', icon: CalendarCheck, color: 'text-violet-600', bgColor: 'bg-violet-50' },
+        { id: 'shifts', label: 'Jadwal Shift', icon: ClockHistory, color: 'text-indigo-700', bgColor: 'bg-indigo-50' },
+        { id: 'payroll', label: 'Payroll', icon: Wallet, color: 'text-emerald-600', bgColor: 'bg-emerald-50' },
+        { id: 'performance', label: 'Performa', icon: Award, color: 'text-yellow-600', bgColor: 'bg-yellow-50' },
+      ]
+    },
+    {
+      title: 'Keuangan',
+      modules: [
+        { id: 'reports', label: 'Laporan', icon: FileText, color: 'text-teal-600', bgColor: 'bg-teal-50' },
+        { id: 'accounting', label: 'Akuntansi', icon: Calculator, color: 'text-cyan-600', bgColor: 'bg-cyan-50' },
+      ]
+    },
+    {
+      title: 'Administrasi',
+      modules: [
+        { id: 'branches', label: 'Cabang', icon: MapPin, color: 'text-amber-600', bgColor: 'bg-amber-50' },
+        { id: 'users', label: 'Pengguna', icon: Users, color: 'text-indigo-600', bgColor: 'bg-indigo-50' },
+        { id: 'settings', label: 'Pengaturan', icon: Settings, color: 'text-gray-600', bgColor: 'bg-gray-50' },
+      ]
+    }
   ];
 
-  const allowedModules = allModules.filter(m => {
-    if (m.id === 'dashboard') return true; // Always show Dashboard
-    // Case-insensitive check for admin
+  // Helper to check permission
+  const hasPermission = (moduleId: string) => {
+    if (moduleId === 'dashboard') return true;
     if (role && role.toLowerCase() === 'administrator') return true;
+    return permissions.includes(moduleId);
+  };
 
-    // Check if permission exists
-    return permissions.includes(m.id);
-  });
+
 
 
   // --- Contacts Integration ---
@@ -1014,16 +1061,22 @@ function Home() {
 
   // Settings Handler
   const handleUpdateSettings = async (newSettings: any) => {
+    // Optimistic update for immediate UI feedback (especially for theme)
+    const previousSettings = storeSettings;
+    setStoreSettings({ ...storeSettings, ...newSettings });
+
     try {
       const { error } = await supabase.from('store_settings').upsert({
         id: 1,
         ...newSettings,
         updated_at: new Date()
       });
-      if (error) throw error;
+      if (error) {
+        // Revert on error
+        setStoreSettings(previousSettings);
+        throw error;
+      }
       toast.success('Pengaturan berhasil disimpan');
-      // Optimistic update
-      setStoreSettings({ ...storeSettings, ...newSettings });
     } catch (err: any) {
       toast.error('Gagal simpan pengaturan: ' + err.message);
     }
@@ -1106,6 +1159,15 @@ function Home() {
     }
   };
 
+  // Theme Effect (Sync on load)
+  useEffect(() => {
+    if (storeSettings?.theme_mode === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [storeSettings?.theme_mode]);
+
   const renderActiveModule = () => {
     switch (activeModule) {
       case 'dashboard': return (
@@ -1115,10 +1177,12 @@ function Home() {
           returns={returns}
           products={products}
           ingredients={inventoryIngredients}
-          onNavigate={(module) => setActiveModule(module)}
+          onNavigate={(module) => setActiveModule(module as ModuleType)}
         />
       );
-      case 'users': return <UsersView />;
+      case 'users': return (
+        <UsersView branches={branches} />
+      );
       case 'contacts': return (
         <ContactsView
           contacts={contacts}
@@ -1139,7 +1203,80 @@ function Home() {
           setUnits={setUnits}
           brands={brands}
           setBrands={setBrands}
-          onProductCRUD={(action, data) => handleMasterDataCRUD('products', action, data)}
+          onProductCRUD={async (action, data) => {
+            try {
+              if (action === 'create' || action === 'update') {
+                // Separate relation data from product data
+                const { recipe, addons, id, ...rest } = data;
+
+                // Whitelist only valid columns to avoid schema errors and strip undefined values
+                const validColumns = ['code', 'name', 'category', 'brand', 'unit', 'price', 'cost', 'stock', 'image_url'];
+                const productData: any = {};
+                validColumns.forEach(col => {
+                  if (rest[col] !== undefined) productData[col] = rest[col];
+                });
+
+                // Ensure numeric values are numbers
+                if (productData.price) productData.price = Number(productData.price);
+                if (productData.cost) productData.cost = Number(productData.cost);
+                if (productData.stock) productData.stock = Number(productData.stock);
+
+                console.log('Saving product data:', productData);
+
+                // 1. Save Product
+                let productId = id;
+                if (action === 'create') {
+                  const { data: newProd, error } = await supabase.from('products').insert([productData]).select().single();
+                  if (error) throw error;
+                  productId = newProd.id;
+                } else {
+                  const { error } = await supabase.from('products').update(productData).eq('id', id);
+                  if (error) throw error;
+                }
+
+                // 2. Handle Recipe
+                if (recipe && Array.isArray(recipe)) {
+                  // Delete existing
+                  await supabase.from('product_recipes').delete().eq('product_id', productId);
+                  // Insert new
+                  if (recipe.length > 0) {
+                    const recipeItems = recipe.map((r: any) => ({
+                      product_id: productId,
+                      ingredient_id: r.ingredientId,
+                      amount: r.amount
+                    }));
+                    const { error: recipeError } = await supabase.from('product_recipes').insert(recipeItems);
+                    if (recipeError) console.error('Error saving recipe:', recipeError);
+                  }
+                }
+
+                if (addons && Array.isArray(addons)) {
+                  await supabase.from('product_addons').delete().eq('product_id', productId);
+                  if (addons.length > 0) {
+                    const addonItems = addons.map((a: any) => ({
+                      product_id: productId,
+                      name: a.name,
+                      price: a.price
+                    }));
+                    const { error: addonError } = await supabase.from('product_addons').insert(addonItems);
+                    if (addonError) console.error('Error saving addons:', addonError);
+                  }
+                }
+
+                toast.success(`Produk berhasil ${action === 'create' ? 'dibuat' : 'diupdate'}`);
+                fetchMasterData(); // Refresh data
+              } else if (action === 'delete') {
+                await handleMasterDataCRUD('products', action, data);
+              }
+            } catch (err: any) {
+              console.error('Error saving product:', err);
+              // Show more detailed error
+              const errorMessage = err.message || JSON.stringify(err);
+              const errorDetails = err.details ? ` (${err.details})` : '';
+              const errorHint = err.hint ? ` Hint: ${err.hint}` : '';
+              toast.error(`Gagal menyimpan: ${errorMessage}${errorDetails}${errorHint}`);
+            }
+          }}
           onCategoryCRUD={(action, data) => handleMasterDataCRUD('categories', action, data)}
           onUnitCRUD={(action, data) => handleMasterDataCRUD('units', action, data)}
           onBrandCRUD={(action, data) => handleMasterDataCRUD('brands', action, data)}
@@ -1154,20 +1291,21 @@ function Home() {
       );
       case 'kds': return <KDSView pendingOrders={pendingOrders} setPendingOrders={setPendingOrders} />;
       case 'pos':
+      case 'pos':
         return (
           <SalesView
-            initialTab={salesViewTab}
-            currentBranchId={currentBranchId}
             sales={sales}
             returns={returns}
-            contacts={contacts}
-            employees={employees}
             onAddSale={handleAddSale}
             onAddReturn={handleAddReturn}
+            contacts={contacts}
+            employees={employees}
             onUpdateSale={handleUpdateSale}
             onDeleteSale={handleDeleteSale}
-            onModeChange={(mode) => setSalesViewTab(mode)}
             onOpenCashier={() => setIsCashierOpen(true)}
+            initialTab={salesViewTab}
+            currentBranchId={currentBranchId}
+            onModeChange={(mode) => setSalesViewTab(mode)}
             onExit={() => setActiveModule('dashboard')}
           />
         );
@@ -1271,7 +1409,7 @@ function Home() {
           returns={returns}
           products={products}
           ingredients={inventoryIngredients}
-          onNavigate={(module) => setActiveModule(module)}
+          onNavigate={(module) => setActiveModule(module as ModuleType)}
         />
       );
     }
@@ -1300,173 +1438,211 @@ function Home() {
     }
   };
 
+
+
   const handleModuleClick = (moduleId: string) => {
     setActiveModule(moduleId as ModuleType);
   };
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden font-sans relative">
-      <div className="absolute top-0 left-0 w-full h-96 bg-gradient-to-b from-blue-50/50 to-transparent pointer-events-none" />
-      <aside className="w-56 bg-white/70 backdrop-blur-xl border-r border-white/20 flex flex-col py-8 shadow-[4px_0_24px_-4px_rgba(0,0,0,0.05)] z-20">
-        <div className="mb-10 px-6 relative flex items-center gap-3">
+    <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden font-sans relative transition-colors duration-300">
+      <div className="absolute top-0 left-0 w-full h-96 bg-gradient-to-b from-blue-50/50 to-transparent dark:from-blue-900/20 pointer-events-none" />
+      <aside className={`${isSidebarCollapsed ? 'w-20' : 'w-64'} bg-white/70 dark:bg-gray-900/70 backdrop-blur-xl border-r border-white/20 dark:border-gray-800 flex flex-col py-8 shadow-[4px_0_24px_-4px_rgba(0,0,0,0.05)] z-20 transition-all duration-300 relative`}>
+
+        {/* Toggle Button */}
+        <button
+          onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+          className="absolute -right-3 top-10 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full p-1 shadow-md hover:bg-gray-50 text-gray-500 z-50"
+        >
+          {isSidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+        </button>
+
+        <div className={`mb-10 px-6 relative flex items-center gap-3 ${isSidebarCollapsed ? 'justify-center' : ''}`}>
           <div className="bg-gradient-to-br from-primary to-orange-600 w-10 h-10 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/30 transform hover:scale-110 transition-transform duration-300 flex-shrink-0">
             <span className="font-extrabold text-[10px] text-white leading-none tracking-tight">POS</span>
           </div>
-          <div className="flex flex-col">
-            <span className="font-bold text-gray-800 text-sm tracking-tight leading-none">WINPOS</span>
-            <span className="text-[10px] text-gray-400 font-medium">Enterprise Management</span>
-          </div>
+          {!isSidebarCollapsed && (
+            <div className="flex flex-col animate-in fade-in duration-200">
+              <span className="font-bold text-gray-800 dark:text-gray-100 text-sm tracking-tight leading-none">WINPOS</span>
+              <span className="text-[10px] text-gray-400 font-medium">Enterprise Management</span>
+            </div>
+          )}
         </div>
-        <nav className="flex-1 w-full px-4 space-y-1 overflow-y-auto min-h-0 pb-2">
-          {allowedModules.map((module) => {
-            const isActive = activeModule === module.id;
+        <nav className="flex-1 overflow-y-auto py-6 px-3 space-y-6 scrollbar-thin scrollbar-thumb-gray-200">
+          {menuGroups.map((group, groupIdx) => {
+            // Filter modules in this group based on permission
+            const visibleModules = group.modules.filter(m => hasPermission(m.id));
+
+            // If no modules are visible in this group, hide the group entirely
+            if (visibleModules.length === 0) return null;
+
             return (
-              <button
-                key={module.id}
-                onClick={() => handleModuleClick(module.id)}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl transition-all duration-300 group relative ${isActive ? 'bg-white shadow-sm ring-1 ring-gray-100' : 'hover:bg-white/50 hover:translate-x-1'}`}
-              >
-                {isActive && <div className="absolute inset-0 bg-primary/5 rounded-2xl" />}
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 relative overflow-hidden flex-shrink-0 ${isActive ? 'bg-gradient-to-br from-primary to-orange-600 text-white shadow-lg shadow-orange-500/20' : 'text-gray-400 group-hover:text-primary bg-white shadow-sm border border-gray-100'}`}>
-                  <module.icon className="w-4 h-4 relative z-10" />
+              <div key={groupIdx}>
+                {!isSidebarCollapsed && (
+                  <h3 className="px-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2 animate-in fade-in slide-in-from-left-2 duration-300">
+                    {group.title}
+                  </h3>
+                )}
+                {isSidebarCollapsed && (
+                  <div className="w-full h-px bg-gray-200 dark:bg-gray-700 my-2 mx-auto w-1/2" />
+                )}
+                <div className="space-y-1">
+                  {visibleModules.map((module) => {
+                    const Icon = module.icon;
+                    const isActive = activeModule === module.id;
+                    const colorClass = isActive ? 'text-white' : module.color;
+                    const bgClass = isActive ? 'bg-primary' : `${module.bgColor} bg-opacity-30 group-hover:bg-opacity-100`;
+
+                    return (
+                      <button
+                        key={module.id}
+                        onClick={() => {
+                          setActiveModule(module.id as ModuleType);
+                          // Close mobile drawer if open (not implemented but good practice)
+                        }}
+                        className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start px-3'} gap-3 py-2.5 rounded-xl transition-all duration-200 group relative ${isActive
+                          ? 'bg-blue-50 text-blue-700 shadow-sm ring-1 ring-blue-100'
+                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                          }`}
+                        title={isSidebarCollapsed ? module.label : ''}
+                      >
+                        <div className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${isActive ? 'bg-white text-blue-600' : `${module.bgColor} bg-opacity-40 group-hover:bg-opacity-100 ${module.color} group-hover:text-gray-900`}`}>
+                          <Icon className="w-5 h-5" />
+                        </div>
+                        {!isSidebarCollapsed && (
+                          <span className="font-medium text-sm truncate animate-in fade-in duration-200">{module.label}</span>
+                        )}
+                        {!isSidebarCollapsed && isActive && (
+                          <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-600" />
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
-                <span className={`text-[13px] font-semibold tracking-tight transition-colors duration-300 ${isActive ? 'text-gray-800' : 'text-gray-500 group-hover:text-gray-900'}`}>
-                  {module.label}
-                </span>
-              </button>
+              </div>
             );
           })}
         </nav>
+
+        {/* PROFILE FOOTER */}
+        <div className="px-3 mt-auto">
+          <div className={`flex items-center gap-3 p-2 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 ${isSidebarCollapsed ? 'justify-center' : ''}`}>
+            <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-primary to-blue-500 flex items-center justify-center text-white font-bold flex-shrink-0 shadow-sm">
+              {user?.user_metadata?.name?.charAt(0) || 'U'}
+            </div>
+            {!isSidebarCollapsed && (
+              <div className="flex-1 min-w-0 overflow-hidden">
+                <p className="text-xs font-bold text-gray-700 dark:text-gray-200 truncate">{user?.user_metadata?.name || 'User'}</p>
+                <p className="text-[10px] text-gray-400 font-medium truncate uppercase">{role || 'Staff'}</p>
+              </div>
+            )}
+            {!isSidebarCollapsed && (
+              <button
+                onClick={() => setShowLogoutConfirm(true)}
+                className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                title="Keluar"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          {isSidebarCollapsed && (
+            <button
+              onClick={() => setShowLogoutConfirm(true)}
+              className="mt-2 w-full flex items-center justify-center p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
       </aside>
 
-      <main className="flex-1 overflow-auto relative z-10">
-        <header className="sticky top-0 z-30 bg-white/60 backdrop-blur-xl border-b border-white/20 px-10 py-5 flex items-center justify-between shadow-sm">
+      <main className="flex-1 h-screen flex flex-col overflow-hidden bg-gray-50/50 dark:bg-gray-900/50 relative">
+        {/* Header - Fixed Height, Flex None */}
+        <header className="h-20 flex-none bg-white/90 dark:bg-gray-900/90 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-800 px-6 flex items-center justify-between shadow-sm z-50">
           <div>
-            <h1 className="text-3xl font-bold text-gray-800 tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">
-              {allModules.find(m => m.id === activeModule)?.label || 'WinPOS'}
+            <h1 className="text-2xl font-bold text-gray-800 dark:text-white tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-400">
+              {menuGroups.flatMap(g => g.modules).find(m => m.id === activeModule)?.label || 'WinPOS'}
             </h1>
-            <p className="text-xs text-gray-500 font-medium mt-1 tracking-wide uppercase opacity-80">Sistem Terintegrasi</p>
+            <p className="text-[10px] text-gray-500 font-medium mt-0.5 tracking-wide uppercase opacity-80">Sistem Terintegrasi</p>
           </div>
 
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4">
             {/* Branch Selector */}
-            <div className="hidden md:flex items-center gap-2 bg-gray-50 px-4 py-2 rounded-2xl border border-gray-100">
-              <Store className="w-4 h-4 text-primary" />
+            <div className="hidden md:flex items-center gap-2 bg-gray-50 dark:bg-gray-800 px-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700">
+              <Store className="w-3.5 h-3.5 text-primary" />
               <select
                 value={currentBranchId}
                 onChange={(e) => setCurrentBranchId(e.target.value)}
-                className="bg-transparent text-sm font-bold text-gray-700 outline-none cursor-pointer"
+                className="bg-transparent text-xs font-bold text-gray-700 dark:text-gray-200 outline-none cursor-pointer"
               >
-                {branchList.map(branch => (
+                {branches.map(branch => (
                   <option key={branch.id} value={branch.id}>{branch.name}</option>
                 ))}
               </select>
             </div>
 
-            <div className="h-8 w-[1px] bg-gray-200 hidden lg:block" />
+            <div className="h-6 w-[1px] bg-gray-200 hidden lg:block" />
 
-            {/* Sync Status Info */}
-            <div className="hidden sm:flex items-center gap-4 bg-gray-50 px-4 py-2 rounded-2xl border border-gray-100">
+            {/* Sync Status */}
+            <div className="hidden sm:flex items-center gap-3 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-200">
               <div className="flex flex-col items-center">
                 {isOnline ? (
-                  <div className="flex items-center gap-2 text-green-600 font-bold text-[10px] uppercase">
-                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                  <div className="flex items-center gap-1.5 text-green-600 font-bold text-[10px] uppercase">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
                     Online
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2 text-red-500 font-bold text-[10px] uppercase">
-                    <span className="w-2 h-2 rounded-full bg-red-500" />
+                  <div className="flex items-center gap-1.5 text-red-500 font-bold text-[10px] uppercase">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
                     Offline
                   </div>
                 )}
               </div>
-              <div className="w-[1px] h-6 bg-gray-200" />
-              <div className="flex items-center gap-2">
+              <div className="w-[1px] h-4 bg-gray-200" />
+              <div className="flex items-center gap-1.5">
                 {sales.some(s => s.syncStatus === 'pending') ? (
-                  <div className="flex items-center gap-2 text-orange-500 text-xs font-semibold">
-                    <Clock className="w-4 h-4" />
-                    <span>{sales.filter(s => s.syncStatus === 'pending').length} Menunggu</span>
+                  <div className="flex items-center gap-1.5 text-orange-500 text-[10px] font-semibold">
+                    <Clock className="w-3 h-3" />
+                    <span>{sales.filter(s => s.syncStatus === 'pending').length} Pending</span>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2 text-blue-600 text-xs font-semibold">
-                    <CheckCircle className="w-4 h-4" />
-                    <span>Sinkron</span>
+                  <div className="flex items-center gap-1.5 text-blue-600 text-[10px] font-semibold">
+                    <CheckCircle className="w-3 h-3" />
+                    <span>Sync</span>
                   </div>
                 )}
               </div>
             </div>
 
-            <div className="h-8 w-[1px] bg-gray-200 hidden lg:block" />
+            <div className="h-6 w-[1px] bg-gray-200 hidden lg:block" />
 
             <button
               onClick={() => setIsCashierOpen(true)}
-              className="flex items-center gap-3 p-2 rounded-xl hover:bg-gray-50 transition-all"
+              className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-all group"
               title="Buka Kasir"
             >
-              <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-pink-500 to-rose-500 flex items-center justify-center text-white shadow-md shadow-pink-500/20">
-                <ShoppingCart className="w-5 h-5" />
+              <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-pink-500 to-rose-500 flex items-center justify-center text-white shadow-md shadow-pink-500/20 group-hover:scale-105 transition-transform">
+                <ShoppingCart className="w-4 h-4" />
               </div>
             </button>
-
-            <div className="relative" ref={menuRef}>
-              <button
-                onClick={() => setShowUserMenu(!showUserMenu)}
-                className="flex items-center gap-3 p-2 rounded-xl hover:bg-gray-50 transition-all border border-transparent hover:border-gray-100"
-              >
-                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-primary to-blue-500 flex items-center justify-center text-white font-bold shadow-md shadow-blue-500/20">
-                  A
-                </div>
-                <div className="text-right hidden md:block">
-                  <p className="text-sm font-bold text-gray-700">{user?.user_metadata?.name || 'User'}</p>
-                  <p className="text-[10px] text-primary font-bold uppercase tracking-wider">
-                    {role || 'Memuat...'}
-                  </p>
-                </div>
-              </button>
-
-              {showUserMenu && (
-                <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-2xl shadow-xl border border-gray-100 p-2 z-50">
-                  <div className="px-4 py-3 border-b border-gray-50 mb-2">
-                    <p className="text-sm font-bold text-gray-800">Akun Saya</p>
-                    <p className="text-xs text-gray-500 truncate">admin@winpos.com</p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setShowUserMenu(false);
-                      setActiveModule('settings');
-                    }}
-                    className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-600 hover:text-primary hover:bg-primary/5 rounded-xl transition-colors"
-                  >
-                    <Settings className="w-4 h-4" />
-                    Pengaturan
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowUserMenu(false);
-                      setShowLogoutConfirm(true);
-                    }}
-                    className="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-xl transition-colors mt-1"
-                  >
-                    <LogOut className="w-4 h-4" />
-                    Keluar
-                  </button>
-                </div>
-              )}
-            </div>
           </div>
-        </header>
+        </header >
 
-        <div className="h-[calc(100vh-80px)] overflow-auto">
+        {/* Main Content Area - Scrollable */}
+        <div className="flex-1 overflow-auto relative w-full">
           {renderActiveModule()}
-        </div>
 
-        <div className="absolute inset-0 flex items-center justify-center opacity-[0.02] pointer-events-none select-none z-0">
-          <h1 className="text-[20vw] font-bold text-gray-900 rotate-[-15deg]">WinPOS</h1>
+          {/* Watermark inside scroll area if needed, or outside */}
+          <div className="fixed inset-0 flex items-center justify-center opacity-[0.02] pointer-events-none select-none z-0">
+            <h1 className="text-[20vw] font-bold text-gray-900 rotate-[-15deg]">WinPOS</h1>
+          </div>
         </div>
-      </main>
+      </main >
 
       {isCashierOpen && (
-        <div className="fixed inset-0 z-[40] bg-white animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100] bg-white animate-in fade-in duration-200">
           <CashierInterface
             orderItems={orderItems}
             orderDiscount={orderDiscount}
@@ -1482,35 +1658,38 @@ function Home() {
             tables={tables}
           />
         </div>
-      )}
+      )
+      }
 
-      {showLogoutConfirm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-8 animate-in zoom-in-95 duration-200">
-            <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-6">
-              <LogOut className="w-8 h-8 text-red-600" />
-            </div>
-            <h3 className="text-xl font-bold text-center text-gray-800 mb-2">Konfirmasi Keluar</h3>
-            <p className="text-gray-500 text-center mb-8">Apakah Anda yakin ingin keluar dari sistem? Pastikan semua transaksi sudah tersimpan.</p>
-            <div className="flex gap-3">
-              <Button
-                variant="outline"
-                className="flex-1 h-12 rounded-xl"
-                onClick={() => setShowLogoutConfirm(false)}
-              >
-                Batal
-              </Button>
-              <Button
-                className="flex-1 h-12 bg-red-600 hover:bg-red-700 text-white rounded-xl shadow-lg shadow-red-100"
-                onClick={() => supabase.auth.signOut()}
-              >
-                Keluar
-              </Button>
+      {
+        showLogoutConfirm && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-8 animate-in zoom-in-95 duration-200">
+              <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-6">
+                <LogOut className="w-8 h-8 text-red-600" />
+              </div>
+              <h3 className="text-xl font-bold text-center text-gray-800 mb-2">Konfirmasi Keluar</h3>
+              <p className="text-gray-500 text-center mb-8">Apakah Anda yakin ingin keluar dari sistem? Pastikan semua transaksi sudah tersimpan.</p>
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  className="flex-1 h-12 rounded-xl"
+                  onClick={() => setShowLogoutConfirm(false)}
+                >
+                  Batal
+                </Button>
+                <Button
+                  className="flex-1 h-12 bg-red-600 hover:bg-red-700 text-white rounded-xl shadow-lg shadow-red-100"
+                  onClick={() => supabase.auth.signOut()}
+                >
+                  Keluar
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 }
 

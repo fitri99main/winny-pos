@@ -65,55 +65,84 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
+    // 1. INITIALIZATION EFFECT (Fast, Non-Blocking)
     useEffect(() => {
-        // Check active sessions and sets the user
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            setSession(session);
-            setUser(session?.user ?? null);
-            if (session?.user) {
-                fetchProfileAndPermissions(session.user.id);
-            } else {
-                setLoading(false);
-            }
-        });
+        let mounted = true;
 
-        // Listen for changes on auth state (logged in, signed out, etc.)
+        const initSession = async () => {
+            try {
+                // Check session locally
+                const { data: { session } } = await supabase.auth.getSession();
+
+                if (mounted) {
+                    if (session?.user) {
+                        setSession(session);
+                        setUser(session.user);
+                        // Do NOT await profile fetch here - let it happen in the watcher
+                    }
+                }
+            } catch (err) {
+                console.error('Session init error:', err);
+            } finally {
+                if (mounted) {
+                    setLoading(false); // ALWAYS release the UI immediately
+                }
+            }
+        };
+
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            if (!mounted) return;
             setSession(session);
             setUser(session?.user ?? null);
-
-            if (session?.user) {
-                fetchProfileAndPermissions(session.user.id);
-            } else {
-                setPermissions([]);
-                setRole(null);
-                setLoading(false);
-            }
+            setLoading(false);
         });
 
-        return () => subscription.unsubscribe();
+        initSession();
+
+        return () => {
+            mounted = false;
+            subscription.unsubscribe();
+        };
     }, []);
 
-    // Effect to unset loading once profile fetch is done (or if it takes too long)
+    // 2. PROFILE FETCH EFFECT (Reactive, Background)
     useEffect(() => {
-        // Simple safety timeout to prevent infinite loading if profile fetch hangs
-        const timer = setTimeout(() => {
-            if (loading) setLoading(false);
-        }, 2000); // 2s max wait for profile
-
-        // If we have user and role (or no user), loading is done
-        if (!user || role) {
-            setLoading(false);
+        if (user) {
+            // Fetch profile data silently when user is available
+            fetchProfileAndPermissions(user.id);
+        } else {
+            setRole(null);
+            setPermissions([]);
         }
+    }, [user]);
 
+    // SAFETY FALBACK: Force loading to false after 3 seconds max
+    useEffect(() => {
+        const timer = setTimeout(() => setLoading(false), 3000);
         return () => clearTimeout(timer);
-    }, [user, role]);
+    }, []);
 
     return (
         <AuthContext.Provider value={{ user, session, loading, permissions, role }}>
             {!loading ? children : (
-                <div className="h-screen w-full flex items-center justify-center bg-gray-50">
+                <div className="h-screen w-full flex flex-col items-center justify-center bg-gray-50 gap-4">
                     <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+                    <p className="text-gray-500 font-medium">Memuat data pengguna...</p>
+
+                    {/* Escape Hatch if loading takes too long */}
+                    <button
+                        onClick={() => {
+                            // Nuclear option: Clear everything and reload
+                            localStorage.clear();
+                            setLoading(false);
+                            setUser(null);
+                            setSession(null);
+                            window.location.reload();
+                        }}
+                        className="text-xs text-red-500 hover:underline mt-4 cursor-pointer"
+                    >
+                        Klik di sini jika loading terlalu lama (Reset Total)
+                    </button>
                 </div>
             )}
         </AuthContext.Provider>

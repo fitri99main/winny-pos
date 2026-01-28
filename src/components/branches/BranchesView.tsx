@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Store, Plus, Search, MapPin, Phone, X, MoreVertical, Edit2, Trash2 } from 'lucide-react';
 import { Button } from '../ui/button';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { toast } from 'sonner';
 
 interface Branch {
@@ -21,29 +22,53 @@ export function BranchesView({
 
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const [editingBranch, setEditingBranch] = useState<any>(null);
     const [newBranch, setNewBranch] = useState({ name: '', address: '', phone: '' });
+    const [deleteId, setDeleteId] = useState<string | null>(null);
 
-    const handleAddBranch = (e: React.FormEvent) => {
+    const handleSaveBranch = (e: React.FormEvent) => {
         e.preventDefault();
         if (!newBranch.name || !newBranch.address) {
             toast.error('Silakan isi nama dan alamat cabang');
             return;
         }
 
-        onBranchAction('create', {
+        const payload = {
             name: newBranch.name,
             address: newBranch.address,
             phone: newBranch.phone,
             status: 'Active'
-        });
+        };
+
+        if (editingBranch) {
+            onBranchAction('update', { ...payload, id: editingBranch.id });
+        } else {
+            onBranchAction('create', payload);
+        }
 
         setNewBranch({ name: '', address: '', phone: '' });
+        setEditingBranch(null);
         setIsAddModalOpen(false);
     };
 
-    const handleDeleteBranch = (id: string) => {
-        if (confirm('Hapus cabang ini?')) {
-            onBranchAction('delete', { id });
+    const handleEditClick = (branch: any) => {
+        setEditingBranch(branch);
+        setNewBranch({
+            name: branch.name,
+            address: branch.address,
+            phone: branch.phone || ''
+        });
+        setIsAddModalOpen(true);
+    };
+
+    const handleDeleteClick = (id: string) => {
+        setDeleteId(id);
+    };
+
+    const confirmDelete = () => {
+        if (deleteId) {
+            onBranchAction('delete', { id: deleteId });
+            setDeleteId(null);
         }
     };
 
@@ -59,7 +84,11 @@ export function BranchesView({
                 <h2 className="text-xl font-bold text-gray-800 mb-6 px-2">Manajemen Cabang</h2>
 
                 <Button
-                    onClick={() => setIsAddModalOpen(true)}
+                    onClick={() => {
+                        setEditingBranch(null);
+                        setNewBranch({ name: '', address: '', phone: '' });
+                        setIsAddModalOpen(true);
+                    }}
                     className="w-full bg-primary hover:bg-primary/90 text-white shadow-lg shadow-blue-100 rounded-xl mb-6 h-12"
                 >
                     <Plus className="w-5 h-5 mr-2" />
@@ -106,11 +135,14 @@ export function BranchesView({
                                             <Store className="w-6 h-6 text-primary" />
                                         </div>
                                         <div className="flex gap-1">
-                                            <button className="p-2 hover:bg-white rounded-lg text-gray-400 hover:text-blue-600 transition-colors shadow-sm opacity-0 group-hover:opacity-100">
+                                            <button
+                                                onClick={() => handleEditClick(branch)}
+                                                className="p-2 hover:bg-white rounded-lg text-gray-400 hover:text-blue-600 transition-colors shadow-sm opacity-0 group-hover:opacity-100"
+                                            >
                                                 <Edit2 className="w-4 h-4" />
                                             </button>
                                             <button
-                                                onClick={() => handleDeleteBranch(branch.id)}
+                                                onClick={() => handleDeleteClick(branch.id)}
                                                 className="p-2 hover:bg-white rounded-lg text-gray-400 hover:text-red-600 transition-colors shadow-sm opacity-0 group-hover:opacity-100"
                                             >
                                                 <Trash2 className="w-4 h-4" />
@@ -150,15 +182,15 @@ export function BranchesView({
                     <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                         <div className="px-8 py-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
                             <div>
-                                <h3 className="font-bold text-xl text-gray-800">Tambah Cabang</h3>
-                                <p className="text-xs text-gray-500 mt-1">Masukkan informasi lokasi outlet baru.</p>
+                                <h3 className="font-bold text-xl text-gray-800">{editingBranch ? 'Edit Cabang' : 'Tambah Cabang'}</h3>
+                                <p className="text-xs text-gray-500 mt-1">{editingBranch ? 'Perbarui informasi lokasi outlet.' : 'Masukkan informasi lokasi outlet baru.'}</p>
                             </div>
                             <button onClick={() => setIsAddModalOpen(false)} className="p-2 hover:bg-gray-200 rounded-full text-gray-400">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
 
-                        <form onSubmit={handleAddBranch} className="p-8 space-y-5">
+                        <form onSubmit={handleSaveBranch} className="p-8 space-y-5">
                             <div className="space-y-2">
                                 <label className="text-sm font-bold text-gray-700">Nama Cabang</label>
                                 <input
@@ -202,6 +234,16 @@ export function BranchesView({
                     </div>
                 </div>
             )}
+
+            <ConfirmDialog
+                isOpen={!!deleteId}
+                onClose={() => setDeleteId(null)}
+                onConfirm={confirmDelete}
+                title="Hapus Cabang?"
+                message="Tindakan ini tidak dapat dibatalkan. Semua data terkait cabang ini mungkin akan terpengaruh."
+                confirmText="Ya, Hapus"
+                variant="danger"
+            />
         </div>
     );
 }

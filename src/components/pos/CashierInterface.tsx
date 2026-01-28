@@ -14,7 +14,7 @@ import { HeldOrdersModal } from './HeldOrdersModal';
 import { SplitBillModal } from './SplitBillModal';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
-import { Store, ArrowLeft, ShoppingCart, Users, Cake, CreditCard, ChevronDown, Search, Star, Puzzle, Check } from 'lucide-react';
+import { Store, ArrowLeft, ShoppingCart, Users, User, Cake, CreditCard, ChevronDown, Search, Star, Puzzle, Check } from 'lucide-react';
 import { ContactData } from '../contacts/ContactsView';
 import { Addon } from '@/types/pos';
 
@@ -408,125 +408,7 @@ export function CashierInterface({
               <h1 className="text-2xl font-bold text-pos-charcoal leading-none">WinPOS</h1>
             </div>
 
-            <div className="flex items-center gap-2 ml-4">
-              <span className="text-xs font-bold text-gray-400 uppercase">Meja:</span>
-              <select
-                value={selectedTable}
-                onChange={(e) => setSelectedTable(e.target.value)}
-                className="bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-sm font-bold text-pos-coral focus:outline-none focus:ring-2 focus:ring-pos-coral/20 min-w-[80px]"
-              >
-                <option value="">-- No Meja --</option>
-                {tables.map(t => (
-                  <option key={t.id} value={t.number}>{t.number} ({t.capacity})</option>
-                ))}
-              </select>
-            </div>
 
-            <div className="flex items-center gap-2 ml-4 relative">
-              <span className="text-xs font-bold text-gray-400 uppercase">Pelanggan:</span>
-              <div className="relative">
-                <button
-                  onClick={() => setIsCustomerSearchOpen(!isCustomerSearchOpen)}
-                  className="bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-sm font-bold text-pos-charcoal focus:outline-none focus:ring-2 focus:ring-pos-coral/20 min-w-[180px] flex items-center justify-between gap-2"
-                >
-                  <span className="truncate max-w-[140px]">{selectedCustomer ? selectedCustomer.name : 'Umum / Non-Member'}</span>
-                  <ChevronDown className={`w-3 h-3 transition-transform ${isCustomerSearchOpen ? 'rotate-180' : ''}`} />
-                </button>
-
-                {isCustomerSearchOpen && (
-                  <div className="absolute top-full left-0 mt-2 w-72 bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="p-3 border-b border-gray-50 flex items-center gap-2 bg-gray-50/50">
-                      <Search className="w-4 h-4 text-gray-400" />
-                      <input
-                        className="bg-transparent border-none outline-none text-sm w-full"
-                        placeholder="Cari ID/Nama Member..."
-                        autoFocus
-                        onChange={(e) => {
-                          const q = e.target.value.toLowerCase();
-                          // Simplified filtering for UI
-                        }}
-                      />
-                    </div>
-                    <div className="max-h-64 overflow-y-auto">
-                      <button
-                        onClick={() => {
-                          setSelectedCustomerId(null);
-                          setCustomerName('');
-                          setOrderDiscount(0);
-                          setIsCustomerSearchOpen(false);
-                        }}
-                        className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center justify-between border-b border-gray-50"
-                      >
-                        <span className="text-sm font-medium text-gray-500 italic">Umum (Bukan Member)</span>
-                      </button>
-                      {contacts.filter(c => c.type === 'Customer').map(c => {
-                        const isCBirthday = c.birthday && new Date(c.birthday).getMonth() === new Date().getMonth() && new Date(c.birthday).getDate() === new Date().getDate();
-                        return (
-                          <button
-                            key={c.id}
-                            onClick={() => {
-                              setSelectedCustomerId(c.id);
-                              setCustomerName(c.name);
-                              setIsCustomerSearchOpen(false);
-
-                              // Check Birthday
-                              if (isCBirthday) {
-                                toast(`🎉 Selamat Ulang Tahun, ${c.name}!`, {
-                                  description: "Berikan ucapan atau promo spesial ultah.",
-                                  duration: 5000,
-                                });
-                              }
-
-                              // Auto Apply Discount
-                              if (c.tier && membershipDiscounts[c.tier] > 0) {
-                                const disc = subtotal * membershipDiscounts[c.tier];
-                                setOrderDiscount(disc);
-                                toast.success(`Diskon Member ${c.tier} (${membershipDiscounts[c.tier] * 100}%) diterapkan`, {
-                                  icon: <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-                                });
-                              } else {
-                                setOrderDiscount(0);
-                              }
-                            }}
-                            className="w-full text-left px-4 py-3 hover:bg-blue-50/50 transition-colors flex items-center justify-between border-b border-gray-50 last:border-none group"
-                          >
-                            <div className="flex flex-col">
-                              <span className="text-sm font-bold text-gray-800 flex items-center gap-1.5">
-                                {c.name}
-                                {isCBirthday && <Cake className="w-3.5 h-3.5 text-pink-500" />}
-                              </span>
-                              <div className="flex items-center gap-1.5 mt-0.5">
-                                <span className={`text-[9px] font-bold px-1.5 rounded uppercase tracking-wider ${c.tier === 'Platinum' ? 'bg-indigo-600 text-white' :
-                                  c.tier === 'Gold' ? 'bg-yellow-500 text-white' :
-                                    c.tier === 'Silver' ? 'bg-gray-400 text-white' :
-                                      'bg-gray-100 text-gray-500'
-                                  }`}>{c.tier || 'Regular'}</span>
-                                <span className="text-[9px] font-mono text-gray-400">#{c.memberId}</span>
-                              </div>
-                            </div>
-                            <CreditCard className="w-4 h-4 text-gray-200 group-hover:text-blue-500 transition-colors" />
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 ml-4">
-              <span className="text-xs font-bold text-gray-400 uppercase">Pelayan:</span>
-              <select
-                value={waiterName}
-                onChange={(e) => setWaiterName(e.target.value)}
-                className="bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-sm font-bold text-pos-charcoal focus:outline-none focus:ring-2 focus:ring-pos-coral/20 min-w-[140px]"
-              >
-                <option value="">-- Pilih Pelayan --</option>
-                {employees.map(emp => (
-                  <option key={emp.id} value={emp.name}>{emp.name}</option>
-                ))}
-              </select>
-            </div>
           </div>
 
           {/* Search Bar */}
@@ -568,10 +450,86 @@ export function CashierInterface({
               </div>
             )}
           </div>
+
+
         </div>
 
         {/* Right: Order Panel (30%) */}
-        <div className="flex-[0.3] p-6 pl-0">
+        <div className="flex-[0.3] p-6 pl-0 flex flex-col gap-4">
+          {/* Info Bar (Moved from Left Footer) */}
+          <div className="bg-white/40 backdrop-blur-md border border-white/50 rounded-2xl p-4 shadow-sm">
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              {/* Table Selector */}
+              <div className="bg-white/80 rounded-xl p-2.5 shadow-sm border border-white/50 flex flex-col justify-center relative group">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-5 h-5 rounded-md bg-orange-100 flex items-center justify-center text-orange-600">
+                    <Store className="w-3 h-3" />
+                  </div>
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Meja</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <select
+                    value={selectedTable}
+                    onChange={(e) => setSelectedTable(e.target.value)}
+                    className="bg-transparent font-bold text-pos-charcoal focus:outline-none text-sm w-full cursor-pointer hover:text-pos-coral transition-colors appearance-none"
+                  >
+                    <option value="">Pilih</option>
+                    {tables.map(t => (
+                      <option key={t.id} value={t.number}>{t.number} ({t.capacity})</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-3 h-3 text-gray-400 pointer-events-none absolute right-2 bottom-3" />
+                </div>
+              </div>
+
+              {/* Customer Selector */}
+              <div className="bg-white/80 rounded-xl p-2.5 shadow-sm border border-white/50 flex flex-col justify-center relative group">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-5 h-5 rounded-md bg-blue-100 flex items-center justify-center text-blue-600">
+                    <Users className="w-3 h-3" />
+                  </div>
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Pelanggan</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <select
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    className="bg-transparent font-bold text-pos-charcoal focus:outline-none text-sm w-full cursor-pointer hover:text-pos-coral transition-colors appearance-none"
+                  >
+                    <option value="Guest">Guest</option>
+                    {contacts.filter(c => c.type === 'Customer').map(c => (
+                      <option key={c.id} value={c.name}>{c.name}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-3 h-3 text-gray-400 pointer-events-none absolute right-2 bottom-3" />
+                </div>
+              </div>
+            </div>
+
+            {/* Waiter Selector (Full Width) */}
+            <div className="bg-white/80 rounded-xl p-2.5 shadow-sm border border-white/50 flex flex-col justify-center relative group">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-5 h-5 rounded-md bg-purple-100 flex items-center justify-center text-purple-600">
+                  <User className="w-3 h-3" />
+                </div>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Pelayan</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <select
+                  value={waiterName}
+                  onChange={(e) => setWaiterName(e.target.value)}
+                  className="bg-transparent font-bold text-pos-charcoal focus:outline-none text-sm w-full cursor-pointer hover:text-pos-coral transition-colors appearance-none"
+                >
+                  <option value="">-- Pilih Pelayan --</option>
+                  {employees.map(emp => (
+                    <option key={emp.id} value={emp.name}>{emp.name}</option>
+                  ))}
+                </select>
+                <ChevronDown className="w-3 h-3 text-gray-400 pointer-events-none absolute right-3 bottom-3" />
+              </div>
+            </div>
+          </div>
+
           <OrderPanel
             items={orderItems}
             subtotal={subtotal}

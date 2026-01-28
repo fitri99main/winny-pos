@@ -2,7 +2,10 @@ import { useState } from 'react';
 import { Contact, Users, Truck, Plus, Search, Phone, Mail, MapPin, Edit, Trash2, CreditCard, Cake, Star, Printer } from 'lucide-react';
 import { QRCard } from '../ui/QRCard';
 import { Button } from '../ui/button';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { EmptyState } from '../ui/EmptyState';
 import { toast } from 'sonner';
+import { CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 
 type ContactType = 'Customer' | 'Supplier';
 
@@ -48,6 +51,23 @@ export function ContactsView({ contacts, setContacts, onAdd, onUpdate, onDelete 
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [formData, setFormData] = useState<Partial<ContactData>>({});
     const [selectedCard, setSelectedCard] = useState<ContactData | null>(null);
+    const [deleteId, setDeleteId] = useState<number | null>(null);
+    const [emailError, setEmailError] = useState('');
+
+    const validateEmail = (email: string) => {
+        const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return re.test(email);
+    };
+
+    const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const email = e.target.value;
+        setFormData({ ...formData, email });
+        if (email && !validateEmail(email)) {
+            setEmailError('Format email tidak valid');
+        } else {
+            setEmailError('');
+        }
+    };
 
     const filteredContacts = (contacts || []).filter(c => c.type === activeTab);
 
@@ -61,7 +81,7 @@ export function ContactsView({ contacts, setContacts, onAdd, onUpdate, onDelete 
         if (formData.id) {
             onUpdate(formData);
         } else {
-            const newContact = {
+            const newContact: any = {
                 ...formData,
                 type: activeTab,
                 status: 'Active'
@@ -70,11 +90,17 @@ export function ContactsView({ contacts, setContacts, onAdd, onUpdate, onDelete 
         }
         setIsFormOpen(false);
         setFormData({});
+        setEmailError('');
     };
 
-    const handleDelete = (id: number) => {
-        if (confirm('Yakin ingin menghapus kontak ini?')) {
-            onDelete(id);
+    const handleDeleteClick = (id: number) => {
+        setDeleteId(id);
+    };
+
+    const confirmDelete = () => {
+        if (deleteId) {
+            onDelete(deleteId);
+            setDeleteId(null);
         }
     };
 
@@ -202,15 +228,21 @@ export function ContactsView({ contacts, setContacts, onAdd, onUpdate, onDelete 
                                                         <button onClick={() => setSelectedCard(contact)} className="p-2 hover:bg-amber-50 text-amber-600 rounded-lg" title="Cetak Kartu Member"><CreditCard className="w-4 h-4" /></button>
                                                     )}
                                                     <button onClick={() => { setFormData(contact); setIsFormOpen(true); }} className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg"><Edit className="w-4 h-4" /></button>
-                                                    <button onClick={() => handleDelete(contact.id)} className="p-2 hover:bg-red-50 text-red-600 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+                                                    <button onClick={() => handleDeleteClick(contact.id)} className="p-2 hover:bg-red-50 text-red-600 rounded-lg"><Trash2 className="w-4 h-4" /></button>
                                                 </td>
                                             </tr>
                                         );
                                     })}
                                     {filteredContacts.length === 0 && (
                                         <tr>
-                                            <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
-                                                Belum ada data {activeTab === 'Customer' ? 'pelanggan' : 'pemasok'}.
+                                            <td colSpan={5}>
+                                                <EmptyState
+                                                    icon={Users}
+                                                    title={`Belum ada ${activeTab === 'Customer' ? 'Pelanggan' : 'Pemasok'}`}
+                                                    description={`Mulai tambahkan data ${activeTab === 'Customer' ? 'pelanggan' : 'pemasok'} Anda di sini.`}
+                                                    actionLabel={`Tambah ${activeTab === 'Customer' ? 'Pelanggan' : 'Pemasok'}`}
+                                                    onAction={() => { setFormData({ type: activeTab }); setIsFormOpen(true); }}
+                                                />
                                             </td>
                                         </tr>
                                     )}
@@ -267,7 +299,25 @@ export function ContactsView({ contacts, setContacts, onAdd, onUpdate, onDelete 
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                                    <input type="email" className="w-full p-2 border rounded-lg" value={formData.email || ''} onChange={e => setFormData({ ...formData, email: e.target.value })} />
+                                    <div className="relative">
+                                        <input
+                                            type="email"
+                                            className={`w-full p-2 border rounded-lg pr-10 ${emailError ? 'border-red-500 focus:ring-red-200' : formData.email ? 'border-green-500 focus:ring-green-200' : ''}`}
+                                            value={formData.email || ''}
+                                            onChange={handleEmailChange}
+                                            placeholder="nama@email.com"
+                                        />
+                                        {formData.email && (
+                                            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                                {emailError ? (
+                                                    <XCircle className="w-5 h-5 text-red-500" />
+                                                ) : (
+                                                    <CheckCircle className="w-5 h-5 text-green-500" />
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                    {emailError && <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> {emailError}</p>}
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">No. Telepon</label>
@@ -322,6 +372,16 @@ export function ContactsView({ contacts, setContacts, onAdd, onUpdate, onDelete 
                     </div>
                 </div>
             )}
+            {/* Confirmation Dialog */}
+            <ConfirmDialog
+                isOpen={!!deleteId}
+                onClose={() => setDeleteId(null)}
+                onConfirm={confirmDelete}
+                title="Hapus Kontak?"
+                message="Data kontak yang dihapus tidak dapat dikembalikan lagi."
+                confirmText="Hapus"
+                variant="danger"
+            />
         </div>
     );
 }

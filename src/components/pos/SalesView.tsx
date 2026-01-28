@@ -134,11 +134,6 @@ export function SalesView({
         setActiveTab(initialTab);
     }, [initialTab]);
 
-    const handleTabChange = (newTab: 'history' | 'returns') => {
-        setActiveTab(newTab);
-        if (onModeChange) onModeChange(newTab);
-    };
-
     const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
     const [selectedOrder, setSelectedOrder] = useState<SalesOrder | null>(null);
     const [returnReason, setReturnReason] = useState('');
@@ -148,6 +143,35 @@ export function SalesView({
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [selectedOrderToEdit, setSelectedOrderToEdit] = useState<SalesOrder | null>(null);
     const [editForm, setEditForm] = useState<Partial<SalesOrder>>({});
+
+    // Keyboard Shortcuts
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // F2: Focus Search
+            if (e.key === 'F2') {
+                e.preventDefault();
+                const searchInput = document.getElementById('sales-search-input');
+                if (searchInput) searchInput.focus();
+            }
+            // F9: Open Cashier (Equivalent to space if requested, but F9 is safer global)
+            // User asked for "F9 or Space". Space is risky if typing. Let's use F9 for "Open Cashier" context.
+            // Or if we are in "Add Sale" mode, F9 could mean pay.
+            // Here "Open Cashier" opens the Sales Mode.
+            if (e.key === 'F9') {
+                e.preventDefault();
+                if (onOpenCashier) onOpenCashier();
+            }
+            // Escape: Close Modals
+            if (e.key === 'Escape') {
+                if (isReturnModalOpen) setIsReturnModalOpen(false);
+                if (isDetailsModalOpen) setIsDetailsModalOpen(false);
+                if (isEditModalOpen) setIsEditModalOpen(false);
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [onOpenCashier, isReturnModalOpen, isDetailsModalOpen, isEditModalOpen]);
 
     const filteredSales = sales.filter(sale =>
         (sale.branchId === currentBranchId || !sale.branchId) &&
@@ -462,6 +486,7 @@ export function SalesView({
                             className="pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 w-64"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
+                            id="sales-search-input"
                         />
                     </div>
 
