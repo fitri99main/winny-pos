@@ -136,27 +136,12 @@ function Home() {
       if (moveError) throw moveError;
 
       // 2. Update Ingredient Stock
-      // For simplicity, we fetch current stock (handled by trigger ideally, but manual here for now)
-      // Actually, let's use RPC if possible, but for now simple update
-      // We need to calculate new stock. Ideally we read fresh, but for now we assume FE passed correct intent? 
-      // Better: standard increment/decrement
-      // NOTE: In a real app we'd use a postgres function. Here we will just fetch first to be safe or blindly increment.
-
-      // Let's just fetch the current ingredient to get current stock first to be safe
       const { data: ing } = await supabase.from('ingredients').select('current_stock').eq('id', ingredientId).single();
       if (ing) {
         let newStock = Number(ing.current_stock);
         if (type === 'IN') newStock += qty;
         else if (type === 'OUT') newStock -= qty;
-        else if (type === 'ADJUSTMENT') newStock = qty; // If adjustment is absolute set
-
-        // If type is adjustment and logic differs, we might need correction.
-        // Usually 'ADJUSTMENT' implies 'Opname' -> strict set.
-        // But let's assume the UI sends the DELTA for IN/OUT and Absolute for ADJUSTMENT? 
-        // Standardizing: type IN/OUT adds/subtracts. ADJUSTMENT sets absolute value?
-        // Let's assume adjustment in this app context means "Stock Opname" (Set to X).
-        // Checking InventoryView usage... usually it's "Add/Reduce" or "Set".
-        // Let's assume IN/OUT for now.
+        else if (type === 'ADJUSTMENT') newStock = qty;
 
         const { error: updateError } = await supabase.from('ingredients')
           .update({ current_stock: newStock, last_updated: new Date() })
@@ -168,6 +153,31 @@ function Home() {
       toast.success('Stok berhasil disesuaikan');
     } catch (err: any) {
       toast.error('Gagal update stok: ' + err.message);
+    }
+  };
+
+  // --- Payment Methods State ---
+  const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
+
+  const handlePaymentMethodCRUD = async (action: 'create' | 'update' | 'delete', data: any) => {
+    try {
+      if (action === 'create') {
+        const { error } = await supabase.from('payment_methods').insert([data]);
+        if (error) throw error;
+        toast.success('Metode pembayaran ditambahkan');
+      } else if (action === 'update') {
+        const { id, ...rest } = data;
+        const { error } = await supabase.from('payment_methods').update(rest).eq('id', id);
+        if (error) throw error;
+        toast.success('Metode pembayaran diperbarui');
+      } else if (action === 'delete') {
+        if (data.is_static) return toast.error('Metode sistem tidak dapat dihapus');
+        const { error } = await supabase.from('payment_methods').delete().eq('id', data.id);
+        if (error) throw error;
+        toast.success('Metode pembayaran dihapus');
+      }
+    } catch (err: any) {
+      toast.error('Gagal memproses metode pembayaran: ' + err.message);
     }
   };
 
@@ -202,6 +212,10 @@ function Home() {
     show_date: true,
     show_waiter: true,
     show_table: true,
+    show_customer_name: true,
+    show_customer_status: true,
+    show_logo: true,
+    receipt_logo_url: '',
     address: ''
   });
 
@@ -233,11 +247,12 @@ function Home() {
         safeFetch(supabase.from('store_settings').select('*').eq('id', 1).maybeSingle(), 'settings'),
         safeFetch(supabase.from('tables').select('*').order('number'), 'tables'),
         safeFetch(supabase.from('ingredients').select('*').order('name'), 'ingredients'),
-        safeFetch(supabase.from('stock_movements').select('*').order('date', { ascending: false }), 'movements')
+        safeFetch(supabase.from('stock_movements').select('*').order('date', { ascending: false }), 'movements'),
+        safeFetch(supabase.from('payment_methods').select('*').order('name'), 'payment_methods')
       ]);
 
       const [productsRes, categoriesRes, unitsRes, brandsRes, contactsRes,
-        branchesRes, shiftsRes, schedulesRes, settingsRes, tablesRes, ingredientsRes, movementsRes] = results;
+        branchesRes, shiftsRes, schedulesRes, settingsRes, tablesRes, ingredientsRes, movementsRes, paymentsRes] = results;
 
       if (productsRes.data) setProducts(productsRes.data);
       if (categoriesRes.data) setCategories(categoriesRes.data);
@@ -256,6 +271,7 @@ function Home() {
       if (tablesRes.data) setTables(tablesRes.data);
       if (ingredientsRes.data) setInventoryIngredients(ingredientsRes.data);
       if (movementsRes.data) setInventoryHistory(movementsRes.data);
+      if (paymentsRes.data) setPaymentMethods(paymentsRes.data);
     } catch (err) {
       console.error('Error loading master data:', err);
     }
@@ -269,139 +285,228 @@ function Home() {
       supabase.channel('products_all').on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, fetchMasterData).subscribe(),
       supabase.channel('categories_all').on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, fetchMasterData).subscribe(),
       supabase.channel('units_all').on('postgres_changes', { event: '*', schema: 'public', table: 'units' }, fetchMasterData).subscribe(),
-      supabase.channel('units_all').on('postgres_changes', { event: '*', schema: 'public', table: 'units' }, fetchMasterData).subscribe(),
       supabase.channel('brands_all').on('postgres_changes', { event: '*', schema: 'public', table: 'brands' }, fetchMasterData).subscribe(),
-      supabase.channel('contacts_all').on('postgres_changes', { event: '*', schema: 'public', table: 'contacts' }, fetchMasterData).subscribe(),
       supabase.channel('contacts_all').on('postgres_changes', { event: '*', schema: 'public', table: 'contacts' }, fetchMasterData).subscribe(),
       supabase.channel('branches_all').on('postgres_changes', { event: '*', schema: 'public', table: 'branches' }, fetchMasterData).subscribe(),
       supabase.channel('shifts_all').on('postgres_changes', { event: '*', schema: 'public', table: 'shifts' }, fetchMasterData).subscribe(),
       supabase.channel('schedules_all').on('postgres_changes', { event: '*', schema: 'public', table: 'shift_schedules' }, fetchMasterData).subscribe(),
       supabase.channel('ingredients_all').on('postgres_changes', { event: '*', schema: 'public', table: 'ingredients' }, fetchMasterData).subscribe(),
       supabase.channel('movements_all').on('postgres_changes', { event: '*', schema: 'public', table: 'stock_movements' }, fetchMasterData).subscribe(),
-      supabase.channel('movements_all').on('postgres_changes', { event: '*', schema: 'public', table: 'stock_movements' }, fetchMasterData).subscribe(),
       supabase.channel('settings_all').on('postgres_changes', { event: '*', schema: 'public', table: 'store_settings' }, fetchMasterData).subscribe(),
       supabase.channel('tables_all').on('postgres_changes', { event: '*', schema: 'public', table: 'tables' }, fetchMasterData).subscribe(),
+      supabase.channel('payments_all').on('postgres_changes', { event: '*', schema: 'public', table: 'payment_methods' }, fetchMasterData).subscribe(),
     ];
 
-    // --- Purchases Integration ---
-    const fetchPurchases = async () => {
-      const { data: pData } = await supabase.from('purchases').select('*').order('created_at', { ascending: false });
-      const { data: rData } = await supabase.from('purchase_returns').select('*').order('created_at', { ascending: false });
-      if (pData) setPurchases(pData);
-      if (rData) setPurchaseReturns(rData);
+    return () => {
+      channels.forEach(ch => ch.unsubscribe());
     };
+  }, []);
 
+  // --- Purchases Integration ---
+  const fetchPurchases = async () => {
+    const { data: pData } = await supabase.from('purchases').select('*').order('created_at', { ascending: false });
+    const { data: rData } = await supabase.from('purchase_returns').select('*').order('created_at', { ascending: false });
+    if (pData) setPurchases(pData);
+    if (rData) setPurchaseReturns(rData);
+  };
+
+  useEffect(() => {
     fetchPurchases();
     const purchaseChannels = [
       supabase.channel('purchases_all').on('postgres_changes', { event: '*', schema: 'public', table: 'purchases' }, fetchPurchases).subscribe(),
       supabase.channel('returns_all').on('postgres_changes', { event: '*', schema: 'public', table: 'purchase_returns' }, fetchPurchases).subscribe(),
     ];
+    return () => {
+      purchaseChannels.forEach(ch => ch.unsubscribe());
+    };
+  }, []);
 
-    // --- Sales & POS Integration ---
-    const fetchTransactions = async () => {
-      // Fetch Sales with Items
-      const { data: salesData } = await supabase
-        .from('sales')
-        .select(`
-          *,
-          items:sale_items(*)
-        `)
-        .order('created_at', { ascending: false });
+  // --- Sales & POS Integration ---
+  const fetchTransactions = async () => {
+    // Fetch Sales with Items
+    const { data: salesData } = await supabase
+      .from('sales')
+      .select(`
+        *,
+        items:sale_items(*)
+      `)
+      .order('created_at', { ascending: false });
 
-      if (salesData) {
-        const formattedSales = salesData.map(s => ({
-          ...s,
-          items: (s.items || []).length,
+    if (salesData) {
+      const formattedSales = salesData.map(s => ({
+        ...s,
+        items: (s.items || []).length,
+        id: s.id,
+        orderNo: s.order_no,
+        date: s.date,
+        totalAmount: Number(s.total_amount || 0),
+        paymentMethod: s.payment_method,
+        status: s.status,
+        waitingTime: s.waiting_time, // optional if exists
+        customerName: s.customer_name,
+        discount: Number(s.discount || 0),
+        notes: s.notes,
+        branchId: s.branch_id,
+        waiterName: s.waiter_name,
+        tableNo: s.table_no,
+        productDetails: (s.items || []).map((i: any) => ({
+          name: i.product_name,
+          quantity: i.quantity,
+          price: i.price
+        })),
+        printCount: s.print_count || 0,
+        lastPrintedAt: s.last_printed_at
+      }));
+      setSales(formattedSales);
+
+      const pendingFromDB = salesData
+        .filter(s => s.status === 'Pending')
+        .map(s => ({
           id: s.id,
           orderNo: s.order_no,
-          date: s.date,
-          totalAmount: Number(s.total_amount || 0),
-          paymentMethod: s.payment_method,
-          status: s.status,
-          branchId: s.branch_id,
-          waiterName: s.waiter_name,
-          productDetails: (s.items || []).map((i: any) => ({
+          tableNo: s.table_no || '-',
+          waiterName: s.waiter_name || 'Kiosk',
+          time: new Date(s.date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+          items: (s.items || []).map((i: any) => ({
             name: i.product_name,
             quantity: i.quantity,
-            price: i.price
+            target: 'Kitchen',
+            status: 'Pending'
           }))
         }));
-        setSales(formattedSales);
-      }
 
-      const { data: returnsData } = await supabase.from('sales_returns').select('*').order('created_at', { ascending: false });
-      if (returnsData) {
-        setReturns(returnsData.map(r => ({
-          ...r,
-          id: r.id,
-          returnNo: r.return_no,
-          orderNo: r.sale_id,
-          date: r.date,
-          reason: r.reason,
-          refundAmount: Number(r.refund_amount || 0),
-          status: r.status
-        })));
-      }
-    };
+      setPendingOrders(prev => {
+        const newOrders = pendingFromDB.filter(p => !prev.some(existing => existing.id === p.id));
+        if (newOrders.length > 0) return [...newOrders, ...prev];
+        return prev;
+      });
+    }
 
+    const { data: returnsData } = await supabase.from('sales_returns').select('*').order('created_at', { ascending: false });
+    if (returnsData) {
+      setReturns(returnsData.map(r => ({
+        ...r,
+        id: r.id,
+        returnNo: r.return_no,
+        orderNo: r.sale_id,
+        date: r.date,
+        reason: r.reason,
+        refundAmount: Number(r.refund_amount || 0),
+        status: r.status
+      })));
+    }
+  };
+
+  useEffect(() => {
     fetchTransactions();
     const transactionChannels = [
       supabase.channel('sales_changes').on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, fetchTransactions).subscribe(),
       supabase.channel('sale_items_changes').on('postgres_changes', { event: '*', schema: 'public', table: 'sale_items' }, fetchTransactions).subscribe(),
       supabase.channel('returns_changes').on('postgres_changes', { event: '*', schema: 'public', table: 'sales_returns' }, fetchTransactions).subscribe(),
     ];
-
-    // --- Accounting Integration ---
-    const fetchAccounting = async () => {
-      const { data: accData } = await supabase.from('accounts').select('*').order('code');
-      if (accData) setAccounts(accData);
-
-      const { data: journalData } = await supabase.from('journal_entries').select('*').order('date', { ascending: false });
-      if (journalData) {
-        setJournalEntries(journalData.map(j => ({
-          ...j,
-          debitAccount: j.debit_account,
-          creditAccount: j.credit_account,
-          amount: Number(j.amount)
-        })));
-      }
+    return () => {
+      transactionChannels.forEach(ch => ch.unsubscribe());
     };
+  }, []);
 
+  // --- Accounting Integration ---
+  const fetchAccounting = async () => {
+    const { data: accData } = await supabase.from('accounts').select('*').order('code');
+    if (accData) setAccounts(accData);
+
+    const { data: journalData } = await supabase.from('journal_entries').select('*').order('date', { ascending: false });
+    if (journalData) {
+      setJournalEntries(journalData.map(j => ({
+        ...j,
+        debitAccount: j.debit_account,
+        creditAccount: j.credit_account,
+        amount: Number(j.amount)
+      })));
+    }
+  };
+
+  useEffect(() => {
     fetchAccounting();
     const accountingChannels = [
       supabase.channel('accounts_changes').on('postgres_changes', { event: '*', schema: 'public', table: 'accounts' }, fetchAccounting).subscribe(),
       supabase.channel('journal_changes').on('postgres_changes', { event: '*', schema: 'public', table: 'journal_entries' }, fetchAccounting).subscribe(),
     ];
-
-    // --- Employees Integration ---
-    const fetchEmployees = async () => {
-      const { data: empData } = await supabase.from('employees').select('*').order('name');
-      if (empData) {
-        setEmployees(empData.map(e => ({
-          ...e,
-          joinDate: e.join_date,
-          offDays: e.off_days || []
-        })));
-      }
-
-      const { data: deptData } = await supabase.from('departments').select('*').order('name');
-      if (deptData) setDepartments(deptData);
+    return () => {
+      accountingChannels.forEach(ch => ch.unsubscribe());
     };
+  }, []);
 
+  // --- Employees Integration ---
+  const fetchEmployees = async () => {
+    const { data: empData } = await supabase.from('employees').select('*').order('name');
+    if (empData) {
+      setEmployees(empData.map(e => ({
+        ...e,
+        joinDate: e.join_date,
+        offDays: e.off_days || []
+      })));
+    }
+
+    const { data: deptData } = await supabase.from('departments').select('*').order('name');
+    if (deptData) setDepartments(deptData);
+  };
+
+  useEffect(() => {
     fetchEmployees();
     const employeeChannels = [
       supabase.channel('employees_changes').on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, fetchEmployees).subscribe(),
       supabase.channel('departments_changes').on('postgres_changes', { event: '*', schema: 'public', table: 'departments' }, fetchEmployees).subscribe(),
     ];
-
     return () => {
-      channels.forEach(ch => ch.unsubscribe());
-      purchaseChannels.forEach(ch => ch.unsubscribe());
-      transactionChannels.forEach(ch => ch.unsubscribe());
-      accountingChannels.forEach(ch => ch.unsubscribe());
       employeeChannels.forEach(ch => ch.unsubscribe());
     };
   }, []);
+
+
+  // --- Realtime Order Notifications for Cashier ---
+  useEffect(() => {
+    const channel = supabase
+      .channel('new_kiosk_orders')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'sales' },
+        (payload) => {
+          const newOrder = payload.new;
+          if (newOrder.waiter_name !== 'Self-Service Kiosk') return;
+
+          toast.custom((t) => (
+            <div className="bg-white rounded-xl shadow-2xl border border-blue-100 p-4 w-80 animate-in slide-in-from-top-5">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 shrink-0">
+                  <ShoppingCart className="w-6 h-6" />
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-bold text-gray-900">Pesanan Baru Kiosk!</h4>
+                  <p className="text-sm text-gray-500 mb-1">Meja {newOrder.table_no} • {newOrder.customer_name || 'Pelanggan'}</p>
+                  <p className="text-xs font-mono text-gray-400 mb-3">{newOrder.order_no}</p>
+                  <button
+                    onClick={() => {
+                      setActiveModule('pos');
+                      setSalesViewTab('history');
+                      toast.dismiss(t);
+                    }}
+                    className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg font-bold w-full hover:bg-blue-700 transition-colors"
+                  >
+                    Buka Kasir
+                  </button>
+                </div>
+              </div>
+            </div >
+          ), { duration: 10000 });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
 
   // --- Attendance Integration ---
   useEffect(() => {
@@ -633,7 +738,21 @@ function Home() {
 
   // Sync receipt settings to PrinterService
   useEffect(() => {
-    printerService.setTemplate(storeSettings);
+    if (storeSettings) {
+      printerService.setTemplate({
+        header: storeSettings.receipt_header,
+        address: storeSettings.address,
+        footer: storeSettings.receipt_footer,
+        paperWidth: storeSettings.receipt_paper_width,
+        showDate: storeSettings.show_date,
+        showWaiter: storeSettings.show_waiter,
+        showTable: storeSettings.show_table,
+        showCustomerName: storeSettings.show_customer_name,
+        showCustomerStatus: storeSettings.show_customer_status,
+        showLogo: storeSettings.show_logo,
+        logoUrl: storeSettings.receipt_logo_url,
+      });
+    }
   }, [storeSettings]);
 
   // Background Sync Effect
@@ -714,11 +833,15 @@ function Home() {
         })),
         subtotal: saleData.subtotal || saleData.totalAmount,
         discount: saleData.discount || 0,
+        tax: 0,
         total: saleData.totalAmount,
         paymentType: saleData.paymentMethod || 'Tunai',
         amountPaid: saleData.paidAmount || saleData.totalAmount,
         change: saleData.change || 0
       });
+
+      // 4. Force refresh the transactions list to show the new sale immediately
+      await fetchTransactions();
 
     } catch (err) {
       console.error('Transaction failed:', err);
@@ -804,12 +927,28 @@ function Home() {
       // Only allow updating specific fields for now to prevent integrity issues
       const { error } = await supabase.from('sales').update({
         payment_method: updatedSale.paymentMethod,
-        branch_id: updatedSale.branchId, // if tableNo stored here or separate? TableNo not in DB schema yet.
+        branch_id: updatedSale.branchId,
         waiter_name: updatedSale.waiterName,
-        // total_amount mismatch if items changed? For now assume only header update.
+        status: updatedSale.status, // Allow status update for Pay First workflow
       }).eq('id', updatedSale.id);
 
       if (error) throw error;
+
+      // Automatically clear table if sale is completed
+      if (updatedSale.status === 'Completed' && updatedSale.tableNo) {
+        const { error: tableError } = await supabase
+          .from('tables')
+          .update({ status: 'Empty' })
+          .eq('number', updatedSale.tableNo);
+
+        if (tableError) {
+          console.error('Failed to clear table:', tableError);
+          toast.warning('Transaksi sukses, tapi gagal mengosongkan meja.');
+        } else {
+          // Optionally refresh tables if needed, but realtime should handle it in other views
+        }
+      }
+
       toast.success('Transaksi berhasil diupdate');
     } catch (err) {
       console.error('Update failed', err);
@@ -1168,6 +1307,25 @@ function Home() {
     }
   }, [storeSettings?.theme_mode]);
 
+  // Sync Printer Template
+  useEffect(() => {
+    if (storeSettings) {
+      printerService.setTemplate({
+        header: storeSettings.receipt_header,
+        address: storeSettings.address,
+        footer: storeSettings.receipt_footer,
+        paperWidth: storeSettings.receipt_paper_width,
+        showDate: storeSettings.show_date,
+        showWaiter: storeSettings.show_waiter,
+        showTable: storeSettings.show_table,
+        showCustomerName: storeSettings.show_customer_name,
+        showCustomerStatus: storeSettings.show_customer_status,
+        showLogo: storeSettings.show_logo,
+        logoUrl: storeSettings.receipt_logo_url
+      });
+    }
+  }, [storeSettings]);
+
   const renderActiveModule = () => {
     switch (activeModule) {
       case 'dashboard': return (
@@ -1291,16 +1449,16 @@ function Home() {
       );
       case 'kds': return <KDSView pendingOrders={pendingOrders} setPendingOrders={setPendingOrders} />;
       case 'pos':
-      case 'pos':
         return (
           <SalesView
             sales={sales}
             returns={returns}
             onAddSale={handleAddSale}
             onAddReturn={handleAddReturn}
+            onUpdateSale={handleUpdateSale}
             contacts={contacts}
             employees={employees}
-            onUpdateSale={handleUpdateSale}
+            paymentMethods={paymentMethods}
             onDeleteSale={handleDeleteSale}
             onOpenCashier={() => setIsCashierOpen(true)}
             initialTab={salesViewTab}
@@ -1309,7 +1467,7 @@ function Home() {
             onExit={() => setActiveModule('dashboard')}
           />
         );
-      case 'reports': return <ReportsView sales={sales} returns={returns} />;
+      case 'reports': return <ReportsView sales={sales} returns={returns} paymentMethods={paymentMethods} />;
       case 'accounting': return (
         <AccountingView
           accounts={accounts}
@@ -1400,6 +1558,8 @@ function Home() {
           onUpdateSettings={handleUpdateSettings}
           tables={tables}
           onTableAction={handleTableCRUD}
+          paymentMethods={paymentMethods}
+          onPaymentMethodAction={handlePaymentMethodCRUD}
         />
       );
       default: return (
@@ -1656,6 +1816,9 @@ function Home() {
             products={products}
             categories={categories}
             tables={tables}
+            activeSales={sales}
+            paymentMethods={paymentMethods}
+            onDeleteSale={handleDeleteSale}
           />
         </div>
       )

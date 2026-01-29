@@ -1,5 +1,7 @@
 import { motion } from 'framer-motion';
+import { ShoppingCart } from 'lucide-react';
 import { Product } from '@/types/pos';
+import { getAcronym } from '@/lib/utils';
 
 interface ProductTileProps {
   product: Product;
@@ -22,12 +24,24 @@ export function ProductTile({ product, onAddToCart }: ProductTileProps) {
       onClick={() => onAddToCart(product)}
       className="relative bg-white rounded-2xl overflow-hidden soft-shadow hover:shadow-lg transition-shadow duration-200 group"
     >
-      <div className="aspect-square overflow-hidden bg-gray-100">
-        <img
-          src={product.image}
-          alt={product.name}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-        />
+      <div className="aspect-square overflow-hidden bg-gray-50 flex items-center justify-center relative group">
+        {product.image_url || product.image ? (
+          <img
+            src={product.image_url || product.image}
+            alt={product.name}
+            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 ease-out"
+          />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center relative">
+            <div className="absolute inset-0 opacity-10 flex items-center justify-center overflow-hidden">
+              <ShoppingCart className="w-24 h-24 -rotate-12" />
+            </div>
+            <span className="text-2xl font-black text-primary drop-shadow-sm z-10 font-mono tracking-tighter">
+              {getAcronym(product.name)}
+            </span>
+          </div>
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
       </div>
       <div className="p-2 text-left">
         <h3 className="font-medium text-pos-charcoal text-xs mb-0.5 line-clamp-1">

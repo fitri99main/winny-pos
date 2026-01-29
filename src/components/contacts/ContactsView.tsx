@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Contact, Users, Truck, Plus, Search, Phone, Mail, MapPin, Edit, Trash2, CreditCard, Cake, Star, Printer } from 'lucide-react';
 import { QRCard } from '../ui/QRCard';
 import { Button } from '../ui/button';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { EmptyState } from '../ui/EmptyState';
 import { toast } from 'sonner';
+import { supabase } from '../../lib/supabase';
 import { CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 
 type ContactType = 'Customer' | 'Supplier';
@@ -31,13 +32,6 @@ const MEMBERSHIP_TIERS = {
     'Platinum': 15
 };
 
-export const INITIAL_CONTACTS: ContactData[] = [
-    { id: 1, name: 'Bapak Ahmad', type: 'Customer', email: 'ahmad@gmail.com', phone: '08123456789', address: 'Jl. Merdeka No. 1', status: 'Active', memberId: 'MC-001', tier: 'Gold', points: 1250, birthday: '1985-01-24' },
-    { id: 2, name: 'PT. Kopi Nusantara', type: 'Supplier', email: 'sales@kopinusantara.com', phone: '021-5556667', address: 'Jl. Industri Kopi Blok A', company: 'PT. Kopi Nusantara', status: 'Active' },
-    { id: 3, name: 'Ibu Susi', type: 'Customer', email: 'susi@yahoo.com', phone: '08198765432', address: 'Komp. Melati Indah', status: 'Active', memberId: 'MC-002', tier: 'Silver', points: 450, birthday: '1990-05-12' },
-    { id: 4, name: 'CV. Susu Murni Jaya', type: 'Supplier', email: 'order@susumurni.co.id', phone: '022-7778889', address: 'Lembang, Bandung', company: 'CV. Susu Murni Jaya', status: 'Active' },
-];
-
 interface ContactsViewProps {
     contacts: ContactData[];
     setContacts: React.Dispatch<React.SetStateAction<ContactData[]>>;
@@ -53,6 +47,20 @@ export function ContactsView({ contacts, setContacts, onAdd, onUpdate, onDelete 
     const [selectedCard, setSelectedCard] = useState<ContactData | null>(null);
     const [deleteId, setDeleteId] = useState<number | null>(null);
     const [emailError, setEmailError] = useState('');
+
+    useEffect(() => {
+        fetchContacts();
+    }, []);
+
+    const fetchContacts = async () => {
+        const { data, error } = await supabase.from('contacts').select('*').order('created_at', { ascending: false });
+        if (error) {
+            toast.error('Gagal mengambil data kontak');
+            console.error(error);
+        } else {
+            setContacts(data || []);
+        }
+    };
 
     const validateEmail = (email: string) => {
         const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -71,35 +79,79 @@ export function ContactsView({ contacts, setContacts, onAdd, onUpdate, onDelete 
 
     const filteredContacts = (contacts || []).filter(c => c.type === activeTab);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.name || !formData.phone) {
             toast.error('Nama dan No. Telepon wajib diisi');
             return;
         }
 
-        if (formData.id) {
-            onUpdate(formData);
-        } else {
-            const newContact: any = {
-                ...formData,
-                type: activeTab,
-                status: 'Active'
-            };
-            onAdd(newContact);
+        try {
+            if (formData.id) {
+                const { error } = await supabase.from('contacts').update(formData).eq('id', formData.id);
+                if (error) throw error;
+                toast.success('Kontak berhasil diperbarui');
+            } else {
+                const newContact = {
+                    ...formData,
+                    type: activeTab,
+                    status: 'Active',
+                    member_id: activeTab === 'Customer' ? (formData.memberId || `MC-${Math.floor(Math.random() * 10000)}`) : null,
+                    // Map camelCase to snake_case if needed by Supabase, but our TS interface uses mixed. 
+                    // Ideally we should align types. For now assuming column names match TS or direct mapping.
+                    // Actually supabase columns are usually snake_case. Let's fix keys before insert if needed.
+                    // But wait, the table definition uses snake_case (member_id), frontend uses camelCase (memberId).
+                    // We need to map them.
+                };
+
+                // Manual mapping for insert/update to match DB schema
+                const dbPayload = {
+                    name: formData.name,
+                    type: activeTab,
+                    email: formData.email,
+                    phone: formData.phone,
+                    address: formData.address,
+                    company: formData.company,
+                    status: 'Active',
+                    member_id: formData.memberId,
+                    tier: formData.tier,
+                    points: formData.points,
+                    birthday: formData.birthday
+                };
+
+                if (formData.id) {
+                    const { error } = await supabase.from('contacts').update(dbPayload).eq('id', formData.id);
+                    if (error) throw error;
+                    toast.success('Kontak berhasil diperbarui');
+                } else {
+                    const { error } = await supabase.from('contacts').insert([dbPayload]);
+                    if (error) throw error;
+                    toast.success('Kontak berhasil ditambahkan');
+                }
+            }
+            fetchContacts();
+            setIsFormOpen(false);
+            setFormData({});
+            setEmailError('');
+        } catch (error: any) {
+            toast.error('Gagal menyimpan kontak: ' + error.message);
         }
-        setIsFormOpen(false);
-        setFormData({});
-        setEmailError('');
     };
 
     const handleDeleteClick = (id: number) => {
         setDeleteId(id);
     };
 
-    const confirmDelete = () => {
+    const confirmDelete = async () => {
         if (deleteId) {
-            onDelete(deleteId);
+            try {
+                const { error } = await supabase.from('contacts').delete().eq('id', deleteId);
+                if (error) throw error;
+                toast.success('Kontak berhasil dihapus');
+                fetchContacts();
+            } catch (error: any) {
+                toast.error('Gagal menghapus kontak: ' + error.message);
+            }
             setDeleteId(null);
         }
     };
@@ -225,7 +277,10 @@ export function ContactsView({ contacts, setContacts, onAdd, onUpdate, onDelete 
                                                 </td>
                                                 <td className="px-6 py-4 flex justify-center gap-2">
                                                     {contact.type === 'Customer' && (
-                                                        <button onClick={() => setSelectedCard(contact)} className="p-2 hover:bg-amber-50 text-amber-600 rounded-lg" title="Cetak Kartu Member"><CreditCard className="w-4 h-4" /></button>
+                                                        <button type="button" onClick={() => setSelectedCard(contact)} className="p-2 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg flex items-center gap-2 px-3" title="Cetak Kartu Member">
+                                                            <CreditCard className="w-4 h-4" />
+                                                            <span className="text-xs font-bold">Kartu</span>
+                                                        </button>
                                                     )}
                                                     <button onClick={() => { setFormData(contact); setIsFormOpen(true); }} className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg"><Edit className="w-4 h-4" /></button>
                                                     <button onClick={() => handleDeleteClick(contact.id)} className="p-2 hover:bg-red-50 text-red-600 rounded-lg"><Trash2 className="w-4 h-4" /></button>

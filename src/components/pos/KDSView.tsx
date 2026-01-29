@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ChefHat, Coffee, CheckCircle2, Clock, MapPin, User, ChevronRight, XCircle } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
+import { supabase } from '@/lib/supabase';
 
 interface KDSItem {
     name: string;
@@ -45,11 +46,24 @@ export function KDSView({ pendingOrders, setPendingOrders }: KDSViewProps) {
         }
     };
 
-    const handleCompleteOrder = (orderId: number) => {
+    const handleCompleteOrder = async (orderId: number) => {
         // Only remove if all filtered items are ready
         if (confirm('Selesaikan seluruh pesanan ini?')) {
-            setPendingOrders(prev => prev.filter(o => o.id !== orderId));
-            toast.success('Pesanan diselesaikan');
+            try {
+                // Update DB Status to 'Served' (or Completed/Ready depending on flow)
+                // Since Kiosk sets 'Pending', changing it removes it from Home.tsx sync filter
+                const { error } = await supabase
+                    .from('sales')
+                    .update({ status: 'Served' }) // Using 'Served' to differentiate from 'Completed' (paid) if needed, or just remove from KDS list
+                    .eq('id', orderId);
+
+                if (error) throw error;
+
+                setPendingOrders(prev => prev.filter(o => o.id !== orderId));
+                toast.success('Pesanan diselesaikan');
+            } catch (error: any) {
+                toast.error('Gagal menyelesaikan pesanan: ' + error.message);
+            }
         }
     };
 
@@ -77,8 +91,8 @@ export function KDSView({ pendingOrders, setPendingOrders }: KDSViewProps) {
                             key={tab.id}
                             onClick={() => setFilter(tab.id as any)}
                             className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-black transition-all ${filter === tab.id
-                                    ? 'bg-white text-primary shadow-sm ring-1 ring-gray-200'
-                                    : 'text-gray-500 hover:bg-white/50'
+                                ? 'bg-white text-primary shadow-sm ring-1 ring-gray-200'
+                                : 'text-gray-500 hover:bg-white/50'
                                 }`}
                         >
                             <tab.icon className="w-4 h-4" />
@@ -121,8 +135,8 @@ export function KDSView({ pendingOrders, setPendingOrders }: KDSViewProps) {
                                         <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-3">
                                                 <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-sm ${item.status === 'Ready' ? 'bg-green-100 text-green-600' :
-                                                        item.status === 'Preparing' ? 'bg-orange-100 text-orange-600 animate-pulse' :
-                                                            'bg-gray-100 text-gray-600'
+                                                    item.status === 'Preparing' ? 'bg-orange-100 text-orange-600 animate-pulse' :
+                                                        'bg-gray-100 text-gray-600'
                                                     }`}>
                                                     {item.quantity}
                                                 </div>
@@ -160,8 +174,8 @@ export function KDSView({ pendingOrders, setPendingOrders }: KDSViewProps) {
                                     onClick={() => handleCompleteOrder(order.id)}
                                     disabled={!order.items.every(i => i.status === 'Ready')}
                                     className={`w-full h-12 rounded-2xl font-black gap-2 ${order.items.every(i => i.status === 'Ready')
-                                            ? 'bg-gray-900 hover:bg-black text-white'
-                                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                        ? 'bg-gray-900 hover:bg-black text-white'
+                                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                         }`}
                                 >
                                     {order.items.every(i => i.status === 'Ready') ? (

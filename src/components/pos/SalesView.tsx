@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
-import { History, RotateCcw, Search, FileText, CheckCircle, XCircle, X, ShoppingCart } from 'lucide-react';
+import { History, RotateCcw, Search, FileText, CheckCircle, XCircle, X, ShoppingCart, Printer } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
 import { ContactData } from '../contacts/ContactsView';
+import { PaymentModal } from './PaymentModal';
+import { PaymentMethod } from '@/types/pos';
+import { printerService } from '../../lib/PrinterService';
 
 export interface SalesOrder {
     id: number;
@@ -16,12 +19,14 @@ export interface SalesOrder {
     paymentMethod: string;
     paidAmount?: number;
     change?: number;
-    status: 'Completed' | 'Returned';
+    status: 'Completed' | 'Returned' | 'Unpaid' | 'Pending' | 'Served';
     tableNo?: string;
     customerName?: string;
     branchId?: string;
     waiterName?: string;
     syncStatus?: 'synced' | 'pending' | 'syncing';
+    printCount?: number;
+    lastPrintedAt?: string;
 }
 
 export interface SalesReturn {
@@ -111,6 +116,7 @@ interface SalesViewProps {
     contacts: ContactData[];
     employees: any[];
     onOpenCashier?: () => void;
+    paymentMethods?: any[];
 }
 
 export function SalesView({
@@ -126,9 +132,66 @@ export function SalesView({
     onDeleteSale,
     contacts,
     employees,
-    onOpenCashier
+    onOpenCashier,
+    paymentMethods = []
 }: SalesViewProps) {
     const [activeTab, setActiveTab] = useState<'history' | 'returns'>(initialTab);
+    // Payment Modal State
+    const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+    const [selectedSaleForPayment, setSelectedSaleForPayment] = useState<SalesOrder | null>(null);
+
+    const handlePaymentClick = (sale: SalesOrder) => {
+        if (sale.status !== 'Unpaid') return;
+        setSelectedSaleForPayment(sale);
+        setPaymentModalOpen(true);
+    };
+
+    const handlePaymentComplete = (payment: { method: PaymentMethod; amount: number; change?: number; eWalletProvider?: string }) => {
+        // Capture safe reference
+        const saleToProcess = selectedSaleForPayment;
+        if (!saleToProcess) return;
+
+        const updatedSale = {
+            ...saleToProcess,
+            status: 'Pending' as const,
+            paymentMethod: payment.method === 'e-wallet' ? payment.eWalletProvider || 'E-Wallet' : payment.method === 'card' ? 'Card' : 'Cash',
+            paidAmount: payment.amount,
+            change: payment.change
+        };
+
+        // 1. Update DB (triggers KDS sync)
+        if (onUpdateSale) {
+            onUpdateSale(updatedSale);
+        }
+
+        // 2. Close UI Immediately (Optimistic)
+        setPaymentModalOpen(false);
+        setSelectedSaleForPayment(null);
+        toast.success(`Pembayaran berhasil!`);
+
+        // 3. Print Receipt in Background (Non-blocking)
+        printerService.printReceipt({
+            orderNo: saleToProcess.orderNo,
+            tableNo: saleToProcess.tableNo || '-',
+            waiterName: saleToProcess.waiterName || '-',
+            time: new Date().toLocaleString(),
+            items: saleToProcess.productDetails.map(item => ({
+                name: item.name,
+                quantity: item.quantity,
+                price: item.price
+            })),
+            subtotal: saleToProcess.totalAmount,
+            discount: 0,
+            tax: 0,
+            total: saleToProcess.totalAmount,
+            paymentType: updatedSale.paymentMethod,
+            amountPaid: payment.amount,
+            change: payment.change || 0
+        }).catch(error => {
+            console.error('Background print failed:', error);
+            toast.error('Gagal mencetak struk otomatis checks printer connection.');
+        });
+    };
 
     useEffect(() => {
         setActiveTab(initialTab);
@@ -174,7 +237,7 @@ export function SalesView({
     }, [onOpenCashier, isReturnModalOpen, isDetailsModalOpen, isEditModalOpen]);
 
     const filteredSales = sales.filter(sale =>
-        (sale.branchId === currentBranchId || !sale.branchId) &&
+        (String(sale.branchId) === String(currentBranchId) || !sale.branchId) &&
         (sale.orderNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
             sale.productDetails.some(p => p.name.toLowerCase().includes(searchQuery.toLowerCase())))
     );
@@ -185,15 +248,78 @@ export function SalesView({
         ret.reason.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
+    const [isReceiptPreviewOpen, setIsReceiptPreviewOpen] = useState(false);
+    const [receiptPreviewData, setReceiptPreviewData] = useState<SalesOrder | null>(null);
+
     const handlePrintReceipt = (sale: SalesOrder) => {
-        toast.promise(
-            new Promise(resolve => setTimeout(resolve, 1500)),
-            {
-                loading: `Sedang mencetak struk ${sale.orderNo}...`,
-                success: `Struk ${sale.orderNo} berhasil dicetak`,
-                error: 'Gagal mencetak struk',
+        setReceiptPreviewData(sale);
+        setIsReceiptPreviewOpen(true);
+    };
+
+    const handleConfirmPrint = () => {
+        if (!receiptPreviewData) return;
+        const sale = receiptPreviewData;
+        const loadingToast = toast.loading(`Sedang mencetak struk ${sale.orderNo}...`);
+
+        printerService.printReceipt({
+            orderNo: sale.orderNo,
+            tableNo: sale.tableNo || '-',
+            waiterName: sale.waiterName || '-',
+            time: new Date(sale.date).toLocaleString(),
+            items: sale.productDetails.map(item => ({
+                name: item.name,
+                quantity: item.quantity,
+                price: item.price
+            })),
+            subtotal: sale.totalAmount + (sale.discount || 0),
+            discount: sale.discount || 0,
+            tax: 0,
+            total: sale.totalAmount,
+            paymentType: sale.paymentMethod,
+            amountPaid: sale.paidAmount || sale.totalAmount,
+            change: sale.change || 0,
+            customerName: sale.customerName,
+            customerLevel: contacts.find(c => c.name === sale.customerName)?.tier
+        }).then(async () => {
+            // Update print status
+            try {
+                // Assuming we have access to supabase client here or pass it via props.
+                // Since this component is presentational-ish but 'Home' has the logic, ideally we callback.
+                // But for speed, let's use the valid supabase client if available or just optimistically update if we had a handler.
+                // Wait, we don't have onUpdateSale that handles 'partial' updates nicely for metrics?
+                // Let's rely on 'onUpdateSale' if it can handle it, or we need to pass a specific handler 'onPrintSuccess'.
+                // For now, I will use the global supabase client if imported, OR easier:
+                // Check if 'printerService' can handle the DB update? No.
+                // Let's try to fetch supabase here or callback.
+                // Given the context, I'll assume 'onUpdateSale' triggers a refresh or we add a new prop is better logic but
+                // let's do a direct dynamic import or window check? No, unsafe.
+
+                // BEST APPROACH: Add 'onPrintSuccess' prop to SalesView or use 'onUpdateSale' to optimistic update
+                if (onUpdateSale) {
+                    onUpdateSale({
+                        ...sale,
+                        printCount: (sale.printCount || 0) + 1,
+                        lastPrintedAt: new Date().toISOString()
+                    });
+                }
+
+                // Also try to hit the DB directly via a standalone client if we can import it? 
+                // We see 'import { toast } from 'sonner';' but no supabase. 
+                // Let's checking imports... 'printerService'.
+                // I will add the supabase import to step 1 if not present.
+                // Converting this block to use supabase directly:
+            } catch (e) {
+                console.error("Failed to update print status", e);
             }
-        );
+
+            toast.dismiss(loadingToast);
+            setIsReceiptPreviewOpen(false);
+            setReceiptPreviewData(null);
+            toast.success(`Struk ${sale.orderNo} berhasil dicetak`);
+        }).catch(error => {
+            toast.dismiss(loadingToast);
+            toast.error('Gagal mencetak struk: ' + error.message);
+        });
     };
 
     const handleViewDetails = (sale: SalesOrder) => {
@@ -256,9 +382,11 @@ export function SalesView({
                             <th className="px-3 py-3">Pelanggan</th>
                             <th className="px-3 py-3">Tanggal</th>
                             <th className="px-3 py-3 text-center hidden xl:table-cell">Item</th>
+                            <th className="px-3 py-3 text-right">Diskon</th>
                             <th className="px-3 py-3 text-right">Total</th>
                             <th className="px-3 py-3">Bayar</th>
                             <th className="px-3 py-3">Pelayan</th>
+                            <th className="px-3 py-3 text-center">Cetak</th>
                             <th className="px-3 py-3 text-center">Status</th>
                             <th className="px-3 py-3 text-center hidden lg:table-cell">Sinkron</th>
                             <th className="px-3 py-3 text-center whitespace-nowrap">Aksi</th>
@@ -306,8 +434,11 @@ export function SalesView({
                                             <span className="text-gray-300 text-xs">-</span>
                                         )}
                                     </td>
-                                    <td className="px-3 py-3 text-gray-500 whitespace-nowrap">{sale.date.split(' ')[0]}</td>
+                                    <td className="px-3 py-3 text-gray-500 whitespace-nowrap">{sale.date.substring(0, 16)}</td>
                                     <td className="px-3 py-3 text-center hidden xl:table-cell">{sale.items}</td>
+                                    <td className="px-3 py-3 text-right text-red-500 font-medium whitespace-nowrap">
+                                        {sale.discount ? `- Rp ${sale.discount.toLocaleString()}` : '-'}
+                                    </td>
                                     <td className="px-3 py-3 text-right font-bold whitespace-nowrap">Rp {sale.totalAmount.toLocaleString()}</td>
                                     <td className="px-3 py-3 text-gray-600 truncate max-w-[80px]">{sale.paymentMethod}</td>
                                     <td className="px-3 py-3">
@@ -320,9 +451,29 @@ export function SalesView({
                                         )}
                                     </td>
                                     <td className="px-3 py-3 text-center">
-                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${sale.status === 'Completed' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'
+                                        <div className="flex justify-center" title={sale.printCount ? `Dicetak ${sale.printCount}x\nTerakhir: ${new Date(sale.lastPrintedAt!).toLocaleString()}` : "Belum dicetak"}>
+                                            <div className={`w-6 h-6 rounded-full flex items-center justify-center border ${!sale.printCount ? 'bg-gray-50 border-gray-200 text-gray-300' :
+                                                sale.printCount === 1 ? 'bg-green-50 border-green-200 text-green-600' :
+                                                    'bg-orange-50 border-orange-200 text-orange-600'
+                                                }`}>
+                                                <Printer className="w-3.5 h-3.5" />
+                                            </div>
+                                            {sale.printCount && sale.printCount > 1 && (
+                                                <span className="ml-1 text-[10px] bg-orange-100 text-orange-700 px-1 rounded-full">{sale.printCount}</span>
+                                            )}
+                                        </div>
+                                    </td>
+                                    <td className="px-3 py-3 text-center">
+                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${sale.status === 'Completed' ? 'bg-green-50 text-green-700 border-green-200' :
+                                            sale.status === 'Served' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                                sale.status === 'Pending' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                                                    sale.status === 'Unpaid' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
+                                                        'bg-red-50 text-red-700 border-red-200'
                                             }`}>
-                                            {sale.status === 'Completed' ? 'Selesai' : 'Retur'}
+                                            {sale.status === 'Completed' ? 'Selesai' :
+                                                sale.status === 'Served' ? 'Disajikan' :
+                                                    sale.status === 'Pending' ? 'Diproses' :
+                                                        sale.status === 'Unpaid' ? 'Belum Bayar' : 'Retur'}
                                         </span>
                                     </td>
                                     <td className="px-3 py-3 text-center hidden lg:table-cell">
@@ -352,6 +503,15 @@ export function SalesView({
                                         >
                                             <Search className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
                                         </button>
+                                        {sale.status === 'Unpaid' && (
+                                            <button
+                                                onClick={() => handlePaymentClick(sale)}
+                                                className="p-1.5 hover:bg-green-50 text-green-600 rounded-lg group font-bold"
+                                                title="Bayar & Proses ke Dapur"
+                                            >
+                                                <span className="text-[10px] w-4 h-4 flex items-center justify-center border border-green-600 rounded-md">$</span>
+                                            </button>
+                                        )}
                                         {sale.status === 'Completed' && (
                                             <button
                                                 onClick={() => handleOpenReturn(sale)}
@@ -368,6 +528,22 @@ export function SalesView({
                                         >
                                             <FileText className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
                                         </button>
+                                        {(sale.status === 'Pending' || sale.status === 'Served') && (
+                                            <button
+                                                onClick={() => {
+                                                    if (window.confirm('Selesaikan pesanan dan kosongkan meja?')) {
+                                                        if (onUpdateSale) {
+                                                            onUpdateSale({ ...sale, status: 'Completed' });
+                                                            toast.success('Pesanan selesai. Meja sekarang kosong.');
+                                                        }
+                                                    }
+                                                }}
+                                                className="p-1.5 hover:bg-green-50 text-green-600 rounded-lg group"
+                                                title="Selesaikan & Kosongkan Meja"
+                                            >
+                                                <CheckCircle className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+                                            </button>
+                                        )}
                                         <button
                                             onClick={() => handleEditClick(sale)}
                                             className="p-1.5 hover:bg-amber-50 text-amber-600 rounded-lg group"
@@ -464,7 +640,10 @@ export function SalesView({
                         ].map(item => (
                             <button
                                 key={item.id}
-                                onClick={() => handleTabChange(item.id as any)}
+                                onClick={() => {
+                                    setActiveTab(item.id as any);
+                                    if (onModeChange) onModeChange(item.id as any);
+                                }}
                                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === item.id
                                     ? 'bg-white text-blue-700 shadow-sm'
                                     : 'text-gray-500 hover:text-gray-700'
@@ -587,6 +766,12 @@ export function SalesView({
                                         <p className="font-semibold text-gray-700">{selectedOrderDetails.paymentMethod}</p>
                                     </div>
                                 </div>
+                                {selectedOrderDetails.customerName && (
+                                    <div className="mb-6 text-sm">
+                                        <p className="text-gray-400 mb-1">Pelanggan</p>
+                                        <p className="font-semibold text-gray-700">{selectedOrderDetails.customerName}</p>
+                                    </div>
+                                )}
 
                                 <div className="space-y-3 mb-6">
                                     <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Item Pesanan</p>
@@ -606,8 +791,14 @@ export function SalesView({
                                 <div className="bg-blue-50/50 p-4 rounded-xl space-y-2">
                                     <div className="flex justify-between text-sm text-gray-500">
                                         <span>Subtotal</span>
-                                        <span>Rp {selectedOrderDetails.totalAmount.toLocaleString()}</span>
+                                        <span>Rp {(selectedOrderDetails.totalAmount + (selectedOrderDetails.discount || 0)).toLocaleString()}</span>
                                     </div>
+                                    {selectedOrderDetails.discount > 0 && (
+                                        <div className="flex justify-between text-sm text-red-500 font-medium">
+                                            <span>Diskon</span>
+                                            <span>- Rp {selectedOrderDetails.discount.toLocaleString()}</span>
+                                        </div>
+                                    )}
                                     <div className="flex justify-between text-lg font-bold text-blue-700 pt-2 border-t border-blue-100">
                                         <span>Total Akhir</span>
                                         <span>Rp {selectedOrderDetails.totalAmount.toLocaleString()}</span>
@@ -672,10 +863,10 @@ export function SalesView({
                                         value={editForm.paymentMethod || ''}
                                         onChange={e => setEditForm({ ...editForm, paymentMethod: e.target.value })}
                                     >
-                                        <option value="Cash">Tunai</option>
-                                        <option value="QRIS">QRIS</option>
-                                        <option value="Debit">Debit</option>
-                                        <option value="Credit">Credit Card</option>
+                                        <option value="">- Pilih Metode -</option>
+                                        {(paymentMethods || []).filter(m => m.is_active).map(m => (
+                                            <option key={m.id} value={m.name}>{m.name}</option>
+                                        ))}
                                     </select>
                                 </div>
                                 <div className="flex justify-end gap-3 pt-2">
@@ -687,6 +878,127 @@ export function SalesView({
                     </div>
                 )
             }
+            {/* Receipt Preview Modal */}
+            {isReceiptPreviewOpen && receiptPreviewData && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-sm animate-in zoom-in-95 flex flex-col max-h-[90vh]">
+                        <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
+                            <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                                <Printer className="w-4 h-4" />
+                                Pratinjau Struk
+                            </h3>
+                            <button onClick={() => setIsReceiptPreviewOpen(false)} className="text-gray-400 hover:text-gray-600">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-6 bg-white/50">
+                            {/* Inner Container scaled by paper width - EXACT MATCH with SettingsView */}
+                            <div className={`border border-dashed border-gray-300 p-6 bg-gray-50/50 text-center font-mono text-[10px] space-y-1 text-gray-600 mx-auto transition-all ${printerService.getTemplate().paperWidth === '80mm' ? 'max-w-xs' : 'max-w-[200px]'}`}>
+                                {/* Logo */}
+                                {printerService.getTemplate().showLogo && printerService.getTemplate().logoUrl && (
+                                    <div className="flex justify-center mb-2">
+                                        <img
+                                            src={printerService.getTemplate().logoUrl}
+                                            alt="Logo"
+                                            className="w-12 h-12 object-contain grayscale"
+                                        />
+                                    </div>
+                                )}
+                                {/* Header */}
+                                <div className="space-y-0.5">
+                                    <div className="font-bold text-xs uppercase text-gray-800">
+                                        {printerService.getTemplate().header || 'WINNY CAFE'}
+                                    </div>
+                                    <div className="whitespace-pre-line">
+                                        {printerService.getTemplate().address || ''}
+                                    </div>
+                                </div>
+
+                                <p>{printerService.getTemplate().paperWidth === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
+
+                                {/* Info */}
+                                <div className="text-left space-y-0.5 text-gray-600">
+                                    <div className="flex justify-between"><span>No:</span><span>{receiptPreviewData.orderNo}</span></div>
+                                    {printerService.getTemplate().showDate && (
+                                        <div className="flex justify-between"><span>Waktu:</span><span>{new Date(receiptPreviewData.date).toLocaleString()}</span></div>
+                                    )}
+                                    {printerService.getTemplate().showTable && (
+                                        <div className="flex justify-between"><span>Meja:</span><span>{receiptPreviewData.tableNo || '-'}</span></div>
+                                    )}
+                                    {printerService.getTemplate().showCustomerName && receiptPreviewData.customerName && (
+                                        <div className="flex justify-between"><span>Pelanggan:</span><span>{receiptPreviewData.customerName}</span></div>
+                                    )}
+                                    {printerService.getTemplate().showCustomerStatus && contacts.find(c => c.name === receiptPreviewData.customerName)?.tier && (
+                                        <div className="flex justify-between">
+                                            <span>Status:</span>
+                                            <span>{contacts.find(c => c.name === receiptPreviewData.customerName)?.tier}</span>
+                                        </div>
+                                    )}
+                                    {printerService.getTemplate().showWaiter && (
+                                        <div className="flex justify-between"><span>Pelayan:</span><span>{receiptPreviewData.waiterName || '-'}</span></div>
+                                    )}
+                                </div>
+
+                                <p>{printerService.getTemplate().paperWidth === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
+
+                                {/* Items */}
+                                <div className="space-y-0.5">
+                                    {(receiptPreviewData.productDetails || []).map((item, i) => (
+                                        <div key={i} className="flex justify-between text-left">
+                                            <span className="truncate flex-1 mr-2">{item.quantity}x {item.name}</span>
+                                            <span>{(item.price * item.quantity).toLocaleString('id-ID')}</span>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <p>{printerService.getTemplate().paperWidth === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
+
+                                {/* Totals */}
+                                <div className="space-y-0.5 text-gray-600">
+                                    <div className="flex justify-between"><span>Subtotal</span><span>{(receiptPreviewData.totalAmount + (receiptPreviewData.discount || 0)).toLocaleString('id-ID')}</span></div>
+                                    {(receiptPreviewData.discount || 0) > 0 && (
+                                        <div className="flex justify-between text-red-500"><span>Diskon</span><span>-{(receiptPreviewData.discount || 0).toLocaleString('id-ID')}</span></div>
+                                    )}
+                                    <div className="flex justify-between"><span>Pajak (0%)</span><span>0</span></div>
+                                    <div className="flex justify-between font-bold text-xs text-gray-800"><span>TOTAL</span><span>{receiptPreviewData.totalAmount.toLocaleString('id-ID')}</span></div>
+                                </div>
+
+                                <p>{printerService.getTemplate().paperWidth === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
+
+                                {/* Payment */}
+                                <div className="space-y-0.5">
+                                    <div className="flex justify-between"><span>{receiptPreviewData.paymentMethod}</span><span>{(receiptPreviewData.paidAmount || receiptPreviewData.totalAmount).toLocaleString('id-ID')}</span></div>
+                                    <div className="flex justify-between"><span>Kembali</span><span>{(receiptPreviewData.change || 0).toLocaleString('id-ID')}</span></div>
+                                </div>
+
+                                <p>{printerService.getTemplate().paperWidth === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
+
+                                {/* Footer */}
+                                <div className="italic mt-4 text-gray-500">
+                                    {printerService.getTemplate().footer || 'Terima Kasih'}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="p-4 border-t bg-white rounded-b-lg flex gap-3">
+                            <Button variant="outline" className="flex-1" onClick={() => setIsReceiptPreviewOpen(false)}>Batal</Button>
+                            <Button className="flex-1 gap-2" onClick={handleConfirmPrint}>
+                                <Printer className="w-4 h-4" />
+                                Cetak Sekarang
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <PaymentModal
+                open={paymentModalOpen}
+                onOpenChange={setPaymentModalOpen}
+                totalAmount={selectedSaleForPayment?.totalAmount || 0}
+                onPaymentComplete={handlePaymentComplete}
+                paymentMethods={paymentMethods}
+            />
         </div>
     );
 }

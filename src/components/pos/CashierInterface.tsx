@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { ProductCategory, OrderItem, Product } from '@/types/pos';
 // import { mockProducts } from '@/data/products'; // REMOVED
 import { SearchBar } from './SearchBar';
@@ -12,6 +12,7 @@ import { SuccessModal } from './SuccessModal';
 import { ManualItemModal } from './ManualItemModal';
 import { HeldOrdersModal } from './HeldOrdersModal';
 import { SplitBillModal } from './SplitBillModal';
+import { TableSelectionGrid, Table } from './TableSelectionGrid';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
 import { Store, ArrowLeft, ShoppingCart, Users, User, Cake, CreditCard, ChevronDown, Search, Star, Puzzle, Check } from 'lucide-react';
@@ -45,6 +46,9 @@ interface CashierInterfaceProps {
   products: Product[];
   categories: any[];
   tables: any[];
+  activeSales?: any[]; // Passed from Home to determine occupancy
+  paymentMethods?: any[];
+  onDeleteSale?: (id: number) => void | Promise<void>;
 }
 
 interface HeldOrder {
@@ -67,8 +71,12 @@ export function CashierInterface({
   onSendToKDS,
   products = [],
   categories = [],
-  tables = []
+  tables = [],
+  activeSales = [],
+  paymentMethods = [],
+  onDeleteSale
 }: CashierInterfaceProps) {
+  const [viewMode, setViewMode] = useState<'tables' | 'pos'>('tables');
   const [activeCategory, setActiveCategory] = useState<ProductCategory>('Semua');
   const [searchQuery, setSearchQuery] = useState('');
   const [discountModalOpen, setDiscountModalOpen] = useState(false);
@@ -89,6 +97,19 @@ export function CashierInterface({
   const [isAddonModalOpen, setIsAddonModalOpen] = useState(false);
   const [addonPendingProduct, setAddonPendingProduct] = useState<Product | null>(null);
   const [tempSelectedAddons, setTempSelectedAddons] = useState<Addon[]>([]);
+
+  // Calculate occupied tables based on active sales
+  const occupiedTableNumbers = useMemo(() => {
+    const occupied = new Set<string>();
+    if (activeSales) {
+      activeSales.forEach(sale => {
+        if (['Unpaid', 'Pending'].includes(sale.status) && sale.tableNo) {
+          occupied.add(sale.tableNo);
+        }
+      });
+    }
+    return occupied;
+  }, [activeSales]);
 
   const membershipDiscounts: Record<string, number> = {
     'Regular': 0,
@@ -112,6 +133,9 @@ export function CashierInterface({
       currentProducts = currentProducts.filter((p) => p.category === activeCategory);
     }
 
+    // Filter by sellable status
+    currentProducts = currentProducts.filter((p) => p.is_sellable !== false);
+
     if (searchQuery) {
       currentProducts = currentProducts.filter((p) =>
         p.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -130,6 +154,82 @@ export function CashierInterface({
   }, [orderItems]);
 
   const total = subtotal - orderDiscount;
+
+  // Hydrate order when table is selected
+  useEffect(() => {
+    if (selectedTable && activeSales) {
+      const existingSale = activeSales.find(
+        s => (s.status === 'Pending' || s.status === 'Unpaid') && s.tableNo === selectedTable
+      );
+
+      if (existingSale) {
+        // Reconstruct order items from sale
+        const items = existingSale.productDetails.map((detail: any, index: number) => {
+          // Find original product to get ID and image if possible, otherwise mock
+          const originalProduct = products.find(p => p.name === detail.name);
+          return {
+            id: `${originalProduct?.id || 'restored'}-${index}`,
+            product: originalProduct || {
+              id: 0,
+              name: detail.name,
+              price: detail.price,
+              category: 'Others',
+              stock: 999
+            },
+            quantity: detail.quantity,
+            selectedAddons: [] // Addons restoration would require more detailed data structure
+          };
+        });
+
+        setOrderItems(items);
+        setCustomerName(existingSale.customerName || 'Guest');
+        setWaiterName(existingSale.waiterName || '');
+        // If there's a discount, we might need to recalculate or restore it
+        // setOrderDiscount(existingSale.discount || 0); 
+      } else {
+        // New order for this table
+        setOrderItems([]);
+        setCustomerName('Guest');
+        setWaiterName('');
+        setOrderDiscount(0);
+      }
+    }
+  }, [selectedTable, activeSales, products]);
+
+  const handleClearTable = (tableNo: string) => {
+    const saleToClear = activeSales?.find(
+      s => (s.status === 'Pending' || s.status === 'Unpaid') && s.tableNo === tableNo
+    );
+
+    if (saleToClear && onDeleteSale) {
+      if (confirm(`Kosongkan meja ${tableNo}? Pesanan yang belum lunas akan dihapus.`)) {
+        onDeleteSale(saleToClear.id);
+        toast.success(`Meja ${tableNo} Berhasil Dikosongkan`, {
+          icon: <Check className="w-5 h-5 text-green-500" />,
+          description: 'Status meja kini tersedia kembali.',
+          duration: 3000,
+        });
+      }
+    } else {
+      toast.error('Gagal mengosongkan meja: Transaksi tidak ditemukan');
+    }
+  };
+
+  // Render Table View if mode is 'tables'
+  if (viewMode === 'tables') {
+    return (
+      <TableSelectionGrid
+        tables={tables}
+        occupiedTableNumbers={occupiedTableNumbers}
+        onSelectTable={(table) => {
+          setSelectedTable(table.number);
+          setViewMode('pos');
+        }}
+        onClearTable={handleClearTable}
+        onBack={onBack || (() => { })}
+      />
+    );
+  }
 
   // Add to cart
   const handleAddToCart = (product: Product) => {
@@ -301,7 +401,10 @@ export function CashierInterface({
 
     // Always show a small success toast for partial payments if not the full success modal
     if (isSplitPayment) {
-      toast.success('Pembayaran sebagian berhasil');
+      toast.success('Pembayaran Berhasil!', {
+        description: 'Pembayaran sebagian telah diterima',
+        duration: 3000,
+      });
     }
   };
 
@@ -369,7 +472,7 @@ export function CashierInterface({
 
   // Split bill
   const handleSplitBill = () => {
-    if (orderItems.length === 0) return;
+    // if (orderItems.length === 0) return; // Allow opening to see if modal works, or handled by UI
     setSplitBillModalOpen(true);
   };
 
@@ -395,8 +498,8 @@ export function CashierInterface({
           <div className="flex items-center gap-3 mb-6">
             {onBack && (
               <button
-                onClick={onBack}
-                className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm hover:shadow-md transition-all text-pos-charcoal hover:text-pos-coral"
+                onClick={() => setViewMode('tables')}
+                className="p-2 hover:bg-white/50 rounded-lg transition-colors"
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
@@ -544,10 +647,7 @@ export function CashierInterface({
       {/* Quick Actions Bar */}
       <QuickActionsBar
         hasItems={orderItems.length > 0}
-        onManualItemClick={() => {
-          console.log("Opening manual item modal");
-          setManualItemModalOpen(true);
-        }}
+        onManualItemClick={() => setManualItemModalOpen(true)}
         onDiscountClick={() => setDiscountModalOpen(true)}
         onSplitBillClick={handleSplitBill}
         onHoldOrderClick={handleHoldOrder}
@@ -670,6 +770,7 @@ export function CashierInterface({
         onOpenChange={setPaymentModalOpen}
         totalAmount={isSplitPayment ? itemsToSplit.reduce((sum, item) => sum + item.product.price * item.quantity, 0) : total}
         onPaymentComplete={handlePaymentComplete}
+        paymentMethods={paymentMethods}
       />
 
       <SuccessModal

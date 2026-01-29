@@ -88,7 +88,7 @@ export function EmployeesView({
     };
 
     const toggleOffDay = (dayIndex: number) => {
-        const currentOffDays = formData.offDays || [];
+        const currentOffDays = Array.isArray(formData.offDays) ? formData.offDays : [];
         if (currentOffDays.includes(dayIndex)) {
             setFormData({ ...formData, offDays: currentOffDays.filter(d => d !== dayIndex) });
         } else {
@@ -102,10 +102,10 @@ export function EmployeesView({
         }
     };
 
-    const filteredEmployees = employees.filter(emp =>
-        emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        emp.position.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        emp.department.toLowerCase().includes(searchQuery.toLowerCase())
+    const filteredEmployees = (employees || []).filter(emp =>
+        (emp.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (emp.position || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (emp.department || '').toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     return (
@@ -167,10 +167,10 @@ export function EmployeesView({
                                     </td>
                                     <td className="px-8 py-5">
                                         <div className="flex flex-wrap gap-1">
-                                            {emp.offDays && emp.offDays.length > 0 ? (
-                                                emp.offDays.slice().sort().map(d => (
+                                            {emp.offDays && Array.isArray(emp.offDays) && emp.offDays.length > 0 ? (
+                                                [...emp.offDays].sort().map(d => (
                                                     <span key={d} className="px-2 py-0.5 bg-red-50 text-red-600 rounded-md text-[10px] font-black uppercase ring-1 ring-red-100">
-                                                        {DAYS_NAME[d]}
+                                                        {DAYS_NAME[d] || 'N/A'}
                                                     </span>
                                                 ))
                                             ) : (
@@ -179,9 +179,21 @@ export function EmployeesView({
                                         </div>
                                     </td>
                                     <td className="px-8 py-5 flex justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button onClick={() => setSelectedCard(emp)} className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-100 transition-colors" title="Cetak ID Card"><CreditCard className="w-4.5 h-4.5" /></button>
-                                        <button onClick={() => { setFormData(emp); setIsFormOpen(true); }} className="p-2.5 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors" title="Edit Data"><Edit className="w-4.5 h-4.5" /></button>
-                                        <button onClick={() => handleDelete(emp.id)} className="p-2.5 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors" title="Hapus"><Trash2 className="w-4.5 h-4.5" /></button>
+                                        <button onClick={() => setSelectedCard(emp)} className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-100 transition-colors" title="Cetak ID Card"><CreditCard className="w-4 h-4" /></button>
+                                        <button
+                                            onClick={() => {
+                                                setFormData({
+                                                    ...emp,
+                                                    offDays: Array.isArray(emp.offDays) ? emp.offDays : []
+                                                });
+                                                setIsFormOpen(true);
+                                            }}
+                                            className="p-2.5 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors"
+                                            title="Edit Data"
+                                        >
+                                            <Edit className="w-4 h-4" />
+                                        </button>
+                                        <button onClick={() => handleDelete(emp.id)} className="p-2.5 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors" title="Hapus"><Trash2 className="w-4 h-4" /></button>
                                     </td>
                                 </tr>
                             ))}
@@ -213,7 +225,7 @@ export function EmployeesView({
                                         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Struktur Departemen</label>
                                         <select className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold text-gray-700" value={formData.department || ''} onChange={e => setFormData({ ...formData, department: e.target.value })}>
                                             <option value="">Pilih Departemen...</option>
-                                            {departments.map(dept => (
+                                            {(departments || []).map(dept => (
                                                 <option key={dept.id} value={dept.name}>{dept.name}</option>
                                             ))}
                                         </select>
@@ -238,7 +250,7 @@ export function EmployeesView({
                                                 key={idx}
                                                 type="button"
                                                 onClick={() => toggleOffDay(idx)}
-                                                className={`px-4 py-2.5 rounded-xl text-[11px] font-black transition-all border ${formData.offDays?.includes(idx)
+                                                className={`px-4 py-2.5 rounded-xl text-[11px] font-black transition-all border ${Array.isArray(formData.offDays) && formData.offDays.includes(idx)
                                                     ? 'bg-red-600 text-white border-red-600 shadow-lg shadow-red-200'
                                                     : 'bg-white text-gray-400 border-gray-200 hover:border-red-200 hover:text-red-500'
                                                     }`}

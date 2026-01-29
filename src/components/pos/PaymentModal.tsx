@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { toast } from 'sonner';
 import { Label } from '@/components/ui/label';
 import { Banknote, CreditCard, Smartphone, Zap } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -12,11 +13,12 @@ interface PaymentModalProps {
   onOpenChange: (open: boolean) => void;
   totalAmount: number;
   onPaymentComplete: (payment: {
-    method: PaymentMethod;
+    method: any;
     amount: number;
     change?: number;
     eWalletProvider?: string;
   }) => void;
+  paymentMethods?: any[];
 }
 
 export function PaymentModal({
@@ -24,8 +26,9 @@ export function PaymentModal({
   onOpenChange,
   totalAmount,
   onPaymentComplete,
+  paymentMethods = []
 }: PaymentModalProps) {
-  const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
+  const [selectedMethod, setSelectedMethod] = useState<any>(null);
   const [cashAmount, setCashAmount] = useState('');
   const [eWalletProvider, setEWalletProvider] = useState('');
 
@@ -45,34 +48,39 @@ export function PaymentModal({
   const handlePayment = () => {
     if (!selectedMethod) return;
 
-    if (selectedMethod === 'cash') {
+    if (selectedMethod.type === 'cash') {
       const amount = parseFloat(cashAmount) || 0;
       if (amount >= totalAmount) {
         onPaymentComplete({
-          method: 'cash',
+          method: selectedMethod.name,
           amount,
           change: calculateChange(),
         });
+      } else {
+        toast.error(`Pembayaran kurang! Harap bayar minimal ${formatPrice(totalAmount)}`);
       }
-    } else if (selectedMethod === 'card') {
+    } else {
       onPaymentComplete({
-        method: 'card',
+        method: selectedMethod.name,
         amount: totalAmount,
-      });
-    } else if (selectedMethod === 'e-wallet' && eWalletProvider) {
-      onPaymentComplete({
-        method: 'e-wallet',
-        amount: totalAmount,
-        eWalletProvider,
       });
     }
   };
 
-  const quickAmounts = [
+  const handlePaymentWithLog = () => {
+    try {
+      handlePayment();
+    } catch (e: any) {
+      console.error("Payment error:", e);
+      toast.error("Error confirming payment: " + e.message);
+    }
+  };
+
+  const quickAmounts = Array.from(new Set([
     totalAmount,
     Math.ceil(totalAmount / 50000) * 50000,
     Math.ceil(totalAmount / 100000) * 100000,
-  ];
+  ])).filter(amount => amount > 0);
 
   useEffect(() => {
     if (!open) {
@@ -87,6 +95,9 @@ export function PaymentModal({
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-3xl font-bold">Pembayaran</DialogTitle>
+          <DialogDescription>
+            Pilih metode pembayaran untuk menyelesaikan transaksi sebesar {formatPrice(totalAmount)}.
+          </DialogDescription>
           <div className="mt-4 p-4 bg-gray-50 rounded-xl">
             <p className="text-sm text-gray-600 mb-1">Total Tagihan</p>
             <p className="text-3xl font-mono font-bold text-pos-coral">
@@ -98,38 +109,35 @@ export function PaymentModal({
         <div className="space-y-6 py-4">
           {/* Payment Method Selection */}
           {!selectedMethod && (
-            <div className="grid grid-cols-3 gap-4">
-              <motion.button
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setSelectedMethod('cash')}
-                className="p-6 border-2 border-gray-200 rounded-2xl hover:border-pos-coral hover:bg-orange-50 transition-all"
-              >
-                <Banknote className="w-10 h-10 mx-auto mb-3 text-pos-coral" />
-                <p className="font-bold text-pos-charcoal">Tunai</p>
-              </motion.button>
-
-              <motion.button
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setSelectedMethod('card')}
-                className="p-6 border-2 border-gray-200 rounded-2xl hover:border-pos-coral hover:bg-orange-50 transition-all"
-              >
-                <CreditCard className="w-10 h-10 mx-auto mb-3 text-pos-coral" />
-                <p className="font-bold text-pos-charcoal">Kartu</p>
-              </motion.button>
-
-              <motion.button
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setSelectedMethod('e-wallet')}
-                className="p-6 border-2 border-gray-200 rounded-2xl hover:border-pos-coral hover:bg-orange-50 transition-all"
-              >
-                <Smartphone className="w-10 h-10 mx-auto mb-3 text-pos-coral" />
-                <p className="font-bold text-pos-charcoal">E-Wallet</p>
-              </motion.button>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              {paymentMethods.filter(m => m.is_active).map((method) => (
+                <motion.button
+                  key={method.id}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => {
+                    if (method.type === 'cash') {
+                      setSelectedMethod(method);
+                    } else {
+                      setSelectedMethod(method);
+                    }
+                  }}
+                  className="p-6 border-2 border-gray-200 rounded-2xl hover:border-pos-coral hover:bg-orange-50 transition-all flex flex-col items-center justify-center gap-3"
+                >
+                  {method.type === 'cash' ? (
+                    <Banknote className="w-10 h-10 text-pos-coral" />
+                  ) : method.type === 'card' ? (
+                    <CreditCard className="w-10 h-10 text-pos-coral" />
+                  ) : (
+                    <Smartphone className="w-10 h-10 text-pos-coral" />
+                  )}
+                  <p className="font-bold text-pos-charcoal text-center leading-tight">{method.name}</p>
+                </motion.button>
+              ))}
             </div>
           )}
 
           {/* Cash Payment */}
-          {selectedMethod === 'cash' && (
+          {selectedMethod?.type === 'cash' && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -148,9 +156,9 @@ export function PaymentModal({
               </div>
 
               <div className="grid grid-cols-3 gap-3">
-                {quickAmounts.map((amount) => (
+                {quickAmounts.map((amount, idx) => (
                   <Button
-                    key={amount}
+                    key={`${amount}-${idx}`}
                     variant="outline"
                     onClick={() => setCashAmount(amount.toString())}
                     className="h-12"
@@ -178,8 +186,8 @@ export function PaymentModal({
                   Back
                 </Button>
                 <Button
-                  onClick={handlePayment}
-                  disabled={!cashAmount || parseFloat(cashAmount) < totalAmount}
+                  onClick={handlePaymentWithLog}
+                  // We removed disabled to allow clicking and showing the error toast if amount is low
                   className="flex-1 h-12 bg-pos-coral hover:bg-orange-600"
                 >
                   Selesaikan Pembayaran
@@ -188,20 +196,24 @@ export function PaymentModal({
             </motion.div>
           )}
 
-          {/* Card Payment */}
-          {selectedMethod === 'card' && (
+          {/* Non-Cash Payment Confirmation */}
+          {selectedMethod && selectedMethod.type !== 'cash' && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               className="space-y-4"
             >
               <div className="p-6 bg-gray-50 rounded-xl text-center">
-                <Zap className="w-16 h-16 mx-auto mb-4 text-pos-coral animate-pulse" />
+                {selectedMethod.type === 'card' ? (
+                  <CreditCard className="w-16 h-16 mx-auto mb-4 text-pos-coral animate-pulse" />
+                ) : (
+                  <Smartphone className="w-16 h-16 mx-auto mb-4 text-pos-coral animate-pulse" />
+                )}
                 <p className="text-lg font-medium text-pos-charcoal mb-2">
-                  Memproses Pembayaran Kartu
+                  Konfirmasi Pembayaran {selectedMethod.name}
                 </p>
                 <p className="text-sm text-gray-600">
-                  Silakan masukkan atau tempel kartu pada pembaca kartu
+                  Pastikan pembayaran telah {selectedMethod.type === 'card' ? 'berhasil diproses di mesin EDC' : 'diterima'} sebelum konfirmasi.
                 </p>
               </div>
 
@@ -218,58 +230,6 @@ export function PaymentModal({
                   className="flex-1 h-12 bg-pos-coral hover:bg-orange-600"
                 >
                   Konfirmasi Pembayaran
-                </Button>
-              </div>
-            </motion.div>
-          )}
-
-          {/* E-Wallet Payment */}
-          {selectedMethod === 'e-wallet' && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="space-y-4"
-            >
-              <Label className="text-base">Pilih Penyedia E-Wallet</Label>
-              <div className="grid grid-cols-2 gap-3">
-                {['GoPay', 'OVO', 'DANA', 'ShopeePay'].map((provider) => (
-                  <Button
-                    key={provider}
-                    variant={eWalletProvider === provider ? 'default' : 'outline'}
-                    onClick={() => setEWalletProvider(provider)}
-                    className="h-14 text-base"
-                  >
-                    {provider}
-                  </Button>
-                ))}
-              </div>
-
-              {eWalletProvider && (
-                <div className="p-6 bg-gray-50 rounded-xl text-center">
-                  <Smartphone className="w-16 h-16 mx-auto mb-4 text-pos-coral" />
-                  <p className="text-lg font-medium text-pos-charcoal mb-2">
-                    Pindai Kode QR dengan {eWalletProvider}
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    Tunjukkan kode QR kepada pelanggan
-                  </p>
-                </div>
-              )}
-
-              <div className="flex gap-3 pt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => setSelectedMethod(null)}
-                  className="flex-1 h-12"
-                >
-                  Back
-                </Button>
-                <Button
-                  onClick={handlePayment}
-                  disabled={!eWalletProvider}
-                  className="flex-1 h-12 bg-pos-coral hover:bg-orange-600"
-                >
-                  Selesaikan Pembayaran
                 </Button>
               </div>
             </motion.div>

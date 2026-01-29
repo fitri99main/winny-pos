@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, User, Monitor, Globe, Bell, Shield, Save, Clock, Calendar, Printer, FileText, LayoutGrid, Plus, Trash2, Edit } from 'lucide-react';
+import { Settings, User, Monitor, Globe, Bell, Shield, Save, Clock, Calendar, Printer, FileText, LayoutGrid, Plus, Trash2, Edit, CreditCard, CheckCircle2, XCircle } from 'lucide-react';
 import { printerService } from '../../lib/PrinterService';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -14,9 +14,18 @@ interface SettingsViewProps {
     onUpdateSettings: (settings: any) => void;
     tables?: any[];
     onTableAction?: (action: 'create' | 'update' | 'delete', data: any) => void;
+    paymentMethods?: any[];
+    onPaymentMethodAction?: (action: 'create' | 'update' | 'delete', data: any) => void;
 }
 
-export function SettingsView({ settings, onUpdateSettings, tables = [], onTableAction }: SettingsViewProps) {
+export function SettingsView({
+    settings,
+    onUpdateSettings,
+    tables = [],
+    onTableAction,
+    paymentMethods = [],
+    onPaymentMethodAction
+}: SettingsViewProps) {
     const [activeTab, setActiveTab] = useState('general');
     const [localSettings, setLocalSettings] = useState(settings);
     const [hasChanges, setHasChanges] = useState(false);
@@ -25,6 +34,7 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
     const { user } = useAuth();
     const [profileName, setProfileName] = useState('');
     const [updatingProfile, setUpdatingProfile] = useState(false);
+    const [uploadingLogo, setUploadingLogo] = useState(false);
 
     useEffect(() => {
         if (user) {
@@ -60,6 +70,36 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
         }
     };
 
+    const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setUploadingLogo(true);
+        try {
+            const fileExt = file.name.split('.').pop();
+            const fileName = `logo-${Date.now()}.${fileExt}`;
+            const filePath = `${fileName}`;
+
+            const { error: uploadError, data } = await supabase.storage
+                .from('receipt-logos')
+                .upload(filePath, file);
+
+            if (uploadError) throw uploadError;
+
+            const { data: { publicUrl } } = supabase.storage
+                .from('receipt-logos')
+                .getPublicUrl(filePath);
+
+            const updated = { ...localSettings, receipt_logo_url: publicUrl };
+            handleLocalChange(updated);
+            toast.success('Logo produk berhasil diunggah');
+        } catch (error: any) {
+            toast.error('Gagal upload logo: ' + error.message);
+        } finally {
+            setUploadingLogo(false);
+        }
+    };
+
     useEffect(() => {
         setLocalSettings(settings);
     }, [settings]);
@@ -85,6 +125,7 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
         { id: 'notifications', label: 'Notifikasi', icon: Bell },
         { id: 'printer', label: 'Printer', icon: Printer },
         { id: 'receipt', label: 'Templat Struk', icon: FileText },
+        { id: 'payment_methods', label: 'Metode Pembayaran', icon: CreditCard },
         { id: 'security', label: 'Keamanan', icon: Shield },
     ];
 
@@ -141,6 +182,34 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
         setIsTableModalOpen(false);
     };
 
+    // Payment Method Management State
+    const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+    const [editingPayment, setEditingPayment] = useState<any>(null);
+    const [paymentForm, setPaymentForm] = useState({ name: '', type: 'digital', is_active: true });
+
+    const handleOpenPaymentModal = (method?: any) => {
+        if (method) {
+            setEditingPayment(method);
+            setPaymentForm({ name: method.name, type: method.type, is_active: method.is_active });
+        } else {
+            setEditingPayment(null);
+            setPaymentForm({ name: '', type: 'digital', is_active: true });
+        }
+        setIsPaymentModalOpen(true);
+    };
+
+    const handleSavePaymentMethod = () => {
+        if (!paymentForm.name) return toast.error('Nama metode harus diisi');
+        if (onPaymentMethodAction) {
+            if (editingPayment) {
+                onPaymentMethodAction('update', { id: editingPayment.id, ...paymentForm, is_static: editingPayment.is_static });
+            } else {
+                onPaymentMethodAction('create', paymentForm);
+            }
+        }
+        setIsPaymentModalOpen(false);
+    };
+
     const handleSave = () => {
         if (hasChanges) {
             onUpdateSettings(localSettings);
@@ -153,7 +222,7 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
     return (
         <div className="p-8 flex gap-8 h-full bg-gray-50/50 dark:bg-gray-900/50">
             {/* Sidebar Settings */}
-            <div className="w-56 flex flex-col gap-2">
+            <div className="w-56 flex flex-col gap-2 overflow-y-auto pr-2 custom-scrollbar">
                 <div className="mb-6 px-2">
                     <h2 className="text-xl font-bold text-gray-800 dark:text-white">Pengaturan</h2>
                     <p className="text-sm text-gray-500 dark:text-gray-400">Kelola preferensi Anda</p>
@@ -591,6 +660,7 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
                                                 items: [{ name: 'Test Product', quantity: 1, price: 15000 }],
                                                 subtotal: 15000,
                                                 discount: 0,
+                                                tax: 0,
                                                 total: 15000,
                                                 paymentType: 'Tunai',
                                                 amountPaid: 20000,
@@ -679,7 +749,52 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
                             </div>
 
                             <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100 space-y-4">
-                                <h4 className="font-bold text-gray-800 text-sm">Opsi Tampilan</h4>
+                                <h4 className="font-bold text-gray-800 text-sm">Opsi Logo</h4>
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <Label htmlFor="show-logo" className="cursor-pointer">Tampilkan Logo</Label>
+                                        <Switch
+                                            id="show-logo"
+                                            checked={localSettings.show_logo}
+                                            onCheckedChange={checked => handleLocalChange({ ...localSettings, show_logo: checked })}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Logo Struk</Label>
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-20 h-20 rounded-xl border-2 border-dashed border-gray-200 flex items-center justify-center overflow-hidden bg-white">
+                                                {localSettings.receipt_logo_url ? (
+                                                    <img src={localSettings.receipt_logo_url} alt="Logo" className="w-full h-full object-contain" />
+                                                ) : (
+                                                    <LayoutGrid className="w-8 h-8 text-gray-200" />
+                                                )}
+                                            </div>
+                                            <div className="flex-1">
+                                                <input
+                                                    type="file"
+                                                    id="logo-upload"
+                                                    className="hidden"
+                                                    accept="image/*"
+                                                    onChange={handleLogoUpload}
+                                                    disabled={uploadingLogo}
+                                                />
+                                                <Button
+                                                    variant="outline"
+                                                    onClick={() => document.getElementById('logo-upload')?.click()}
+                                                    disabled={uploadingLogo}
+                                                    className="w-full"
+                                                >
+                                                    {uploadingLogo ? 'Mengunggah...' : 'Pilih Logo'}
+                                                </Button>
+                                                <p className="text-[10px] text-gray-500 mt-1">Saran: Gunakan gambar hitam putih resolusi rendah (kotak).</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100 space-y-4">
+                                <h4 className="font-bold text-gray-800 text-sm">Opsi Informasi</h4>
                                 <div className="space-y-4">
                                     <div className="flex items-center justify-between">
                                         <Label htmlFor="show-date" className="cursor-pointer">Tampilkan Tanggal & Waktu</Label>
@@ -705,6 +820,22 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
                                             onCheckedChange={checked => handleLocalChange({ ...localSettings, show_table: checked })}
                                         />
                                     </div>
+                                    <div className="flex items-center justify-between">
+                                        <Label htmlFor="show-customer-name" className="cursor-pointer">Tampilkan Nama Pelanggan</Label>
+                                        <Switch
+                                            id="show-customer-name"
+                                            checked={localSettings.show_customer_name}
+                                            onCheckedChange={checked => handleLocalChange({ ...localSettings, show_customer_name: checked })}
+                                        />
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <Label htmlFor="show-customer-status" className="cursor-pointer">Tampilkan Status Pelanggan</Label>
+                                        <Switch
+                                            id="show-customer-status"
+                                            checked={localSettings.show_customer_status}
+                                            onCheckedChange={checked => handleLocalChange({ ...localSettings, show_customer_status: checked })}
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -714,17 +845,38 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
                             <h4 className="font-bold text-gray-800 text-sm">Pratinjau Struk ({localSettings.receipt_paper_width})</h4>
                             <div className={`border border-dashed border-gray-300 p-6 bg-gray-50/50 text-center font-mono text-[10px] space-y-1 text-gray-600 mx-auto transition-all ${localSettings.receipt_paper_width === '80mm' ? 'max-w-xs' : 'max-w-[200px]'
                                 }`}>
+                                {localSettings.show_logo && localSettings.receipt_logo_url && (
+                                    <div className="flex justify-center mb-2">
+                                        <img src={localSettings.receipt_logo_url} alt="Logo" className="w-12 h-12 object-contain grayscale" />
+                                    </div>
+                                )}
                                 <p className="font-bold text-xs uppercase text-gray-800">{localSettings.receipt_header || 'NAMA TOKO'}</p>
                                 <p className="whitespace-pre-line">{localSettings.address || 'Alamat Toko'}</p>
+                                <p>{localSettings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
+                                <div className="text-left space-y-0.5">
+                                    <p>No: ORD-12345</p>
+                                    {localSettings.show_date && <p>Waktu: {new Date().toLocaleDateString()} {new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p>}
+                                    {localSettings.show_table && <p>Meja: T-05</p>}
+                                    {localSettings.show_customer_name && <p>Pelanggan: Winny</p>}
+                                    {localSettings.show_customer_status && <p>Status: Member Gold</p>}
+                                    {localSettings.show_waiter && <p>Pelayan: Budi R.</p>}
+                                </div>
                                 <p>{localSettings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
                                 <div className="text-left flex justify-between"><span>KOPI SUSU GULA AREN</span> <span>25.000</span></div>
                                 <div className="text-left flex justify-between"><span>PISANG GORENG</span> <span>15.000</span></div>
                                 <p>{localSettings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
-                                <div className="font-bold flex justify-between text-xs text-gray-800"><span>TOTAL</span> <span>40.000</span></div>
+                                <div className="space-y-0.5">
+                                    <div className="flex justify-between"><span>Subtotal</span><span>40.000</span></div>
+                                    <div className="flex justify-between text-red-500"><span>Diskon</span><span>0</span></div>
+                                    <div className="flex justify-between"><span>Pajak (0%)</span><span>0</span></div>
+                                    <div className="font-bold flex justify-between text-xs text-gray-800"><span>TOTAL</span> <span>40.000</span></div>
+                                </div>
                                 <p>{localSettings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
-                                {localSettings.show_date && <p>{new Date().toLocaleDateString()} {new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p>}
-                                {localSettings.show_waiter && <p>Pelayan: Budi R.</p>}
-                                {localSettings.show_table && <p>Meja: T-05</p>}
+                                <div className="space-y-0.5 text-left">
+                                    <div className="flex justify-between text-left"><span>CASH</span> <span>50.000</span></div>
+                                    <div className="flex justify-between text-left"><span>Kembali</span> <span>10.000</span></div>
+                                </div>
+                                <p>{localSettings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
                                 <p className="italic mt-4 text-gray-500">{localSettings.receipt_footer || 'Terima Kasih'}</p>
                             </div>
                         </div>
@@ -839,6 +991,58 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
                     </div>
                 )}
 
+                {activeTab === 'payment_methods' && (
+                    <div className="max-w-4xl space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h3 className="text-lg font-bold text-gray-800">Metode Pembayaran</h3>
+                                <p className="text-sm text-gray-500">Kelola pilihan pembayaran yang tersedia di POS.</p>
+                            </div>
+                            <Button onClick={() => handleOpenPaymentModal()} className="bg-primary text-white">
+                                <Plus className="w-4 h-4 mr-2" /> Tambah Metode
+                            </Button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {paymentMethods.map(method => (
+                                <div key={method.id} className="group relative bg-white border border-gray-200 rounded-2xl p-5 hover:border-primary hover:shadow-lg hover:shadow-primary/5 transition-all">
+                                    <div className="flex items-start justify-between mb-4">
+                                        <div className={`p-2.5 rounded-xl ${method.is_active ? 'bg-primary/10 text-primary' : 'bg-gray-100 text-gray-400'}`}>
+                                            <CreditCard className="w-5 h-5" />
+                                        </div>
+                                        <div className="flex gap-1 group-hover:opacity-100 opacity-0 transition-opacity">
+                                            <button onClick={() => handleOpenPaymentModal(method)} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500">
+                                                <Edit className="w-3.5 h-3.5" />
+                                            </button>
+                                            {!method.is_static && (
+                                                <button
+                                                    onClick={() => onPaymentMethodAction && onPaymentMethodAction('delete', method)}
+                                                    className="p-1.5 hover:bg-red-50 rounded-lg text-red-500"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <h4 className="font-bold text-gray-800">{method.name}</h4>
+                                        <p className="text-[10px] text-gray-400 uppercase tracking-wider mt-1">
+                                            {method.type === 'cash' ? 'Tunai' : method.type === 'card' ? 'Kartu' : 'Digital'} {method.is_static && '• Sistem'}
+                                        </p>
+                                    </div>
+
+                                    <div className="mt-4 flex items-center justify-between border-t border-gray-50 pt-4">
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${method.is_active ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}>
+                                            {method.is_active ? 'AKTIF' : 'NONAKTIF'}
+                                        </span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 {/* Fallback not needed anymore as all tabs are covered */}
 
                 {/* Action Footer */}
@@ -885,6 +1089,50 @@ export function SettingsView({ settings, onUpdateSettings, tables = [], onTableA
                     </div>
                 )
             }
+
+            {/* Modal Payment Method */}
+            {isPaymentModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+                        <h3 className="text-lg font-bold text-gray-800 mb-4">{editingPayment ? 'Edit Metode Pembayaran' : 'Tambah Metode Pembayaran'}</h3>
+                        <div className="space-y-4">
+                            <div className="space-y-2">
+                                <Label>Nama Metode</Label>
+                                <input
+                                    type="text"
+                                    value={paymentForm.name}
+                                    onChange={e => setPaymentForm({ ...paymentForm, name: e.target.value })}
+                                    className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                    placeholder="Contoh: QRIS, Transfer Bank, dll"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Tipe</Label>
+                                <select
+                                    value={paymentForm.type}
+                                    onChange={e => setPaymentForm({ ...paymentForm, type: e.target.value })}
+                                    className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white"
+                                >
+                                    <option value="cash">Tunai (Cash)</option>
+                                    <option value="card">Kartu (Debit/Kredit)</option>
+                                    <option value="digital">Digital (E-Wallet/QRIS)</option>
+                                </select>
+                            </div>
+                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                                <Label className="cursor-pointer">Aktifkan Metode</Label>
+                                <Switch
+                                    checked={paymentForm.is_active}
+                                    onCheckedChange={c => setPaymentForm({ ...paymentForm, is_active: c })}
+                                />
+                            </div>
+                            <div className="flex gap-3 pt-4">
+                                <Button variant="outline" className="flex-1" onClick={() => setIsPaymentModalOpen(false)}>Batal</Button>
+                                <Button className="flex-1 bg-primary text-white" onClick={handleSavePaymentMethod}>Simpan</Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div >
     );
 }

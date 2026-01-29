@@ -1,7 +1,9 @@
 import { useState } from 'react';
-import { Package, Tags, Scale, Ticket, Plus, Search, Edit, Trash2, Filter, ChefHat, Info, Calculator, Puzzle, Settings2, X } from 'lucide-react';
+import { Package, Tags, Scale, Ticket, Plus, Search, Edit, Trash2, Filter, ChefHat, Info, Calculator, Puzzle, Settings2, X, Image as ImageIcon, Upload } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
+import { getAcronym } from '../../lib/utils';
 
 // --- Types ---
 
@@ -17,6 +19,8 @@ export interface Product {
     stock: number;
     recipe?: RecipeItem[];
     addons?: Addon[];
+    is_sellable?: boolean;
+    image_url?: string;
 }
 
 export interface Addon {
@@ -87,6 +91,7 @@ export function ProductsView({
     const [isRecipeOpen, setIsRecipeOpen] = useState(false);
     const [isAddonOpen, setIsAddonOpen] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+    const [isUploading, setIsUploading] = useState(false);
 
     // --- Generic Handlers ---
 
@@ -111,6 +116,44 @@ export function ProductsView({
             const cost = (ingredient?.costPerUnit || 0) * (item.amount || 0);
             return total + cost;
         }, 0);
+    };
+
+    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        // Basic validation
+        if (!file.type.startsWith('image/')) {
+            return toast.error('File harus berupa gambar');
+        }
+        if (file.size > 2 * 1024 * 1024) {
+            return toast.error('Ukuran gambar maksimal 2MB');
+        }
+
+        setIsUploading(true);
+        try {
+            const fileExt = file.name.split('.').pop();
+            const fileName = `prod-${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+            const filePath = `${fileName}`;
+
+            const { error: uploadError } = await supabase.storage
+                .from('product-images')
+                .upload(filePath, file);
+
+            if (uploadError) throw uploadError;
+
+            const { data: { publicUrl } } = supabase.storage
+                .from('product-images')
+                .getPublicUrl(filePath);
+
+            setFormData({ ...formData, image_url: publicUrl });
+            toast.success('Gambar berhasil diunggah');
+        } catch (error: any) {
+            console.error('Upload error:', error);
+            toast.error('Gagal upload gambar: ' + error.message);
+        } finally {
+            setIsUploading(false);
+        }
     };
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -139,8 +182,8 @@ export function ProductsView({
                 'ingredients': () => { } // Shouldn't happen here
             };
 
-            const handler = crudMap[activeTab];
-            if (activeTab !== 'products' && activeTab !== 'ingredients') {
+            const handler = (crudMap as any)[activeTab];
+            if (activeTab !== 'ingredients' && handler) {
                 if (formData.id) {
                     handler('update', formData);
                 } else {
@@ -168,12 +211,14 @@ export function ProductsView({
                 <table className="w-full text-sm">
                     <thead className="bg-gray-50/50 text-gray-400 text-left border-b border-gray-100">
                         <tr>
+                            <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px] text-center">Gambar</th>
                             <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px]">Kode</th>
                             <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px]">Nama Produk</th>
                             <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px]">Kategori</th>
                             <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px] text-right">Modal</th>
                             <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px] text-right">Harga</th>
                             <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px] text-right">Stok</th>
+                            <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px] text-center">Status</th>
                             <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px] text-center">Aksi</th>
                         </tr>
                     </thead>
@@ -183,6 +228,17 @@ export function ProductsView({
                             const margin = p.price - currentHPP;
                             return (
                                 <tr key={p.id} className="group hover:bg-gray-50/50 transition-all">
+                                    <td className="px-4 py-5">
+                                        <div className="w-12 h-12 rounded-xl bg-primary/5 overflow-hidden border border-primary/10 flex items-center justify-center relative">
+                                            {p.image_url ? (
+                                                <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
+                                            ) : (
+                                                <span className="text-xs font-black text-primary">
+                                                    {getAcronym(p.name)}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </td>
                                     <td className="px-4 py-5 font-mono text-gray-400 text-xs">{p.code}</td>
                                     <td className="px-4 py-5">
                                         <div className="font-bold text-gray-800">{p.name}</div>
@@ -203,7 +259,12 @@ export function ProductsView({
                                         <span className={`font-black ${p.stock < 10 ? 'text-red-500' : 'text-gray-700'}`}>{p.stock}</span>
                                         <span className="text-gray-400 text-[10px] ml-1 uppercase font-bold">{p.unit}</span>
                                     </td>
-                                    <td className="px-4 py-5 flex justify-center gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <td className="px-4 py-5 text-center">
+                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${p.is_sellable !== false ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                                            {p.is_sellable !== false ? 'Dijual' : 'Berhenti'}
+                                        </span>
+                                    </td>
+                                    <td className="px-4 py-5 flex justify-center gap-1">
                                         <button onClick={() => { setSelectedProduct(p); setIsRecipeOpen(true); }} className="p-2.5 bg-orange-50 text-orange-600 rounded-xl hover:bg-orange-100 transition-colors" title="Atur Resep & HPP"><ChefHat className="w-4.5 h-4.5" /></button>
                                         <button onClick={() => { setSelectedProduct(p); setIsAddonOpen(true); }} className="p-2.5 bg-purple-50 text-purple-600 rounded-xl hover:bg-purple-100 transition-colors" title="Atur Toping / Add-ons"><Puzzle className="w-4.5 h-4.5" /></button>
                                         <button onClick={() => handleOpenForm(p)} className="p-2.5 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors" title="Edit"><Edit className="w-4.5 h-4.5" /></button>
@@ -294,8 +355,8 @@ export function ProductsView({
             {isFormOpen && (() => {
                 const currentLabel = activeTab === 'products' ? 'Produk' : activeTab === 'categories' ? 'Kategori' : activeTab === 'units' ? 'Satuan' : 'Merek';
                 return (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-                        <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-xl animate-in zoom-in-95 duration-300 overflow-hidden">
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                        <div className="bg-white rounded-[48px] shadow-[0_32px_120px_-20px_rgba(0,0,0,0.3)] w-full max-w-2xl animate-in zoom-in-95 fade-in duration-300 overflow-hidden border border-white/20">
                             <div className="px-10 py-8 border-b bg-gray-50/50 flex justify-between items-center">
                                 <div>
                                     <h3 className="font-black text-2xl text-gray-800 tracking-tight">
@@ -304,71 +365,165 @@ export function ProductsView({
                                     <p className="text-sm text-gray-500 font-medium">Lengkapi rincian informasi di bawah ini.</p>
                                 </div>
                             </div>
-                            <form onSubmit={handleSubmit} className="p-10 space-y-6">
+                            <form onSubmit={handleSubmit} className="p-10 space-y-8 max-h-[75vh] overflow-y-auto custom-scrollbar">
                                 {activeTab === 'products' ? (
-                                    <>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div className="space-y-2">
-                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Kode Produk (SKU)</label>
-                                                <input className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-mono font-bold" value={formData.code || ''} onChange={e => setFormData({ ...formData, code: e.target.value })} placeholder="Ex: P001" required />
-                                            </div>
-                                            <div className="space-y-2">
-                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Nama Produk</label>
-                                                <input className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-black" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="Exp: Es Kopi Gula Aren" required />
+                                    <div className="space-y-10">
+                                        {/* Image Section */}
+                                        <div className="flex flex-col items-center gap-4 py-4 bg-gray-50/50 rounded-[32px] border-2 border-dashed border-gray-100 transition-all hover:bg-gray-50 hover:border-primary/20 group">
+                                            <div className="relative">
+                                                <div className="w-40 h-40 rounded-[40px] bg-white border border-gray-100 flex flex-col items-center justify-center overflow-hidden shadow-2xl shadow-gray-200/50 transition-all group-hover:scale-[1.02]">
+                                                    {formData.image_url ? (
+                                                        <img src={formData.image_url} alt="Preview" className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        <div className="flex flex-col items-center gap-3">
+                                                            <div className="p-4 bg-primary/5 rounded-[24px]">
+                                                                <Upload className="w-6 h-6 text-primary" />
+                                                            </div>
+                                                            <div className="text-center">
+                                                                <span className="block text-[14px] font-black text-primary uppercase tracking-tighter mb-0.5">
+                                                                    {getAcronym(formData.name || "") || "Pilih Foto"}
+                                                                </span>
+                                                                <span className="block text-[9px] font-bold text-gray-400 uppercase tracking-widest">Maks 2MB</span>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    {isUploading && (
+                                                        <div className="absolute inset-0 bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center gap-3">
+                                                            <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" />
+                                                            <span className="text-[10px] font-black text-primary uppercase tracking-widest animate-pulse">Mengunggah...</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    onChange={handleImageUpload}
+                                                    className="absolute inset-0 opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                                                    disabled={isUploading}
+                                                />
+                                                {formData.image_url && !isUploading && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.preventDefault();
+                                                            setFormData({ ...formData, image_url: '' });
+                                                        }}
+                                                        className="absolute -top-3 -right-3 p-2.5 bg-red-500 text-white rounded-2xl shadow-xl hover:bg-red-600 transition-all hover:scale-110 border-4 border-white"
+                                                    >
+                                                        <X className="w-3.5 h-3.5" />
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div className="space-y-2">
-                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Kategori Produk</label>
-                                                <select className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold" value={formData.category || ''} onChange={e => setFormData({ ...formData, category: e.target.value })}>
-                                                    <option value="">Pilih Kategori...</option>
-                                                    {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                                                </select>
+
+                                        {/* Informasi Utama Section */}
+                                        <div className="space-y-6">
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <div className="h-px flex-1 bg-gray-100"></div>
+                                                <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Informasi Utama</span>
+                                                <div className="h-px flex-1 bg-gray-100"></div>
                                             </div>
-                                            <div className="space-y-2">
-                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Satuan Dasar</label>
-                                                <select className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold" value={formData.unit || ''} onChange={e => setFormData({ ...formData, unit: e.target.value })}>
-                                                    <option value="">Pilih Satuan...</option>
-                                                    {units.map(u => <option key={u.id} value={u.abbreviation}>{u.name} ({u.abbreviation})</option>)}
-                                                </select>
+                                            <div className="grid grid-cols-2 gap-6">
+                                                <div className="space-y-2.5">
+                                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2 pl-1">
+                                                        <div className="w-1 h-1 rounded-full bg-primary ring-2 ring-primary/20"></div>
+                                                        Kode Produk (SKU)
+                                                    </label>
+                                                    <input className="w-full p-5 bg-gray-50/50 border border-gray-100 rounded-[24px] outline-none focus:ring-4 focus:ring-primary/5 focus:bg-white focus:border-primary/20 transition-all font-mono font-bold text-gray-800 placeholder:text-gray-300 shadow-sm" value={formData.code || ''} onChange={e => setFormData({ ...formData, code: e.target.value })} placeholder="Ex: P001" required />
+                                                </div>
+                                                <div className="space-y-2.5">
+                                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2 pl-1">
+                                                        <div className="w-1 h-1 rounded-full bg-primary ring-2 ring-primary/20"></div>
+                                                        Nama Produk
+                                                    </label>
+                                                    <input className="w-full p-5 bg-gray-50/50 border border-gray-100 rounded-[24px] outline-none focus:ring-4 focus:ring-primary/5 focus:bg-white focus:border-primary/20 transition-all font-black text-gray-800 placeholder:text-gray-300 shadow-sm" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="Exp: Es Kopi Gula Aren" required />
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-6">
+                                                <div className="space-y-2.5">
+                                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-1">Kategori Produk</label>
+                                                    <select className="w-full p-5 bg-gray-50/50 border border-gray-100 rounded-[24px] outline-none focus:ring-4 focus:ring-primary/5 focus:bg-white focus:border-primary/20 transition-all text-sm font-black text-gray-800 shadow-sm" value={formData.category || ''} onChange={e => setFormData({ ...formData, category: e.target.value })}>
+                                                        <option value="">Pilih Kategori...</option>
+                                                        {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div className="space-y-2.5">
+                                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-1">Satuan Dasar</label>
+                                                    <select className="w-full p-5 bg-gray-50/50 border border-gray-100 rounded-[24px] outline-none focus:ring-4 focus:ring-primary/5 focus:bg-white focus:border-primary/20 transition-all text-sm font-black text-gray-800 shadow-sm" value={formData.unit || ''} onChange={e => setFormData({ ...formData, unit: e.target.value })}>
+                                                        <option value="">Pilih Satuan...</option>
+                                                        {units.map(u => <option key={u.id} value={u.abbreviation}>{u.name} ({u.abbreviation})</option>)}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-6">
+                                                <div className="space-y-2.5">
+                                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-1">Merek</label>
+                                                    <select className="w-full p-5 bg-gray-50/50 border border-gray-100 rounded-[24px] outline-none focus:ring-4 focus:ring-primary/5 focus:bg-white focus:border-primary/20 transition-all text-sm font-black text-gray-800 shadow-sm" value={formData.brand || ''} onChange={e => setFormData({ ...formData, brand: e.target.value })}>
+                                                        <option value="">Pilih Merek...</option>
+                                                        {brands.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
+                                                    </select>
+                                                </div>
                                             </div>
                                         </div>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div className="space-y-2">
-                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Merek</label>
-                                                <select className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold" value={formData.brand || ''} onChange={e => setFormData({ ...formData, brand: e.target.value })}>
-                                                    <option value="">Pilih Merek...</option>
-                                                    {brands.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
-                                                </select>
+
+                                        {/* Harga & Inventaris Section */}
+                                        <div className="space-y-6">
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <div className="h-px flex-1 bg-gray-100"></div>
+                                                <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Harga & Inventaris</span>
+                                                <div className="h-px flex-1 bg-gray-100"></div>
                                             </div>
-                                            <div className="space-y-2">
-                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Harga Jual (IDR)</label>
-                                                <input type="number" className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-black text-blue-600" value={formData.price || ''} onChange={e => setFormData({ ...formData, price: parseInt(e.target.value) })} />
+                                            <div className="grid grid-cols-2 gap-6">
+                                                <div className="space-y-2.5">
+                                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-1">Harga Jual (IDR)</label>
+                                                    <div className="relative">
+                                                        <span className="absolute left-5 top-1/2 -translate-y-1/2 text-xs font-black text-blue-400">Rp</span>
+                                                        <input type="number" className="w-full p-5 pl-12 bg-blue-50/30 border border-blue-100 rounded-[24px] outline-none focus:ring-4 focus:ring-blue-500/5 focus:bg-white focus:border-blue-500/20 transition-all font-black text-blue-600 shadow-sm" value={formData.price || ''} onChange={e => setFormData({ ...formData, price: parseInt(e.target.value) })} placeholder="0" />
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-2.5">
+                                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-1">Stok Awal</label>
+                                                    <input type="number" className="w-full p-5 bg-gray-50/50 border border-gray-100 rounded-[24px] outline-none focus:ring-4 focus:ring-primary/5 focus:bg-white focus:border-primary/20 transition-all font-black text-gray-800 shadow-sm" value={formData.stock || ''} onChange={e => setFormData({ ...formData, stock: parseInt(e.target.value) })} placeholder="0" />
+                                                </div>
+                                            </div>
+
+                                            <div className="p-6 bg-primary/5 rounded-[32px] border border-primary/10 flex items-center justify-between group transition-all hover:bg-primary/10">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="p-3 bg-white rounded-2xl shadow-sm text-primary group-hover:scale-110 transition-transform">
+                                                        <Package className="w-5 h-5" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-sm font-black text-gray-800">Status Penjualan</p>
+                                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Tampilkan Menu di Layar Kasir</p>
+                                                    </div>
+                                                </div>
+                                                <div
+                                                    onClick={() => setFormData({ ...formData, is_sellable: formData.is_sellable === false ? true : false })}
+                                                    className={`w-14 h-8 rounded-full transition-all cursor-pointer relative p-1 ${formData.is_sellable !== false ? 'bg-primary' : 'bg-gray-200'}`}
+                                                >
+                                                    <div className={`w-6 h-6 bg-white rounded-full shadow-md transition-all transform ${formData.is_sellable !== false ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                                                </div>
                                             </div>
                                         </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Stok Awal Inventaris</label>
-                                            <input type="number" className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-black" value={formData.stock || ''} onChange={e => setFormData({ ...formData, stock: parseInt(e.target.value) })} />
-                                        </div>
-                                    </>
+                                    </div>
                                 ) : (
-                                    <>
-                                        <div className="space-y-2">
+                                    <div className="space-y-8">
+                                        <div className="space-y-3">
                                             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Nama {currentLabel}</label>
-                                            <input className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-bold" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} required />
+                                            <input className="w-full p-5 bg-gray-50/50 border border-gray-100 rounded-[24px] outline-none focus:ring-4 focus:ring-primary/5 transition-all font-black text-gray-800 shadow-sm" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} required />
                                         </div>
                                         {activeTab === 'units' ? (
-                                            <div className="space-y-2">
+                                            <div className="space-y-3">
                                                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Singkatan Satuan</label>
-                                                <input className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-bold" value={formData.abbreviation || ''} onChange={e => setFormData({ ...formData, abbreviation: e.target.value })} placeholder="cth: kg, L, pcs" />
+                                                <input className="w-full p-5 bg-gray-50/50 border border-gray-100 rounded-[24px] outline-none focus:ring-4 focus:ring-primary/5 transition-all font-mono font-bold text-gray-800 shadow-sm" value={formData.abbreviation || ''} onChange={e => setFormData({ ...formData, abbreviation: e.target.value })} placeholder="cth: kg, L, pcs" />
                                             </div>
                                         ) : (
-                                            <div className="space-y-2">
+                                            <div className="space-y-3">
                                                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Deskripsi Tambahan</label>
-                                                <textarea className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm" rows={4} value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} />
+                                                <textarea className="w-full p-5 bg-gray-50/50 border border-gray-100 rounded-[32px] outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold text-gray-800 shadow-sm min-h-[160px]" value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} placeholder="Opsional..." />
                                             </div>
                                         )}
-                                    </>
+                                    </div>
                                 )}
 
                                 <div className="flex justify-end gap-3 pt-6 border-t border-gray-50">

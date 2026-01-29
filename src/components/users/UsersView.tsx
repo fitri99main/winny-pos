@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, Shield, Plus, Search, MoreVertical, X } from 'lucide-react';
+import { Users, Shield, Plus, Search, MoreVertical, X, Edit } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -583,6 +583,38 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
                         </div>
                     )}
 
+                    {/* Missing Role Banner (Self-Fix) */}
+                    {activeTab === 'users' && user && users.some(u => u.id === user.id && !u.role) && (
+                        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-center justify-between animate-in slide-in-from-top-2 mb-6">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center text-orange-600">
+                                    <Shield className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h4 className="font-bold text-orange-800">Role Anda Belum Diatur</h4>
+                                    <p className="text-xs text-orange-700">Akun Anda tidak memiliki hak akses (Administrator), sehingga data pengguna lain tidak terlihat.</p>
+                                </div>
+                            </div>
+                            <Button
+                                size="sm"
+                                className="bg-orange-600 hover:bg-orange-700 text-white shadow-lg shadow-orange-200"
+                                onClick={async () => {
+                                    try {
+                                        const { error } = await supabase.from('profiles').update({ role: 'Administrator' }).eq('id', user.id);
+                                        if (error) throw error;
+                                        toast.success('Berhasil! Anda sekarang Administrator.');
+                                        fetchUsers();
+                                    } catch (err: any) {
+                                        toast.error('Gagal update role: ' + err.message);
+                                    }
+                                }}
+                            >
+                                <Shield className="w-4 h-4 mr-2" />
+                                Klaim Akses Admin
+                            </Button>
+                        </div>
+                    )}
+
                     {activeTab === 'users' ? (
                         /* Users Table */
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -623,7 +655,7 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-50 text-blue-600">
-                                                        {user.role}
+                                                        {user.role || 'Tanpa Peran'}
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4">
@@ -646,7 +678,7 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
                                                         className="p-2 hover:bg-blue-50 rounded-lg text-gray-400 hover:text-blue-600 transition-colors mr-1"
                                                         title="Edit Pengguna"
                                                     >
-                                                        <div className="w-4 h-4">✏️</div>
+                                                        <Edit className="w-4 h-4" />
                                                         {/* Using Emoji temporarily if Lucide Pencil is not imported, or just use Lucide if available. 
                                                             Checking imports... Edit/Pencil not imported. Use Emoji or add import. 
                                                             Let's stick to existing style, I will just assume Pencil is not imported and use text/emoji for safety or add import.
@@ -949,7 +981,7 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
                                     onChange={(e) => setNewUser({ ...newUser, branchId: e.target.value })}
                                     className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all bg-white"
                                 >
-                                    {branchList.map(branch => (
+                                    {(branches || []).map(branch => (
                                         <option key={branch.id} value={branch.id}>{branch.name}</option>
                                     ))}
                                 </select>

@@ -1,4 +1,4 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Pause, Play, Trash2, Clock } from 'lucide-react';
@@ -43,6 +43,9 @@ export function HeldOrdersModal({
                         <Pause className="w-6 h-6 text-pos-coral" />
                         Pesanan Ditangguhkan
                     </DialogTitle>
+                    <DialogDescription>
+                        Daftar pesanan yang sedang ditangguhkan. Pilih untuk melanjutkan atau hapus.
+                    </DialogDescription>
                 </DialogHeader>
 
                 <ScrollArea className="flex-1 -mx-6 px-6">

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Split, Minus, Plus } from 'lucide-react';
@@ -61,6 +61,9 @@ export function SplitBillModal({
                         <Split className="w-6 h-6 text-pos-coral" />
                         Pisah Tagihan
                     </DialogTitle>
+                    <DialogDescription>
+                        Pilih item dan jumlah yang ingin dibayar terpisah dari total tagihan.
+                    </DialogDescription>
                     <p className="text-sm text-gray-500">
                         Pilih item yang ingin dibayar terpisah
                     </p>

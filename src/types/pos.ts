@@ -16,6 +16,8 @@ export interface Product {
   target?: 'Kitchen' | 'Bar' | 'Waitress';
   recipe?: { ingredientId: number; amount: number }[];
   addons?: Addon[];
+  is_sellable?: boolean;
+  image_url?: string;
 }
 
 export interface OrderItem {

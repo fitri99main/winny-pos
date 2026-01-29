@@ -40,7 +40,11 @@ class PrinterService {
         paperWidth: '58mm',
         showDate: true,
         showWaiter: true,
-        showTable: true
+        showTable: true,
+        showCustomerName: true,
+        showCustomerStatus: true,
+        showLogo: true,
+        logoUrl: ''
     };
 
     // ESC/POS Commands
@@ -54,7 +58,7 @@ class PrinterService {
 
     async connect(type: 'Kitchen' | 'Bar' | 'Cashier'): Promise<string> {
         try {
-            const device = await navigator.bluetooth.requestDevice({
+            const device = await (navigator as any).bluetooth.requestDevice({
                 filters: [
                     { services: [this.SERVICE_UUID] },
                     { namePrefix: 'TP' },
@@ -90,6 +94,10 @@ class PrinterService {
 
     setTemplate(newTemplate: any) {
         this.template = { ...this.template, ...newTemplate };
+    }
+
+    getTemplate() {
+        return this.template;
     }
 
     private getLineWidth(): number {
@@ -166,10 +174,13 @@ class PrinterService {
         items: { name: string; quantity: number; price: number }[];
         subtotal: number;
         discount: number;
+        tax: number;
         total: number;
         paymentType: string;
         amountPaid: number;
         change: number;
+        customerName?: string;
+        customerLevel?: string;
     }) {
         const printer = this.cashierPrinter;
         if (!printer || !printer.characteristic) {
@@ -201,8 +212,10 @@ class PrinterService {
         commands.push(new Uint8Array([this.ESC, 0x61, 0x00])); // Left align
         commands.push(encoder.encode(`No: ${data.orderNo}\n`));
         if (this.template.showDate) commands.push(encoder.encode(`Waktu: ${data.time}\n`));
-        if (this.template.showWaiter) commands.push(encoder.encode(`Pelayan: ${data.waiterName}\n`));
         if (this.template.showTable) commands.push(encoder.encode(`Meja: ${data.tableNo}\n`));
+        if (this.template.showCustomerName && data.customerName) commands.push(encoder.encode(`Pelanggan: ${data.customerName}\n`));
+        if (this.template.showCustomerStatus && data.customerLevel) commands.push(encoder.encode(`Status: ${data.customerLevel}\n`));
+        if (this.template.showWaiter) commands.push(encoder.encode(`Pelayan: ${data.waiterName}\n`));
         commands.push(encoder.encode(line));
 
         // Items
@@ -222,6 +235,9 @@ class PrinterService {
         commands.push(encoder.encode(`${'Subtotal'.padEnd(labelWidth)}${data.subtotal.toLocaleString('id-ID').padStart(valWidth)}\n`));
         if (data.discount > 0) {
             commands.push(encoder.encode(`${'Diskon'.padEnd(labelWidth)}${data.discount.toLocaleString('id-ID').padStart(valWidth)}\n`));
+        }
+        if (data.tax > 0) {
+            commands.push(encoder.encode(`${'Pajak'.padEnd(labelWidth)}${data.tax.toLocaleString('id-ID').padStart(valWidth)}\n`));
         }
         commands.push(new Uint8Array([this.GS, 0x21, 0x01])); // Bold-ish (emphasized)
         commands.push(encoder.encode(`${'TOTAL'.padEnd(labelWidth)}${data.total.toLocaleString('id-ID').padStart(valWidth)}\n`));

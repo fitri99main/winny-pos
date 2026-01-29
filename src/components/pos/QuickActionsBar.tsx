@@ -1,5 +1,6 @@
 import { Percent, Split, Pause, CreditCard, PackagePlus } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { toast } from 'sonner';
 
 interface QuickActionsBarProps {
   onManualItemClick: () => void;
@@ -22,8 +23,17 @@ export function QuickActionsBar({
   hasItems,
   heldCount,
 }: QuickActionsBarProps) {
+
+  const handleAction = (action: () => void, label: string) => {
+    if (!hasItems) {
+      toast.warning(`Keranjang kosong. Tambahkan item sebelum ${label}.`);
+      return;
+    }
+    action();
+  };
+
   return (
-    <div className="absolute bottom-4 left-4 right-4 z-10">
+    <div className="absolute bottom-4 left-4 right-4 z-50">
       <div className="max-w-7xl mx-auto">
         <motion.div
           initial={{ y: 100, opacity: 0 }}
@@ -42,33 +52,34 @@ export function QuickActionsBar({
 
           <motion.button
             whileTap={{ scale: 0.95 }}
-            onClick={onDiscountClick}
-            disabled={!hasItems}
-            className="flex-1 flex items-center justify-center gap-2 py-4 px-6 rounded-xl bg-gray-50 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            onClick={() => handleAction(onDiscountClick, 'memberi diskon')}
+            // We removed disabled prop to allow feedback
+            className={`flex-1 flex items-center justify-center gap-2 py-4 px-6 rounded-xl transition-colors ${!hasItems ? 'bg-gray-50 text-gray-400' : 'bg-gray-50 hover:bg-gray-100 text-pos-charcoal'
+              }`}
           >
-            <Percent className="w-5 h-5 text-pos-charcoal" />
-            <span className="font-medium text-pos-charcoal">Diskon</span>
+            <Percent className={`w-5 h-5 ${!hasItems ? 'text-gray-400' : 'text-pos-charcoal'}`} />
+            <span className="font-medium">Diskon</span>
           </motion.button>
 
           <motion.button
             whileTap={{ scale: 0.95 }}
-            onClick={onSplitBillClick}
-            disabled={!hasItems}
-            className="flex-1 flex items-center justify-center gap-2 py-4 px-6 rounded-xl bg-gray-50 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            onClick={() => handleAction(onSplitBillClick, 'memisah tagihan')}
+            className={`flex-1 flex items-center justify-center gap-2 py-4 px-6 rounded-xl transition-colors ${!hasItems ? 'bg-gray-50 text-gray-400' : 'bg-gray-50 hover:bg-gray-100 text-pos-charcoal'
+              }`}
           >
-            <Split className="w-5 h-5 text-pos-charcoal" />
-            <span className="font-medium text-pos-charcoal">Pisah Tagihan</span>
+            <Split className={`w-5 h-5 ${!hasItems ? 'text-gray-400' : 'text-pos-charcoal'}`} />
+            <span className="font-medium">Pisah Tagihan</span>
           </motion.button>
 
           <div className="flex-1 flex gap-2">
             <motion.button
               whileTap={{ scale: 0.95 }}
-              onClick={onHoldOrderClick}
-              disabled={!hasItems}
-              className="flex-1 flex items-center justify-center gap-2 py-4 px-6 rounded-xl bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              onClick={() => handleAction(onHoldOrderClick, 'menangguhkan pesanan')}
+              className={`flex-1 flex items-center justify-center gap-2 py-4 px-6 rounded-xl transition-colors ${!hasItems ? 'bg-gray-100 text-gray-400' : 'bg-gray-100 hover:bg-gray-200 text-pos-charcoal'
+                }`}
             >
-              <Pause className="w-5 h-5 text-pos-charcoal" />
-              <span className="font-medium text-pos-charcoal">Tangguhkan</span>
+              <Pause className={`w-5 h-5 ${!hasItems ? 'text-gray-400' : 'text-pos-charcoal'}`} />
+              <span className="font-medium">Tangguhkan</span>
             </motion.button>
 
             {heldCount > 0 && (
@@ -87,12 +98,12 @@ export function QuickActionsBar({
 
           <motion.button
             whileTap={{ scale: 0.95 }}
-            onClick={onPaymentClick}
-            disabled={!hasItems}
-            className="flex-1 flex items-center justify-center gap-2 py-4 px-6 rounded-xl bg-pos-coral hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-lg"
+            onClick={() => handleAction(onPaymentClick, 'melakukan pembayaran')}
+            className={`flex-1 flex items-center justify-center gap-2 py-4 px-6 rounded-xl transition-colors shadow-lg ${!hasItems ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-pos-coral hover:bg-orange-600 text-white'
+              }`}
           >
-            <CreditCard className="w-5 h-5 text-white" />
-            <span className="font-bold text-white">Pembayaran</span>
+            <CreditCard className={`w-5 h-5 ${!hasItems ? 'text-gray-500' : 'text-white'}`} />
+            <span className="font-bold">Pembayaran</span>
           </motion.button>
         </motion.div>
       </div>
