@@ -21,6 +21,7 @@ export interface Product {
     addons?: Addon[];
     is_sellable?: boolean;
     image_url?: string;
+    branch_id?: number | string;
 }
 
 export interface Addon {
@@ -66,6 +67,7 @@ interface ProductsViewProps {
     onCategoryCRUD: (action: 'create' | 'update' | 'delete', data: any) => void;
     onUnitCRUD: (action: 'create' | 'update' | 'delete', data: any) => void;
     onBrandCRUD: (action: 'create' | 'update' | 'delete', data: any) => void;
+    currentBranchId?: string;
 }
 
 export function ProductsView({
@@ -81,7 +83,8 @@ export function ProductsView({
     onProductCRUD,
     onCategoryCRUD,
     onUnitCRUD,
-    onBrandCRUD
+    onBrandCRUD,
+    currentBranchId
 }: ProductsViewProps) {
     const [activeTab, setActiveTab] = useState<'products' | 'categories' | 'units' | 'brands' | 'ingredients'>('products');
 
@@ -223,56 +226,58 @@ export function ProductsView({
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                        {products.map(p => {
-                            const currentHPP = calculateHPP(p.recipe);
-                            const margin = p.price - currentHPP;
-                            return (
-                                <tr key={p.id} className="group hover:bg-gray-50/50 transition-all">
-                                    <td className="px-4 py-5">
-                                        <div className="w-12 h-12 rounded-xl bg-primary/5 overflow-hidden border border-primary/10 flex items-center justify-center relative">
-                                            {p.image_url ? (
-                                                <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
-                                            ) : (
-                                                <span className="text-xs font-black text-primary">
-                                                    {getAcronym(p.name)}
-                                                </span>
-                                            )}
-                                        </div>
-                                    </td>
-                                    <td className="px-4 py-5 font-mono text-gray-400 text-xs">{p.code}</td>
-                                    <td className="px-4 py-5">
-                                        <div className="font-bold text-gray-800">{p.name}</div>
-                                        <div className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">{p.brand}</div>
-                                    </td>
-                                    <td className="px-4 py-5">
-                                        <span className="px-2.5 py-1 bg-primary/5 text-primary rounded-lg text-[10px] font-black uppercase tracking-widest ring-1 ring-primary/10">
-                                            {p.category}
-                                        </span>
-                                    </td>
-                                    <td className="px-4 py-5 text-right font-black text-orange-600">
-                                        Rp {currentHPP.toLocaleString()}
-                                    </td>
-                                    <td className="px-4 py-5 text-right font-black text-blue-600">
-                                        Rp {p.price.toLocaleString()}
-                                    </td>
-                                    <td className="px-4 py-5 text-right">
-                                        <span className={`font-black ${p.stock < 10 ? 'text-red-500' : 'text-gray-700'}`}>{p.stock}</span>
-                                        <span className="text-gray-400 text-[10px] ml-1 uppercase font-bold">{p.unit}</span>
-                                    </td>
-                                    <td className="px-4 py-5 text-center">
-                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${p.is_sellable !== false ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
-                                            {p.is_sellable !== false ? 'Dijual' : 'Berhenti'}
-                                        </span>
-                                    </td>
-                                    <td className="px-4 py-5 flex justify-center gap-1">
-                                        <button onClick={() => { setSelectedProduct(p); setIsRecipeOpen(true); }} className="p-2.5 bg-orange-50 text-orange-600 rounded-xl hover:bg-orange-100 transition-colors" title="Atur Resep & HPP"><ChefHat className="w-4.5 h-4.5" /></button>
-                                        <button onClick={() => { setSelectedProduct(p); setIsAddonOpen(true); }} className="p-2.5 bg-purple-50 text-purple-600 rounded-xl hover:bg-purple-100 transition-colors" title="Atur Toping / Add-ons"><Puzzle className="w-4.5 h-4.5" /></button>
-                                        <button onClick={() => handleOpenForm(p)} className="p-2.5 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors" title="Edit"><Edit className="w-4.5 h-4.5" /></button>
-                                        <button onClick={() => handleDelete(p.id, 'product')} className="p-2.5 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors" title="Hapus"><Trash2 className="w-4.5 h-4.5" /></button>
-                                    </td>
-                                </tr>
-                            );
-                        })}
+                        {products
+                            .filter(p => !currentBranchId || String(p.branch_id) === String(currentBranchId) || !p.branch_id)
+                            .map(p => {
+                                const currentHPP = calculateHPP(p.recipe);
+                                const margin = p.price - currentHPP;
+                                return (
+                                    <tr key={p.id} className="group hover:bg-gray-50/50 transition-all">
+                                        <td className="px-4 py-5">
+                                            <div className="w-12 h-12 rounded-xl bg-primary/5 overflow-hidden border border-primary/10 flex items-center justify-center relative">
+                                                {p.image_url ? (
+                                                    <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <span className="text-xs font-black text-primary">
+                                                        {getAcronym(p.name)}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-5 font-mono text-gray-400 text-xs">{p.code}</td>
+                                        <td className="px-4 py-5">
+                                            <div className="font-bold text-gray-800">{p.name}</div>
+                                            <div className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">{p.brand}</div>
+                                        </td>
+                                        <td className="px-4 py-5">
+                                            <span className="px-2.5 py-1 bg-primary/5 text-primary rounded-lg text-[10px] font-black uppercase tracking-widest ring-1 ring-primary/10">
+                                                {p.category}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-5 text-right font-black text-orange-600">
+                                            Rp {currentHPP.toLocaleString()}
+                                        </td>
+                                        <td className="px-4 py-5 text-right font-black text-blue-600">
+                                            Rp {p.price.toLocaleString()}
+                                        </td>
+                                        <td className="px-4 py-5 text-right">
+                                            <span className={`font-black ${p.stock < 10 ? 'text-red-500' : 'text-gray-700'}`}>{p.stock}</span>
+                                            <span className="text-gray-400 text-[10px] ml-1 uppercase font-bold">{p.unit}</span>
+                                        </td>
+                                        <td className="px-4 py-5 text-center">
+                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${p.is_sellable !== false ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                                                {p.is_sellable !== false ? 'Dijual' : 'Berhenti'}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-5 flex justify-center gap-1">
+                                            <button onClick={() => { setSelectedProduct(p); setIsRecipeOpen(true); }} className="p-2.5 bg-orange-50 text-orange-600 rounded-xl hover:bg-orange-100 transition-colors" title="Atur Resep & HPP"><ChefHat className="w-4.5 h-4.5" /></button>
+                                            <button onClick={() => { setSelectedProduct(p); setIsAddonOpen(true); }} className="p-2.5 bg-purple-50 text-purple-600 rounded-xl hover:bg-purple-100 transition-colors" title="Atur Toping / Add-ons"><Puzzle className="w-4.5 h-4.5" /></button>
+                                            <button onClick={() => handleOpenForm(p)} className="p-2.5 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors" title="Edit"><Edit className="w-4.5 h-4.5" /></button>
+                                            <button onClick={() => handleDelete(p.id, 'product')} className="p-2.5 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors" title="Hapus"><Trash2 className="w-4.5 h-4.5" /></button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                     </tbody>
                 </table>
             </div>

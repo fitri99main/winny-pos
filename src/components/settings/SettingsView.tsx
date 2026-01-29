@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, User, Monitor, Globe, Bell, Shield, Save, Clock, Calendar, Printer, FileText, LayoutGrid, Plus, Trash2, Edit, CreditCard, CheckCircle2, XCircle } from 'lucide-react';
+import { Settings, User, Monitor, Globe, Bell, Shield, Save, Clock, Calendar, Printer, FileText, LayoutGrid, Plus, Trash2, Edit, CreditCard, CheckCircle2, XCircle, Database, Upload, Download, AlertTriangle, Loader2 } from 'lucide-react';
 import { printerService } from '../../lib/PrinterService';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -127,6 +127,7 @@ export function SettingsView({
         { id: 'receipt', label: 'Templat Struk', icon: FileText },
         { id: 'payment_methods', label: 'Metode Pembayaran', icon: CreditCard },
         { id: 'security', label: 'Keamanan', icon: Shield },
+        { id: 'backup', label: 'Backup & Data', icon: Database },
     ];
 
     // Password Change State
@@ -217,6 +218,121 @@ export function SettingsView({
         } else {
             toast.info('Tidak ada perubahan untuk disimpan');
         }
+    };
+
+    // --- BACKUP & RESTORE LOGIC ---
+    const [isBackingUp, setIsBackingUp] = useState(false);
+    const [isRestoring, setIsRestoring] = useState(false);
+    const [restoreProgress, setRestoreProgress] = useState('');
+
+    const handleBackup = async () => {
+        setIsBackingUp(true);
+        toast.info('Memulai proses backup data...');
+        try {
+            const tablesToBackup = [
+                'branches', 'store_settings', 'categories', 'units', 'brands',
+                'products', 'ingredients', 'tables', 'shifts', 'employees',
+                'contacts', 'sales', 'sale_items', 'purchases', 'stock_movements',
+                'attendance_logs', 'payrolls', 'shift_schedules', 'product_addons', 'product_recipes',
+                'payment_methods', 'departments'
+            ];
+
+            const backupData: any = {
+                timestamp: new Date().toISOString(),
+                version: '1.0',
+                tables: {}
+            };
+
+            for (const table of tablesToBackup) {
+                const { data, error } = await supabase.from(table).select('*');
+                if (error) {
+                    console.warn(`Skipping table ${table} due to error:`, error.message);
+                    continue;
+                }
+                backupData.tables[table] = data || [];
+            }
+
+            // Create Blob and Download
+            const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `backup-winny-pos-${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+            toast.success('Backup selesai! File telah didownload.');
+
+        } catch (err: any) {
+            console.error('Backup failed:', err);
+            toast.error('Backup gagal: ' + err.message);
+        } finally {
+            setIsBackingUp(false);
+        }
+    };
+
+    const handleRestore = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        if (!confirm('PERINGATAN: Restore akan menimpa/menggabungkan data yang ada. Pastikan Anda punya backup sebelumnya. Lanjutkan?')) {
+            event.target.value = ''; // Reset input
+            return;
+        }
+
+        setIsRestoring(true);
+        setRestoreProgress('Membaca file...');
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const content = e.target?.result as string;
+                const backupData = JSON.parse(content);
+
+                if (!backupData.tables) throw new Error('Format file backup tidak valid.');
+
+                const tablesToRestore = [
+                    'branches', 'store_settings', 'categories', 'units', 'brands',
+                    'payment_methods', 'departments',
+                    'products', 'ingredients', 'tables', 'shifts',
+                    'employees', 'contacts',
+                    'sales', 'sale_items', 'purchases', 'stock_movements',
+                    'attendance_logs', 'payrolls', 'shift_schedules',
+                    'product_addons', 'product_recipes'
+                ];
+
+                for (const table of tablesToRestore) {
+                    const rows = backupData.tables[table];
+                    if (rows && rows.length > 0) {
+                        setRestoreProgress(`Memulihkan ${table} (${rows.length} data)...`);
+
+                        // Process in chunks of 100 to avoid request size limits
+                        const chunkSize = 100;
+                        for (let i = 0; i < rows.length; i += chunkSize) {
+                            const chunk = rows.slice(i, i + chunkSize);
+                            const { error } = await supabase.from(table).upsert(chunk);
+                            if (error) {
+                                console.error(`Error restoring ${table} chunk ${i}:`, error.message);
+                                // Optional: throw error to stop, or continue "best effort"
+                            }
+                        }
+                    }
+                }
+
+                toast.success('Restore data selesai! Silakan refresh halaman.');
+
+            } catch (err: any) {
+                console.error('Restore failed:', err);
+                toast.error('Restore gagal: ' + err.message);
+            } finally {
+                setIsRestoring(false);
+                setRestoreProgress('');
+                event.target.value = ''; // Reset input
+            }
+        };
+        reader.readAsText(file);
     };
 
     return (
@@ -939,6 +1055,98 @@ export function SettingsView({
                     </div>
                 )}
 
+                {activeTab === 'backup' && (
+                    <div className="max-w-2xl space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                        <div>
+                            <h3 className="text-lg font-bold text-gray-800">Backup & Recovery</h3>
+                            <p className="text-sm text-gray-500">Amankan data aplikasi Anda atau pulihkan dari file backup.</p>
+                        </div>
+
+                        <div className="p-6 bg-blue-50 rounded-2xl border border-blue-100 space-y-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shadow-sm">
+                                    <Download className="w-5 h-5 text-blue-600" />
+                                </div>
+                                <div>
+                                    <h4 className="font-bold text-gray-800">Backup Data</h4>
+                                    <p className="text-xs text-gray-500">Download semua data database dalam format JSON.</p>
+                                </div>
+                            </div>
+                            <div className="pl-[52px]">
+                                <Button
+                                    onClick={handleBackup}
+                                    disabled={isBackingUp}
+                                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                                >
+                                    {isBackingUp ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                            Memproses Backup...
+                                        </>
+                                    ) : (
+                                        'Download Backup'
+                                    )}
+                                </Button>
+                                <p className="text-[10px] text-gray-400 mt-2">
+                                    Berisi data Produk, Penjualan, Karyawan, Stok, dan Pengaturan.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="p-6 bg-orange-50 rounded-2xl border border-orange-100 space-y-4 relative overflow-hidden">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shadow-sm">
+                                    <Upload className="w-5 h-5 text-orange-600" />
+                                </div>
+                                <div>
+                                    <h4 className="font-bold text-gray-800">Restore Data</h4>
+                                    <p className="text-xs text-gray-500">Pulihkan data dari file backup JSON.</p>
+                                </div>
+                            </div>
+
+                            <div className="pl-[52px] space-y-3">
+                                {isRestoring ? (
+                                    <div className="space-y-2">
+                                        <div className="flex items-center gap-2 text-sm text-orange-700 font-medium">
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                            {restoreProgress}
+                                        </div>
+                                        <div className="w-full bg-orange-200 h-1.5 rounded-full overflow-hidden">
+                                            <div className="h-full bg-orange-500 animate-pulse w-full origin-left"></div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="relative">
+                                            <Button
+                                                variant="outline"
+                                                className="border-orange-200 text-orange-700 hover:bg-orange-100 hover:text-orange-800"
+                                                onClick={() => document.getElementById('restore-upload')?.click()}
+                                            >
+                                                Pilih File Backup
+                                            </Button>
+                                            <input
+                                                type="file"
+                                                id="restore-upload"
+                                                className="hidden"
+                                                accept=".json"
+                                                onChange={handleRestore}
+                                            />
+                                        </div>
+
+                                        <div className="flex items-start gap-2 bg-white/50 p-3 rounded-lg border border-orange-100/50">
+                                            <AlertTriangle className="w-4 h-4 text-orange-500 flex-shrink-0 mt-0.5" />
+                                            <p className="text-[10px] text-orange-700 leading-relaxed">
+                                                <strong>PERHATIAN:</strong> Proses ini akan menggabungkan data backup dengan data yang ada (Upsert).
+                                                Data dengan ID yang sama akan ditimpa. Pastikan Anda tahu apa yang Anda lakukan.
+                                            </p>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
                 {activeTab === 'security' && (
                     <div className="max-w-2xl space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
                         <div>

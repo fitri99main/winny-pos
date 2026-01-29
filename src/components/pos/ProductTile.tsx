@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { ShoppingCart } from 'lucide-react';
+import { ShoppingCart, Coffee } from 'lucide-react';
 import { Product } from '@/types/pos';
 import { getAcronym } from '@/lib/utils';
 
@@ -14,7 +14,7 @@ export function ProductTile({ product, onAddToCart }: ProductTileProps) {
       style: 'currency',
       currency: 'IDR',
       minimumFractionDigits: 0,
-    }).format(price);
+    }).format(price || 0);
   };
 
   return (
@@ -32,20 +32,18 @@ export function ProductTile({ product, onAddToCart }: ProductTileProps) {
             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 ease-out"
           />
         ) : (
-          <div className="w-full h-full bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center relative">
-            <div className="absolute inset-0 opacity-10 flex items-center justify-center overflow-hidden">
-              <ShoppingCart className="w-24 h-24 -rotate-12" />
-            </div>
-            <span className="text-2xl font-black text-primary drop-shadow-sm z-10 font-mono tracking-tighter">
-              {getAcronym(product.name)}
+          <div className="w-full h-full bg-primary/5 flex items-center justify-center relative">
+            <span className="text-2xl font-black text-primary/40 font-mono tracking-tighter">
+              {getAcronym(product?.name || '')}
             </span>
+            {/* Keeping it simple like Kiosk - no acronym */}
           </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
       </div>
       <div className="p-2 text-left">
         <h3 className="font-medium text-pos-charcoal text-xs mb-0.5 line-clamp-1">
-          {product.name}
+          {product?.name || 'Unknown Product'}
         </h3>
         <p className="font-mono font-bold text-pos-coral text-sm">
           {formatPrice(product.price)}

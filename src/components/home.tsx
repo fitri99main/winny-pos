@@ -53,13 +53,20 @@ function Home() {
   const [userRole, setUserRole] = useState<string>('Administrator');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [currentBranchId, setCurrentBranchId] = useState('');
+  const [currentBranchId, setCurrentBranchId] = useState(localStorage.getItem('winpos_current_branch') || '');
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [orderDiscount, setOrderDiscount] = useState(0);
   const [isCashierOpen, setIsCashierOpen] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [contacts, setContacts] = useState<ContactData[]>([]);
+  // Persist Branch Selection
+  useEffect(() => {
+    if (currentBranchId) {
+      localStorage.setItem('winpos_current_branch', currentBranchId);
+    }
+  }, [currentBranchId]);
+
   const [employees, setEmployees] = useState<any[]>([]);
 
   // POS State
@@ -92,7 +99,8 @@ function Home() {
           ...data,
           current_stock: Number(data.current_stock || 0),
           min_stock: Number(data.min_stock || 0),
-          cost_per_unit: Number(data.cost_per_unit || 0)
+          cost_per_unit: Number(data.cost_per_unit || 0),
+          branch_id: currentBranchId
         };
         const { error } = await supabase.from('ingredients').insert([payload]);
         if (error) throw error;
@@ -127,6 +135,7 @@ function Home() {
       const { error: moveError } = await supabase.from('stock_movements').insert([{
         ingredient_id: ingredientId,
         ingredient_name: ingredientName,
+        branch_id: currentBranchId,
         type,
         quantity: qty,
         unit,
@@ -220,9 +229,8 @@ function Home() {
   });
 
   // --- Master Data Integration ---
-  const fetchMasterData = async () => {
-    // Helper to log errors but return null so Promise.all doesn't fail
-    // Helper to log errors but return null so Promise.all doesn't fail
+  const fetchGlobalData = async () => {
+    // Fetch data that doesn't depend on branch
     const safeFetch = async (promise: any, name: string) => {
       try {
         const res = await promise;
@@ -234,78 +242,126 @@ function Home() {
       }
     };
 
-    try {
-      const results = await Promise.all([
-        safeFetch(supabase.from('products').select('*').order('created_at', { ascending: false }), 'products'),
-        safeFetch(supabase.from('categories').select('*').order('name'), 'categories'),
-        safeFetch(supabase.from('units').select('*').order('name'), 'units'),
-        safeFetch(supabase.from('brands').select('*').order('name'), 'brands'),
-        safeFetch(supabase.from('contacts').select('*').order('name'), 'contacts'),
-        safeFetch(supabase.from('branches').select('*').order('id'), 'branches'),
-        safeFetch(supabase.from('shifts').select('*').order('id'), 'shifts'),
-        safeFetch(supabase.from('shift_schedules').select('*').order('date'), 'schedules'),
-        safeFetch(supabase.from('store_settings').select('*').eq('id', 1).maybeSingle(), 'settings'),
-        safeFetch(supabase.from('tables').select('*').order('number'), 'tables'),
-        safeFetch(supabase.from('ingredients').select('*').order('name'), 'ingredients'),
-        safeFetch(supabase.from('stock_movements').select('*').order('date', { ascending: false }), 'movements'),
-        safeFetch(supabase.from('payment_methods').select('*').order('name'), 'payment_methods')
-      ]);
+    const results = await Promise.all([
+      safeFetch(supabase.from('categories').select('*').order('name'), 'categories'),
+      safeFetch(supabase.from('units').select('*').order('name'), 'units'),
+      safeFetch(supabase.from('brands').select('*').order('name'), 'brands'),
+      safeFetch(supabase.from('contacts').select('*').order('name'), 'contacts'),
+      safeFetch(supabase.from('branches').select('*').order('id'), 'branches'),
+      safeFetch(supabase.from('shifts').select('*').order('id'), 'shifts'),
+      safeFetch(supabase.from('store_settings').select('*').eq('id', 1).maybeSingle(), 'settings'),
+      safeFetch(supabase.from('payment_methods').select('*').order('name'), 'payment_methods')
+    ]);
 
-      const [productsRes, categoriesRes, unitsRes, brandsRes, contactsRes,
-        branchesRes, shiftsRes, schedulesRes, settingsRes, tablesRes, ingredientsRes, movementsRes, paymentsRes] = results;
+    const [categoriesRes, unitsRes, brandsRes, contactsRes,
+      branchesRes, shiftsRes, settingsRes, paymentsRes] = results;
 
-      if (productsRes.data) setProducts(productsRes.data);
-      if (categoriesRes.data) setCategories(categoriesRes.data);
-      if (unitsRes.data) setUnits(unitsRes.data);
-      if (brandsRes.data) setBrands(brandsRes.data);
-      if (contactsRes.data) setContacts(contactsRes.data);
-      if (branchesRes.data) {
-        setBranches(branchesRes.data);
-        if (branchesRes.data.length > 0 && !currentBranchId) {
-          setCurrentBranchId(String(branchesRes.data[0].id));
+    if (categoriesRes.data) setCategories(categoriesRes.data);
+    if (unitsRes.data) setUnits(unitsRes.data);
+    if (brandsRes.data) setBrands(brandsRes.data);
+    if (contactsRes.data) setContacts(contactsRes.data);
+    if (branchesRes.data) {
+      setBranches(branchesRes.data);
+      // Initialize branch if needed (or validate existing one)
+      if (branchesRes.data.length > 0) {
+        // If currentBranchId is set but not found in fetched branches, reset to default
+        const isValid = branchesRes.data.find(b => String(b.id) === currentBranchId);
+
+        if (!currentBranchId || !isValid) {
+          const defaultBranchId = String(branchesRes.data[0].id);
+          setCurrentBranchId(defaultBranchId);
+          // localStorage will be updated by useEffect
         }
       }
-      if (shiftsRes.data) setShifts(shiftsRes.data);
-      if (schedulesRes.data) setShiftSchedules(schedulesRes.data);
-      if (settingsRes.data) setStoreSettings(settingsRes.data);
-      if (tablesRes.data) setTables(tablesRes.data);
-      if (ingredientsRes.data) setInventoryIngredients(ingredientsRes.data);
-      if (movementsRes.data) setInventoryHistory(movementsRes.data);
-      if (paymentsRes.data) setPaymentMethods(paymentsRes.data);
-    } catch (err) {
-      console.error('Error loading master data:', err);
     }
+    if (shiftsRes.data) setShifts(shiftsRes.data);
+    if (settingsRes.data) setStoreSettings(settingsRes.data);
+    if (paymentsRes.data) setPaymentMethods(paymentsRes.data);
+  };
+
+  const fetchBranchData = async (branchId: string) => {
+    if (!branchId) return;
+
+    const safeFetch = async (promise: any, name: string) => {
+      try {
+        const res = await promise;
+        if (res.error) console.warn(`Error fetching ${name}:`, res.error.message);
+        return res;
+      } catch (err) {
+        console.error(`Crash fetching ${name}:`, err);
+        return { data: null, error: err };
+      }
+    };
+
+    const results = await Promise.all([
+      safeFetch(supabase.from('products').select('*').eq('branch_id', branchId).order('created_at', { ascending: false }), 'products'),
+      safeFetch(supabase.from('shift_schedules').select('*').order('date'), 'schedules'), // Needs JS filtering or relation update
+      safeFetch(supabase.from('tables').select('*').eq('branch_id', branchId).order('number'), 'tables'),
+      safeFetch(supabase.from('ingredients').select('*').eq('branch_id', branchId).order('name'), 'ingredients'),
+      safeFetch(supabase.from('stock_movements').select('*').eq('branch_id', branchId).order('date', { ascending: false }), 'movements'),
+    ]);
+
+    const [productsRes, schedulesRes, tablesRes, ingredientsRes, movementsRes] = results;
+
+    if (productsRes.data) setProducts(productsRes.data);
+
+    // Filter schedules for employees in this branch (done in employees fetch usually, or here if we have employees list?)
+    // For now, setting all schedules. Ideally should filter.
+    if (schedulesRes.data) setShiftSchedules(schedulesRes.data);
+
+    if (tablesRes.data) setTables(tablesRes.data);
+    if (ingredientsRes.data) setInventoryIngredients(ingredientsRes.data);
+    if (movementsRes.data) setInventoryHistory(movementsRes.data);
   };
 
   useEffect(() => {
-    fetchMasterData();
+    fetchGlobalData();
 
-    // Subscribe to all master data changes
-    const channels = [
-      supabase.channel('products_all').on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, fetchMasterData).subscribe(),
-      supabase.channel('categories_all').on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, fetchMasterData).subscribe(),
-      supabase.channel('units_all').on('postgres_changes', { event: '*', schema: 'public', table: 'units' }, fetchMasterData).subscribe(),
-      supabase.channel('brands_all').on('postgres_changes', { event: '*', schema: 'public', table: 'brands' }, fetchMasterData).subscribe(),
-      supabase.channel('contacts_all').on('postgres_changes', { event: '*', schema: 'public', table: 'contacts' }, fetchMasterData).subscribe(),
-      supabase.channel('branches_all').on('postgres_changes', { event: '*', schema: 'public', table: 'branches' }, fetchMasterData).subscribe(),
-      supabase.channel('shifts_all').on('postgres_changes', { event: '*', schema: 'public', table: 'shifts' }, fetchMasterData).subscribe(),
-      supabase.channel('schedules_all').on('postgres_changes', { event: '*', schema: 'public', table: 'shift_schedules' }, fetchMasterData).subscribe(),
-      supabase.channel('ingredients_all').on('postgres_changes', { event: '*', schema: 'public', table: 'ingredients' }, fetchMasterData).subscribe(),
-      supabase.channel('movements_all').on('postgres_changes', { event: '*', schema: 'public', table: 'stock_movements' }, fetchMasterData).subscribe(),
-      supabase.channel('settings_all').on('postgres_changes', { event: '*', schema: 'public', table: 'store_settings' }, fetchMasterData).subscribe(),
-      supabase.channel('tables_all').on('postgres_changes', { event: '*', schema: 'public', table: 'tables' }, fetchMasterData).subscribe(),
-      supabase.channel('payments_all').on('postgres_changes', { event: '*', schema: 'public', table: 'payment_methods' }, fetchMasterData).subscribe(),
+    // Subscribe to global changes
+    const globalChannels = [
+      supabase.channel('categories_all').on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, fetchGlobalData).subscribe(),
+      supabase.channel('units_all').on('postgres_changes', { event: '*', schema: 'public', table: 'units' }, fetchGlobalData).subscribe(),
+      supabase.channel('brands_all').on('postgres_changes', { event: '*', schema: 'public', table: 'brands' }, fetchGlobalData).subscribe(),
+      supabase.channel('contacts_all').on('postgres_changes', { event: '*', schema: 'public', table: 'contacts' }, fetchGlobalData).subscribe(),
+      supabase.channel('branches_all').on('postgres_changes', { event: '*', schema: 'public', table: 'branches' }, fetchGlobalData).subscribe(),
+      supabase.channel('shifts_all').on('postgres_changes', { event: '*', schema: 'public', table: 'shifts' }, fetchGlobalData).subscribe(),
+      supabase.channel('settings_all').on('postgres_changes', { event: '*', schema: 'public', table: 'store_settings' }, fetchGlobalData).subscribe(),
+      supabase.channel('payments_all').on('postgres_changes', { event: '*', schema: 'public', table: 'payment_methods' }, fetchGlobalData).subscribe(),
     ];
 
     return () => {
-      channels.forEach(ch => ch.unsubscribe());
+      globalChannels.forEach(ch => ch.unsubscribe());
     };
   }, []);
 
+  useEffect(() => {
+    if (currentBranchId) {
+      fetchBranchData(currentBranchId);
+    }
+
+    // Subscribe to branch-specific changes
+    // Note: receiving all events then re-fetching filtered is acceptable for now.
+    const branchChannels = [
+      supabase.channel('products_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
+      supabase.channel('schedules_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'shift_schedules' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
+      supabase.channel('ingredients_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'ingredients' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
+      supabase.channel('movements_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'stock_movements' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
+      supabase.channel('tables_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'tables' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
+    ];
+
+    return () => {
+      branchChannels.forEach(ch => ch.unsubscribe());
+    };
+  }, [currentBranchId]);
+
   // --- Purchases Integration ---
   const fetchPurchases = async () => {
-    const { data: pData } = await supabase.from('purchases').select('*').order('created_at', { ascending: false });
+    if (!currentBranchId) return;
+    const { data: pData } = await supabase.from('purchases').select('*').eq('branch_id', currentBranchId).order('created_at', { ascending: false });
+    // Returns likely need filtering by purchase -> branch, but for now assuming 'purchase_returns' might be global or we fetch all and filter in JS if branch link isn't direct. 
+    // Actually assuming purchases are filtered, returns for them should be relevant.
     const { data: rData } = await supabase.from('purchase_returns').select('*').order('created_at', { ascending: false });
+
     if (pData) setPurchases(pData);
     if (rData) setPurchaseReturns(rData);
   };
@@ -319,10 +375,12 @@ function Home() {
     return () => {
       purchaseChannels.forEach(ch => ch.unsubscribe());
     };
-  }, []);
+  }, [currentBranchId]);
 
   // --- Sales & POS Integration ---
   const fetchTransactions = async () => {
+    if (!currentBranchId) return;
+
     // Fetch Sales with Items
     const { data: salesData } = await supabase
       .from('sales')
@@ -330,6 +388,7 @@ function Home() {
         *,
         items:sale_items(*)
       `)
+      .eq('branch_id', currentBranchId)
       .order('created_at', { ascending: false });
 
     if (salesData) {
@@ -407,7 +466,7 @@ function Home() {
     return () => {
       transactionChannels.forEach(ch => ch.unsubscribe());
     };
-  }, []);
+  }, [currentBranchId]);
 
   // --- Accounting Integration ---
   const fetchAccounting = async () => {
@@ -438,7 +497,8 @@ function Home() {
 
   // --- Employees Integration ---
   const fetchEmployees = async () => {
-    const { data: empData } = await supabase.from('employees').select('*').order('name');
+    if (!currentBranchId) return;
+    const { data: empData } = await supabase.from('employees').select('*').eq('branch_id', currentBranchId).order('name');
     if (empData) {
       setEmployees(empData.map(e => ({
         ...e,
@@ -460,7 +520,7 @@ function Home() {
     return () => {
       employeeChannels.forEach(ch => ch.unsubscribe());
     };
-  }, []);
+  }, [currentBranchId]);
 
 
   // --- Realtime Order Notifications for Cashier ---
@@ -630,6 +690,12 @@ function Home() {
     try {
       if (action === 'create') {
         const { id, ...payload } = data; // Strip ID for auto-generation
+
+        // Inject branch_id for branch-specific tables managed by this generic handler
+        if (table === 'purchases') {
+          (payload as any).branch_id = currentBranchId;
+        }
+
         const { error } = await supabase.from(table).insert([payload]);
         if (error) throw error;
         toast.success(`Data berhasil ditambahkan`);
@@ -683,8 +749,12 @@ function Home() {
     safeLoad('winpos_contacts', setContacts);
     safeLoad('winpos_pending_orders', setPendingOrders);
 
-    // Auto-select first branch if none selected and branches exist
-    if (!currentBranchId && branches.length > 0) {
+    // Load saved branch from localStorage
+    const savedBranchId = localStorage.getItem('winpos_current_branch');
+    if (savedBranchId) {
+      setCurrentBranchId(savedBranchId);
+    } else if (!currentBranchId && branches.length > 0) {
+      // Auto-select first branch if none selected and branches exist
       setCurrentBranchId(String(branches[0].id));
     }
 
@@ -735,6 +805,13 @@ function Home() {
   useEffect(() => { localStorage.setItem('winpos_products', JSON.stringify(products)); }, [products]);
   useEffect(() => { localStorage.setItem('winpos_contacts', JSON.stringify(contacts)); }, [contacts]);
   useEffect(() => { localStorage.setItem('winpos_pending_orders', JSON.stringify(pendingOrders)); }, [pendingOrders]);
+
+  // Persist currentBranchId to localStorage
+  useEffect(() => {
+    if (currentBranchId) {
+      localStorage.setItem('winpos_current_branch', currentBranchId);
+    }
+  }, [currentBranchId]);
 
   // Sync receipt settings to PrinterService
   useEffect(() => {
@@ -789,7 +866,10 @@ function Home() {
         payment_method: saleData.paymentMethod,
         status: 'Completed',
         branch_id: currentBranchId,
-        waiter_name: saleData.waiterName
+        waiter_name: saleData.waiterName,
+        table_no: saleData.tableNo,
+        customer_name: saleData.customerName,
+        discount: saleData.discount || 0
       }]).select().single();
 
       if (saleError) throw saleError;
@@ -1161,13 +1241,13 @@ function Home() {
     try {
       if (action === 'create') {
         const { id, joinDate, offDays, ...rest } = data;
-        const payload = { ...rest, join_date: joinDate, off_days: offDays };
+        const payload = { ...rest, join_date: joinDate, off_days: offDays, branch_id: currentBranchId };
         const { error } = await supabase.from('employees').insert([payload]);
         if (error) throw error;
         toast.success('Karyawan berhasil ditambahkan');
       } else if (action === 'update') {
         const { id, joinDate, offDays, ...rest } = data;
-        const payload = { ...rest, join_date: joinDate, off_days: offDays };
+        const payload = { ...rest, join_date: joinDate, off_days: offDays, branch_id: currentBranchId };
         const { error } = await supabase.from('employees').update(payload).eq('id', id);
         if (error) throw error;
         toast.success('Data karyawan diupdate');
@@ -1384,6 +1464,8 @@ function Home() {
                 // 1. Save Product
                 let productId = id;
                 if (action === 'create') {
+                  // Auto-assign branch_id for new products
+                  productData.branch_id = currentBranchId;
                   const { data: newProd, error } = await supabase.from('products').insert([productData]).select().single();
                   if (error) throw error;
                   productId = newProd.id;
@@ -1422,10 +1504,11 @@ function Home() {
                 }
 
                 toast.success(`Produk berhasil ${action === 'create' ? 'dibuat' : 'diupdate'}`);
-                fetchMasterData(); // Refresh data
+                // fetchMasterData(); // Removed - handled by subscription
               } else if (action === 'delete') {
                 await handleMasterDataCRUD('products', action, data);
               }
+              // Refresh is handled by fetchBranchData via subscription
             } catch (err: any) {
               console.error('Error saving product:', err);
               // Show more detailed error
@@ -1438,6 +1521,7 @@ function Home() {
           onCategoryCRUD={(action, data) => handleMasterDataCRUD('categories', action, data)}
           onUnitCRUD={(action, data) => handleMasterDataCRUD('units', action, data)}
           onBrandCRUD={(action, data) => handleMasterDataCRUD('brands', action, data)}
+          currentBranchId={currentBranchId}
         />
       );
       case 'purchases': return (
@@ -1445,6 +1529,7 @@ function Home() {
           purchases={purchases}
           returns={purchaseReturns}
           onCRUD={(table, action, data) => handleMasterDataCRUD(table, action, data)}
+          currentBranchId={currentBranchId}
         />
       );
       case 'kds': return <KDSView pendingOrders={pendingOrders} setPendingOrders={setPendingOrders} />;
@@ -1518,15 +1603,21 @@ function Home() {
           }}
         />
       );
-      case 'attendance': return <AttendanceView logs={attendanceLogs} setLogs={setAttendanceLogs} employees={employees} />;
-      case 'payroll': return (
-        <PayrollView
-          payroll={payrollData}
-          setPayroll={setPayrollData}
-          employees={employees} // Pass real employees for dropdown
-          onPayrollAction={handlePayrollAction}
-        />
-      );
+      case 'attendance':
+        // Filter logs to match employees in current branch
+        const filteredLogs = attendanceLogs.filter(log => employees.some(e => e.id === log.employee_id || e.name === log.employeeName));
+        return <AttendanceView logs={filteredLogs} setLogs={setAttendanceLogs} employees={employees} />;
+      case 'payroll':
+        // Filter payroll to match employees in current branch
+        const filteredPayroll = payrollData.filter(p => employees.some(e => e.id === p.employee_id || e.name === p.employeeName));
+        return (
+          <PayrollView
+            payroll={filteredPayroll}
+            setPayroll={setPayrollData}
+            employees={employees} // Pass real employees for dropdown
+            onPayrollAction={handlePayrollAction}
+          />
+        );
       case 'branches': return (
         <BranchesView
           branches={branches}
@@ -1580,7 +1671,8 @@ function Home() {
     try {
       if (action === 'create') {
         const { id, ...rest } = data;
-        const { error } = await supabase.from('tables').insert([rest]);
+        const payload = { ...rest, branch_id: currentBranchId };
+        const { error } = await supabase.from('tables').insert([payload]);
         if (error) throw error;
         toast.success('Meja berhasil ditambahkan');
       } else if (action === 'update') {
@@ -1607,7 +1699,7 @@ function Home() {
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden font-sans relative transition-colors duration-300">
       <div className="absolute top-0 left-0 w-full h-96 bg-gradient-to-b from-blue-50/50 to-transparent dark:from-blue-900/20 pointer-events-none" />
-      <aside className={`${isSidebarCollapsed ? 'w-20' : 'w-64'} bg-white/70 dark:bg-gray-900/70 backdrop-blur-xl border-r border-white/20 dark:border-gray-800 flex flex-col py-8 shadow-[4px_0_24px_-4px_rgba(0,0,0,0.05)] z-20 transition-all duration-300 relative`}>
+      <aside className={`${isSidebarCollapsed ? 'w-20' : 'w-56'} bg-white/70 dark:bg-gray-900/70 backdrop-blur-xl border-r border-white/20 dark:border-gray-800 flex flex-col py-8 shadow-[4px_0_24px_-4px_rgba(0,0,0,0.05)] z-20 transition-all duration-300 relative`}>
 
         {/* Toggle Button */}
         <button
@@ -1730,7 +1822,7 @@ function Home() {
 
           <div className="flex items-center gap-4">
             {/* Branch Selector */}
-            <div className="hidden md:flex items-center gap-2 bg-gray-50 dark:bg-gray-800 px-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-800 px-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700">
               <Store className="w-3.5 h-3.5 text-primary" />
               <select
                 value={currentBranchId}

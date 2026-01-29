@@ -4,7 +4,9 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
 
+
 // Types
+import { getAcronym } from '../../lib/utils';
 interface Product {
     id: number;
     name: string;
@@ -47,38 +49,55 @@ export function KioskView() {
     const [occupiedTables, setOccupiedTables] = useState<Set<string>>(new Set());
     const [customerName, setCustomerName] = useState('');
     const [branches, setBranches] = useState<any[]>([]);
-    const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
+    const [selectedBranchId, setSelectedBranchId] = useState<string | null>(localStorage.getItem('kiosk_branch_id'));
+
+    // Wrapper to save to local storage
+    const handleSetBranch = (id: string) => {
+        setSelectedBranchId(id);
+        localStorage.setItem('kiosk_branch_id', id);
+    };
+
+    // Initial Data Fetch
+    useEffect(() => {
+        if (selectedBranchId) {
+            fetchOccupancy();
+        }
+    }, [selectedBranchId]);
 
     // Initial Data Fetch
     useEffect(() => {
         fetchProducts();
         fetchTables();
-        fetchOccupancy();
         fetchBranches();
 
         // Realtime Subscription (Best effort)
         const subscription = supabase
             .channel('kiosk_occupancy')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, () => {
-                fetchOccupancy();
+                fetchOccupancy(); // This will use the current selectedBranchId from state closure? careful.
             })
             .subscribe();
 
-        // Polling Fallback (Guaranteed sync every 5s) - Essential due to RLS blocking Realtime events for anon
-        const intervalId = setInterval(fetchOccupancy, 5000);
-
         return () => {
             subscription.unsubscribe();
-            clearInterval(intervalId);
         };
     }, []);
 
+    // Polling Effect
+    useEffect(() => {
+        if (!selectedBranchId) return;
+        const intervalId = setInterval(fetchOccupancy, 5000);
+        return () => clearInterval(intervalId);
+    }, [selectedBranchId]);
+
     const fetchOccupancy = async () => {
+        if (!selectedBranchId) return;
+
         try {
-            // Direct query is more reliable now that we enabled Anon SELECT
             const { data, error } = await supabase
                 .from('sales')
                 .select('table_no')
+                .eq('branch_id', selectedBranchId) // Filter by branch!
                 .in('status', ['Unpaid', 'Pending'])
                 .not('table_no', 'is', null);
 
@@ -114,7 +133,12 @@ export function KioskView() {
         const { data } = await supabase.from('branches').select('*').order('id');
         if (data && data.length > 0) {
             setBranches(data);
-            setSelectedBranchId(String(data[0].id));
+            const savedBranch = localStorage.getItem('kiosk_branch_id');
+            if (savedBranch && data.find(b => String(b.id) === savedBranch)) {
+                setSelectedBranchId(savedBranch);
+            } else {
+                setSelectedBranchId(String(data[0].id));
+            }
         }
     };
 
@@ -223,6 +247,26 @@ export function KioskView() {
             <div className="h-screen w-full bg-gray-50 px-4 py-10 md:px-10 md:py-20 flex flex-col items-center justify-start overflow-y-auto">
                 <div className="max-w-7xl w-full text-center">
                     <h1 className="text-2xl md:text-4xl font-bold text-gray-800 mb-2">Selamat Datang di Winny Cafe</h1>
+
+                    {/* Branch Selector */}
+                    <div className="flex justify-center mb-6">
+                        <select
+                            value={selectedBranchId || ''}
+                            onChange={(e) => {
+                                setSelectedBranchId(e.target.value);
+                                setCart([]); // Clear cart on branch change to avoid mixed stock
+                                setStep('table'); // Reset step
+                            }}
+                            className="bg-white border border-gray-200 text-gray-700 text-sm rounded-lg focus:ring-primary focus:border-primary block p-2.5 shadow-sm"
+                        >
+                            {branches.map((branch) => (
+                                <option key={branch.id} value={branch.id}>
+                                    📍 {branch.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
                     <p className="text-gray-500 mb-8 md:mb-12 text-sm md:text-lg">Silakan pilih meja Anda untuk memulai pesanan</p>
 
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 md:gap-6 pb-20">
@@ -357,8 +401,10 @@ export function KioskView() {
                                     {product.image_url ? (
                                         <img src={product.image_url} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                                     ) : (
-                                        <div className="w-full h-full flex items-center justify-center text-gray-300">
-                                            <Coffee className="w-8 h-8 md:w-10 md:h-10" />
+                                        <div className="w-full h-full flex items-center justify-center bg-primary/5">
+                                            <span className="text-2xl font-black text-primary/40 font-mono tracking-tighter">
+                                                {getAcronym(product.name)}
+                                            </span>
                                         </div>
                                     )}
                                     <button

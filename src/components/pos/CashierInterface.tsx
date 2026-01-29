@@ -103,7 +103,7 @@ export function CashierInterface({
     const occupied = new Set<string>();
     if (activeSales) {
       activeSales.forEach(sale => {
-        if (['Unpaid', 'Pending'].includes(sale.status) && sale.tableNo) {
+        if (sale && ['Unpaid', 'Pending'].includes(sale.status) && sale.tableNo) {
           occupied.add(sale.tableNo);
         }
       });
@@ -127,7 +127,7 @@ export function CashierInterface({
 
   // Filter products
   const filteredProducts = useMemo(() => {
-    let currentProducts = products;
+    let currentProducts = (products || []).filter(p => p && p.id); // SAFEGUARD: Remove invalid items early
 
     if (activeCategory !== 'Semua') {
       currentProducts = currentProducts.filter((p) => p.category === activeCategory);
@@ -159,7 +159,7 @@ export function CashierInterface({
   useEffect(() => {
     if (selectedTable && activeSales) {
       const existingSale = activeSales.find(
-        s => (s.status === 'Pending' || s.status === 'Unpaid') && s.tableNo === selectedTable
+        s => s && (s.status === 'Pending' || s.status === 'Unpaid') && s.tableNo === selectedTable
       );
 
       if (existingSale) {
@@ -198,7 +198,7 @@ export function CashierInterface({
 
   const handleClearTable = (tableNo: string) => {
     const saleToClear = activeSales?.find(
-      s => (s.status === 'Pending' || s.status === 'Unpaid') && s.tableNo === tableNo
+      s => s && (s.status === 'Pending' || s.status === 'Unpaid') && s.tableNo === tableNo
     );
 
     if (saleToClear && onDeleteSale) {
@@ -387,7 +387,7 @@ export function CashierInterface({
           name: item.product.name,
           quantity: item.quantity,
           price: item.product.price,
-          isManual: item.product.id.startsWith('manual-')
+          isManual: String(item.product.id).startsWith('manual-')
         })),
         tableNo: selectedTable,
         customerName: customerName,
@@ -526,7 +526,7 @@ export function CashierInterface({
           {/* Category Tabs */}
           <div className="mb-6">
             <CategoryTabs
-              categories={['Semua', ...categories.map(c => c.name)]}
+              categories={['Semua', ...(categories || []).filter(c => c && c.name).map(c => c.name)]}
               activeCategory={activeCategory}
               onCategoryChange={setActiveCategory}
             />
@@ -535,7 +535,7 @@ export function CashierInterface({
           {/* Product Grid */}
           <div className="flex-1 overflow-y-auto">
             <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 pb-6">
-              {filteredProducts.map((product) => (
+              {filteredProducts.filter(p => p && p.id).map((product) => (
                 <ProductTile
                   key={product.id}
                   product={product}

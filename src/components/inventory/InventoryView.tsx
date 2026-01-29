@@ -25,6 +25,7 @@ export interface Ingredient {
     minStock: number;
     lastUpdated: string;
     costPerUnit: number;
+    branch_id?: number | string;
 }
 
 export interface StockMovement {
@@ -60,6 +61,7 @@ interface InventoryViewProps {
     onStockAdjustment: (adjustment: any) => Promise<void>;
     categories: any[];
     units: any[];
+    currentBranchId?: string;
 }
 
 export function InventoryView({
@@ -68,7 +70,8 @@ export function InventoryView({
     onIngredientAction,
     onStockAdjustment,
     categories,
-    units
+    units,
+    currentBranchId
 }: InventoryViewProps) {
     const [activeTab, setActiveTab] = useState<'stock' | 'history'>('stock');
     const [searchQuery, setSearchQuery] = useState('');
@@ -100,7 +103,8 @@ export function InventoryView({
             category: newIngredient.category,
             min_stock: newIngredient.minStock,
             current_stock: 0,
-            cost_per_unit: newIngredient.costPerUnit // Send cost
+            cost_per_unit: newIngredient.costPerUnit, // Send cost
+            branch_id: currentBranchId
         });
         setIsAddModalOpen(false);
         setNewIngredient({ name: '', unit: 'kg', category: 'Coffee', minStock: 1, costPerUnit: 0 });
@@ -144,8 +148,9 @@ export function InventoryView({
     };
 
     const filteredIngredients = ingredients.filter(ing =>
-        ing.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        ing.category.toLowerCase().includes(searchQuery.toLowerCase())
+        (!currentBranchId || String(ing.branch_id) === String(currentBranchId) || !ing.branch_id) &&
+        (ing.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            ing.category.toLowerCase().includes(searchQuery.toLowerCase()))
     );
 
     return (

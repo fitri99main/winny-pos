@@ -16,7 +16,8 @@ CREATE POLICY "Enable all for users based on email" ON public.branches
     FOR ALL USING (true) WITH CHECK (true);
 
 -- Enable Realtime
-ALTER PUBLICATION supabase_realtime ADD TABLE public.branches;
+-- Enable Realtime (Commented out because supabase_realtime is likely FOR ALL TABLES)
+-- ALTER PUBLICATION supabase_realtime ADD TABLE public.branches;
 
 -- Seed Initial Data
 INSERT INTO public.branches (name, address, phone) VALUES

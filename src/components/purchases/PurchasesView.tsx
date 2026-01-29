@@ -39,9 +39,10 @@ interface PurchasesViewProps {
     purchases: any[];
     returns: any[];
     onCRUD: (table: string, action: 'create' | 'update' | 'delete', data: any) => void;
+    currentBranchId?: string;
 }
 
-export function PurchasesView({ purchases = [], returns = [], onCRUD }: PurchasesViewProps) {
+export function PurchasesView({ purchases = [], returns = [], onCRUD, currentBranchId }: PurchasesViewProps) {
     const [activeTab, setActiveTab] = useState<'history' | 'input' | 'returns'>('history');
     const [searchQuery, setSearchQuery] = useState('');
     const [returnSearchQuery, setReturnSearchQuery] = useState('');
@@ -65,7 +66,8 @@ export function PurchasesView({ purchases = [], returns = [], onCRUD }: Purchase
             date: inputForm.date || new Date().toISOString().split('T')[0],
             items_count: inputForm.items || 1,
             total_amount: Number(inputForm.totalAmount),
-            status: 'Pending'
+            status: 'Pending',
+            branch_id: currentBranchId
         };
 
         onCRUD('purchases', 'create', newPurchase);
@@ -97,14 +99,16 @@ export function PurchasesView({ purchases = [], returns = [], onCRUD }: Purchase
     };
 
     const filteredPurchases = purchases.filter(p =>
-        (p.purchase_no || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (p.supplier_name || '').toLowerCase().includes(searchQuery.toLowerCase())
+        (!currentBranchId || String(p.branch_id) === String(currentBranchId) || !p.branch_id) &&
+        ((p.purchase_no || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (p.supplier_name || '').toLowerCase().includes(searchQuery.toLowerCase()))
     );
 
     const filteredReturns = returns.filter(r =>
-        (r.return_no || '').toLowerCase().includes(returnSearchQuery.toLowerCase()) ||
-        (r.purchase_no || '').toLowerCase().includes(returnSearchQuery.toLowerCase()) ||
-        (r.reason || '').toLowerCase().includes(returnSearchQuery.toLowerCase())
+        (!currentBranchId || String(r.branch_id) === String(currentBranchId) || !r.branch_id) &&
+        ((r.return_no || '').toLowerCase().includes(returnSearchQuery.toLowerCase()) ||
+            (r.purchase_no || '').toLowerCase().includes(returnSearchQuery.toLowerCase()) ||
+            (r.reason || '').toLowerCase().includes(returnSearchQuery.toLowerCase()))
     );
 
     // --- Renderers ---
