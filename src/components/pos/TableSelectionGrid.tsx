@@ -62,65 +62,73 @@ export function TableSelectionGrid({
             {/* Grid */}
             <div className="flex-1 overflow-y-auto p-6">
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
-                    {(tables || []).filter(t => t && t.number).map((table) => {
-                        const isOccupied = occupiedTableNumbers.has(table.number) || table.status === 'Occupied';
+                    {(tables || []).length === 0 ? (
+                        <div className="col-span-full flex flex-col items-center justify-center py-20 text-gray-400">
+                            <Store className="w-16 h-16 mb-4 opacity-20" />
+                            <p className="text-lg font-medium">Belum ada meja</p>
+                            <p className="text-sm">Konfigurasi meja untuk cabang ini di menu Pengaturan</p>
+                        </div>
+                    ) : (
+                        (tables || []).filter(t => t && t.number).map((table) => {
+                            const isOccupied = occupiedTableNumbers.has(table.number) || table.status === 'Occupied';
 
-                        return (
-                            <motion.button
-                                key={table.id}
-                                whileHover={{ scale: 1.02 }}
-                                whileTap={{ scale: 0.95 }}
-                                onClick={() => onSelectTable(table)}
-                                className={cn(
-                                    "relative aspect-square rounded-3xl border-2 flex flex-col items-center justify-center gap-3 transition-all p-4 shadow-sm hover:shadow-md",
-                                    isOccupied
-                                        ? "bg-red-50 border-red-200 text-red-700"
-                                        : "bg-white border-green-100 hover:border-green-500 hover:bg-green-50/30 text-gray-700"
-                                )}
-                            >
-                                <div className={cn(
-                                    "w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold transition-colors",
-                                    isOccupied
-                                        ? "bg-red-100 text-red-600"
-                                        : "bg-green-100 text-green-600 group-hover:bg-green-200"
-                                )}>
-                                    {table.number}
-                                </div>
-
-                                <div className="text-center">
-                                    <p className={cn(
-                                        "font-bold text-sm uppercase tracking-wider mb-1",
-                                        isOccupied ? "text-red-600" : "text-gray-500"
-                                    )}>
-                                        {isOccupied ? 'Terisi' : 'Kosong'}
-                                    </p>
-                                    {table.capacity && (
-                                        <div className="flex items-center justify-center gap-1 text-xs opacity-60">
-                                            <Users className="w-3 h-3" />
-                                            <span>{table.capacity} Org</span>
-                                        </div>
+                            return (
+                                <motion.div
+                                    key={table.id}
+                                    whileHover={{ scale: 1.02 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={() => onSelectTable(table)}
+                                    className={cn(
+                                        "relative aspect-square rounded-3xl border-2 flex flex-col items-center justify-center gap-3 transition-all p-4 shadow-sm hover:shadow-md cursor-pointer",
+                                        isOccupied
+                                            ? "bg-red-50 border-red-200 text-red-700"
+                                            : "bg-white border-green-100 hover:border-green-500 hover:bg-green-50/30 text-gray-700"
                                     )}
-                                </div>
+                                >
+                                    <div className={cn(
+                                        "w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold transition-colors",
+                                        isOccupied
+                                            ? "bg-red-100 text-red-600"
+                                            : "bg-green-100 text-green-600 group-hover:bg-green-200"
+                                    )}>
+                                        {table.number}
+                                    </div>
 
-                                {isOccupied && (
-                                    <>
-                                        <div className="absolute top-3 right-3 w-3 h-3 bg-red-500 rounded-full animate-pulse shadow-lg shadow-red-500/50" />
-                                        {onClearTable && (
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    onClearTable(table.number);
-                                                }}
-                                                className="mt-2 w-full py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-xl text-[10px] font-black uppercase tracking-wider transition-colors border border-red-200"
-                                            >
-                                                Kosongkan
-                                            </button>
+                                    <div className="text-center">
+                                        <p className={cn(
+                                            "font-bold text-sm uppercase tracking-wider mb-1",
+                                            isOccupied ? "text-red-600" : "text-gray-500"
+                                        )}>
+                                            {isOccupied ? 'Terisi' : 'Kosong'}
+                                        </p>
+                                        {table.capacity && (
+                                            <div className="flex items-center justify-center gap-1 text-xs opacity-60">
+                                                <Users className="w-3 h-3" />
+                                                <span>{table.capacity} Org</span>
+                                            </div>
                                         )}
-                                    </>
-                                )}
-                            </motion.button>
-                        );
-                    })}
+                                    </div>
+
+                                    {isOccupied && (
+                                        <>
+                                            <div className="absolute top-3 right-3 w-3 h-3 bg-red-500 rounded-full animate-pulse shadow-lg shadow-red-500/50" />
+                                            {onClearTable && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onClearTable(table.number);
+                                                    }}
+                                                    className="mt-2 w-full py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-xl text-[10px] font-black uppercase tracking-wider transition-colors border border-red-200"
+                                                >
+                                                    Kosongkan
+                                                </button>
+                                            )}
+                                        </>
+                                    )}
+                                </motion.div>
+                            );
+                        })
+                    )}
                 </div>
             </div>
         </div>

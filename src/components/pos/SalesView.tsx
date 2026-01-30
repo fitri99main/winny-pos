@@ -24,6 +24,7 @@ export interface SalesOrder {
     customerName?: string;
     branchId?: string;
     waiterName?: string;
+    waitingTime?: string;
     syncStatus?: 'synced' | 'pending' | 'syncing';
     printCount?: number;
     lastPrintedAt?: string;
@@ -117,6 +118,7 @@ interface SalesViewProps {
     employees: any[];
     onOpenCashier?: () => void;
     paymentMethods?: any[];
+    tables?: any[];
 }
 
 export function SalesView({
@@ -133,7 +135,8 @@ export function SalesView({
     contacts,
     employees,
     onOpenCashier,
-    paymentMethods = []
+    paymentMethods = [],
+    tables = []
 }: SalesViewProps) {
     const [activeTab, setActiveTab] = useState<'history' | 'returns'>(initialTab);
     // Payment Modal State
@@ -236,13 +239,13 @@ export function SalesView({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [onOpenCashier, isReturnModalOpen, isDetailsModalOpen, isEditModalOpen]);
 
-    const filteredSales = sales.filter(sale =>
+    const filteredSales = (sales || []).filter(sale =>
         (String(sale.branchId) === String(currentBranchId) || !sale.branchId) &&
         (sale.orderNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
             sale.productDetails.some(p => p.name.toLowerCase().includes(searchQuery.toLowerCase())))
     );
 
-    const filteredReturns = returns.filter(ret =>
+    const filteredReturns = (returns || []).filter(ret =>
         ret.returnNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
         ret.orderNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
         ret.reason.toLowerCase().includes(searchQuery.toLowerCase())
@@ -389,6 +392,7 @@ export function SalesView({
                             <th className="px-3 py-3 text-center">Cetak</th>
                             <th className="px-3 py-3 text-center">Status</th>
                             <th className="px-3 py-3 text-center hidden lg:table-cell">Sinkron</th>
+                            <th className="px-3 py-3 text-center">Durasi Saji</th>
                             <th className="px-3 py-3 text-center whitespace-nowrap">Aksi</th>
                         </tr>
                     </thead>
@@ -434,7 +438,15 @@ export function SalesView({
                                             <span className="text-gray-300 text-xs">-</span>
                                         )}
                                     </td>
-                                    <td className="px-3 py-3 text-gray-500 whitespace-nowrap">{sale.date.substring(0, 16)}</td>
+                                    <td className="px-3 py-3 text-gray-500 whitespace-nowrap">
+                                        {new Date(sale.date).toLocaleString('id-ID', {
+                                            year: 'numeric',
+                                            month: 'short',
+                                            day: 'numeric',
+                                            hour: '2-digit',
+                                            minute: '2-digit'
+                                        })}
+                                    </td>
                                     <td className="px-3 py-3 text-center hidden xl:table-cell">{sale.items}</td>
                                     <td className="px-3 py-3 text-right text-red-500 font-medium whitespace-nowrap">
                                         {sale.discount ? `- Rp ${sale.discount.toLocaleString()}` : '-'}
@@ -467,13 +479,17 @@ export function SalesView({
                                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${sale.status === 'Completed' ? 'bg-green-50 text-green-700 border-green-200' :
                                             sale.status === 'Served' ? 'bg-blue-50 text-blue-700 border-blue-200' :
                                                 sale.status === 'Pending' ? 'bg-orange-50 text-orange-700 border-orange-200' :
-                                                    sale.status === 'Unpaid' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
-                                                        'bg-red-50 text-red-700 border-red-200'
+                                                    sale.status === 'Paid' ? 'bg-teal-50 text-teal-700 border-teal-200' :
+                                                        sale.status === 'Unpaid' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
+                                                            sale.status === 'Returned' ? 'bg-red-50 text-red-700 border-red-200' :
+                                                                'bg-gray-50 text-gray-700 border-gray-200'
                                             }`}>
                                             {sale.status === 'Completed' ? 'Selesai' :
                                                 sale.status === 'Served' ? 'Disajikan' :
                                                     sale.status === 'Pending' ? 'Diproses' :
-                                                        sale.status === 'Unpaid' ? 'Belum Bayar' : 'Retur'}
+                                                        sale.status === 'Paid' ? 'Dibayar' :
+                                                            sale.status === 'Unpaid' ? 'Belum Bayar' :
+                                                                sale.status === 'Returned' ? 'Retur' : sale.status}
                                         </span>
                                     </td>
                                     <td className="px-3 py-3 text-center hidden lg:table-cell">
@@ -494,6 +510,9 @@ export function SalesView({
                                                 </div>
                                             </div>
                                         )}
+                                    </td>
+                                    <td className="px-3 py-3 text-center">
+                                        <span className="text-xs font-mono text-gray-500">{sale.waitingTime || '-'}</span>
                                     </td>
                                     <td className="px-3 py-3 flex justify-center gap-0.5 whitespace-nowrap">
                                         <button
@@ -528,18 +547,17 @@ export function SalesView({
                                         >
                                             <FileText className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
                                         </button>
-                                        {(sale.status === 'Pending' || sale.status === 'Served') && (
+                                        {/* DEBUG: Table {sale.tableNo} Status: {tables.find(t => String(t.number) === String(sale.tableNo))?.status || 'Not Found'} */}
+                                        {((sale.status === 'Pending' || sale.status === 'Served') || (sale.status === 'Completed' && tables.find(t => String(t.number) === String(sale.tableNo) && t.status === 'Occupied'))) && (
                                             <button
                                                 onClick={() => {
-                                                    if (window.confirm('Selesaikan pesanan dan kosongkan meja?')) {
-                                                        if (onUpdateSale) {
-                                                            onUpdateSale({ ...sale, status: 'Completed' });
-                                                            toast.success('Pesanan selesai. Meja sekarang kosong.');
-                                                        }
+                                                    if (onUpdateSale) {
+                                                        onUpdateSale({ ...sale, status: 'Completed' });
+                                                        toast.success('Meja berhasil dikosongkan.');
                                                     }
                                                 }}
-                                                className="p-1.5 hover:bg-green-50 text-green-600 rounded-lg group"
-                                                title="Selesaikan & Kosongkan Meja"
+                                                className={`p-1.5 rounded-lg group ${sale.status === 'Completed' ? 'hover:bg-orange-50 text-orange-600' : 'hover:bg-green-50 text-green-600'}`}
+                                                title={sale.status === 'Completed' ? "Fix: Kosongkan Status Meja" : "Selesaikan & Kosongkan Meja"}
                                             >
                                                 <CheckCircle className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
                                             </button>
@@ -851,7 +869,7 @@ export function SalesView({
                                         onChange={e => setEditForm({ ...editForm, waiterName: e.target.value })}
                                     >
                                         <option value="">- Pilih Pelayan -</option>
-                                        {employees.map(emp => (
+                                        {(employees || []).map(emp => (
                                             <option key={emp.id} value={emp.name}>{emp.name}</option>
                                         ))}
                                     </select>

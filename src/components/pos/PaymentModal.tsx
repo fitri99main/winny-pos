@@ -19,6 +19,10 @@ interface PaymentModalProps {
     eWalletProvider?: string;
   }) => void;
   paymentMethods?: any[];
+  subtotal?: number;
+  discount?: number;
+  tax?: number;
+  service?: number;
 }
 
 export function PaymentModal({
@@ -26,7 +30,11 @@ export function PaymentModal({
   onOpenChange,
   totalAmount,
   onPaymentComplete,
-  paymentMethods = []
+  paymentMethods = [],
+  subtotal = 0,
+  discount = 0,
+  tax = 0,
+  service = 0
 }: PaymentModalProps) {
   const [selectedMethod, setSelectedMethod] = useState<any>(null);
   const [cashAmount, setCashAmount] = useState('');
@@ -98,11 +106,31 @@ export function PaymentModal({
           <DialogDescription>
             Pilih metode pembayaran untuk menyelesaikan transaksi sebesar {formatPrice(totalAmount)}.
           </DialogDescription>
-          <div className="mt-4 p-4 bg-gray-50 rounded-xl">
-            <p className="text-sm text-gray-600 mb-1">Total Tagihan</p>
-            <p className="text-3xl font-mono font-bold text-pos-coral">
-              {formatPrice(totalAmount)}
-            </p>
+          <div className="mt-4 p-4 bg-gray-50 rounded-xl space-y-2 border-2 border-red-500">
+            <div className="flex justify-between text-sm text-gray-500">
+              <span>Subtotal</span>
+              <span>{formatPrice(subtotal)}</span>
+            </div>
+            {discount > 0 ? (
+              <div className="flex justify-between text-sm text-red-500">
+                <span>Diskon</span>
+                <span>-{formatPrice(discount)}</span>
+              </div>
+            ) : null}
+            <div className="flex justify-between text-sm text-gray-500">
+              <span>Pajak ({tax > 0 ? formatPrice(tax) : '0'})</span>
+              <span>{formatPrice(tax)}</span>
+            </div>
+            <div className="flex justify-between text-sm text-gray-500">
+              <span>Layanan ({service > 0 ? formatPrice(service) : '0'})</span>
+              <span>{formatPrice(service)}</span>
+            </div>
+            <div className="pt-2 border-t border-gray-200 flex justify-between items-center">
+              <p className="text-sm font-bold text-gray-700">Total Tagihan</p>
+              <p className="text-2xl font-mono font-bold text-pos-coral">
+                {formatPrice(totalAmount)}
+              </p>
+            </div>
           </div>
         </DialogHeader>
 

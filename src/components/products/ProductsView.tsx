@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Package, Tags, Scale, Ticket, Plus, Search, Edit, Trash2, Filter, ChefHat, Info, Calculator, Puzzle, Settings2, X, Image as ImageIcon, Upload } from 'lucide-react';
+import { Package, Tags, Scale, Ticket, Plus, Search, Edit, Trash2, Filter, ChefHat, Info, Calculator, Puzzle, Settings2, X, Image as ImageIcon, Upload, Check, Coffee } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -22,6 +22,7 @@ export interface Product {
     is_sellable?: boolean;
     image_url?: string;
     branch_id?: number | string;
+    target?: 'Kitchen' | 'Bar';
 }
 
 export interface Addon {
@@ -318,34 +319,34 @@ export function ProductsView({
     );
 
     return (
-        <div className="flex h-full bg-gray-50/50 relative overflow-hidden">
-            {/* Sidebar */}
-            <div className="w-64 bg-white border-r border-gray-100 p-5 flex flex-col gap-2 shadow-[10px_0_30px_rgba(0,0,0,0.02)] z-20">
-                <div className="mb-4">
+        <div className="flex flex-col h-full bg-gray-50/50 relative overflow-hidden">
+            {/* Top Navigation Header */}
+            <div className="w-full bg-white border-b border-gray-100 px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 z-20 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] flex-shrink-0">
+                <div>
                     <h2 className="text-xl font-black text-gray-800 tracking-tight">Master Data</h2>
                     <p className="text-[10px] text-gray-400 font-medium tracking-wide">Katalog Produk & Inventaris</p>
                 </div>
-                {[
-                    { id: 'products', label: 'Daftar Produk', icon: Package, desc: 'Harga Jual & Stok' },
-                    { id: 'categories', label: 'Kategori', icon: Filter, desc: 'Grouping Menu' },
-                    { id: 'units', label: 'Satuan', icon: Scale, desc: 'Unit Takaran' },
-                    { id: 'brands', label: 'Merek', icon: Ticket, desc: 'Brand / Vendor' },
-                ].map(item => (
-                    <button
-                        key={item.id}
-                        onClick={() => setActiveTab(item.id as any)}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all group ${activeTab === item.id ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-gray-500 hover:bg-gray-100'
-                            }`}
-                    >
-                        <div className={`p-2 rounded-xl transition-colors ${activeTab === item.id ? 'bg-white/20' : 'bg-gray-50 group-hover:bg-white'}`}>
-                            <item.icon className="w-4 h-4" />
-                        </div>
-                        <div className="text-left">
-                            <div className="text-sm font-black tracking-tight">{item.label}</div>
-                            <div className={`text-[10px] font-medium opacity-60 ${activeTab === item.id ? 'text-white' : 'text-gray-400'}`}>{item.desc}</div>
-                        </div>
-                    </button>
-                ))}
+
+                <div className="flex items-center gap-1 bg-gray-50 p-1.5 rounded-2xl overflow-x-auto no-scrollbar border border-gray-100">
+                    {[
+                        { id: 'products', label: 'Daftar Produk', icon: Package },
+                        { id: 'categories', label: 'Kategori', icon: Filter },
+                        { id: 'units', label: 'Satuan', icon: Scale },
+                        { id: 'brands', label: 'Merek', icon: Ticket },
+                    ].map(item => (
+                        <button
+                            key={item.id}
+                            onClick={() => setActiveTab(item.id as any)}
+                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all font-bold text-xs whitespace-nowrap ${activeTab === item.id
+                                ? 'bg-white text-primary shadow-sm ring-1 ring-gray-100'
+                                : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                                }`}
+                        >
+                            <item.icon className={`w-4 h-4 ${activeTab === item.id ? 'text-primary' : 'text-gray-400'}`} />
+                            {item.label}
+                        </button>
+                    ))}
+                </div>
             </div>
 
             {/* Content */}
@@ -507,6 +508,52 @@ export function ProductsView({
                                                     className={`w-14 h-8 rounded-full transition-all cursor-pointer relative p-1 ${formData.is_sellable !== false ? 'bg-primary' : 'bg-gray-200'}`}
                                                 >
                                                     <div className={`w-6 h-6 bg-white rounded-full shadow-md transition-all transform ${formData.is_sellable !== false ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                                                </div>
+                                            </div>
+
+                                            {/* KDS Target Configuration */}
+                                            <div className="space-y-3 pt-6 border-t border-gray-100">
+                                                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-1">Posisi KDS (Checklist)</label>
+                                                <div className="flex gap-4">
+                                                    <div
+                                                        onClick={() => setFormData({ ...formData, target: 'Kitchen' })}
+                                                        className={`flex-1 p-4 rounded-2xl border-2 cursor-pointer transition-all flex items-center justify-between group ${(!formData.target || formData.target === 'Kitchen')
+                                                            ? 'bg-orange-50 border-orange-200 shadow-sm'
+                                                            : 'bg-white border-gray-100 hover:border-orange-200'
+                                                            }`}
+                                                    >
+                                                        <div className="flex items-center gap-3">
+                                                            <div className={`p-2 rounded-xl ${(!formData.target || formData.target === 'Kitchen') ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-400'}`}>
+                                                                <ChefHat className="w-5 h-5" />
+                                                            </div>
+                                                            <div>
+                                                                <p className={`text-sm font-black ${(!formData.target || formData.target === 'Kitchen') ? 'text-gray-800' : 'text-gray-400'}`}>Dapur</p>
+                                                            </div>
+                                                        </div>
+                                                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${(!formData.target || formData.target === 'Kitchen') ? 'border-orange-500 bg-orange-500 text-white' : 'border-gray-200'}`}>
+                                                            {(!formData.target || formData.target === 'Kitchen') && <Check className="w-4 h-4" />}
+                                                        </div>
+                                                    </div>
+
+                                                    <div
+                                                        onClick={() => setFormData({ ...formData, target: 'Bar' })}
+                                                        className={`flex-1 p-4 rounded-2xl border-2 cursor-pointer transition-all flex items-center justify-between group ${formData.target === 'Bar'
+                                                            ? 'bg-blue-50 border-blue-200 shadow-sm'
+                                                            : 'bg-white border-gray-100 hover:border-blue-200'
+                                                            }`}
+                                                    >
+                                                        <div className="flex items-center gap-3">
+                                                            <div className={`p-2 rounded-xl ${formData.target === 'Bar' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-400'}`}>
+                                                                <Coffee className="w-5 h-5" />
+                                                            </div>
+                                                            <div>
+                                                                <p className={`text-sm font-black ${formData.target === 'Bar' ? 'text-gray-800' : 'text-gray-400'}`}>Bar</p>
+                                                            </div>
+                                                        </div>
+                                                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${formData.target === 'Bar' ? 'border-blue-500 bg-blue-500 text-white' : 'border-gray-200'}`}>
+                                                            {formData.target === 'Bar' && <Check className="w-4 h-4" />}
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>

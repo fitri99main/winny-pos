@@ -398,6 +398,39 @@ export function SettingsView({
                                 />
                             </div>
                         </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-gray-700">Pajak (%)</label>
+                                <div className="relative">
+                                    <input
+                                        type="number"
+                                        value={localSettings.tax_rate || 0}
+                                        onChange={e => handleLocalChange({ ...localSettings, tax_rate: parseFloat(e.target.value) || 0 })}
+                                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                        placeholder="0"
+                                        min="0"
+                                        max="100"
+                                    />
+                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
+                                </div>
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-gray-700">Layanan (%)</label>
+                                <div className="relative">
+                                    <input
+                                        type="number"
+                                        value={localSettings.service_rate || 0}
+                                        onChange={e => handleLocalChange({ ...localSettings, service_rate: parseFloat(e.target.value) || 0 })}
+                                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                        placeholder="0"
+                                        min="0"
+                                        max="100"
+                                    />
+                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 )}
 
@@ -1299,48 +1332,50 @@ export function SettingsView({
             }
 
             {/* Modal Payment Method */}
-            {isPaymentModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in">
-                    <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl">
-                        <h3 className="text-lg font-bold text-gray-800 mb-4">{editingPayment ? 'Edit Metode Pembayaran' : 'Tambah Metode Pembayaran'}</h3>
-                        <div className="space-y-4">
-                            <div className="space-y-2">
-                                <Label>Nama Metode</Label>
-                                <input
-                                    type="text"
-                                    value={paymentForm.name}
-                                    onChange={e => setPaymentForm({ ...paymentForm, name: e.target.value })}
-                                    className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
-                                    placeholder="Contoh: QRIS, Transfer Bank, dll"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label>Tipe</Label>
-                                <select
-                                    value={paymentForm.type}
-                                    onChange={e => setPaymentForm({ ...paymentForm, type: e.target.value })}
-                                    className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white"
-                                >
-                                    <option value="cash">Tunai (Cash)</option>
-                                    <option value="card">Kartu (Debit/Kredit)</option>
-                                    <option value="digital">Digital (E-Wallet/QRIS)</option>
-                                </select>
-                            </div>
-                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
-                                <Label className="cursor-pointer">Aktifkan Metode</Label>
-                                <Switch
-                                    checked={paymentForm.is_active}
-                                    onCheckedChange={c => setPaymentForm({ ...paymentForm, is_active: c })}
-                                />
-                            </div>
-                            <div className="flex gap-3 pt-4">
-                                <Button variant="outline" className="flex-1" onClick={() => setIsPaymentModalOpen(false)}>Batal</Button>
-                                <Button className="flex-1 bg-primary text-white" onClick={handleSavePaymentMethod}>Simpan</Button>
+            {
+                isPaymentModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in">
+                        <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+                            <h3 className="text-lg font-bold text-gray-800 mb-4">{editingPayment ? 'Edit Metode Pembayaran' : 'Tambah Metode Pembayaran'}</h3>
+                            <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <Label>Nama Metode</Label>
+                                    <input
+                                        type="text"
+                                        value={paymentForm.name}
+                                        onChange={e => setPaymentForm({ ...paymentForm, name: e.target.value })}
+                                        className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                        placeholder="Contoh: QRIS, Transfer Bank, dll"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Tipe</Label>
+                                    <select
+                                        value={paymentForm.type}
+                                        onChange={e => setPaymentForm({ ...paymentForm, type: e.target.value })}
+                                        className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 bg-white"
+                                    >
+                                        <option value="cash">Tunai (Cash)</option>
+                                        <option value="card">Kartu (Debit/Kredit)</option>
+                                        <option value="digital">Digital (E-Wallet/QRIS)</option>
+                                    </select>
+                                </div>
+                                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                                    <Label className="cursor-pointer">Aktifkan Metode</Label>
+                                    <Switch
+                                        checked={paymentForm.is_active}
+                                        onCheckedChange={c => setPaymentForm({ ...paymentForm, is_active: c })}
+                                    />
+                                </div>
+                                <div className="flex gap-3 pt-4">
+                                    <Button variant="outline" className="flex-1" onClick={() => setIsPaymentModalOpen(false)}>Batal</Button>
+                                    <Button className="flex-1 bg-primary text-white" onClick={handleSavePaymentMethod}>Simpan</Button>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
         </div >
     );
 }

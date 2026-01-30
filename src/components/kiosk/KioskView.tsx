@@ -61,13 +61,14 @@ export function KioskView() {
     useEffect(() => {
         if (selectedBranchId) {
             fetchOccupancy();
+            fetchTables();
+            fetchProducts(); // Refetch products when branch changes
         }
     }, [selectedBranchId]);
 
     // Initial Data Fetch
     useEffect(() => {
-        fetchProducts();
-        fetchTables();
+        // fetchProducts(); // Removed: Handled by branch effect
         fetchBranches();
 
         // Realtime Subscription (Best effort)
@@ -116,16 +117,29 @@ export function KioskView() {
     };
 
     const fetchProducts = async () => {
-        const { data } = await supabase.from('products').select('*');
+        if (!selectedBranchId) return;
+        const { data } = await supabase
+            .from('products')
+            .select('*')
+            .eq('branch_id', selectedBranchId); // Filter by branch to match POS behavior
+
         if (data) {
             setProducts(data);
             const cats = Array.from(new Set(data.map(p => p.category || 'Other')));
             setCategories(['All', ...cats]);
+        } else {
+            setProducts([]);
+            setCategories(['All']);
         }
     };
 
     const fetchTables = async () => {
-        const { data } = await supabase.from('tables').select('*').order('number', { ascending: true });
+        if (!selectedBranchId) return;
+        const { data } = await supabase
+            .from('tables')
+            .select('*')
+            .eq('branch_id', selectedBranchId)
+            .order('number', { ascending: true });
         if (data) setTables(data);
     };
 
@@ -192,7 +206,8 @@ export function KioskView() {
                 .from('sales')
                 .insert([{
                     order_no: `ORD-${Date.now()}`,
-                    date: new Date().toISOString(),
+                    // Create ISO string with local timezone offset
+                    date: new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString(),
                     total_amount: totalAmount,
                     payment_method: 'Pay at Cashier',
                     status: 'Unpaid',

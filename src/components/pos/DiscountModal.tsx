@@ -50,8 +50,8 @@ export function DiscountModal({
 
   const handleApply = () => {
     const value = parseFloat(discountValue) || 0;
-    if (value > 0 && reason) {
-      onApplyDiscount({ type: discountType, value, reason });
+    if (value > 0) {
+      onApplyDiscount({ type: discountType, value, reason: reason || '-' });
       setDiscountValue('');
       setReason('');
       onOpenChange(false);
@@ -60,7 +60,7 @@ export function DiscountModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md z-[9999]">
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold">Terapkan Diskon</DialogTitle>
           <DialogDescription>
@@ -104,12 +104,12 @@ export function DiscountModal({
           </div>
 
           <div className="space-y-2">
-            <Label>Alasan</Label>
+            <Label>Alasan (Opsional)</Label>
             <Select value={reason} onValueChange={setReason}>
               <SelectTrigger className="h-12">
                 <SelectValue placeholder="Pilih alasan" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="z-[9999]">
                 <SelectItem value="promotion">Promosi</SelectItem>
                 <SelectItem value="loyalty">Diskon Loyalitas</SelectItem>
                 <SelectItem value="employee">Diskon Karyawan</SelectItem>
@@ -144,7 +144,7 @@ export function DiscountModal({
 
           <Button
             onClick={handleApply}
-            disabled={!discountValue || !reason}
+            disabled={!discountValue}
             className="w-full h-12 text-base bg-pos-coral hover:bg-orange-600"
           >
             Terapkan Diskon
@@ -154,3 +154,4 @@ export function DiscountModal({
     </Dialog>
   );
 }
+

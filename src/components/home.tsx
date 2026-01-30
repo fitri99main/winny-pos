@@ -58,6 +58,8 @@ function Home() {
   const [orderDiscount, setOrderDiscount] = useState(0);
   const [isCashierOpen, setIsCashierOpen] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [autoSelectedTable, setAutoSelectedTable] = useState<string>('');
+  const [pendingCount, setPendingCount] = useState(0); // New state for badge
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [contacts, setContacts] = useState<ContactData[]>([]);
   // Persist Branch Selection
@@ -378,6 +380,64 @@ function Home() {
   }, [currentBranchId]);
 
   // --- Sales & POS Integration ---
+
+  // Polling for Kiosk Orders and Badge Count
+  const [lastProcessedOrderId, setLastProcessedOrderId] = useState<number>(0);
+
+  useEffect(() => {
+    if (!currentBranchId) return;
+
+    const checkNewOrders = async () => {
+      try {
+        // 1. Get Count of Pending Orders for Badge
+        const { count, error: countError } = await supabase
+          .from('sales')
+          .select('*', { count: 'exact', head: true })
+          .eq('branch_id', currentBranchId)
+          .eq('status', 'Pending');
+
+        if (!countError) setPendingCount(count || 0);
+
+        // 2. Check for NEW order to notify
+        const { data } = await supabase
+          .from('sales')
+          .select('*')
+          .eq('branch_id', currentBranchId)
+          .eq('status', 'Pending')
+          .gt('id', lastProcessedOrderId) // Only get orders newer than last processed
+          .order('id', { ascending: false })
+          .limit(1);
+
+        // DEBUG LOGS
+        // console.log('Polling Check:', { lastId: lastProcessedOrderId, found: data?.length });
+
+        if (data && data.length > 0) {
+          const latestOrder = data[0];
+          console.log('Found Latest Order:', latestOrder.id, 'Last Processed:', lastProcessedOrderId);
+
+          // Only notify if we haven't processed this ID yet
+          if (latestOrder.id > lastProcessedOrderId) {
+            setLastProcessedOrderId(latestOrder.id); // <--- CRITICAL: Update state to prevent loop
+
+            const targetTable = latestOrder.table_no || latestOrder.tableNo || latestOrder.table_number;
+
+            // Automatically open WinPOS (Cashier Interface)
+            console.log('Triggering Auto-Open for Order #' + latestOrder.id);
+            console.log('New Kiosk Order from Table ' + (targetTable || '?') + ' - Opening WinPOS');
+            setIsCashierOpen(true);
+            setAutoSelectedTable(''); // Show Table Grid (All Orders)
+          }
+        }
+      } catch (err) {
+        console.error('Polling Error:', err);
+      }
+    };
+
+    const intervalId = setInterval(checkNewOrders, 3000); // Check every 3 seconds
+    checkNewOrders(); // Run immediately once
+    return () => clearInterval(intervalId);
+  }, [currentBranchId, lastProcessedOrderId]);
+
   const fetchTransactions = async () => {
     if (!currentBranchId) return;
 
@@ -419,24 +479,30 @@ function Home() {
       setSales(formattedSales);
 
       const pendingFromDB = salesData
-        .filter(s => s.status === 'Pending')
+        .filter(s => ['Pending', 'Paid'].includes(s.status)) // Include Paid orders for KDS
         .map(s => ({
           id: s.id,
           orderNo: s.order_no,
+          date: s.date,
           tableNo: s.table_no || '-',
           waiterName: s.waiter_name || 'Kiosk',
           time: new Date(s.date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
-          items: (s.items || []).map((i: any) => ({
-            name: i.product_name,
-            quantity: i.quantity,
-            target: 'Kitchen',
-            status: 'Pending'
-          }))
+          items: (s.items || []).map((i: any) => {
+            const product = products.find(p => p.name === i.product_name);
+            return {
+              name: i.product_name,
+              quantity: i.quantity,
+              target: product?.target || 'Kitchen',
+              status: 'Pending'
+            };
+          })
         }));
 
       setPendingOrders(prev => {
+        // Merge DB orders with local pending orders (avoid duplicates)
         const newOrders = pendingFromDB.filter(p => !prev.some(existing => existing.id === p.id));
-        if (newOrders.length > 0) return [...newOrders, ...prev];
+        if (newOrders.length > 0) return [...prev, ...newOrders]; // Append new ones from DB
+        // Note: Logic allows local 'Held' orders (id timestamp) to coexist with DB 'Sales' (id int)
         return prev;
       });
     }
@@ -523,41 +589,31 @@ function Home() {
   }, [currentBranchId]);
 
 
-  // --- Realtime Order Notifications for Cashier ---
+
+
+
+  // --- Realtime Order Notifications for Cashier (Restored & Modified) ---
   useEffect(() => {
     const channel = supabase
-      .channel('new_kiosk_orders')
+      .channel('new_kiosk_orders_realtime')
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'sales' },
         (payload) => {
           const newOrder = payload.new;
-          if (newOrder.waiter_name !== 'Self-Service Kiosk') return;
-
-          toast.custom((t) => (
-            <div className="bg-white rounded-xl shadow-2xl border border-blue-100 p-4 w-80 animate-in slide-in-from-top-5">
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 shrink-0">
-                  <ShoppingCart className="w-6 h-6" />
-                </div>
-                <div className="flex-1">
-                  <h4 className="font-bold text-gray-900">Pesanan Baru Kiosk!</h4>
-                  <p className="text-sm text-gray-500 mb-1">Meja {newOrder.table_no} • {newOrder.customer_name || 'Pelanggan'}</p>
-                  <p className="text-xs font-mono text-gray-400 mb-3">{newOrder.order_no}</p>
-                  <button
-                    onClick={() => {
-                      setActiveModule('pos');
-                      setSalesViewTab('history');
-                      toast.dismiss(t);
-                    }}
-                    className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg font-bold w-full hover:bg-blue-700 transition-colors"
-                  >
-                    Buka Kasir
-                  </button>
-                </div>
-              </div>
-            </div >
-          ), { duration: 10000 });
+          // Strict filter for Kiosk orders
+          if (newOrder.waiter_name === 'Self-Service Kiosk' || newOrder.waiter_name === 'Kiosk') {
+            console.log('Realtime: New Kiosk Order Detected! Opening WinPOS...');
+            const targetTable = newOrder.table_no || newOrder.tableNo;
+            setIsCashierOpen(true);
+            // Select the table to bypass "Pilih Meja" and go to "WinPOS" (Product View)
+            if (targetTable) {
+              setAutoSelectedTable(String(targetTable));
+            } else {
+              setAutoSelectedTable(''); // Fallback to grid if no table
+            }
+            // No toast as per request
+          }
         }
       )
       .subscribe();
@@ -566,7 +622,6 @@ function Home() {
       supabase.removeChannel(channel);
     };
   }, []);
-
 
   // --- Attendance Integration ---
   useEffect(() => {
@@ -864,7 +919,7 @@ function Home() {
         date: new Date().toISOString(),
         total_amount: saleData.totalAmount,
         payment_method: saleData.paymentMethod,
-        status: 'Completed',
+        status: 'Paid', // Changed from 'Completed' to 'Paid' so it appears in KDS
         branch_id: currentBranchId,
         waiter_name: saleData.waiterName,
         table_no: saleData.tableNo,
@@ -964,6 +1019,36 @@ function Home() {
         time: kdsOrder.time,
         items: barItems
       });
+    }
+  };
+
+  const handleKDSUpdate = async (orderId: number, status: string, items?: any) => {
+    // 1. Update LOCAL state for immediate UI response
+    setPendingOrders(prev => prev.map(order =>
+      order.id === orderId
+        ? {
+          ...order,
+          status: status === 'Served' ? 'Served' : order.status,
+          items: status === 'ItemUpdate' ? order.items.map((i: any) => i.name === items.itemName ? { ...i, status: items.newStatus } : i) : order.items
+        }
+        : order
+    ).filter(order => status !== 'Served')); // Remove if served (optional, or keep for history)
+
+    // 2. Update DB if it is a persisted order (id is number usually, or check valid ID)
+    if (status === 'Served') {
+      const order = pendingOrders.find(o => o.id === orderId);
+      let waitingTimeUpdate = {};
+
+      if (order?.date) {
+        const start = new Date(order.date).getTime();
+        const diff = Date.now() - start;
+        const minutes = Math.floor(diff / 60000);
+        waitingTimeUpdate = { waiting_time: `${minutes} mnt` };
+      }
+
+      const { error } = await supabase.from('sales').update({ status: 'Completed', ...waitingTimeUpdate }).eq('id', orderId);
+      if (error) console.log('KDS update ignored for local/invalid order ID or DB error:', error.message);
+      else toast.success('Pesanan selesai & disajikan');
     }
   };
 
@@ -1532,7 +1617,10 @@ function Home() {
           currentBranchId={currentBranchId}
         />
       );
-      case 'kds': return <KDSView pendingOrders={pendingOrders} setPendingOrders={setPendingOrders} />;
+
+
+
+      case 'kds': return <KDSView orders={pendingOrders} onUpdateStatus={handleKDSUpdate} />;
       case 'pos':
         return (
           <SalesView
@@ -1544,6 +1632,7 @@ function Home() {
             contacts={contacts}
             employees={employees}
             paymentMethods={paymentMethods}
+            tables={tables} // Pass tables for occupancy check
             onDeleteSale={handleDeleteSale}
             onOpenCashier={() => setIsCashierOpen(true)}
             initialTab={salesViewTab}
@@ -1875,8 +1964,13 @@ function Home() {
               className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-all group"
               title="Buka Kasir"
             >
-              <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-pink-500 to-rose-500 flex items-center justify-center text-white shadow-md shadow-pink-500/20 group-hover:scale-105 transition-transform">
+              <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-pink-500 to-rose-500 flex items-center justify-center text-white shadow-md shadow-pink-500/20 group-hover:scale-105 transition-transform relative">
                 <ShoppingCart className="w-4 h-4" />
+                {pendingCount > 0 && (
+                  <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-600 rounded-full flex items-center justify-center text-[10px] font-bold border-2 border-white">
+                    {pendingCount}
+                  </div>
+                )}
               </div>
             </button>
           </div>
@@ -1901,7 +1995,7 @@ function Home() {
             setOrderItems={setOrderItems}
             setOrderDiscount={setOrderDiscount}
             onAddSale={handleAddSale}
-            onBack={() => setIsCashierOpen(false)}
+            onBack={() => { setIsCashierOpen(false); setAutoSelectedTable(''); }} // Clear selection on close
             contacts={contacts}
             employees={employees}
             onSendToKDS={handleSendToKDS}
@@ -1911,6 +2005,8 @@ function Home() {
             activeSales={sales}
             paymentMethods={paymentMethods}
             onDeleteSale={handleDeleteSale}
+            settings={storeSettings}
+            initialTable={autoSelectedTable} // Pass the auto-selected table
           />
         </div>
       )

@@ -49,6 +49,8 @@ interface CashierInterfaceProps {
   activeSales?: any[]; // Passed from Home to determine occupancy
   paymentMethods?: any[];
   onDeleteSale?: (id: number) => void | Promise<void>;
+  settings?: any;
+  initialTable?: string;
 }
 
 interface HeldOrder {
@@ -74,9 +76,24 @@ export function CashierInterface({
   tables = [],
   activeSales = [],
   paymentMethods = [],
-  onDeleteSale
+  onDeleteSale,
+  settings = {},
+  initialTable = ''
 }: CashierInterfaceProps) {
+  // console.log('CashierInterface Props:', { productsLength: products?.length, categoriesLength: categories?.length }); 
+  // Removed verbose log to prevent crash on undefined properties
   const [viewMode, setViewMode] = useState<'tables' | 'pos'>('tables');
+  const [selectedTable, setSelectedTable] = useState<string>(initialTable || '');
+
+  // Auto-switch to POS mode if table is provided initially
+  useEffect(() => {
+    console.log('CashierInterface Effect - initialTable:', initialTable);
+    if (initialTable) {
+      console.log('Setting selected table to:', initialTable);
+      setSelectedTable(initialTable);
+      setViewMode('pos');
+    }
+  }, [initialTable]);
   const [activeCategory, setActiveCategory] = useState<ProductCategory>('Semua');
   const [searchQuery, setSearchQuery] = useState('');
   const [discountModalOpen, setDiscountModalOpen] = useState(false);
@@ -89,7 +106,7 @@ export function CashierInterface({
   const [isSplitPayment, setIsSplitPayment] = useState(false);
   const [itemsToSplit, setItemsToSplit] = useState<OrderItem[]>([]);
   const [lastPaymentChange, setLastPaymentChange] = useState<number | undefined>();
-  const [selectedTable, setSelectedTable] = useState<string>('');
+  // const [selectedTable, setSelectedTable] = useState<string>(''); // Removed duplicate
   const [customerName, setCustomerName] = useState<string>('');
   const [waiterName, setWaiterName] = useState<string>('');
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
@@ -119,7 +136,7 @@ export function CashierInterface({
   };
 
   const selectedCustomer = useMemo(() =>
-    contacts.find(c => c.id === selectedCustomerId),
+    (contacts || []).find(c => c.id === selectedCustomerId),
     [selectedCustomerId, contacts]
   );
 
@@ -153,7 +170,14 @@ export function CashierInterface({
     }, 0);
   }, [orderItems]);
 
-  const total = subtotal - orderDiscount;
+  const taxableAmount = Math.max(0, subtotal - orderDiscount);
+  const taxRate = settings?.tax_rate || 0;
+  const serviceRate = settings?.service_rate || 0;
+
+  const taxAmount = (taxableAmount * taxRate) / 100;
+  const serviceAmount = (taxableAmount * serviceRate) / 100;
+
+  const total = taxableAmount + taxAmount + serviceAmount;
 
   // Hydrate order when table is selected
   useEffect(() => {
@@ -185,7 +209,7 @@ export function CashierInterface({
         setCustomerName(existingSale.customerName || 'Guest');
         setWaiterName(existingSale.waiterName || '');
         // If there's a discount, we might need to recalculate or restore it
-        // setOrderDiscount(existingSale.discount || 0); 
+        setOrderDiscount(existingSale.discount || 0);
       } else {
         // New order for this table
         setOrderItems([]);
@@ -394,6 +418,8 @@ export function CashierInterface({
         waiterName: waiterName,
         subtotal: isSplitPayment ? amountToReport : subtotal,
         discount: isSplitPayment ? 0 : orderDiscount,
+        tax: isSplitPayment ? 0 : taxAmount,
+        service: isSplitPayment ? 0 : serviceAmount,
         paidAmount: payment.amount || amountToReport,
         change: payment.change || 0
       });
@@ -577,7 +603,7 @@ export function CashierInterface({
                     className="bg-transparent font-bold text-pos-charcoal focus:outline-none text-sm w-full cursor-pointer hover:text-pos-coral transition-colors appearance-none"
                   >
                     <option value="">Pilih</option>
-                    {tables.map(t => (
+                    {(tables || []).map(t => (
                       <option key={t.id} value={t.number}>{t.number} ({t.capacity})</option>
                     ))}
                   </select>
@@ -600,7 +626,7 @@ export function CashierInterface({
                     className="bg-transparent font-bold text-pos-charcoal focus:outline-none text-sm w-full cursor-pointer hover:text-pos-coral transition-colors appearance-none"
                   >
                     <option value="Guest">Guest</option>
-                    {contacts.filter(c => c.type === 'Customer').map(c => (
+                    {(contacts || []).filter(c => c && c.type === 'Customer').map(c => (
                       <option key={c.id} value={c.name}>{c.name}</option>
                     ))}
                   </select>
@@ -624,7 +650,7 @@ export function CashierInterface({
                   className="bg-transparent font-bold text-pos-charcoal focus:outline-none text-sm w-full cursor-pointer hover:text-pos-coral transition-colors appearance-none"
                 >
                   <option value="">-- Pilih Pelayan --</option>
-                  {employees.map(emp => (
+                  {(employees || []).map(emp => (
                     <option key={emp.id} value={emp.name}>{emp.name}</option>
                   ))}
                 </select>
@@ -638,6 +664,8 @@ export function CashierInterface({
             subtotal={subtotal}
             discount={orderDiscount}
             total={total}
+            tax={taxAmount}
+            service={serviceAmount}
             onQuantityChange={handleQuantityChange}
             onRemoveItem={handleRemoveItem}
           />
@@ -769,6 +797,10 @@ export function CashierInterface({
         open={paymentModalOpen}
         onOpenChange={setPaymentModalOpen}
         totalAmount={isSplitPayment ? itemsToSplit.reduce((sum, item) => sum + item.product.price * item.quantity, 0) : total}
+        subtotal={isSplitPayment ? itemsToSplit.reduce((sum, item) => sum + item.product.price * item.quantity, 0) : subtotal}
+        discount={isSplitPayment ? 0 : orderDiscount}
+        tax={isSplitPayment ? 0 : taxAmount}
+        service={isSplitPayment ? 0 : serviceAmount}
         onPaymentComplete={handlePaymentComplete}
         paymentMethods={paymentMethods}
       />

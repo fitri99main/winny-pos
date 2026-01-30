@@ -8,6 +8,8 @@ interface OrderPanelProps {
   subtotal: number;
   discount: number;
   total: number;
+  tax?: number;
+  service?: number;
   onQuantityChange: (itemId: string, newQuantity: number) => void;
   onRemoveItem: (itemId: string) => void;
 }
@@ -17,6 +19,8 @@ export function OrderPanel({
   subtotal,
   discount,
   total,
+  tax = 0,
+  service = 0,
   onQuantityChange,
   onRemoveItem,
 }: OrderPanelProps) {
@@ -139,6 +143,22 @@ export function OrderPanel({
               <span className="text-gray-600">Diskon</span>
               <span className="font-mono font-medium text-red-500">
                 -{formatPrice(discount)}
+              </span>
+            </div>
+          )}
+          {tax > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Pajak</span>
+              <span className="font-mono font-medium text-pos-charcoal">
+                {formatPrice(tax)}
+              </span>
+            </div>
+          )}
+          {service > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Layanan</span>
+              <span className="font-mono font-medium text-pos-charcoal">
+                {formatPrice(service)}
               </span>
             </div>
           )}
