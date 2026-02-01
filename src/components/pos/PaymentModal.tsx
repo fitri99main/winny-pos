@@ -106,28 +106,35 @@ export function PaymentModal({
           <DialogDescription>
             Pilih metode pembayaran untuk menyelesaikan transaksi sebesar {formatPrice(totalAmount)}.
           </DialogDescription>
-          <div className="mt-4 p-4 bg-gray-50 rounded-xl space-y-2 border-2 border-red-500">
-            <div className="flex justify-between text-sm text-gray-500">
-              <span>Subtotal</span>
-              <span>{formatPrice(subtotal)}</span>
+          <div className="mt-4 p-4 bg-gray-50 rounded-xl border border-gray-100 space-y-3">
+            {/* Subtotal & Discount line */}
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-gray-500">Subtotal</span>
+              <span className="font-semibold text-gray-700">{formatPrice(subtotal)}</span>
             </div>
-            {discount > 0 ? (
-              <div className="flex justify-between text-sm text-red-500">
+
+            {discount > 0 && (
+              <div className="flex justify-between items-center text-sm text-red-500">
                 <span>Diskon</span>
                 <span>-{formatPrice(discount)}</span>
               </div>
-            ) : null}
-            <div className="flex justify-between text-sm text-gray-500">
-              <span>Pajak ({tax > 0 ? formatPrice(tax) : '0'})</span>
-              <span>{formatPrice(tax)}</span>
+            )}
+
+            {/* Tax & Service Grouped */}
+            <div className="space-y-1 pt-1">
+              <div className="flex justify-between items-center text-xs text-gray-500">
+                <span>Pajak ({tax > 0 ? formatPrice(tax) : '0'})</span>
+                <span>{formatPrice(tax)}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs text-gray-500">
+                <span>Layanan ({service > 0 ? formatPrice(service) : '0'})</span>
+                <span>{formatPrice(service)}</span>
+              </div>
             </div>
-            <div className="flex justify-between text-sm text-gray-500">
-              <span>Layanan ({service > 0 ? formatPrice(service) : '0'})</span>
-              <span>{formatPrice(service)}</span>
-            </div>
-            <div className="pt-2 border-t border-gray-200 flex justify-between items-center">
-              <p className="text-sm font-bold text-gray-700">Total Tagihan</p>
-              <p className="text-2xl font-mono font-bold text-pos-coral">
+
+            <div className="pt-3 border-t border-gray-200 flex justify-between items-center">
+              <p className="text-base font-bold text-gray-800">Total Tagihan</p>
+              <p className="text-3xl font-mono font-bold text-pos-coral tracking-tight">
                 {formatPrice(totalAmount)}
               </p>
             </div>
@@ -167,58 +174,73 @@ export function PaymentModal({
           {/* Cash Payment */}
           {selectedMethod?.type === 'cash' && (
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="space-y-4"
+              className="space-y-5"
             >
               <div className="space-y-2">
-                <Label className="text-base">Jumlah Tunai</Label>
-                <Input
-                  type="number"
-                  placeholder="Masukkan jumlah tunai"
-                  value={cashAmount}
-                  onChange={(e) => setCashAmount(e.target.value)}
-                  className="h-14 text-xl font-mono"
-                  autoFocus
-                />
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                {quickAmounts.map((amount, idx) => (
-                  <Button
-                    key={`${amount}-${idx}`}
-                    variant="outline"
-                    onClick={() => setCashAmount(amount.toString())}
-                    className="h-12"
-                  >
-                    {formatPrice(amount)}
-                  </Button>
-                ))}
-              </div>
-
-              {cashAmount && parseFloat(cashAmount) >= totalAmount && (
-                <div className="p-4 bg-pos-teal/10 border border-pos-teal rounded-xl">
-                  <p className="text-sm text-gray-600 mb-1">Kembalian</p>
-                  <p className="text-2xl font-mono font-bold text-pos-teal">
-                    {formatPrice(calculateChange())}
-                  </p>
+                <Label className="text-sm font-medium text-gray-600">Terima Tunai</Label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">Rp</span>
+                  <Input
+                    type="number"
+                    placeholder="0"
+                    value={cashAmount}
+                    onChange={(e) => setCashAmount(e.target.value)}
+                    className="h-16 text-3xl font-bold pl-12 bg-gray-50 border-gray-200 focus:border-pos-coral focus:ring-pos-coral/20 rounded-xl"
+                    autoFocus
+                  />
                 </div>
-              )}
+              </div>
 
-              <div className="flex gap-3 pt-4">
+              {/* Quick Suggestion Grid */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-2">
+                  {quickAmounts.slice(0, 4).map((amount, idx) => (
+                    <Button
+                      key={`${amount}-${idx}`}
+                      variant="outline"
+                      onClick={() => setCashAmount(amount.toString())}
+                      className="h-14 text-sm font-semibold border-gray-200 hover:border-pos-coral hover:bg-orange-50 hover:text-pos-coral rounded-xl transition-all"
+                    >
+                      {formatPrice(amount)}
+                    </Button>
+                  ))}
+                </div>
+
+                {/* Change Display Box */}
+                <div className={`p-4 rounded-xl border flex flex-col justify-center items-end ${cashAmount && parseFloat(cashAmount) >= totalAmount
+                    ? 'bg-green-50 border-green-200'
+                    : 'bg-gray-50 border-gray-200'
+                  }`}>
+                  <span className={`text-xs font-medium mb-1 ${cashAmount && parseFloat(cashAmount) >= totalAmount
+                      ? 'text-green-600'
+                      : 'text-gray-500'
+                    }`}>Kembalian</span>
+                  <span className={`text-2xl font-mono font-bold ${cashAmount && parseFloat(cashAmount) >= totalAmount
+                      ? 'text-green-700'
+                      : 'text-gray-400'
+                    }`}>
+                    {cashAmount && parseFloat(cashAmount) >= totalAmount
+                      ? formatPrice(calculateChange())
+                      : 'Rp 0'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-gray-100 mt-2">
                 <Button
                   variant="outline"
                   onClick={() => setSelectedMethod(null)}
-                  className="flex-1 h-12"
+                  className="h-14 px-8 rounded-xl border-gray-200 hover:bg-gray-50 font-semibold"
                 >
-                  Back
+                  Kembali
                 </Button>
                 <Button
                   onClick={handlePaymentWithLog}
-                  // We removed disabled to allow clicking and showing the error toast if amount is low
-                  className="flex-1 h-12 bg-pos-coral hover:bg-orange-600"
+                  className="flex-1 h-14 bg-gray-900 hover:bg-black text-white rounded-xl text-lg font-bold shadow-lg shadow-gray-200 hover:shadow-xl transition-all"
                 >
-                  Selesaikan Pembayaran
+                  Selesaikan & Bayar
                 </Button>
               </div>
             </motion.div>

@@ -431,6 +431,44 @@ export function SettingsView({
                                 </div>
                             </div>
                         </div>
+
+                        <div className="pt-6 border-t border-gray-100 dark:border-gray-800">
+                            <div className="flex items-center justify-between p-4 bg-orange-50 dark:bg-orange-900/20 rounded-xl border border-orange-100 dark:border-orange-800">
+                                <div className="space-y-1">
+                                    <h4 className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                                        <Globe className="w-4 h-4 text-orange-600" /> Mode Offline (Darurat)
+                                    </h4>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 max-w-sm">
+                                        Paksa aplikasi berjalan tanpa internet. Aktifkan jika koneksi tidak stabil agar transaksi lebih cepat (data disimpan lokal).
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <span className={`text-xs font-bold ${localSettings.force_offline ? 'text-orange-600' : 'text-gray-400'}`}>
+                                        {localSettings.force_offline ? 'Aktif' : 'Non-aktif'}
+                                    </span>
+                                    <Switch
+                                        checked={localSettings.force_offline || false}
+                                        onCheckedChange={(checked: boolean) => {
+                                            const updated = { ...localSettings, force_offline: checked };
+                                            handleLocalChange(updated);
+                                            // Also save immediately to localStorage to ensure it hits instantly 
+                                            // (though persistent save depends on parent)
+                                            localStorage.setItem('force_offline', checked ? 'true' : 'false');
+                                            // Dispatch event for same-window listeners
+                                            window.dispatchEvent(new Event('force-offline-change'));
+
+                                            // Force reload might be needed to apply to network listeners, 
+                                            // but we will make listeners reactive instead.
+                                            if (checked) {
+                                                toast.warning('Mode Offline Diaktifkan: Koneksi internet akan diabaikan.');
+                                            } else {
+                                                toast.success('Mode Online Diaktifkan: Mencoba sinkronisasi...');
+                                            }
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 )}
 
@@ -1255,14 +1293,12 @@ export function SettingsView({
                                             <button onClick={() => handleOpenPaymentModal(method)} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500">
                                                 <Edit className="w-3.5 h-3.5" />
                                             </button>
-                                            {!method.is_static && (
-                                                <button
-                                                    onClick={() => onPaymentMethodAction && onPaymentMethodAction('delete', method)}
-                                                    className="p-1.5 hover:bg-red-50 rounded-lg text-red-500"
-                                                >
-                                                    <Trash2 className="w-3.5 h-3.5" />
-                                                </button>
-                                            )}
+                                            <button
+                                                onClick={() => onPaymentMethodAction && onPaymentMethodAction('delete', method)}
+                                                className="p-1.5 hover:bg-red-50 rounded-lg text-red-500"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
                                         </div>
                                     </div>
 

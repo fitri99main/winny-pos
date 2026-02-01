@@ -159,7 +159,6 @@ export function ShiftsView({
                             onClick={() => {
                                 if (activeTab === 'schedule') setIsAssignModalOpen(true);
                                 else if (activeTab === 'definitions') setIsAddShiftModalOpen(true);
-                                else setIsAddEmployeeModalOpen(true);
                             }}
                             className="bg-primary hover:bg-primary/90 text-white shadow-lg shadow-blue-100 rounded-xl"
                         >

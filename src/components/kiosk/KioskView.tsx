@@ -51,6 +51,119 @@ export function KioskView() {
     const [branches, setBranches] = useState<any[]>([]);
     const [selectedBranchId, setSelectedBranchId] = useState<string | null>(localStorage.getItem('kiosk_branch_id'));
 
+    // --- OFFLINE & SYNC LOGIC ---
+    const [isOnline, setIsOnline] = useState(() => {
+        return localStorage.getItem('force_offline') === 'true' ? false : navigator.onLine;
+    });
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [pendingOrders, setPendingOrders] = useState<any[]>(() => {
+        const saved = localStorage.getItem('kiosk_pending_orders');
+        return saved ? JSON.parse(saved) : [];
+    });
+
+    useEffect(() => {
+        const handleOnline = () => {
+            const forced = localStorage.getItem('force_offline') === 'true';
+            if (!forced) {
+                setIsOnline(true);
+                processOfflineOrders();
+            }
+        };
+        const handleOffline = () => setIsOnline(false);
+
+        // Listen for Force Offline Toggle
+        const handleForceOffline = () => {
+            const forced = localStorage.getItem('force_offline') === 'true';
+            setIsOnline(!forced && navigator.onLine);
+        };
+        window.addEventListener('storage', handleForceOffline);
+        window.addEventListener('force-offline-change', handleForceOffline);
+
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+        return () => {
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+            window.removeEventListener('storage', handleForceOffline);
+            window.removeEventListener('force-offline-change', handleForceOffline);
+        };
+    }, []);
+
+    useEffect(() => {
+        localStorage.setItem('kiosk_pending_orders', JSON.stringify(pendingOrders));
+    }, [pendingOrders]);
+
+    // Process Sync
+    const processOfflineOrders = async () => {
+        if (!navigator.onLine || isSyncing || pendingOrders.length === 0) return;
+
+        setIsSyncing(true);
+        const toastId = toast.loading('Mensinkronisasi pesanan offline...');
+
+        // Take a snapshot of orders to process
+        const ordersToSync = [...pendingOrders];
+        const successfulOrderIds = new Set<number>(); // track by timestamp or temporary ID
+
+        let successCount = 0;
+        let failCount = 0;
+
+        for (const order of ordersToSync) {
+            try {
+                // 1. Create Sale Record
+                const { data: saleData, error: saleError } = await supabase
+                    .from('sales')
+                    .insert([order.sale])
+                    .select()
+                    .single();
+
+                if (saleError) throw saleError;
+
+                // 2. Create Sale Items
+                const saleItems = order.items.map((item: any) => ({
+                    ...item,
+                    sale_id: saleData.id
+                }));
+
+                const { error: itemsError } = await supabase.from('sale_items').insert(saleItems);
+                if (itemsError) throw itemsError;
+
+                // Mark success (using timestamp as unique key for offline orders)
+                successfulOrderIds.add(order.timestamp);
+                successCount++;
+
+            } catch (error: any) {
+                console.error("Sync failed for order", order, error);
+                failCount++;
+                // If it's a validation error (not network), maybe we should alert? 
+                // For now, we leave it in pending to be safe, but this risks blocking queue.
+            }
+        }
+
+        // Update state: Remove successful ones
+        if (successCount > 0) {
+            setPendingOrders(prev => prev.filter(o => !successfulOrderIds.has(o.timestamp)));
+            toast.success(`${successCount} pesanan terkirim!`, { id: toastId });
+        } else if (failCount > 0) {
+            toast.error(`Gagal mengirim ${failCount} pesanan. Akan dicoba lagi nanti.`, { id: toastId });
+        } else {
+            toast.dismiss(toastId);
+        }
+
+        setIsSyncing(false);
+    };
+
+    // Auto-sync when pending orders change (and we are online)
+    useEffect(() => {
+        if (isOnline && pendingOrders.length > 0) {
+            // Debounce slightly to allow state to settle
+            const timer = setTimeout(() => {
+                processOfflineOrders();
+            }, 1000);
+            return () => clearTimeout(timer);
+        }
+    }, [isOnline, pendingOrders.length]); // depend on length to trigger when new added
+    // --- END OFFLINE LOGIC ---
+
     // Wrapper to save to local storage
     const handleSetBranch = (id: string) => {
         setSelectedBranchId(id);
@@ -178,6 +291,19 @@ export function KioskView() {
         }).filter(item => item.quantity > 0));
     };
 
+    const handleSuccessCheckout = (msg?: string) => {
+        setStep('success');
+        if (msg) toast.success(msg);
+        setLoading(false);
+        setTimeout(() => {
+            setStep('table');
+            setCart([]);
+            setSelectedTable(null);
+            setMember(null);
+            setCustomerName('');
+        }, 5000);
+    };
+
     const handleCheckout = async () => {
         if (!selectedTable || cart.length === 0) return;
 
@@ -189,68 +315,84 @@ export function KioskView() {
 
         setLoading(true);
 
+        // Prepare Data
+        let finalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        let discountAmount = 0;
+        if (member) {
+            discountAmount = Math.round(finalAmount * (member.discount / 100));
+            finalAmount -= discountAmount;
+        }
+
+        const salePayload = {
+            order_no: `ORD-${Date.now()}`,
+            date: new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString(),
+            total_amount: finalAmount,
+            payment_method: 'Pay at Cashier',
+            status: 'Unpaid',
+            waiter_name: 'Self-Service Kiosk',
+            table_no: selectedTable.number,
+            customer_name: member ? `${member.name} (${member.level})` : (customerName || 'Pelanggan Kiosk'),
+            branch_id: selectedBranchId,
+            discount: discountAmount,
+            notes: member ? `Member: ${member.name} (${member.phone}) - ${member.discount}% Off` : undefined
+        };
+
+        const saleItemsPayload = cart.map(item => ({
+            product_id: item.id,
+            product_name: item.name,
+            quantity: item.quantity,
+            price: item.price,
+            cost: item.cost || 0
+        }));
+
+        const saveOffline = () => {
+            const offlineOrder = {
+                sale: salePayload,
+                items: saleItemsPayload,
+                timestamp: Date.now()
+            };
+            setPendingOrders(prev => [...prev, offlineOrder]);
+        };
+
+        // 1. Check Explicit Offline Mode
+        if (!isOnline) {
+            saveOffline();
+            handleSuccessCheckout("Mode Offline: Pesanan disimpan & akan dikirim saat online.");
+            return;
+        }
+
         try {
-            let finalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-
-            // Apply Discount
-            let discountAmount = 0;
-            if (member) {
-                discountAmount = Math.round(finalAmount * (member.discount / 100));
-                finalAmount -= discountAmount;
-            }
-
-            const totalAmount = finalAmount;
-
-            // 1. Create Sale Record
+            // 2. Try Online Submission
             const { data: saleData, error: saleError } = await supabase
                 .from('sales')
-                .insert([{
-                    order_no: `ORD-${Date.now()}`,
-                    // Create ISO string with local timezone offset
-                    date: new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString(),
-                    total_amount: totalAmount,
-                    payment_method: 'Pay at Cashier',
-                    status: 'Unpaid',
-                    waiter_name: 'Self-Service Kiosk',
-                    table_no: selectedTable.number,
-                    customer_name: member ? `${member.name} (${member.level})` : (customerName || 'Pelanggan Kiosk'),
-                    branch_id: selectedBranchId,
-                    discount: discountAmount,
-                    notes: member ? `Member: ${member.name} (${member.phone}) - ${member.discount}% Off` : undefined
-                }])
+                .insert([salePayload])
                 .select()
                 .single();
 
             if (saleError) throw saleError;
 
-            // 2. Create Sale Items
-            const saleItems = cart.map(item => ({
-                sale_id: saleData.id,
-                product_id: item.id,
-                product_name: item.name,
-                quantity: item.quantity,
-                price: item.price,
-                cost: item.cost || 0
+            const saleItems = saleItemsPayload.map(item => ({
+                ...item,
+                sale_id: saleData.id
             }));
 
             const { error: itemsError } = await supabase.from('sale_items').insert(saleItems);
             if (itemsError) throw itemsError;
 
-            setStep('success');
-            setTimeout(() => {
-                // Reset flow after 5 seconds
-                setStep('table');
-                setCart([]);
-                setSelectedTable(null);
-                setMember(null);
-                setCustomerName('');
-            }, 5000);
+            handleSuccessCheckout();
 
         } catch (error: any) {
             console.error('Checkout error details:', error);
+
+            // 3. Fallback if Network Error detected during request
+            if (error.message && (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('connection'))) {
+                saveOffline();
+                handleSuccessCheckout("Jaringan tidak stabil. Pesanan disimpan offline.");
+                return;
+            }
+
             const detail = error.details || error.hint || '';
             toast.error('Gagal membuat pesanan: ' + error.message + (detail ? ` (${detail})` : ''));
-        } finally {
             setLoading(false);
         }
     };
@@ -381,6 +523,25 @@ export function KioskView() {
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
+                    {pendingOrders.length > 0 && (
+                        <button
+                            onClick={processOfflineOrders}
+                            disabled={!isOnline || isSyncing}
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${isSyncing ? 'bg-blue-100 text-blue-700' :
+                                !isOnline ? 'bg-orange-100 text-orange-700' :
+                                    'bg-yellow-100 text-yellow-700 hover:bg-yellow-200 cursor-pointer'
+                                }`}
+                        >
+                            {isSyncing ? (
+                                <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                            ) : !isOnline ? (
+                                <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
+                            ) : (
+                                <div className="w-2 h-2 rounded-full bg-yellow-500" />
+                            )}
+                            {isSyncing ? 'Sending...' : !isOnline ? `${pendingOrders.length} Offline` : `${pendingOrders.length} Pending`}
+                        </button>
+                    )}
                     <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-primary text-white flex items-center justify-center font-bold text-sm md:text-base">
                         Win
                     </div>

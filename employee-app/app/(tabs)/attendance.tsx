@@ -1,7 +1,7 @@
 import { View, Text, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { MapPin, Clock, Calendar, CheckCircle, Navigation } from 'lucide-react-native';
+import { MapPin, Clock, Calendar, CheckCircle, Navigation, ChevronRight } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
 export default function AttendanceScreen() {

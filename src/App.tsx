@@ -4,6 +4,7 @@ import Home from "./components/home";
 import LoginPage from "./components/auth/LoginPage";
 import { AuthProvider, useAuth } from "./components/auth/AuthProvider";
 import { KioskView } from "./components/kiosk/KioskView";
+import { ESSView } from "./components/attendance/ESSView";
 
 // Protected Route Wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -32,6 +33,7 @@ function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/kiosk" element={<KioskView />} />
+          <Route path="/ess" element={<ESSView />} />
           <Route
             path="/"
             element={

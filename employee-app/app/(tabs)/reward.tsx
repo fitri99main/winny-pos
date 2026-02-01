@@ -1,5 +1,5 @@
 import { View, Text, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
-import { Award, Trophy, Star, ChevronRight, TrendingUp } from 'lucide-react-native';
+import { Award, Trophy, Star, ChevronRight, TrendingUp, Clock } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const { width } = Dimensions.get('window');

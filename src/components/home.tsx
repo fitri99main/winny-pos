@@ -37,6 +37,7 @@ type ModuleType = 'dashboard' | 'users' | 'contacts' | 'products' | 'purchases' 
 
 
 function Home() {
+  const { user, role, permissions } = useAuth(); // Retrieve actual user data
   const [activeModule, setActiveModule] = useState<ModuleType>(
     (localStorage.getItem('winpos_active_module') as ModuleType) || 'dashboard'
   );
@@ -50,8 +51,10 @@ function Home() {
     }
   }, [activeModule]);
   const [returns, setReturns] = useState<SalesReturn[]>([]);
-  const [userRole, setUserRole] = useState<string>('Administrator');
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  // const [userRole, setUserRole] = useState<string>('Administrator'); // Replaced by useAuth
+  const [isOnline, setIsOnline] = useState(() => {
+    return localStorage.getItem('force_offline') === 'true' ? false : navigator.onLine;
+  });
   const [isSyncing, setIsSyncing] = useState(false);
   const [currentBranchId, setCurrentBranchId] = useState(localStorage.getItem('winpos_current_branch') || '');
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
@@ -182,7 +185,7 @@ function Home() {
         if (error) throw error;
         toast.success('Metode pembayaran diperbarui');
       } else if (action === 'delete') {
-        if (data.is_static) return toast.error('Metode sistem tidak dapat dihapus');
+
         const { error } = await supabase.from('payment_methods').delete().eq('id', data.id);
         if (error) throw error;
         toast.success('Metode pembayaran dihapus');
@@ -593,26 +596,73 @@ function Home() {
 
 
   // --- Realtime Order Notifications for Cashier (Restored & Modified) ---
+  // --- Realtime Order Notifications & Sync ---
   useEffect(() => {
+    if (!currentBranchId) return;
+
     const channel = supabase
-      .channel('new_kiosk_orders_realtime')
+      .channel('sales_realtime_sync')
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'sales' },
-        (payload) => {
+        { event: 'INSERT', schema: 'public', table: 'sales', filter: `branch_id=eq.${currentBranchId}` },
+        async (payload) => {
+          console.log('Realtime: New Sale Detected', payload.new);
           const newOrder = payload.new;
-          // Strict filter for Kiosk orders
+
+          // 1. Fetch Items for this sale (Wait a bit for items to be inserted)
+          await new Promise(resolve => setTimeout(resolve, 800));
+
+          const { data: items, error } = await supabase
+            .from('sale_items')
+            .select('*')
+            .eq('sale_id', newOrder.id);
+
+          if (error) {
+            console.error('Error fetching realtime items:', error);
+            return;
+          }
+
+          // 2. Format to SalesOrder
+          const formattedSale: SalesOrder = {
+            id: newOrder.id,
+            orderNo: newOrder.order_no,
+            date: newOrder.date,
+            items: items ? items.length : 0,
+            productDetails: items?.map((i: any) => ({
+              name: i.product_name,
+              quantity: i.quantity,
+              price: i.price,
+              isManual: false
+            })) || [],
+            subtotal: newOrder.subtotal,
+            discount: newOrder.discount,
+            totalAmount: newOrder.total_amount,
+            paymentMethod: newOrder.payment_method,
+            status: newOrder.status,
+            tableNo: newOrder.table_no,
+            customerName: newOrder.customer_name,
+            branchId: newOrder.branch_id,
+            waiterName: newOrder.waiter_name,
+            syncStatus: 'synced',
+            waitingTime: 'Baru'
+          };
+
+          // 3. Update Sales State
+          setSales(prev => {
+            if (prev.some(s => s.id === formattedSale.id)) return prev;
+            return [formattedSale, ...prev];
+          });
+          toast.info(`Pesanan Masuk: ${formattedSale.orderNo}`);
+
+          // 4. Special Handling for Kiosk (Auto-Open Cashier)
           if (newOrder.waiter_name === 'Self-Service Kiosk' || newOrder.waiter_name === 'Kiosk') {
-            console.log('Realtime: New Kiosk Order Detected! Opening WinPOS...');
             const targetTable = newOrder.table_no || newOrder.tableNo;
             setIsCashierOpen(true);
-            // Select the table to bypass "Pilih Meja" and go to "WinPOS" (Product View)
             if (targetTable) {
               setAutoSelectedTable(String(targetTable));
             } else {
-              setAutoSelectedTable(''); // Fallback to grid if no table
+              setAutoSelectedTable('');
             }
-            // No toast as per request
           }
         }
       )
@@ -621,7 +671,7 @@ function Home() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [currentBranchId]);
 
   // --- Attendance Integration ---
   useEffect(() => {
@@ -818,8 +868,21 @@ function Home() {
     // if (savedReceipt) setReceiptSettings(JSON.parse(savedReceipt));
 
     // Network status listeners
-    const handleOnline = () => setIsOnline(true);
+    // Network status listeners
+    const handleOnline = () => {
+      const forced = localStorage.getItem('force_offline') === 'true';
+      if (!forced) setIsOnline(true);
+    };
     const handleOffline = () => setIsOnline(false);
+
+    // Listen to custom force_offline updates (from Settings)
+    const handleForceOfflineChange = () => {
+      const forced = localStorage.getItem('force_offline') === 'true';
+      setIsOnline(!forced && navigator.onLine);
+    };
+    window.addEventListener('storage', handleForceOfflineChange);
+    // We might need a custom event if storage event doesn't fire on same window
+    window.addEventListener('force-offline-change', handleForceOfflineChange);
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
@@ -834,6 +897,8 @@ function Home() {
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('storage', handleForceOfflineChange);
+      window.removeEventListener('force-offline-change', handleForceOfflineChange);
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
@@ -889,18 +954,92 @@ function Home() {
 
   // Background Sync Effect
   useEffect(() => {
-    if (isOnline && (sales.some(s => s.syncStatus === 'pending') || returns.some(r => r.syncStatus === 'pending'))) {
-      setIsSyncing(true);
+    const syncData = async () => {
+      if (!isOnline) return;
 
-      // Simulate batch syncing
-      setTimeout(() => {
-        setSales(prev => prev.map(s => s.syncStatus === 'pending' ? { ...s, syncStatus: 'synced' } : s));
-        setReturns(prev => prev.map(r => r.syncStatus === 'pending' ? { ...r, syncStatus: 'synced' } : r));
-        setIsSyncing(false);
-        toast.success('Semua data offline berhasil disinkronkan ke cloud');
-      }, 3000);
+      const pendingSales = sales.filter(s => s.syncStatus === 'pending');
+      // returns logic if needed, simplfied for now to focus on Sales as per user complaint
+      // const pendingReturns = returns.filter(r => r.syncStatus === 'pending');
+
+      if (pendingSales.length === 0) return;
+
+      setIsSyncing(true);
+      const toastId = toast.loading(`Menyinkronkan ${pendingSales.length} transaksi...`);
+      let successCount = 0;
+
+      const newSales = [...sales]; // Clone to mutate state locally after sync
+
+      for (const sale of pendingSales) {
+        try {
+          // Mapping based on SalesOrder interface
+          const salePayload = {
+            order_no: sale.orderNo,
+            date: sale.date,
+            total_amount: sale.totalAmount,
+            payment_method: sale.paymentMethod,
+            status: 'Paid',
+            waiter_name: sale.waiterName || 'Cashier',
+            table_no: sale.tableNo || null,
+            customer_name: sale.customerName || 'Guest',
+            branch_id: currentBranchId,
+            discount: sale.discount || 0,
+            subtotal: sale.subtotal || sale.totalAmount,
+            tax: 0, // Not explicitly in SalesOrder
+            service_charge: 0 // Not explicitly in SalesOrder
+          };
+
+          const { data: saleData, error: saleError } = await supabase
+            .from('sales')
+            .insert([salePayload])
+            .select()
+            .single();
+
+          if (saleError) throw saleError;
+
+          // Items - Mapping from productDetails
+          // CAUTION: productDetails might lack product_id. We'll try to use 'id' if present (casted) or 0.
+          const itemsPayload = (sale.productDetails || []).map((item: any) => ({
+            sale_id: saleData.id,
+            product_id: item.id || 0, // Best effort fallback
+            product_name: item.name,
+            quantity: item.quantity,
+            price: item.price,
+            cost: 0,
+            variant_id: null,
+            note: ''
+          }));
+
+          const { error: itemsError } = await supabase.from('sale_items').insert(itemsPayload);
+          if (itemsError) throw itemsError;
+
+          // Update local state to synced
+          const index = newSales.findIndex(s => s.id === sale.id);
+          if (index !== -1) {
+            newSales[index] = { ...newSales[index], syncStatus: 'synced' };
+          }
+          successCount++;
+
+        } catch (err) {
+          console.error("Sync error for sale:", sale.orderNo, err);
+          // Keep as pending
+        }
+      }
+
+      if (successCount > 0) {
+        setSales(newSales);
+        toast.success(`${successCount} transaksi berhasil disinkronkan!`, { id: toastId });
+      } else {
+        toast.dismiss(toastId);
+      }
+      setIsSyncing(false);
+    };
+
+    if (isOnline) {
+      // Debounce slightly
+      const timer = setTimeout(() => syncData(), 2000);
+      return () => clearTimeout(timer);
     }
-  }, [isOnline, sales, returns]);
+  }, [isOnline, sales]);
 
   // Clock Effect
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -1149,7 +1288,7 @@ function Home() {
   /* 
     3. 'dashboard' is always shown acting as Home.
   */
-  const { user, role, permissions } = useAuth(); // Get extended auth info
+  // const { user, role, permissions } = useAuth(); // Duplicate removed
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
 
@@ -1325,17 +1464,43 @@ function Home() {
   const handleEmployeeCRUD = async (action: 'create' | 'update' | 'delete', data: any) => {
     try {
       if (action === 'create') {
-        const { id, joinDate, offDays, ...rest } = data;
-        const payload = { ...rest, join_date: joinDate, off_days: offDays, branch_id: currentBranchId };
+        const { id, joinDate, offDays, system_role, ...rest } = data;
+        const payload = { ...rest, join_date: joinDate, off_days: offDays, branch_id: currentBranchId, system_role: system_role };
+
+        // 1. Insert Employee
         const { error } = await supabase.from('employees').insert([payload]);
         if (error) throw error;
+
+        // 2. Sync to Profiles (Pre-Approve User) if Role is Set
+        if (system_role && data.email) {
+          await supabase.from('profiles').upsert({
+            email: data.email,
+            name: data.name,
+            role: system_role
+          }, { onConflict: 'email' });
+        }
+
         toast.success('Karyawan berhasil ditambahkan');
       } else if (action === 'update') {
-        const { id, joinDate, offDays, ...rest } = data;
-        const payload = { ...rest, join_date: joinDate, off_days: offDays, branch_id: currentBranchId };
+        const { id, joinDate, offDays, system_role, ...rest } = data;
+        const payload = { ...rest, join_date: joinDate, off_days: offDays, branch_id: currentBranchId, system_role: system_role };
+
+        // 1. Update Employee
         const { error } = await supabase.from('employees').update(payload).eq('id', id);
         if (error) throw error;
-        toast.success('Data karyawan diupdate');
+
+        // 2. Sync to Profiles
+        if (system_role && data.email) {
+          await supabase.from('profiles').upsert({
+            email: data.email,
+            name: data.name,
+            role: system_role
+          }, { onConflict: 'email' });
+          toast.success('Data & Akses Sistem diupdate');
+        } else {
+          toast.success('Data karyawan diupdate');
+        }
+
       } else if (action === 'delete') {
         const { error } = await supabase.from('employees').delete().eq('id', data.id);
         if (error) throw error;
@@ -1928,7 +2093,41 @@ function Home() {
 
             {/* Sync Status */}
             <div className="hidden sm:flex items-center gap-3 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-200">
-              <div className="flex flex-col items-center">
+              <button
+                className="flex flex-col items-center hover:bg-gray-100 dark:hover:bg-gray-700/50 rounded-lg p-1 transition-colors cursor-pointer"
+                title={isOnline ? "Klik untuk Paksa Offline" : "Klik untuk Coba Online"}
+                onClick={() => {
+                  const currentForce = localStorage.getItem('force_offline') === 'true';
+                  // If currently Online, we want to Force Offline (true).
+                  // If currently Offline, we want to Unforce (false) to try to connect.
+                  // However, better logic is: Simply toggle the Force Offline flag based on INTENT.
+                  // If user clicks GREEN (Online), they want OFFLINE -> set force=true.
+                  // If user clicks RED (Offline), they want ONLINE -> set force=false.
+
+                  // But wait, if internet is down, it shows RED. Clicking it sets force=false (correct).
+                  // If force is ALREADY false (internet is just down), clicking it does nothing visible but that's fine.
+
+                  // Simpler: Just toggle force_offline based on current state? 
+                  // No, use the visual cues.
+
+                  const targetForce = isOnline ? 'true' : 'false';
+
+                  // Special Case: If it IS offline, and we click it, we assume user wants to go ONLINE.
+                  // Even if force_offline was NOT set (just natural offline), setting it to false is safe.
+
+                  localStorage.setItem('force_offline', targetForce);
+                  window.dispatchEvent(new Event('force-offline-change'));
+
+                  // Also must dispatch storage event manually for other tabs if needed? 
+                  // window.dispatchEvent(new StorageEvent('storage', { key: 'force_offline', newValue: targetForce }));
+
+                  if (targetForce === 'true') {
+                    toast.warning('Mode Offline Diaktifkan Manual');
+                  } else {
+                    toast.info('Mode Online Diaktifkan (Mencoba hubungkan...)');
+                  }
+                }}
+              >
                 {isOnline ? (
                   <div className="flex items-center gap-1.5 text-green-600 font-bold text-[10px] uppercase">
                     <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
@@ -1940,7 +2139,7 @@ function Home() {
                     Offline
                   </div>
                 )}
-              </div>
+              </button>
               <div className="w-[1px] h-4 bg-gray-200" />
               <div className="flex items-center gap-1.5">
                 {sales.some(s => s.syncStatus === 'pending') ? (
@@ -1958,6 +2157,8 @@ function Home() {
             </div>
 
             <div className="h-6 w-[1px] bg-gray-200 hidden lg:block" />
+
+
 
             <button
               onClick={() => setIsCashierOpen(true)}

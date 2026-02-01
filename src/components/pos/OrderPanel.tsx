@@ -35,15 +35,15 @@ export function OrderPanel({
   return (
     <div className="h-full flex flex-col frosted-glass rounded-3xl border border-white/50 overflow-hidden">
       {/* Header */}
-      <div className="p-6 border-b border-gray-200/50">
-        <h2 className="text-2xl font-bold text-pos-charcoal">Pesanan Saat Ini</h2>
-        <p className="text-sm text-gray-500 mt-1">
+      <div className="p-4 border-b border-gray-200/50">
+        <h2 className="text-xl font-bold text-pos-charcoal">Pesanan Saat Ini</h2>
+        <p className="text-xs text-gray-500 mt-1">
           {items.length} {items.length === 1 ? 'item' : 'item'}
         </p>
       </div>
 
       {/* Items List */}
-      <ScrollArea className="flex-1 px-6">
+      <ScrollArea className="flex-1 px-3">
         <AnimatePresence mode="popLayout">
           {items.length === 0 ? (
             <motion.div

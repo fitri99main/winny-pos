@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { History, RotateCcw, Search, FileText, CheckCircle, XCircle, X, ShoppingCart, Printer } from 'lucide-react';
+import { History, RotateCcw, Search, FileText, CheckCircle, XCircle, X, ShoppingCart, Printer, ChevronDown, Users } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
 import { ContactData } from '../contacts/ContactsView';
@@ -19,7 +19,7 @@ export interface SalesOrder {
     paymentMethod: string;
     paidAmount?: number;
     change?: number;
-    status: 'Completed' | 'Returned' | 'Unpaid' | 'Pending' | 'Served';
+    status: 'Completed' | 'Returned' | 'Unpaid' | 'Pending' | 'Served' | 'Paid';
     tableNo?: string;
     customerName?: string;
     branchId?: string;
@@ -139,6 +139,64 @@ export function SalesView({
     tables = []
 }: SalesViewProps) {
     const [activeTab, setActiveTab] = useState<'history' | 'returns'>(initialTab);
+    // Date Filter State
+    const [dateFilter, setDateFilter] = useState({
+        start: new Date().toISOString().split('T')[0], // Default to Today
+        end: new Date().toISOString().split('T')[0]
+    });
+
+    // Stats State
+    const [statsPeriod, setStatsPeriod] = useState<'daily' | 'monthly' | 'yearly' | 'filtered'>('filtered');
+
+    // Cashier Filter State
+    const [selectedCashier, setSelectedCashier] = useState('');
+
+    const getStatsTotal = () => {
+        const now = new Date();
+        const todayStr = now.toISOString().split('T')[0];
+        const currentMonth = now.getMonth();
+        const currentYear = now.getFullYear();
+
+        let targetSales = sales || [];
+
+        // If 'filtered', use the already filtered list (respects search & date picker)
+        if (statsPeriod === 'filtered') {
+            // We need to re-apply filter or use 'filteredSales' if accessible here?
+            // filteredSales is defined below. We might need to move this function or use the var.
+            // Since 'filteredSales' is derived closer to render, let's use a standard calculation here 
+            // OR move 'filteredSales' up. 
+            // EASIER: Calculate 'Filtered' inside the render or just duplicate logic if small.
+            // Actually, we can move 'filteredSales' definition up above this function? 
+            // No, 'filteredSales' uses 'searchQuery' etc.
+            // Let's defer 'filtered' calc to the reducer in render?
+            // BETTER: Just return 0 here and handle in render? No.
+            // Let's filter 'sales' right here for consistency if easy.
+            return filteredSales.reduce((sum, sale) => sum + (sale.status !== 'Returned' ? sale.totalAmount : 0), 0);
+        }
+
+        // For other periods, filter ALL sales
+        return targetSales.reduce((sum, sale) => {
+            if (sale.status === 'Returned') return sum;
+            // Branch check
+            if (currentBranchId && sale.branchId && String(sale.branchId) !== String(currentBranchId)) return sum;
+
+            const saleDate = new Date(sale.date);
+            const saleDateStr = sale.date.split('T')[0]; // Simple string check if format is ISO
+
+            if (statsPeriod === 'daily') {
+                // Check YYYY-MM-DD
+                // Assuming sale.date is standard timestamp string
+                const d = new Date(sale.date);
+                if (d.getDate() !== now.getDate() || d.getMonth() !== now.getMonth() || d.getFullYear() !== now.getFullYear()) return sum;
+            } else if (statsPeriod === 'monthly') {
+                if (saleDate.getMonth() !== currentMonth || saleDate.getFullYear() !== currentYear) return sum;
+            } else if (statsPeriod === 'yearly') {
+                if (saleDate.getFullYear() !== currentYear) return sum;
+            }
+            return sum + sale.totalAmount;
+        }, 0);
+    };
+
     // Payment Modal State
     const [paymentModalOpen, setPaymentModalOpen] = useState(false);
     const [selectedSaleForPayment, setSelectedSaleForPayment] = useState<SalesOrder | null>(null);
@@ -239,11 +297,37 @@ export function SalesView({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [onOpenCashier, isReturnModalOpen, isDetailsModalOpen, isEditModalOpen]);
 
-    const filteredSales = (sales || []).filter(sale =>
-        (String(sale.branchId) === String(currentBranchId) || !sale.branchId) &&
-        (sale.orderNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            sale.productDetails.some(p => p.name.toLowerCase().includes(searchQuery.toLowerCase())))
-    );
+    const filteredSales = (sales || []).filter(sale => {
+        const matchesBranch = (String(sale.branchId) === String(currentBranchId) || !sale.branchId);
+        const matchesSearch = (sale.orderNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            sale.productDetails.some(p => p.name.toLowerCase().includes(searchQuery.toLowerCase())));
+
+        // Date Logic
+        if (!processDateFilter(sale.date)) return false;
+
+        // Cashier Logic
+        if (selectedCashier && sale.waiterName !== selectedCashier) return false;
+
+        return matchesBranch && matchesSearch;
+    });
+
+    function processDateFilter(dateStr: string) {
+        if (!dateFilter.start && !dateFilter.end) return true;
+        const saleDate = new Date(dateStr);
+        saleDate.setHours(0, 0, 0, 0); // Compare dates only
+
+        if (dateFilter.start) {
+            const startDate = new Date(dateFilter.start);
+            startDate.setHours(0, 0, 0, 0);
+            if (saleDate < startDate) return false;
+        }
+        if (dateFilter.end) {
+            const endDate = new Date(dateFilter.end);
+            endDate.setHours(0, 0, 0, 0);
+            if (saleDate > endDate) return false;
+        }
+        return true;
+    }
 
     const filteredReturns = (returns || []).filter(ret =>
         ret.returnNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -531,7 +615,7 @@ export function SalesView({
                                                 <span className="text-[10px] w-4 h-4 flex items-center justify-center border border-green-600 rounded-md">$</span>
                                             </button>
                                         )}
-                                        {sale.status === 'Completed' && (
+                                        {['Completed', 'Paid', 'Served'].includes(sale.status) && (
                                             <button
                                                 onClick={() => handleOpenReturn(sale)}
                                                 className="p-1.5 hover:bg-red-50 text-red-600 rounded-lg group"
@@ -647,14 +731,16 @@ export function SalesView({
     return (
         <div className="flex flex-col h-full bg-gray-50/50 relative overflow-hidden">
             {/* Header & Tabs */}
-            <div className="bg-white border-b border-gray-200 px-8 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 flex-shrink-0">
-                <div className="flex items-center gap-4">
-                    <h2 className="text-xl font-bold text-gray-800">Modul Penjualan</h2>
-                    <div className="h-6 w-px bg-gray-200 hidden md:block" />
-                    <div className="flex bg-gray-100 p-1 rounded-xl">
+            <div className="bg-white border-b border-gray-200 px-6 py-4 flex flex-col xl:flex-row xl:items-center justify-between gap-4 flex-shrink-0">
+                <div className="flex flex-col md:flex-row md:items-center gap-4">
+                    <div className="flex items-center gap-4">
+                        <h2 className="text-xl font-bold text-gray-800 whitespace-nowrap">Modul Penjualan</h2>
+                        <div className="h-6 w-px bg-gray-200 hidden md:block" />
+                    </div>
+                    <div className="flex bg-gray-100 p-1 rounded-xl overflow-x-auto">
                         {[
-                            { id: 'history', label: 'Riwayat Penjualan', icon: History },
-                            { id: 'returns', label: 'Retur Penjualan', icon: RotateCcw },
+                            { id: 'history', label: 'Riwayat', icon: History },
+                            { id: 'returns', label: 'Retur', icon: RotateCcw },
                         ].map(item => (
                             <button
                                 key={item.id}
@@ -662,29 +748,109 @@ export function SalesView({
                                     setActiveTab(item.id as any);
                                     if (onModeChange) onModeChange(item.id as any);
                                 }}
-                                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === item.id
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${activeTab === item.id
                                     ? 'bg-white text-blue-700 shadow-sm'
                                     : 'text-gray-500 hover:text-gray-700'
                                     }`}
                             >
-                                <item.icon className={`w-4 h-4 ${activeTab === item.id ? 'text-blue-600' : 'text-gray-400'}`} />
+                                <item.icon className={`w-3.5 h-3.5 ${activeTab === item.id ? 'text-blue-600' : 'text-gray-400'}`} />
                                 <span>{item.label}</span>
                             </button>
                         ))}
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3">
-                    <div className="relative">
+                <div className="flex flex-wrap items-center gap-3 justify-end">
+                    {/* Date Picker Range */}
+                    {activeTab === 'history' && (
+                        <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl p-1 order-2 md:order-1">
+                            <input
+                                type="date"
+                                className="bg-transparent text-xs font-bold text-gray-600 outline-none px-2 w-[110px]"
+                                value={dateFilter.start}
+                                onChange={e => setDateFilter(prev => ({ ...prev, start: e.target.value }))}
+                            />
+                            <span className="text-gray-400">-</span>
+                            <input
+                                type="date"
+                                className="bg-transparent text-xs font-bold text-gray-600 outline-none px-2 w-[110px]"
+                                value={dateFilter.end}
+                                onChange={e => setDateFilter(prev => ({ ...prev, end: e.target.value }))}
+                            />
+                            {(dateFilter.start || dateFilter.end) && (
+                                <button
+                                    onClick={() => setDateFilter({ start: '', end: '' })}
+                                    className="p-1 hover:bg-gray-200 rounded-full text-gray-400"
+                                    title="Reset Tanggal"
+                                >
+                                    <X className="w-3 h-3" />
+                                </button>
+                            )}
+                        </div>
+                    )}
+
+
+                    {/* Cashier Filter Dropdown */}
+                    {activeTab === 'history' && (
+                        <div className="relative order-2 md:order-2">
+                            <div className="relative">
+                                <Users className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                <select
+                                    className="pl-9 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 appearance-none cursor-pointer min-w-[130px]"
+                                    value={selectedCashier}
+                                    onChange={(e) => setSelectedCashier(e.target.value)}
+                                >
+                                    <option value="">Semua Kasir</option>
+                                    {employees.map(emp => (
+                                        <option key={emp.id} value={emp.name}>{emp.name}</option>
+                                    ))}
+                                </select>
+                                <ChevronDown className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="relative order-3 md:order-2">
                         <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                         <input
                             type="text"
-                            placeholder={activeTab === 'history' ? "Cari invoice..." : "Cari retur/invoice..."}
-                            className="pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 w-64"
+                            placeholder={activeTab === 'history' ? "Cari invoice..." : "Cari retur..."}
+                            className="pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 w-32 md:w-48 transition-all focus:w-64"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             id="sales-search-input"
                         />
+                    </div>
+
+
+                    <div className="flex flex-col items-end gap-1 order-1 md:order-3">
+                        <div className="bg-blue-50 border border-blue-100 rounded-xl flex flex-col items-end min-w-[140px] relative group cursor-pointer transition-all hover:shadow-md hover:border-blue-300">
+                            {/* Dropdown/Selector Logic embedded in hover or click could be complex, using simple select for now or sticking to click-to-cycle */}
+                            <select
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                value={statsPeriod}
+                                onChange={(e) => setStatsPeriod(e.target.value as any)}
+                            >
+                                <option value="filtered">Total (Tampil)</option>
+                                <option value="daily">Hari Ini</option>
+                                <option value="monthly">Bulan Ini</option>
+                                <option value="yearly">Tahun Ini</option>
+                            </select>
+
+                            <div className="px-3 py-1.5 w-full flex flex-col items-end pointer-events-none">
+                                <div className="flex items-center gap-1 text-[9px] uppercase font-bold text-blue-600 tracking-wider">
+                                    <span>
+                                        {statsPeriod === 'daily' ? 'Hari Ini' :
+                                            statsPeriod === 'monthly' ? 'Bulan Ini' :
+                                                statsPeriod === 'yearly' ? 'Tahun Ini' : 'Total (Filter)'}
+                                    </span>
+                                    <ChevronDown className="w-3 h-3 text-blue-400" />
+                                </div>
+                                <span className="text-sm font-bold text-blue-800">
+                                    Rp {getStatsTotal().toLocaleString()}
+                                </span>
+                            </div>
+                        </div>
                     </div>
 
                     {onOpenCashier && (

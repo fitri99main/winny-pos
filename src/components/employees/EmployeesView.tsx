@@ -14,6 +14,8 @@ export interface Employee {
     joinDate: string;
     status: 'Active' | 'On Leave' | 'Terminated';
     offDays: number[]; // [0-6] where 0 is Sunday
+    pin?: string; // PIN for Kiosk Access
+    system_role?: string; // NEW: System Role (Admin, Cashier, etc.)
 }
 
 export interface Department {
@@ -64,7 +66,8 @@ export function EmployeesView({
                 // id: Date.now(), // Handled by DB or stripped in Home
                 status: 'Active',
                 joinDate: new Date().toISOString().split('T')[0],
-                offDays: formData.offDays || []
+                offDays: formData.offDays || [],
+                pin: formData.pin || '123456' // Default PIN if not set
             };
             onEmployeeCRUD('create', newEmp);
         }
@@ -205,25 +208,25 @@ export function EmployeesView({
             {/* Form Modal */}
             {isFormOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-xl p-10 space-y-8 animate-in zoom-in-95 duration-200">
-                        <div>
-                            <h3 className="text-2xl font-black text-gray-800 tracking-tight">{formData.id ? 'Edit Data Karyawan' : 'Tambah Karyawan Baru'}</h3>
-                            <p className="text-gray-500 text-sm font-medium">Lengkapi biodata dan tentukan departemen kerja.</p>
+                    <div className="bg-white rounded-[32px] md:rounded-[40px] shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto custom-scrollbar animate-in zoom-in-95 duration-200 flex flex-col">
+                        <div className="p-6 md:p-10 pb-0 shrink-0">
+                            <h3 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight">{formData.id ? 'Edit Data Karyawan' : 'Tambah Karyawan Baru'}</h3>
+                            <p className="text-gray-500 text-xs md:text-sm font-medium mt-1">Lengkapi biodata dan tentukan departemen kerja.</p>
                         </div>
-                        <form onSubmit={handleSubmit} className="space-y-6">
+                        <form onSubmit={handleSubmit} className="p-6 md:p-10 space-y-6">
                             <div className="space-y-4">
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Nama Lengkap Karyawan</label>
-                                    <input className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-bold text-gray-800" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} required />
+                                    <input className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-bold text-gray-800 text-sm md:text-base" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} required placeholder="Nama Lengkap" />
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="space-y-2">
                                         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Jabatan / Role</label>
-                                        <input className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold" value={formData.position || ''} onChange={e => setFormData({ ...formData, position: e.target.value })} placeholder="misal: Senior Barista" required />
+                                        <input className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold" value={formData.position || ''} onChange={e => setFormData({ ...formData, position: e.target.value })} placeholder="misal: Senior Barista" required />
                                     </div>
                                     <div className="space-y-2">
                                         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Struktur Departemen</label>
-                                        <select className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold text-gray-700" value={formData.department || ''} onChange={e => setFormData({ ...formData, department: e.target.value })}>
+                                        <select className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold text-gray-700" value={formData.department || ''} onChange={e => setFormData({ ...formData, department: e.target.value })}>
                                             <option value="">Pilih Departemen...</option>
                                             {(departments || []).map(dept => (
                                                 <option key={dept.id} value={dept.name}>{dept.name}</option>
@@ -231,18 +234,47 @@ export function EmployeesView({
                                         </select>
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Alamat Email</label>
-                                        <input type="email" className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-medium" value={formData.email || ''} onChange={e => setFormData({ ...formData, email: e.target.value })} placeholder="email@winny.cafe" />
+                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">PIN Akses Kiosk</label>
+                                        <input
+                                            type="text"
+                                            pattern="[0-9]*"
+                                            inputMode="numeric"
+                                            maxLength={6}
+                                            className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-black tracking-widest"
+                                            value={formData.pin || ''}
+                                            onChange={e => setFormData({ ...formData, pin: e.target.value })}
+                                            placeholder="123456"
+                                        />
                                     </div>
                                     <div className="space-y-2">
                                         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Nomor WhatsApp</label>
-                                        <input className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-medium" value={formData.phone || ''} onChange={e => setFormData({ ...formData, phone: e.target.value })} placeholder="08xx-xxxx-xxxx" />
+                                        <input className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-medium" value={formData.phone || ''} onChange={e => setFormData({ ...formData, phone: e.target.value })} placeholder="08xx-xxxx-xxxx" />
+                                    </div>
+
+                                    <div className="space-y-2 pt-4 border-t border-gray-100 col-span-1 md:col-span-2">
+                                        <label className="text-[10px] font-black text-blue-500 uppercase tracking-widest pl-1 flex items-center gap-2">
+                                            <Settings2 className="w-4 h-4" />
+                                            Akses Sistem (Backoffice)
+                                        </label>
+                                        <select
+                                            value={formData.system_role || ''}
+                                            onChange={(e) => setFormData({ ...formData, system_role: e.target.value || undefined })}
+                                            className="w-full p-3 md:p-4 bg-blue-50/50 border border-blue-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-bold text-gray-700"
+                                        >
+                                            <option value="">Tidak Ada (Hanya Lapangan)</option>
+                                            <option value="Cashier">Kasir (Cashier)</option>
+                                            <option value="Manager">Manager</option>
+                                            <option value="Administrator">Administrator</option>
+                                        </select>
+                                        <p className="text-[10px] text-blue-600/60 pl-1 leading-relaxed">
+                                            Role ini memungkinkan karyawan Login/Sign Up ke Panel Admin dengan email mereka.
+                                        </p>
                                     </div>
                                 </div>
 
-                                <div className="bg-gray-100/50 p-6 rounded-[32px] border border-gray-100/50">
+                                <div className="bg-gray-100/50 p-4 md:p-6 rounded-[24px] md:rounded-[32px] border border-gray-100/50">
                                     <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-4 ml-1">Jadwal Libur Tetap (Weekly Off Day)</label>
                                     <div className="flex flex-wrap gap-2">
                                         {DAYS_NAME.map((day, idx) => (
@@ -250,7 +282,7 @@ export function EmployeesView({
                                                 key={idx}
                                                 type="button"
                                                 onClick={() => toggleOffDay(idx)}
-                                                className={`px-4 py-2.5 rounded-xl text-[11px] font-black transition-all border ${Array.isArray(formData.offDays) && formData.offDays.includes(idx)
+                                                className={`px-3 md:px-4 py-2 md:py-2.5 rounded-xl text-[10px] md:text-[11px] font-black transition-all border ${Array.isArray(formData.offDays) && formData.offDays.includes(idx)
                                                     ? 'bg-red-600 text-white border-red-600 shadow-lg shadow-red-200'
                                                     : 'bg-white text-gray-400 border-gray-200 hover:border-red-200 hover:text-red-500'
                                                     }`}
@@ -262,9 +294,9 @@ export function EmployeesView({
                                 </div>
                             </div>
 
-                            <div className="flex justify-end gap-3 pt-6 border-t border-gray-50">
-                                <Button type="button" variant="outline" className="h-14 rounded-2xl px-8 font-bold" onClick={() => setIsFormOpen(false)}>Batal</Button>
-                                <Button type="submit" className="h-14 rounded-2xl px-10 shadow-xl shadow-primary/20 font-black">Simpan Data</Button>
+                            <div className="flex flex-col-reverse md:flex-row justify-end gap-3 pt-6 border-t border-gray-50">
+                                <Button type="button" variant="outline" className="h-12 md:h-14 rounded-2xl px-8 font-bold w-full md:w-auto" onClick={() => setIsFormOpen(false)}>Batal</Button>
+                                <Button type="submit" className="h-12 md:h-14 rounded-2xl px-10 shadow-xl shadow-primary/20 font-black w-full md:w-auto">Simpan Data</Button>
                             </div>
                         </form>
                     </div>
