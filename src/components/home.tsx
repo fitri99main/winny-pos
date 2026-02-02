@@ -425,10 +425,18 @@ function Home() {
             const targetTable = latestOrder.table_no || latestOrder.tableNo || latestOrder.table_number;
 
             // Automatically open WinPOS (Cashier Interface)
-            console.log('Triggering Auto-Open for Order #' + latestOrder.id);
-            console.log('New Kiosk Order from Table ' + (targetTable || '?') + ' - Opening WinPOS');
-            setIsCashierOpen(true);
-            setAutoSelectedTable(''); // Show Table Grid (All Orders)
+            // Trigger for Kiosk orders OR if user is Cashier (for any order)
+            if (role === 'Cashier' || latestOrder.waiter_name === 'Self-Service Kiosk' || latestOrder.waiter_name === 'Kiosk') {
+              console.log('Triggering Auto-Open for Order #' + latestOrder.id);
+              setIsCashierOpen(true);
+              toast.success(`Order Baru Masuk #${latestOrder.order_no} - Membuka Kasir`);
+
+              if (targetTable) {
+                setAutoSelectedTable(String(targetTable));
+              } else {
+                setAutoSelectedTable(''); // Show Table Grid (All Orders)
+              }
+            }
           }
         }
       } catch (err) {
@@ -654,10 +662,14 @@ function Home() {
           });
           toast.info(`Pesanan Masuk: ${formattedSale.orderNo}`);
 
-          // 4. Special Handling for Kiosk (Auto-Open Cashier)
-          if (newOrder.waiter_name === 'Self-Service Kiosk' || newOrder.waiter_name === 'Kiosk') {
+          // 4. Special Handling for Kiosk OR Cashier Role (Auto-Open Cashier)
+          // If the user is a Cashier, OR if the order is from Kiosk (for Admins/others), open the interface
+          if (role === 'Cashier' || newOrder.waiter_name === 'Self-Service Kiosk' || newOrder.waiter_name === 'Kiosk') {
             const targetTable = newOrder.table_no || newOrder.tableNo;
             setIsCashierOpen(true);
+
+            // If it's a Kiosk order, we might want to focus ALL orders or specific table
+            // For Cashiers, usually showing the table grid or specific table is fine
             if (targetTable) {
               setAutoSelectedTable(String(targetTable));
             } else {
@@ -1342,8 +1354,15 @@ function Home() {
 
   // Helper to check permission
   const hasPermission = (moduleId: string) => {
+    // Debug Access
+    // console.log(`Checking Access: Role=${role}, Module=${moduleId}`);
+
     if (moduleId === 'dashboard') return true;
     if (role && role.toLowerCase() === 'administrator') return true;
+
+    // Special Permission: Cashier (or Kasir) can view KDS
+    if (role && (role.toLowerCase() === 'cashier' || role.toLowerCase() === 'kasir') && moduleId === 'kds') return true;
+
     return permissions.includes(moduleId);
   };
 
