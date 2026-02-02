@@ -1175,6 +1175,21 @@ function Home() {
         console.error('Accounting Sync Failed:', journalError);
         toast.error('Gagal mencatat ke pembukuan (Sales OK)');
       } else {
+        // [NEW] HPP (COGS) Journal Entry
+        const totalCost = saleItems.reduce((acc, item) => acc + ((item.cost || 0) * item.quantity), 0);
+
+        if (totalCost > 0) {
+          const { error: hppError } = await supabase.from('journal_entries').insert([{
+            date: new Date().toISOString(),
+            description: `HPP Penjualan ${orderNo}`,
+            debit_account: '501', // Beban Pembelian / HPP
+            credit_account: '104', // Persediaan
+            amount: totalCost
+          }]);
+
+          if (hppError) console.error('HPP Sync Failed:', hppError);
+        }
+
         toast.success('Pembukuan otomatis berhasil!');
       }
 
