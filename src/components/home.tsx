@@ -27,6 +27,7 @@ import { ShiftsView } from './shifts/ShiftsView';
 import { InventoryView, Ingredient as InvIngredient, StockMovement } from './inventory/InventoryView';
 import { KDSView } from './pos/KDSView';
 import { DashboardSkeleton } from './skeletons/DashboardSkeleton';
+import { PWAInstallButton } from './ui/PWAInstallButton';
 import { OrderItem } from '@/types/pos';
 import { mockProducts } from '@/data/products';
 import { toast } from 'sonner';
@@ -757,7 +758,33 @@ function Home() {
         };
         const { error } = await supabase.from('payrolls').update(payload).eq('id', id);
         if (error) throw error;
-        toast.success('Gaji berhasil diupdate');
+
+        // [NEW] Accounting Integration: Auto-Journal if Paid
+        if (payload.status === 'Paid') {
+          const totalAmount = Number(basicSalary) + Number(rest.allowance || 0) - Number(rest.deduction || 0);
+
+          await supabase.from('journal_entries').insert([{
+            date: new Date().toISOString(),
+            description: `Gaji Karyawan: ${employeeName} (${rest.period || ''})`,
+            debit_account: '502', // Beban Gaji
+            credit_account: '101', // Kas
+            amount: totalAmount
+          }]);
+
+          // [NEW] Deduction Journal Entry (Debit Expense, Credit Income)
+          const deductionAmount = Number(rest.deduction || 0);
+          if (deductionAmount > 0) {
+            await supabase.from('journal_entries').insert([{
+              date: new Date().toISOString(),
+              description: `Potongan Gaji: ${employeeName}`,
+              debit_account: '502', // Beban Gaji (Mencatat full expense)
+              credit_account: '402', // Pendapatan Lain-lain (Alokasi potongan)
+              amount: deductionAmount
+            }]);
+          }
+        }
+
+        toast.success('Gaji berhasil diupdate & dicatat ke Jurnal');
       } else if (action === 'delete') {
         const { error } = await supabase.from('payrolls').delete().eq('id', data.id);
         if (error) throw error;
@@ -1128,6 +1155,28 @@ function Home() {
 
       // 4. Force refresh the transactions list to show the new sale immediately
       await fetchTransactions();
+
+      // 5. [NEW] Accounting Integration: Auto-Journal Entry
+      // Determine Debit Account (Asset)
+      // If Cash -> '101' (Kas)
+      // If Transfer/QRIS/Card -> '102' (Bank)
+      const debitAcc = saleData.paymentMethod.toLowerCase() === 'cash' || saleData.paymentMethod.toLowerCase() === 'tunai'
+        ? '101' : '102';
+
+      const { error: journalError } = await supabase.from('journal_entries').insert([{
+        date: new Date().toISOString(),
+        description: `Penjualan ${orderNo}`,
+        debit_account: debitAcc,
+        credit_account: '401', // Pendapatan Penjualan
+        amount: saleData.totalAmount
+      }]);
+
+      if (journalError) {
+        console.error('Accounting Sync Failed:', journalError);
+        toast.error('Gagal mencatat ke pembukuan (Sales OK)');
+      } else {
+        toast.success('Pembukuan otomatis berhasil!');
+      }
 
     } catch (err) {
       console.error('Transaction failed:', err);
@@ -1889,6 +1938,7 @@ function Home() {
             setPayroll={setPayrollData}
             employees={employees} // Pass real employees for dropdown
             onPayrollAction={handlePayrollAction}
+            settings={storeSettings}
           />
         );
       case 'branches': return (
@@ -2159,6 +2209,8 @@ function Home() {
                   </div>
                 )}
               </button>
+              <div className="w-[1px] h-4 bg-gray-200" />
+              <PWAInstallButton />
               <div className="w-[1px] h-4 bg-gray-200" />
               <div className="flex items-center gap-1.5">
                 {sales.some(s => s.syncStatus === 'pending') ? (

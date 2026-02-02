@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
+import { PWAInstallButton } from '../ui/PWAInstallButton';
 
 // --- Types ---
 import { Employee } from '../employees/EmployeesView';
@@ -83,6 +84,7 @@ export function ESSView() {
                         <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">Waktu Sekarang</p>
                         <ClockDisplay />
                     </div>
+                    <PWAInstallButton />
                     <button
                         onClick={handleLogout}
                         className="p-2 md:p-3 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors flex items-center gap-2 font-bold text-xs md:text-sm"
