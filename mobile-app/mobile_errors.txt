@@ -1,0 +1,3 @@
+﻿src/screens/HistoryScreen.tsx(99,51): error TS2339: Property 'isManual' does not exist on type '{ name: string; quantity: number; price: number; } | { name: string; quantity: number; price: number; isManual: boolean; }'.
+  Property 'isManual' does not exist on type '{ name: string; quantity: number; price: number; }'.
+src/screens/SettingsScreen.tsx(18,24): error TS2322: Type 'string' is not assignable to type 'never'.
