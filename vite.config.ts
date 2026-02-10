@@ -13,7 +13,7 @@ export default defineConfig({
     react(),
     VitePWA({
       devOptions: {
-        enabled: true
+        enabled: false
       },
       registerType: 'autoUpdate',
       workbox: {
@@ -54,7 +54,11 @@ export default defineConfig({
     },
   },
   server: {
+    port: 3000,
+    strictPort: true,
     // @ts-ignore
     allowedHosts: true,
   }
 });
+
+console.log("[WinPOS] Vite Config Loaded - Port 3000 Forced");
