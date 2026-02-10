@@ -16,7 +16,10 @@ export default defineConfig({
         enabled: true
       },
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
+      workbox: {
+        maximumFileSizeToCacheInBytes: 5242880, // 5MB
+      },
+      includeAssets: [],
       manifest: {
         name: 'WinPOS System',
         short_name: 'WinPOS',
