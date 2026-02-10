@@ -45,19 +45,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setRole(profile.role);
 
             // 2. Get Permissions (from roles table)
+            // Use ilike for case-insensitive matching to be safer
             const { data: roleData, error: roleError } = await supabase
                 .from('roles')
                 .select('permissions')
-                .eq('name', profile.role)
-                .single();
+                .ilike('name', profile.role.trim())
+                .maybeSingle(); // Use maybeSingle to avoid error if not found immediately
 
             if (roleData && roleData.permissions) {
                 // Ensure it's an array
                 const perms = Array.isArray(roleData.permissions)
                     ? roleData.permissions
                     : [];
+                console.log(`[Auth] Role: ${profile.role}, Perms Loaded: ${perms.length}`);
                 setPermissions(perms);
             } else {
+                console.warn(`[Auth] Role '${profile.role}' has no permissions or not found in roles table.`);
                 setPermissions([]);
             }
         } catch (err) {

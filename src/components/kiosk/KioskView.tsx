@@ -326,7 +326,7 @@ export function KioskView() {
 
         const salePayload = {
             order_no: `ORD-${Date.now()}`,
-            date: new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString(),
+            date: new Date().toISOString(),
             total_amount: finalAmount,
             payment_method: 'Pay at Cashier',
             status: 'Unpaid',

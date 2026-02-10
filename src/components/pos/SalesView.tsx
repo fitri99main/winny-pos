@@ -24,6 +24,7 @@ export interface SalesOrder {
     customerName?: string;
     branchId?: string;
     waiterName?: string;
+    paymentType?: 'cash' | 'card' | 'e-wallet' | 'qris'; // Added for Accounting
     waitingTime?: string;
     syncStatus?: 'synced' | 'pending' | 'syncing';
     printCount?: number;
@@ -119,6 +120,7 @@ interface SalesViewProps {
     onOpenCashier?: () => void;
     paymentMethods?: any[];
     tables?: any[];
+    onClearTableStatus?: (tableNo: string) => void;
 }
 
 export function SalesView({
@@ -136,13 +138,15 @@ export function SalesView({
     employees,
     onOpenCashier,
     paymentMethods = [],
-    tables = []
+    tables = [],
+    onClearTableStatus
 }: SalesViewProps) {
     const [activeTab, setActiveTab] = useState<'history' | 'returns'>(initialTab);
     // Date Filter State
     const [dateFilter, setDateFilter] = useState({
-        start: new Date().toISOString().split('T')[0], // Default to Today
-        end: new Date().toISOString().split('T')[0]
+        // Fix: Use Local Time for default date to avoid UTC "yesterday" issue in early morning (WIB)
+        start: new Date().toLocaleDateString('en-CA'), // Returns YYYY-MM-DD in local time
+        end: new Date().toLocaleDateString('en-CA')
     });
 
     // Stats State
@@ -215,7 +219,9 @@ export function SalesView({
         const updatedSale = {
             ...saleToProcess,
             status: 'Pending' as const,
-            paymentMethod: payment.method === 'e-wallet' ? payment.eWalletProvider || 'E-Wallet' : payment.method === 'card' ? 'Card' : 'Cash',
+            paymentMethod: payment.method, // Keep specific name (e.g. "BCA", "Tunai")
+            // @ts-ignore
+            paymentType: payment.type, // Pass strict type
             paidAmount: payment.amount,
             change: payment.change
         };
@@ -317,12 +323,14 @@ export function SalesView({
         saleDate.setHours(0, 0, 0, 0); // Compare dates only
 
         if (dateFilter.start) {
-            const startDate = new Date(dateFilter.start);
+            // Force Local Time parsing by replacing - with / (Browser standard behavior for Local vs UTC)
+            const startDate = new Date(dateFilter.start.replace(/-/g, '/'));
             startDate.setHours(0, 0, 0, 0);
             if (saleDate < startDate) return false;
         }
         if (dateFilter.end) {
-            const endDate = new Date(dateFilter.end);
+            // Force Local Time parsing by replacing - with /
+            const endDate = new Date(dateFilter.end.replace(/-/g, '/'));
             endDate.setHours(0, 0, 0, 0);
             if (saleDate > endDate) return false;
         }
@@ -529,6 +537,9 @@ export function SalesView({
                                             day: 'numeric',
                                             hour: '2-digit',
                                             minute: '2-digit'
+                                            // Removed explicit timeZone to rely on Browser Local Time which seems to be what user wants (WIB)
+                                            // actually, better to be safe? User is in WIB.
+                                            // timeZone: 'Asia/Jakarta' 
                                         })}
                                     </td>
                                     <td className="px-3 py-3 text-center hidden xl:table-cell">{sale.items}</td>
@@ -635,7 +646,15 @@ export function SalesView({
                                         {((sale.status === 'Pending' || sale.status === 'Served') || (sale.status === 'Completed' && tables.find(t => String(t.number) === String(sale.tableNo) && t.status === 'Occupied'))) && (
                                             <button
                                                 onClick={() => {
-                                                    if (onUpdateSale) {
+                                                    // Determine the table number securely
+                                                    const tableNo = sale.tableNo;
+                                                    if (!tableNo) return;
+
+                                                    if (onClearTableStatus) {
+                                                        onClearTableStatus(tableNo);
+                                                        // toast handled in parent
+                                                    } else if (onUpdateSale) {
+                                                        // Fallback (Depreacated logic but kept for safety)
                                                         onUpdateSale({ ...sale, status: 'Completed' });
                                                         toast.success('Meja berhasil dikosongkan.');
                                                     }

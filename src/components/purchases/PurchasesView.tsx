@@ -40,9 +40,10 @@ interface PurchasesViewProps {
     returns: any[];
     onCRUD: (table: string, action: 'create' | 'update' | 'delete', data: any) => void;
     currentBranchId?: string;
+    contacts?: any[];
 }
 
-export function PurchasesView({ purchases = [], returns = [], onCRUD, currentBranchId }: PurchasesViewProps) {
+export function PurchasesView({ purchases = [], returns = [], onCRUD, currentBranchId, contacts = [] }: PurchasesViewProps) {
     const [activeTab, setActiveTab] = useState<'history' | 'input' | 'returns'>('history');
     const [searchQuery, setSearchQuery] = useState('');
     const [returnSearchQuery, setReturnSearchQuery] = useState('');
@@ -195,13 +196,17 @@ export function PurchasesView({ purchases = [], returns = [], onCRUD, currentBra
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Supplier</label>
-                        <input
+                        <select
                             className="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-primary/20"
-                            placeholder="Cari supplier..."
                             value={inputForm.supplierName || ''}
                             onChange={e => setInputForm({ ...inputForm, supplierName: e.target.value })}
                             required
-                        />
+                        >
+                            <option value="">Pilih Supplier...</option>
+                            {contacts.filter(c => c.type === 'Supplier').map(c => (
+                                <option key={c.id} value={c.name}>{c.name}</option>
+                            ))}
+                        </select>
                     </div>
                 </div>
 

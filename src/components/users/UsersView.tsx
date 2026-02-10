@@ -13,16 +13,34 @@ import { supabase } from '../../lib/supabase';
 
 export function UsersView({ branches = [] }: { branches?: any[] }) {
     const { user } = useAuth();
-    // DEFINISI HAK AKSES (PERMISSIONS)
+    // DEFINISI HAK AKSES (PERMISSIONS) - Disinkronkan dengan Home.tsx
     const AVAILABLE_PERMISSIONS = [
+        // Utama
         { id: 'dashboard', label: 'Dashboard & Statistik', description: 'Melihat ringkasan penjualan' },
-        { id: 'pos', label: 'Kasir / POS', description: 'Melakukan transaksi penjualan' },
-        { id: 'products', label: 'Manajemen Produk', description: 'Tambah/Edit/Hapus Menu' },
-        { id: 'inventory', label: 'Stok & Inventori', description: 'Kelola stok bahan' },
-        { id: 'reports', label: 'Laporan', description: 'Akses laporan keuangan' },
-        { id: 'employees', label: 'Karyawan', description: 'Kelola data karyawan & gaji' },
-        { id: 'users', label: 'Pengguna Sistem', description: 'Kelola akun & wewenang (Bahaya)' },
-        { id: 'settings', label: 'Pengaturan', description: 'Konfigurasi toko & sistem' },
+        { id: 'pos', label: 'Kasir / POS', description: 'Akses menu penjualan' },
+        { id: 'kds', label: 'Dapur & Bar (KDS)', description: 'Layar pesanan dapur' },
+
+        // Inventori & Produk
+        { id: 'products', label: 'Produk & Menu', description: 'Kelola menu makanan' },
+        { id: 'inventory', label: 'Stok Bahan', description: 'Kelola stok bahan baku' },
+        { id: 'purchases', label: 'Pembelian', description: 'Belanja stok masuk' },
+        { id: 'contacts', label: 'Kontak', description: 'Data pelanggan & supplier' },
+
+        // HRD & Karyawan
+        { id: 'employees', label: 'Karyawan', description: 'Data pegawai' },
+        { id: 'attendance', label: 'Absensi', description: 'Log kehadiran' },
+        { id: 'shifts', label: 'Shift', description: 'Jadwal kerja' },
+        { id: 'payroll', label: 'Payroll', description: 'Penggajian' },
+        { id: 'performance', label: 'Performa', description: 'KPI & Komisi' },
+
+        // Keuangan
+        { id: 'reports', label: 'Laporan', description: 'Laporan lengkap' },
+        { id: 'accounting', label: 'Akuntansi', description: 'Jurnal & Keuangan' },
+
+        // Administrasi
+        { id: 'branches', label: 'Cabang', description: 'Manajemen outlet' },
+        { id: 'users', label: 'Pengguna Sistem', description: 'Kelola akun & hak akses' },
+        { id: 'settings', label: 'Pengaturan', description: 'Konfigurasi sistem' },
     ];
 
     const [activeTab, setActiveTab] = useState<'users' | 'roles'>('users');
@@ -33,7 +51,7 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
         description: '',
         permissions: []
     });
-    const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'Cashier', branchId: 'b1' });
+    const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: '', branchId: 'b1' });
     const [userSearchQuery, setUserSearchQuery] = useState('');
     const [roleSearchQuery, setRoleSearchQuery] = useState('');
     const [editingRole, setEditingRole] = useState<any>(null);
@@ -178,8 +196,8 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
     const applyPreset = (type: 'admin' | 'manager' | 'cashier') => {
         let perms: string[] = [];
         if (type === 'admin') perms = AVAILABLE_PERMISSIONS.map(p => p.id); // All
-        if (type === 'manager') perms = ['dashboard', 'products', 'inventory', 'reports', 'employees'];
-        if (type === 'cashier') perms = ['pos', 'products']; // Minimal
+        if (type === 'manager') perms = ['dashboard', 'products', 'inventory', 'reports', 'employees', 'purchases', 'attendance', 'performance'];
+        if (type === 'cashier') perms = ['pos', 'products', 'attendance'];
 
         setNewRole(prev => ({ ...prev, permissions: perms }));
         toast.info(`Preset ${type.toUpperCase()} diterapkan`);
@@ -197,12 +215,12 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
             {
                 name: 'Manajer',
                 description: 'Manajemen operasional & laporan',
-                permissions: ['dashboard', 'products', 'inventory', 'reports', 'employees']
+                permissions: ['dashboard', 'products', 'inventory', 'reports', 'employees', 'purchases', 'attendance', 'performance', 'shifts']
             },
             {
                 name: 'Kasir',
                 description: 'Transaksi penjualan',
-                permissions: ['pos', 'products']
+                permissions: ['pos', 'products', 'attendance']
             }
         ];
 
@@ -223,7 +241,7 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
             name: user.name || user.full_name || '',
             email: user.email || '',
             password: '', // Password empty means don't change
-            role: user.role || 'Kasir',
+            role: user.role || (roles.length > 0 ? roles[0].name : ''),
             branchId: user.branchId || user.branch_id || 'b1'
         });
         setIsAddUserModalOpen(true);
@@ -340,7 +358,7 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
 
                 toast.success('Data pengguna berhasil diperbarui');
                 setEditingUser(null);
-                setNewUser({ name: '', email: '', password: '', role: 'Kasir', branchId: 'b1' });
+                setNewUser({ name: '', email: '', password: '', role: (roles.length > 0 ? roles[0].name : ''), branchId: 'b1' });
                 setIsAddUserModalOpen(false);
                 fetchUsers();
 
@@ -358,6 +376,8 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
         if (activeTab === 'roles') {
             setIsAddRoleModalOpen(true);
         } else {
+            // Set default role for new user
+            setNewUser(prev => ({ ...prev, role: prev.role || (roles.length > 0 ? roles[0].name : '') }));
             setIsAddUserModalOpen(true);
         }
     };
@@ -912,7 +932,7 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
                                 onClick={() => {
                                     setIsAddUserModalOpen(false);
                                     setEditingUser(null);
-                                    setNewUser({ name: '', email: '', password: '', role: 'Cashier', branchId: 'b1' });
+                                    setNewUser({ name: '', email: '', password: '', role: (roles.length > 0 ? roles[0].name : ''), branchId: 'b1' });
                                 }}
                                 className="p-1 hover:bg-gray-200 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
                             >

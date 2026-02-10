@@ -39,6 +39,7 @@ type ModuleType = 'dashboard' | 'users' | 'contacts' | 'products' | 'purchases' 
 
 function Home() {
   const { user, role, permissions } = useAuth(); // Retrieve actual user data
+
   const [activeModule, setActiveModule] = useState<ModuleType>(
     (localStorage.getItem('winpos_active_module') as ModuleType) || 'dashboard'
   );
@@ -96,6 +97,7 @@ function Home() {
     latePenalty: 25000,
     complaintPenalty: 50000
   });
+
   // Inventory Handlers
   const handleIngredientCRUD = async (action: 'create' | 'update' | 'delete', data: any) => {
     try {
@@ -386,7 +388,9 @@ function Home() {
   // --- Sales & POS Integration ---
 
   // Polling for Kiosk Orders and Badge Count
-  const [lastProcessedOrderId, setLastProcessedOrderId] = useState<number>(0);
+  // Ref to track last processed order ID for immediate access in listeners
+  const lastProcessedOrderIdRef = useRef<number | null>(null);
+  const [lastProcessedOrderId, setLastProcessedOrderId] = useState<number | null>(null);
 
   useEffect(() => {
     if (!currentBranchId) return;
@@ -408,7 +412,7 @@ function Home() {
           .select('*')
           .eq('branch_id', currentBranchId)
           .eq('status', 'Pending')
-          .gt('id', lastProcessedOrderId) // Only get orders newer than last processed
+          .gt('id', lastProcessedOrderId || 0) // [FIX] Default to 0 to avoid 'gt.null' error
           .order('id', { ascending: false })
           .limit(1);
 
@@ -461,7 +465,7 @@ function Home() {
         items:sale_items(*)
       `)
       .eq('branch_id', currentBranchId)
-      .order('created_at', { ascending: false });
+      .order('date', { ascending: false }); // Sort by Payment Time (Date) not Creation Time
 
     if (salesData) {
       const formattedSales = salesData.map(s => ({
@@ -491,7 +495,7 @@ function Home() {
       setSales(formattedSales);
 
       const pendingFromDB = salesData
-        .filter(s => ['Pending', 'Paid'].includes(s.status)) // Include Paid orders for KDS
+        .filter(s => ['Pending', 'Paid', 'Preparing', 'Ready'].includes(s.status)) // [FIX] Include ALL active statuses for KDS
         .map(s => ({
           id: s.id,
           orderNo: s.order_no,
@@ -511,11 +515,9 @@ function Home() {
         }));
 
       setPendingOrders(prev => {
-        // Merge DB orders with local pending orders (avoid duplicates)
-        const newOrders = pendingFromDB.filter(p => !prev.some(existing => existing.id === p.id));
-        if (newOrders.length > 0) return [...prev, ...newOrders]; // Append new ones from DB
-        // Note: Logic allows local 'Held' orders (id timestamp) to coexist with DB 'Sales' (id int)
-        return prev;
+        // [FIX] Strict Sync: Remove stale DB orders, Add new DB orders, Keep Local orders
+        const localOnlyOrders = prev.filter(p => typeof p.id === 'string' && p.id.startsWith('HOLD-'));
+        return [...localOnlyOrders, ...pendingFromDB];
       });
     }
 
@@ -664,8 +666,12 @@ function Home() {
           toast.info(`Pesanan Masuk: ${formattedSale.orderNo}`);
 
           // 4. Special Handling for Kiosk OR Cashier Role (Auto-Open Cashier)
-          // If the user is a Cashier, OR if the order is from Kiosk (for Admins/others), open the interface
-          if (role === 'Cashier' || newOrder.waiter_name === 'Self-Service Kiosk' || newOrder.waiter_name === 'Kiosk') {
+          // ONLY for Pending/Unpaid orders. Paid orders go straight to KDS and shouldn't interrupt Cashier.
+          const isPaidCompleted = newOrder.status === 'Paid' || newOrder.status === 'Completed';
+          const isMyOwnOrder = newOrder.id === lastProcessedOrderIdRef.current;
+
+          if (!isPaidCompleted && !isMyOwnOrder && (newOrder.status === 'Pending' || newOrder.status === 'Unpaid') &&
+            (role === 'Cashier' || newOrder.waiter_name === 'Self-Service Kiosk' || newOrder.waiter_name === 'Kiosk')) {
             const targetTable = newOrder.table_no || newOrder.tableNo;
             setIsCashierOpen(true);
 
@@ -747,7 +753,36 @@ function Home() {
         // Remove id if it's dummy
         const { error } = await supabase.from('payrolls').insert([payload]);
         if (error) throw error;
+
+        // [NEW] Accounting Integration for Create
+        if (payload.status === 'Paid') {
+          const totalAmount = Number(basicSalary) + Number(rest.allowance || 0) - Number(rest.deduction || 0);
+          await supabase.from('journal_entries').insert([{
+            date: new Date().toISOString(),
+            description: `Gaji Karyawan: ${employeeName} (${rest.period || ''})`,
+            debit_account: '502', // Beban Gaji
+            credit_account: '101', // Kas
+            amount: totalAmount
+          }]);
+
+          const deductionAmount = Number(rest.deduction || 0);
+          if (deductionAmount > 0) {
+            await supabase.from('journal_entries').insert([{
+              date: new Date().toISOString(),
+              description: `Potongan Gaji: ${employeeName}`,
+              debit_account: '502',
+              credit_account: '402',
+              amount: deductionAmount
+            }]);
+          }
+        }
         toast.success('Gaji berhasil dibuat');
+
+        // [NEW] Auto-redirect to Accounting to verify posting
+        if (payload.status === 'Paid') {
+          setTimeout(() => setActiveModule('accounting'), 1500);
+        }
+
       } else if (action === 'update') {
         const { id, employeeName, basicSalary, paymentDate, ...rest } = data;
         const payload = {
@@ -761,6 +796,8 @@ function Home() {
 
         // [NEW] Accounting Integration: Auto-Journal if Paid
         if (payload.status === 'Paid') {
+          // Check for existing journal to avoid duplicates (Optional but recommended)
+          // For now, simpler: Just insert.
           const totalAmount = Number(basicSalary) + Number(rest.allowance || 0) - Number(rest.deduction || 0);
 
           await supabase.from('journal_entries').insert([{
@@ -771,20 +808,26 @@ function Home() {
             amount: totalAmount
           }]);
 
-          // [NEW] Deduction Journal Entry (Debit Expense, Credit Income)
+          // Deduction Journal Entry
           const deductionAmount = Number(rest.deduction || 0);
           if (deductionAmount > 0) {
             await supabase.from('journal_entries').insert([{
               date: new Date().toISOString(),
               description: `Potongan Gaji: ${employeeName}`,
-              debit_account: '502', // Beban Gaji (Mencatat full expense)
-              credit_account: '402', // Pendapatan Lain-lain (Alokasi potongan)
+              debit_account: '502', // Beban Gaji (Debit full)
+              credit_account: '402', // Pendapatan Lain-lain (Credit allocation)
               amount: deductionAmount
             }]);
           }
         }
 
         toast.success('Gaji berhasil diupdate & dicatat ke Jurnal');
+
+        // [NEW] Auto-redirect to Accounting to verify posting
+        if (payload.status === 'Paid') {
+          setTimeout(() => setActiveModule('accounting'), 1500); // Delay slightly for toast visibility
+        }
+
       } else if (action === 'delete') {
         const { error } = await supabase.from('payrolls').delete().eq('id', data.id);
         if (error) throw error;
@@ -1087,28 +1130,61 @@ function Home() {
     return () => clearInterval(timer);
   }, []);
 
-  const handleAddSale = async (saleData: Omit<SalesOrder, 'id' | 'orderNo' | 'date' | 'status'>) => {
+  const handleAddSale = async (saleData: Omit<SalesOrder, 'id' | 'orderNo' | 'date' | 'status'> & { id?: number }) => {
     try {
-      const orderNo = `INV-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+      let sale;
+      let orderNo;
 
-      // 1. Create Sale Record
-      const { data: sale, error: saleError } = await supabase.from('sales').insert([{
-        order_no: orderNo,
-        date: new Date().toISOString(),
-        total_amount: saleData.totalAmount,
-        payment_method: saleData.paymentMethod,
-        status: 'Paid', // Changed from 'Completed' to 'Paid' so it appears in KDS
-        branch_id: currentBranchId,
-        waiter_name: saleData.waiterName,
-        table_no: saleData.tableNo,
-        customer_name: saleData.customerName,
-        discount: saleData.discount || 0
-      }]).select().single();
+      if (saleData.id) {
+        // [UPDATE EXISTING]
+        console.log('Updating existing sale:', saleData.id);
+        const { data, error } = await supabase
+          .from('sales')
+          .update({
+            total_amount: saleData.totalAmount,
+            payment_method: saleData.paymentMethod,
+            status: 'Paid',
+            waiter_name: saleData.waiterName,
+            customer_name: saleData.customerName,
+            discount: saleData.discount || 0,
+            date: new Date().toISOString() // [FIX] Store Real UTC (05:xx) so Display (12:xx) is correct
+          })
+          .eq('id', saleData.id)
+          .select()
+          .single();
 
-      if (saleError) throw saleError;
-      if (!sale) throw new Error('Failed to create sale');
+        if (error) throw error;
+        sale = data;
+        orderNo = sale.order_no;
 
-      // 2. Create Sale Items
+        // Optionally update items if needed (delete and recreate or strict sync)
+        // For simplicity, we assume items are final or we just append.
+        // A full sync would require deleting old items first.
+        const { error: deleteError } = await supabase.from('sale_items').delete().eq('sale_id', sale.id);
+        if (deleteError) throw deleteError;
+      } else {
+        // [CREATE NEW]
+        orderNo = `INV-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+        const { data, error: saleError } = await supabase.from('sales').insert([{
+          order_no: orderNo,
+          date: new Date().toISOString(),
+          total_amount: saleData.totalAmount,
+          payment_method: saleData.paymentMethod,
+          status: 'Paid',
+          branch_id: currentBranchId,
+          waiter_name: saleData.waiterName,
+          table_no: saleData.tableNo,
+          customer_name: saleData.customerName,
+          discount: saleData.discount || 0
+        }]).select().single();
+
+        if (saleError) throw saleError;
+        sale = data;
+      }
+
+      if (!sale) throw new Error('Failed to save sale');
+
+      // 2. Create Sale Items (Re-insert)
       const saleItems = saleData.productDetails.map(item => {
         const product = products.find(p => p.name === item.name);
         return {
@@ -1117,7 +1193,7 @@ function Home() {
           product_name: item.name,
           quantity: item.quantity,
           price: item.price,
-          cost: product?.cost || 0 // Snapshot Cost (HPP)
+          cost: product?.cost || 0
         };
       });
 
@@ -1125,6 +1201,21 @@ function Home() {
       if (itemsError) throw itemsError;
 
       toast.success(`Transaksi ${orderNo} berhasil disimpan`);
+      console.log('Transaction Saved. Redirecting to KDS...');
+
+      // FORCE REDIRECT TO KDS (Redundancy)
+      setIsCashierOpen(false);
+      setActiveModule('kds');
+
+      // 6. [FIX] Prevent Auto-Open Loop by updating the last processed ID immediately
+      setLastProcessedOrderId(sale.id);
+      lastProcessedOrderIdRef.current = sale.id; // Update Ref for immediate listener availability
+
+      // 7. [CHANGED] Table Clearing is now MANUAL only (per user request)
+      // Force status to 'Occupied' so it stays red until manually cleared.
+      if (saleData.tableNo) {
+        await supabase.from('tables').update({ status: 'Occupied' }).eq('number', saleData.tableNo);
+      }
 
       // --- Client-Side Stock Deduction (Temporary) ---
       // Real deduction should happen via trigger or backend API
@@ -1158,10 +1249,18 @@ function Home() {
 
       // 5. [NEW] Accounting Integration: Auto-Journal Entry
       // Determine Debit Account (Asset)
-      // If Cash -> '101' (Kas)
-      // If Transfer/QRIS/Card -> '102' (Bank)
-      const debitAcc = saleData.paymentMethod.toLowerCase() === 'cash' || saleData.paymentMethod.toLowerCase() === 'tunai'
-        ? '101' : '102';
+      const pType = saleData.paymentType || 'cash';
+      const pMethod = (saleData.paymentMethod || '').toLowerCase().trim();
+
+      // Robust check: Trust 'paymentType' first (from PaymentModal), then fallback to name string matching
+      const isCash =
+        pType === 'cash' ||
+        pMethod === 'cash' ||
+        pMethod === 'tunai' ||
+        pMethod.includes('tunai') ||
+        pMethod.includes('cash');
+
+      const debitAcc = isCash ? '101' : '102';
 
       const { error: journalError } = await supabase.from('journal_entries').insert([{
         date: new Date().toISOString(),
@@ -1314,6 +1413,8 @@ function Home() {
 
       if (error) throw error;
 
+      // [CHANGED] Table Clearing is now MANUAL only (per user request)
+      /*
       // Automatically clear table if sale is completed
       if (updatedSale.status === 'Completed' && updatedSale.tableNo) {
         const { error: tableError } = await supabase
@@ -1328,8 +1429,15 @@ function Home() {
           // Optionally refresh tables if needed, but realtime should handle it in other views
         }
       }
+      */
 
       toast.success('Transaksi berhasil diupdate');
+
+      // [FIX] Auto-redirect to KDS if payment is confirmed (Pending/Paid)
+      if (['Paid', 'Pending'].includes(updatedSale.status)) {
+        setIsCashierOpen(false);
+        setActiveModule('kds');
+      }
     } catch (err) {
       console.error('Update failed', err);
       toast.error('Gagal update transaksi');
@@ -1338,12 +1446,82 @@ function Home() {
 
   const handleDeleteSale = async (saleId: number) => {
     try {
+      // [FIX] Get sale details first to know which table to clear and for Accounting ID
+      const { data: sale } = await supabase.from('sales').select('table_no, order_no').eq('id', saleId).single();
+
+      // [FIX] Manual Cascade Delete: Delete items first to avoid Foreign Key constraints
+      const { error: itemsError } = await supabase.from('sale_items').delete().eq('sale_id', saleId);
+      if (itemsError) console.warn('Failed to delete associated items (might be empty or already gone):', itemsError);
+
+      // [FIX] Manual Cascade Delete: Delete returns if any
+      const { error: returnsError } = await supabase.from('sales_returns').delete().eq('sale_id', saleId);
+      if (returnsError) console.warn('Failed to delete associated returns:', returnsError);
+
+      // [FIX] Manual Cascade Delete: Delete associated Journal Entry (Accounting)
+      // Since we don't have a direct link, we match by Description pattern used in creation
+      if (sale?.order_no) {
+        const { error: journalError } = await supabase
+          .from('journal_entries')
+          .delete()
+          .ilike('description', `%${sale.order_no}%`); // Match "Penjualan INV-..." or "HPP Penjualan INV-..."
+
+        if (journalError) console.warn('Failed to delete associated journal entries:', journalError);
+      }
+
       const { error } = await supabase.from('sales').delete().eq('id', saleId);
       if (error) throw error;
-      toast.success('Transaksi berhasil dihapus');
-    } catch (err) {
+
+      // Update table to Empty if it exists
+      if (sale?.table_no) {
+        await supabase.from('tables').update({ status: 'Empty' }).eq('number', sale.table_no);
+        if (currentBranchId) fetchBranchData(currentBranchId); // [FIX] Force refresh tables immediately
+      }
+
+      toast.success('Transaksi berhasil dihapus & Meja dikosongkan');
+      fetchTransactions(); // Refresh sales list
+    } catch (err: any) {
       console.error('Delete failed', err);
-      toast.error('Gagal menghapus transaksi');
+      toast.error('Gagal menghapus transaksi: ' + (err.message || 'Unknown error'));
+    }
+  };
+
+  // [NEW] Manual Table Clearing Handler
+  const handleClearTableStatus = async (tableNo: string) => {
+    try {
+      // 1. Check if there are other Active Sales for this table
+      const { data: activeSales } = await supabase
+        .from('sales')
+        .select('order_no')
+        .eq('table_no', tableNo)
+        .in('status', ['Pending', 'Unpaid', 'Served']) // Only block if truly active/unpaid. Paid/Completed is fine.
+        .limit(1);
+
+      if (activeSales && activeSales.length > 0) {
+        // [FIX] Allow Force Clear if user confirms
+        const confirmForce = window.confirm(`Peringatan: Ada pesanan aktif (${activeSales[0].order_no}) di meja ini. \n\nApakah Anda yakin ingin PAKSA kosongkan meja?`);
+        if (!confirmForce) return;
+      }
+
+      // 2. Clear Table Status
+      const { error } = await supabase
+        .from('tables')
+        .update({ status: 'Empty' })
+        .eq('number', tableNo);
+
+      if (error) throw error;
+
+      // 3. Refresh State
+      if (currentBranchId) {
+        await Promise.all([
+          fetchBranchData(currentBranchId), // Updates tables
+          fetchTransactions() // Updates sales (to sync status)
+        ]);
+      }
+
+      toast.success(`Meja ${tableNo} berhasil dikosongkan`);
+    } catch (err) {
+      console.error('Clear table failed:', err);
+      toast.error('Gagal mengosongkan meja');
     }
   };
 
@@ -1529,6 +1707,7 @@ function Home() {
 
   const handleAddJournalEntry = async (entry: any) => {
     const { date, description, debitAccount, creditAccount, amount } = entry;
+    // Removed branch_id to prevent "column does not exist" error
     const { error } = await supabase.from('journal_entries').insert([{
       date,
       description,
@@ -1540,6 +1719,36 @@ function Home() {
       toast.error('Gagal menambah jurnal: ' + error.message);
     } else {
       toast.success('Jurnal berhasil ditambahkan');
+      fetchAccounting();
+    }
+  };
+
+  const handleDeleteJournalEntry = async (id: number) => {
+    try {
+      const { error } = await supabase.from('journal_entries').delete().eq('id', id);
+      if (error) throw error;
+
+      toast.success('Jurnal berhasil dihapus');
+      fetchAccounting();
+    } catch (err: any) {
+      console.error('Failed to delete journal entry:', err);
+      toast.error('Gagal menghapus jurnal: ' + err.message);
+    }
+  };
+
+  const handleResetJournalEntries = async () => {
+    if (!window.confirm('PERINGATAN: Apakah Anda yakin ingin menghapus SEMUA data jurnal akuntansi? Tindakan ini tidak dapat dibatalkan.')) return;
+
+    try {
+      // Removed branch_id filter because the column doesn't exist yet
+      const { error } = await supabase.from('journal_entries').delete().neq('id', 0);
+      if (error) throw error;
+
+      toast.success('Semua data akuntansi berhasil di-reset');
+      fetchAccounting();
+    } catch (err: any) {
+      console.error('Failed to reset journal entries:', err);
+      toast.error('Gagal mereset jurnal: ' + err.message);
     }
   };
 
@@ -1711,6 +1920,7 @@ function Home() {
     }
   };
 
+
   // Theme Effect (Sync on load)
   useEffect(() => {
     if (storeSettings?.theme_mode === 'dark') {
@@ -1863,6 +2073,7 @@ function Home() {
           returns={purchaseReturns}
           onCRUD={(table, action, data) => handleMasterDataCRUD(table, action, data)}
           currentBranchId={currentBranchId}
+          contacts={contacts}
         />
       );
 
@@ -1883,6 +2094,7 @@ function Home() {
             tables={tables} // Pass tables for occupancy check
             onDeleteSale={handleDeleteSale}
             onOpenCashier={() => setIsCashierOpen(true)}
+            onClearTableStatus={handleClearTableStatus}
             initialTab={salesViewTab}
             currentBranchId={currentBranchId}
             onModeChange={(mode) => setSalesViewTab(mode)}
@@ -1898,6 +2110,9 @@ function Home() {
           onUpdateAccount={handleUpdateAccount}
           onDeleteAccount={handleDeleteAccount}
           onAddTransaction={handleAddJournalEntry}
+          onDeleteTransaction={handleDeleteJournalEntry}
+          onResetTransactions={handleResetJournalEntries}
+          onBack={() => setActiveModule('payroll')}
         />
       );
       case 'employees': return (
@@ -2292,8 +2507,15 @@ function Home() {
             activeSales={sales}
             paymentMethods={paymentMethods}
             onDeleteSale={handleDeleteSale}
+            onClearTableStatus={handleClearTableStatus}
             settings={storeSettings}
             initialTable={autoSelectedTable} // Pass the auto-selected table
+            onPaymentSuccess={() => {
+              setIsCashierOpen(false);
+              setAutoSelectedTable(''); // Clear the selected table to prevent re-opening on same order
+              setActiveModule('kds');
+              toast.success('Pembayaran Selesai. Dialihkan ke Dapur.');
+            }}
           />
         </div>
       )

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { ProductCategory, OrderItem, Product } from '@/types/pos';
 // import { mockProducts } from '@/data/products'; // REMOVED
 import { SearchBar } from './SearchBar';
@@ -15,7 +15,11 @@ import { SplitBillModal } from './SplitBillModal';
 import { TableSelectionGrid, Table } from './TableSelectionGrid';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
-import { Store, ArrowLeft, ShoppingCart, Users, User, Cake, CreditCard, ChevronDown, Search, Star, Puzzle, Check } from 'lucide-react';
+import { ArrowLeft, ShoppingCart, Store, User, Users, ChevronDown, Check, Puzzle, LogOut, Cake, CreditCard, Search, Star } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '../auth/AuthProvider';
+import { CashierSessionModal } from './CashierSessionModal';
+import { printerService } from '../../lib/PrinterService';
 import { ContactData } from '../contacts/ContactsView';
 import { Addon } from '@/types/pos';
 
@@ -24,6 +28,7 @@ import { Addon } from '@/types/pos';
 interface CashierInterfaceProps {
   onBack?: () => void;
   onAddSale?: (sale: {
+    id?: number; // Optional ID for updating existing sales
     items: number;
     totalAmount: number;
     paymentMethod: string;
@@ -51,8 +56,10 @@ interface CashierInterfaceProps {
   activeSales?: any[]; // Passed from Home to determine occupancy
   paymentMethods?: any[];
   onDeleteSale?: (id: number) => void | Promise<void>;
+  onClearTableStatus?: (tableNo: string) => void;
   settings?: any;
   initialTable?: string;
+  onPaymentSuccess?: () => void;
 }
 
 interface HeldOrder {
@@ -79,8 +86,10 @@ export function CashierInterface({
   activeSales = [],
   paymentMethods = [],
   onDeleteSale,
+  onClearTableStatus,
   settings = {},
-  initialTable = ''
+  initialTable = '',
+  onPaymentSuccess
 }: CashierInterfaceProps) {
   // console.log('CashierInterface Props:', { productsLength: products?.length, categoriesLength: categories?.length }); 
   // Removed verbose log to prevent crash on undefined properties
@@ -110,16 +119,46 @@ export function CashierInterface({
   const [lastPaymentChange, setLastPaymentChange] = useState<number | undefined>();
   // const [selectedTable, setSelectedTable] = useState<string>(''); // Removed duplicate
   const [customerName, setCustomerName] = useState<string>('');
-  const [waiterName, setWaiterName] = useState<string>('');
+  const [waiterName, setWaiterName] = useState('');
+  const [currentSaleId, setCurrentSaleId] = useState<number | undefined>(undefined); // Track ID of hydrated order
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
   const [isCustomerSearchOpen, setIsCustomerSearchOpen] = useState(false);
   const [isAddonModalOpen, setIsAddonModalOpen] = useState(false);
   const [addonPendingProduct, setAddonPendingProduct] = useState<Product | null>(null);
   const [tempSelectedAddons, setTempSelectedAddons] = useState<Addon[]>([]);
 
-  // Calculate occupied tables based on active sales
+  // Shift Session State
+  const { user } = useAuth();
+  const [currentSession, setCurrentSession] = useState<any>(null);
+  const [sessionModalOpen, setSessionModalOpen] = useState(false);
+  const [sessionMode, setSessionMode] = useState<'open' | 'close'>('open');
+
+  useEffect(() => {
+    const checkSession = async () => {
+      if (!user) return;
+      const { data } = await supabase
+        .from('cashier_sessions')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('status', 'Open')
+        .maybeSingle();
+
+      setCurrentSession(data);
+
+      if (!data && settings?.require_starting_cash) {
+        setSessionMode('open');
+        setSessionModalOpen(true);
+      }
+    };
+
+    checkSession();
+  }, [user, settings?.require_starting_cash]);
+
+  // Calculate occupied tables based on active sales AND table status
   const occupiedTableNumbers = useMemo(() => {
     const occupied = new Set<string>();
+
+    // 1. Check Active Sales (Pending/Unpaid)
     if (activeSales) {
       activeSales.forEach(sale => {
         if (sale && ['Unpaid', 'Pending'].includes(sale.status) && sale.tableNo) {
@@ -127,8 +166,18 @@ export function CashierInterface({
         }
       });
     }
+
+    // 2. Check Table Status from DB (for tables manually cleared or forced occupied)
+    if (tables) {
+      tables.forEach(t => {
+        if (t.status === 'Occupied') {
+          occupied.add(t.number);
+        }
+      });
+    }
+
     return occupied;
-  }, [activeSales]);
+  }, [activeSales, tables]);
 
   const membershipDiscounts: Record<string, number> = {
     'Regular': 0,
@@ -212,12 +261,14 @@ export function CashierInterface({
         setWaiterName(existingSale.waiterName || '');
         // If there's a discount, we might need to recalculate or restore it
         setOrderDiscount(existingSale.discount || 0);
+        setCurrentSaleId(existingSale.id); // [NEW] Track the ID
       } else {
         // New order for this table
         setOrderItems([]);
         setCustomerName('Guest');
         setWaiterName('');
         setOrderDiscount(0);
+        setCurrentSaleId(undefined); // Reset ID
       }
     }
   }, [selectedTable, activeSales, products]);
@@ -227,17 +278,29 @@ export function CashierInterface({
       s => s && (s.status === 'Pending' || s.status === 'Unpaid') && s.tableNo === tableNo
     );
 
+    // Case 1: Active Order found (Unpaid/Pending)
     if (saleToClear && onDeleteSale) {
-      if (confirm(`Kosongkan meja ${tableNo}? Pesanan yang belum lunas akan dihapus.`)) {
-        onDeleteSale(saleToClear.id);
-        toast.success(`Meja ${tableNo} Berhasil Dikosongkan`, {
-          icon: <Check className="w-5 h-5 text-green-500" />,
-          description: 'Status meja kini tersedia kembali.',
-          duration: 3000,
+      if (saleToClear.productDetails && saleToClear.productDetails.length > 0) {
+        toast.error('Gagal Mengosongkan Meja', {
+          description: 'Meja ini memiliki pesanan aktif yang belum dibayar. Mohon selesaikan pembayaran.',
+          duration: 4000
         });
+        return;
       }
-    } else {
-      toast.error('Gagal mengosongkan meja: Transaksi tidak ditemukan');
+
+      if (confirm(`Hapus pesanan kosong dan kosongkan meja ${tableNo}?`)) {
+        onDeleteSale(saleToClear.id);
+        toast.success(`Meja ${tableNo} Berhasil Dikosongkan`);
+      }
+    }
+    // Case 2: No active order (Table status is Occupied but order is Paid/Completed) OR just forcing clear
+    else if (onClearTableStatus) {
+      if (confirm(`Kosongkan status meja ${tableNo}? (Pastikan pelanggan sudah meninggalkan meja)`)) {
+        onClearTableStatus(tableNo);
+      }
+    }
+    else {
+      toast.error('Gagal mengosongkan meja: Fungsi tidak tersedia');
     }
   };
 
@@ -375,6 +438,11 @@ export function CashierInterface({
     setLastPaymentChange(payment.change);
     setPaymentModalOpen(false);
 
+    // Auto Open Drawer
+    if (settings?.auto_open_drawer) {
+      printerService.openDrawer();
+    }
+
     if (isSplitPayment) {
       // Remove split items from main order
       const newItems = [...orderItems];
@@ -395,7 +463,11 @@ export function CashierInterface({
       setIsSplitPayment(false);
       setItemsToSplit([]);
     } else {
-      setSuccessModalOpen(true);
+      if (onPaymentSuccess) {
+        onPaymentSuccess();
+      } else {
+        setSuccessModalOpen(true);
+      }
     }
 
     // Report sale to parent
@@ -406,6 +478,7 @@ export function CashierInterface({
         : total;
 
       onAddSale({
+        id: currentSaleId, // Pass the existing ID if available
         items: itemsToReport.reduce((sum, item) => sum + item.quantity, 0),
         totalAmount: amountToReport,
         paymentMethod: payment.method,
@@ -537,6 +610,18 @@ export function CashierInterface({
             </div>
             <div className="shrink-0">
               <h1 className="text-2xl font-bold text-pos-charcoal leading-none">WinPOS</h1>
+              <button
+                onClick={() => {
+                  setSessionMode(currentSession ? 'close' : 'open');
+                  setSessionModalOpen(true);
+                }}
+                className={`text-[10px] font-bold transition-colors flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full border ${currentSession
+                  ? 'text-green-600 border-green-200 bg-green-50 hover:bg-green-100'
+                  : 'text-red-500 border-red-200 bg-red-50 hover:bg-red-100'
+                  }`}
+              >
+                {currentSession ? '🟢 Shift Aktif' : '🔴 Shift Tutup'}
+              </button>
             </div>
 
             {/* NEW: Horizontal Info Bar */}
@@ -805,6 +890,7 @@ export function CashierInterface({
         service={isSplitPayment ? 0 : serviceAmount}
         onPaymentComplete={handlePaymentComplete}
         paymentMethods={paymentMethods}
+        settings={settings}
       />
 
       <SuccessModal
@@ -814,6 +900,25 @@ export function CashierInterface({
         change={lastPaymentChange}
         onNewTransaction={handleNewTransaction}
         onViewHistory={onBack}
+      />
+
+      <CashierSessionModal
+        open={sessionModalOpen}
+        onOpenChange={setSessionModalOpen}
+        mode={sessionMode}
+        session={currentSession}
+        settings={settings}
+        onSessionComplete={(session) => {
+          setCurrentSession(session);
+          // If session was closed (null), maybe redirect or show summary?
+          // User likely stays on POS but now in "Closed" state where they can try to open again.
+          if (!session && settings?.require_starting_cash) {
+            // If strict, maybe force open again logic handled by effect? 
+            // Effect depends on user/settings, so it might re-trigger if we don't be careful.
+            // But checkSession is only on mount/user change. 
+            // We should manually trigger check or just set state.
+          }
+        }}
       />
     </div>
   );

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,6 +23,7 @@ interface PaymentModalProps {
   discount?: number;
   tax?: number;
   service?: number;
+  settings?: any;
 }
 
 export function PaymentModal({
@@ -34,7 +35,8 @@ export function PaymentModal({
   subtotal = 0,
   discount = 0,
   tax = 0,
-  service = 0
+  service = 0,
+  settings
 }: PaymentModalProps) {
   const [selectedMethod, setSelectedMethod] = useState<any>(null);
   const [cashAmount, setCashAmount] = useState('');
@@ -61,6 +63,8 @@ export function PaymentModal({
       if (amount >= totalAmount) {
         onPaymentComplete({
           method: selectedMethod.name,
+          // @ts-ignore
+          type: selectedMethod.type, // Pass strict type
           amount,
           change: calculateChange(),
         });
@@ -70,6 +74,8 @@ export function PaymentModal({
     } else {
       onPaymentComplete({
         method: selectedMethod.name,
+        // @ts-ignore
+        type: selectedMethod.type, // Pass strict type
         amount: totalAmount,
       });
     }
@@ -84,11 +90,20 @@ export function PaymentModal({
     }
   };
 
-  const quickAmounts = Array.from(new Set([
-    totalAmount,
-    Math.ceil(totalAmount / 50000) * 50000,
-    Math.ceil(totalAmount / 100000) * 100000,
-  ])).filter(amount => amount > 0);
+  const quickAmounts = useMemo(() => {
+    if (settings?.quick_cash_amounts && Array.isArray(settings.quick_cash_amounts) && settings.quick_cash_amounts.length > 0) {
+      // Always include exact total
+      return Array.from(new Set([totalAmount, ...settings.quick_cash_amounts]))
+        .filter(amount => amount > 0)
+        .sort((a, b) => a - b);
+    }
+
+    return Array.from(new Set([
+      totalAmount,
+      Math.ceil(totalAmount / 50000) * 50000,
+      Math.ceil(totalAmount / 100000) * 100000,
+    ])).filter(amount => amount > 0);
+  }, [totalAmount, settings]);
 
   useEffect(() => {
     if (!open) {
@@ -102,7 +117,7 @@ export function PaymentModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-3xl font-bold">Pembayaran</DialogTitle>
+          <DialogTitle className="text-2xl font-bold">Pembayaran</DialogTitle>
           <DialogDescription>
             Pilih metode pembayaran untuk menyelesaikan transaksi sebesar {formatPrice(totalAmount)}.
           </DialogDescription>
@@ -156,7 +171,7 @@ export function PaymentModal({
                       setSelectedMethod(method);
                     }
                   }}
-                  className="p-6 border-2 border-gray-200 rounded-2xl hover:border-pos-coral hover:bg-orange-50 transition-all flex flex-col items-center justify-center gap-3"
+                  className="p-4 border-2 border-gray-200 rounded-2xl hover:border-pos-coral hover:bg-orange-50 transition-all flex flex-col items-center justify-center gap-2"
                 >
                   {method.type === 'cash' ? (
                     <Banknote className="w-10 h-10 text-pos-coral" />
@@ -187,7 +202,7 @@ export function PaymentModal({
                     placeholder="0"
                     value={cashAmount}
                     onChange={(e) => setCashAmount(e.target.value)}
-                    className="h-16 text-3xl font-bold pl-12 bg-gray-50 border-gray-200 focus:border-pos-coral focus:ring-pos-coral/20 rounded-xl"
+                    className="h-12 text-2xl font-bold pl-12 bg-gray-50 border-gray-200 focus:border-pos-coral focus:ring-pos-coral/20 rounded-xl"
                     autoFocus
                   />
                 </div>
@@ -196,12 +211,12 @@ export function PaymentModal({
               {/* Quick Suggestion Grid */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="grid grid-cols-2 gap-2">
-                  {quickAmounts.slice(0, 4).map((amount, idx) => (
+                  {quickAmounts.slice(0, 6).map((amount, idx) => (
                     <Button
                       key={`${amount}-${idx}`}
                       variant="outline"
                       onClick={() => setCashAmount(amount.toString())}
-                      className="h-14 text-sm font-semibold border-gray-200 hover:border-pos-coral hover:bg-orange-50 hover:text-pos-coral rounded-xl transition-all"
+                      className="h-12 text-sm font-semibold border-gray-200 hover:border-pos-coral hover:bg-orange-50 hover:text-pos-coral rounded-xl transition-all"
                     >
                       {formatPrice(amount)}
                     </Button>
@@ -210,16 +225,16 @@ export function PaymentModal({
 
                 {/* Change Display Box */}
                 <div className={`p-4 rounded-xl border flex flex-col justify-center items-end ${cashAmount && parseFloat(cashAmount) >= totalAmount
-                    ? 'bg-green-50 border-green-200'
-                    : 'bg-gray-50 border-gray-200'
+                  ? 'bg-green-50 border-green-200'
+                  : 'bg-gray-50 border-gray-200'
                   }`}>
                   <span className={`text-xs font-medium mb-1 ${cashAmount && parseFloat(cashAmount) >= totalAmount
-                      ? 'text-green-600'
-                      : 'text-gray-500'
+                    ? 'text-green-600'
+                    : 'text-gray-500'
                     }`}>Kembalian</span>
                   <span className={`text-2xl font-mono font-bold ${cashAmount && parseFloat(cashAmount) >= totalAmount
-                      ? 'text-green-700'
-                      : 'text-gray-400'
+                    ? 'text-green-700'
+                    : 'text-gray-400'
                     }`}>
                     {cashAmount && parseFloat(cashAmount) >= totalAmount
                       ? formatPrice(calculateChange())
@@ -232,13 +247,13 @@ export function PaymentModal({
                 <Button
                   variant="outline"
                   onClick={() => setSelectedMethod(null)}
-                  className="h-14 px-8 rounded-xl border-gray-200 hover:bg-gray-50 font-semibold"
+                  className="h-12 px-6 rounded-xl border-gray-200 hover:bg-gray-50 font-semibold"
                 >
                   Kembali
                 </Button>
                 <Button
                   onClick={handlePaymentWithLog}
-                  className="flex-1 h-14 bg-gray-900 hover:bg-black text-white rounded-xl text-lg font-bold shadow-lg shadow-gray-200 hover:shadow-xl transition-all"
+                  className="flex-1 h-12 bg-gray-900 hover:bg-black text-white rounded-xl text-base font-bold shadow-lg shadow-gray-200 hover:shadow-xl transition-all"
                 >
                   Selesaikan & Bayar
                 </Button>
@@ -253,7 +268,7 @@ export function PaymentModal({
               animate={{ opacity: 1, y: 0 }}
               className="space-y-4"
             >
-              <div className="p-6 bg-gray-50 rounded-xl text-center">
+              <div className="p-4 bg-gray-50 rounded-xl text-center">
                 {selectedMethod.type === 'card' ? (
                   <CreditCard className="w-16 h-16 mx-auto mb-4 text-pos-coral animate-pulse" />
                 ) : (

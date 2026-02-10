@@ -32,79 +32,70 @@ export function QuickActionsBar({
     action();
   };
 
+  const buttonBaseClass = "flex-1 flex flex-col items-center justify-center gap-1.5 py-3 px-2 rounded-xl transition-all active:scale-95";
+
   return (
     <div className="absolute bottom-4 left-4 right-4 z-50">
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-5xl mx-auto">
         <motion.div
           initial={{ y: 100, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.3, ease: 'easeOut' }}
-          className="bg-white rounded-2xl shadow-2xl p-4 flex gap-3"
+          className="bg-white/90 backdrop-blur-md rounded-2xl shadow-2xl border border-gray-100/50 p-2 flex gap-2"
         >
-          <motion.button
-            whileTap={{ scale: 0.95 }}
+          <button
             onClick={onManualItemClick}
-            className="flex-1 flex items-center justify-center gap-2 py-4 px-6 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors"
+            className={`${buttonBaseClass} bg-gray-50 hover:bg-gray-100 text-pos-charcoal`}
           >
-            <PackagePlus className="w-5 h-5 text-pos-charcoal" />
-            <span className="font-medium text-pos-charcoal">Item Manual</span>
-          </motion.button>
+            <PackagePlus className="w-5 h-5" />
+            <span className="text-[10px] font-bold uppercase tracking-wide">Item Manual</span>
+          </button>
 
-          <motion.button
-            whileTap={{ scale: 0.95 }}
+          <button
             onClick={() => handleAction(onDiscountClick, 'memberi diskon')}
-            // We removed disabled prop to allow feedback
-            className={`flex-1 flex items-center justify-center gap-2 py-4 px-6 rounded-xl transition-colors ${!hasItems ? 'bg-gray-50 text-gray-400' : 'bg-gray-50 hover:bg-gray-100 text-pos-charcoal'
-              }`}
+            className={`${buttonBaseClass} ${!hasItems ? 'bg-gray-50 text-gray-300' : 'bg-gray-50 hover:bg-gray-100 text-pos-charcoal'}`}
           >
-            <Percent className={`w-5 h-5 ${!hasItems ? 'text-gray-400' : 'text-pos-charcoal'}`} />
-            <span className="font-medium">Diskon</span>
-          </motion.button>
+            <Percent className="w-5 h-5" />
+            <span className="text-[10px] font-bold uppercase tracking-wide">Diskon</span>
+          </button>
 
-          <motion.button
-            whileTap={{ scale: 0.95 }}
+          <button
             onClick={() => handleAction(onSplitBillClick, 'memisah tagihan')}
-            className={`flex-1 flex items-center justify-center gap-2 py-4 px-6 rounded-xl transition-colors ${!hasItems ? 'bg-gray-50 text-gray-400' : 'bg-gray-50 hover:bg-gray-100 text-pos-charcoal'
-              }`}
+            className={`${buttonBaseClass} ${!hasItems ? 'bg-gray-50 text-gray-300' : 'bg-gray-50 hover:bg-gray-100 text-pos-charcoal'}`}
           >
-            <Split className={`w-5 h-5 ${!hasItems ? 'text-gray-400' : 'text-pos-charcoal'}`} />
-            <span className="font-medium">Pisah Tagihan</span>
-          </motion.button>
+            <Split className="w-5 h-5" />
+            <span className="text-[10px] font-bold uppercase tracking-wide">Pisah Bill</span>
+          </button>
 
           <div className="flex-1 flex gap-2">
-            <motion.button
-              whileTap={{ scale: 0.95 }}
+            <button
               onClick={() => handleAction(onHoldOrderClick, 'menangguhkan pesanan')}
-              className={`flex-1 flex items-center justify-center gap-2 py-4 px-6 rounded-xl transition-colors ${!hasItems ? 'bg-gray-100 text-gray-400' : 'bg-gray-100 hover:bg-gray-200 text-pos-charcoal'
-                }`}
+              className={`${buttonBaseClass} ${!hasItems ? 'bg-gray-50 text-gray-300' : 'bg-gray-50 hover:bg-gray-100 text-pos-charcoal'}`}
             >
-              <Pause className={`w-5 h-5 ${!hasItems ? 'text-gray-400' : 'text-pos-charcoal'}`} />
-              <span className="font-medium">Tangguhkan</span>
-            </motion.button>
+              <Pause className="w-5 h-5" />
+              <span className="text-[10px] font-bold uppercase tracking-wide">Tahan</span>
+            </button>
 
             {heldCount > 0 && (
-              <motion.button
-                whileTap={{ scale: 0.95 }}
+              <button
                 onClick={onHeldOrdersClick}
-                className="w-16 flex items-center justify-center rounded-xl bg-pos-teal/10 text-pos-teal border border-pos-teal/20 relative"
+                className="w-14 flex flex-col items-center justify-center gap-1 rounded-xl bg-teal-50 text-teal-600 border border-teal-100 active:scale-95 transition-transform"
               >
-                <div className="absolute -top-2 -right-2 w-6 h-6 bg-pos-teal rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-sm">
+                <div className="bg-teal-600 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
                   {heldCount}
                 </div>
-                <Pause className="w-5 h-5" />
-              </motion.button>
+                <span className="text-[9px] font-bold">List</span>
+              </button>
             )}
           </div>
 
-          <motion.button
-            whileTap={{ scale: 0.95 }}
+          <button
             onClick={() => handleAction(onPaymentClick, 'melakukan pembayaran')}
-            className={`flex-1 flex items-center justify-center gap-2 py-4 px-6 rounded-xl transition-colors shadow-lg ${!hasItems ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-pos-coral hover:bg-orange-600 text-white'
-              }`}
+            className={`${buttonBaseClass} flex-[1.5] shadow-lg ${!hasItems ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-orange-600 hover:bg-orange-700 text-white shadow-orange-200'}`}
           >
-            <CreditCard className={`w-5 h-5 ${!hasItems ? 'text-gray-500' : 'text-white'}`} />
-            <span className="font-bold">Pembayaran</span>
-          </motion.button>
+            <CreditCard className="w-6 h-6" />
+            <span className="text-xs font-black uppercase tracking-wider">Pembayaran</span>
+          </button>
         </motion.div>
       </div>
     </div>

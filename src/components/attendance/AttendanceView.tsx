@@ -108,9 +108,12 @@ export function AttendanceView({ logs, setLogs, employees, onLogAttendance }: { 
     const handleScan = (code: string) => {
         if (scannedData === code) return;
 
-        // Code format is EMP-ID
-        const empIdStr = code.replace('EMP-', '');
-        const employee = employees.find(e => e.id.toString() === empIdStr);
+        // Lookup by Barcode first, then ID (fallback)
+        const employee = employees.find(e =>
+            e.barcode === code ||
+            `EMP-${e.id}` === code ||
+            e.id.toString() === code
+        );
 
         if (employee) {
             setScannedData(code);

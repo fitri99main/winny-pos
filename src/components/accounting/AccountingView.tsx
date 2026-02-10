@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useAuth } from '../auth/AuthProvider';
 import { Calculator, TrendingUp, TrendingDown, DollarSign, Wallet, FileText, Plus, BookOpen, LayoutDashboard, Settings, Edit, Trash2, Download, CalendarCheck } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -29,7 +30,14 @@ interface JournalEntry {
 
 // --- Sub-Components ---
 
-function JournalTab({ transactions, accounts, onAddTransaction }: { transactions: JournalEntry[], accounts: Account[], onAddTransaction: (tx: JournalEntry) => void }) {
+function JournalTab({ transactions, accounts, onAddTransaction, onDeleteTransaction, onResetTransactions, role }: {
+    transactions: JournalEntry[],
+    accounts: Account[],
+    onAddTransaction: (tx: JournalEntry) => void,
+    onDeleteTransaction: (id: number) => void,
+    onResetTransactions: () => void,
+    role?: string
+}) {
     const [formData, setFormData] = useState({ date: new Date().toISOString().split('T')[0], desc: '', debit: '', credit: '', amount: '' });
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -49,6 +57,21 @@ function JournalTab({ transactions, accounts, onAddTransaction }: { transactions
         onAddTransaction(newTx);
         setFormData({ ...formData, desc: '', amount: '' });
         toast.success('Jurnal berhasil disimpan');
+    };
+
+    const handleDelete = (id: number) => {
+        if (confirm('Yakin ingin menghapus jurnal ini?')) {
+            onDeleteTransaction(id);
+        }
+    };
+
+    const handleReset = () => {
+        if (confirm('PERINGATAN: Apakah Anda yakin ingin MENGHAPUS SEMUA data jurnal? Tindakan ini tidak dapat dibatalkan.')) {
+            const doubleCheck = prompt('Ketik "HAPUS" untuk konfirmasi reset database:');
+            if (doubleCheck === 'HAPUS') {
+                onResetTransactions();
+            }
+        }
     };
 
     return (
@@ -93,8 +116,17 @@ function JournalTab({ transactions, accounts, onAddTransaction }: { transactions
 
             {/* Journal Table */}
             <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="p-4 bg-gray-50 border-b border-gray-100">
+                <div className="p-4 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
                     <h3 className="font-bold text-gray-800">Riwayat Jurnal Umum</h3>
+                    {/* Fallback: Allow if role is missing (undefined/null/empty) OR if Administrator/Owner */}
+                    {(!role || ['administrator', 'owner'].includes(role.toLowerCase())) && (
+                        <button
+                            onClick={handleReset}
+                            className="text-xs bg-red-100 text-red-600 px-3 py-1 rounded-lg hover:bg-red-200 transition-colors font-bold flex items-center gap-1"
+                        >
+                            <Trash2 className="w-3 h-3" /> Reset Database
+                        </button>
+                    )}
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm">
@@ -105,6 +137,7 @@ function JournalTab({ transactions, accounts, onAddTransaction }: { transactions
                                 <th className="px-4 py-3 text-left">Akun</th>
                                 <th className="px-4 py-3 text-right">Debit</th>
                                 <th className="px-4 py-3 text-right">Kredit</th>
+                                {(!role || ['administrator', 'owner'].includes(role.toLowerCase())) && <th className="px-4 py-3 text-center">Aksi</th>}
                             </tr>
                         </thead>
                         <tbody>
@@ -127,6 +160,17 @@ function JournalTab({ transactions, accounts, onAddTransaction }: { transactions
                                             <div className="text-transparent">-</div>
                                             <div>Rp {tx.amount.toLocaleString()}</div>
                                         </td>
+                                        {(!role || ['administrator', 'owner'].includes(role.toLowerCase())) && (
+                                            <td className="px-4 py-3 text-center align-top">
+                                                <button
+                                                    onClick={() => handleDelete(tx.id)}
+                                                    className="p-1 hover:bg-red-50 text-red-500 rounded text-xs"
+                                                    title="Hapus Jurnal"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </td>
+                                        )}
                                     </tr>
                                 )
                             })}
@@ -177,7 +221,7 @@ function AccountManagementTab({ accounts, getBalance, onAddAccount, onUpdateAcco
     };
 
     const handleDelete = (code: string) => {
-        if (confirm('Anda yakin ingin menghapus akun ini?')) {
+        if (confirm('Anda yakin ingin menghapus MASTER DATA akun ini?')) {
             onDeleteAccount(code);
         }
     };
@@ -260,7 +304,12 @@ function AccountManagementTab({ accounts, getBalance, onAddAccount, onUpdateAcco
                                         <button onClick={() => handleEdit(acc)} className="p-1 hover:bg-blue-50 text-blue-600 rounded">
                                             <Edit className="w-4 h-4" />
                                         </button>
-                                        <button onClick={() => handleDelete(acc.code)} className="p-1 hover:bg-red-50 text-red-600 rounded">
+                                        <button
+                                            onClick={() => handleDelete(acc.code)}
+                                            className={`p-1 rounded ${getBalance(acc.code) !== 0 ? 'text-gray-300 cursor-not-allowed' : 'hover:bg-red-50 text-red-600'}`}
+                                            disabled={getBalance(acc.code) !== 0}
+                                            title={getBalance(acc.code) !== 0 ? "Tidak bisa hapus akun yang memiliki saldo/transaksi" : "Hapus Master Akun"}
+                                        >
                                             <Trash2 className="w-4 h-4" />
                                         </button>
                                     </td>
@@ -283,6 +332,9 @@ interface AccountingViewProps {
     onUpdateAccount?: (acc: Account) => Promise<void>;
     onDeleteAccount?: (code: string) => Promise<void>;
     onAddTransaction?: (tx: JournalEntry) => Promise<void>;
+    onDeleteTransaction?: (id: number) => Promise<void>;
+    onResetTransactions?: () => Promise<void>;
+    onBack?: () => void;
 }
 
 export function AccountingView({
@@ -291,8 +343,12 @@ export function AccountingView({
     onAddAccount = async () => { },
     onUpdateAccount = async () => { },
     onDeleteAccount = async () => { },
-    onAddTransaction = async () => { }
+    onAddTransaction = async () => { },
+    onDeleteTransaction = async () => { },
+    onResetTransactions = async () => { },
+    onBack
 }: AccountingViewProps) {
+    const { role } = useAuth();
     const [activeTab, setActiveTab] = useState('overview');
 
 
@@ -674,9 +730,21 @@ export function AccountingView({
     return (
         <div className="p-8 space-y-8 min-h-full bg-gray-50/50">
             {/* Header */}
-            <div>
-                <h2 className="text-2xl font-bold text-gray-800">Modul Akuntansi</h2>
-                <p className="text-sm text-gray-500">Pencatatan keuangan standar akuntansi Indonesia.</p>
+            <div className="flex justify-between items-center">
+                <div>
+                    <h2 className="text-2xl font-bold text-gray-800">Modul Akuntansi</h2>
+                    <p className="text-sm text-gray-500">Pencatatan keuangan standar akuntansi Indonesia.</p>
+                </div>
+                {onBack && (
+                    <Button
+                        onClick={onBack}
+                        variant="outline"
+                        className="flex items-center gap-2 border-gray-300 text-gray-700 hover:bg-gray-100"
+                    >
+                        <LayoutDashboard className="w-4 h-4 rotate-180" /> {/* Simulating Back Icon */}
+                        Kembali ke Payroll
+                    </Button>
+                )}
             </div>
 
             {/* Navigation Tabs & Date Filters */}
@@ -720,7 +788,16 @@ export function AccountingView({
             {/* Content Area */}
             <div className="min-h-[500px]">
                 {activeTab === 'overview' && renderOverview()}
-                {activeTab === 'journal' && <JournalTab transactions={filteredTransactions} accounts={accounts} onAddTransaction={(tx) => onAddTransaction(tx)} />}
+                {activeTab === 'journal' && (
+                    <JournalTab
+                        transactions={filteredTransactions}
+                        accounts={accounts}
+                        onAddTransaction={(tx) => onAddTransaction(tx)}
+                        onDeleteTransaction={(id) => onDeleteTransaction(id)}
+                        onResetTransactions={() => onResetTransactions()}
+                        role={role || ''}
+                    />
+                )}
 
                 {activeTab === 'ledger' && (
                     <div className="bg-white p-8 rounded-2xl shadow-sm border text-center">

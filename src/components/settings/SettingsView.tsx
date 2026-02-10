@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, User, Monitor, Globe, Bell, Shield, Save, Clock, Calendar, Printer, FileText, LayoutGrid, Plus, Trash2, Edit, CreditCard, CheckCircle2, XCircle, Database, Upload, Download, AlertTriangle, Loader2 } from 'lucide-react';
+import { Settings, User, Monitor, Globe, Bell, Shield, Save, Clock, Calendar, Printer, FileText, LayoutGrid, Plus, Trash2, Edit, CreditCard, CheckCircle2, XCircle, Database, Upload, Download, AlertTriangle, Loader2, Calculator } from 'lucide-react';
 import { printerService } from '../../lib/PrinterService';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -123,6 +123,7 @@ export function SettingsView({
         { id: 'tables', label: 'Meja', icon: LayoutGrid },
         { id: 'appearance', label: 'Tampilan', icon: Monitor },
         { id: 'notifications', label: 'Notifikasi', icon: Bell },
+        { id: 'cashier', label: 'Kasir', icon: Calculator },
         { id: 'printer', label: 'Printer', icon: Printer },
         { id: 'receipt', label: 'Templat Struk', icon: FileText },
         { id: 'payment_methods', label: 'Metode Pembayaran', icon: CreditCard },
@@ -683,6 +684,71 @@ export function SettingsView({
                                 </div>
                                 <div className={`w-4 h-4 rounded-full border ${localSettings.theme_mode === 'dark' ? 'border-primary bg-primary' : 'border-gray-300'}`} />
                             </button>
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === 'cashier' && (
+                    <div className="max-w-2xl space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                        <div>
+                            <h3 className="text-lg font-bold text-gray-800">Pengaturan Kasir</h3>
+                            <p className="text-sm text-gray-500">Konfigurasi operasional kasir dan laci uang.</p>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+                                <div>
+                                    <h4 className="font-bold text-gray-800">Wajib Modal Awal</h4>
+                                    <p className="text-xs text-gray-500">Kasir harus memasukkan nominal modal sebelum mulai transaksi.</p>
+                                </div>
+                                <Switch
+                                    checked={localSettings.require_starting_cash ?? true}
+                                    onCheckedChange={c => handleLocalChange({ ...localSettings, require_starting_cash: c })}
+                                />
+                            </div>
+
+                            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+                                <div>
+                                    <h4 className="font-bold text-gray-800">Blind Close (Tutup Buta)</h4>
+                                    <p className="text-xs text-gray-500">Kasir harus menghitung uang fisik sebelum melihat total sistem.</p>
+                                </div>
+                                <Switch
+                                    checked={localSettings.require_blind_close ?? false}
+                                    onCheckedChange={c => handleLocalChange({ ...localSettings, require_blind_close: c })}
+                                />
+                            </div>
+
+                            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+                                <div>
+                                    <h4 className="font-bold text-gray-800">Auto Open Drawer</h4>
+                                    <p className="text-xs text-gray-500">Buka laci otomatis setelah transaksi berhasil.</p>
+                                </div>
+                                <Switch
+                                    checked={localSettings.auto_open_drawer ?? false}
+                                    onCheckedChange={c => handleLocalChange({ ...localSettings, auto_open_drawer: c })}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="space-y-4 pt-4 border-t border-gray-100">
+                            <h4 className="font-bold text-gray-800">Pecahan Uang Cepat</h4>
+                            <div className="grid grid-cols-2 gap-4">
+                                {(localSettings.quick_cash_amounts || [10000, 20000, 50000, 100000]).map((amount: number, idx: number) => (
+                                    <div key={idx} className="relative">
+                                        <input
+                                            type="number"
+                                            value={amount}
+                                            onChange={(e) => {
+                                                const newAmounts = [...(localSettings.quick_cash_amounts || [10000, 20000, 50000, 100000])];
+                                                newAmounts[idx] = Number(e.target.value);
+                                                handleLocalChange({ ...localSettings, quick_cash_amounts: newAmounts });
+                                            }}
+                                            className="w-full pl-8 pr-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/20 outline-none"
+                                        />
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">Rp</span>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     </div>
                 )}

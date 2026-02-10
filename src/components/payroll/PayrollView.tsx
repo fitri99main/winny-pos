@@ -71,6 +71,21 @@ export function PayrollView({
         if (formData.id) {
             onPayrollAction('update', formData);
         } else {
+            // [NEW] Prevent Duplicate Payroll for same Period
+            const existing = payrollData.find(p =>
+                p.employeeName === formData.employeeName &&
+                p.period === filterPeriod
+            );
+
+            if (existing) {
+                if (existing.status === 'Paid') {
+                    toast.error(`Gagal: Gaji ${formData.employeeName} periode ${filterPeriod} SUDAH DIBAYAR.`);
+                } else {
+                    toast.error(`Gagal: Data payroll ${formData.employeeName} sudah ada (Status: ${existing.status}). Silakan edit data yang ada.`);
+                }
+                return;
+            }
+
             const newItem = {
                 ...formData,
                 status: 'Pending',
@@ -201,9 +216,15 @@ export function PayrollView({
                                                             </button>
                                                         </>
                                                     ) : (
-                                                        <Button size="sm" variant="outline" onClick={() => handlePrintSlip(item)} className="gap-2 h-8 text-xs text-gray-600">
-                                                            <Printer className="w-3 h-3" /> Slip
-                                                        </Button>
+                                                        <>
+                                                            <Button size="sm" variant="outline" onClick={() => handlePrintSlip(item)} className="gap-2 h-8 text-xs text-gray-600 mr-2">
+                                                                <Printer className="w-3 h-3" /> Slip
+                                                            </Button>
+                                                            {/* Allow deleting Paid items (will reverse Journal ideally, or just delete) */}
+                                                            <button onClick={() => handleDelete(item.id)} className="p-2 hover:bg-red-50 text-red-600 rounded-lg" title="Hapus (Batalkan)">
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        </>
                                                     )}
                                                 </td>
                                             </tr>

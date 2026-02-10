@@ -276,6 +276,21 @@ class PrinterService {
         const printer = type === 'Kitchen' ? this.kitchenPrinter : (type === 'Bar' ? this.barPrinter : this.cashierPrinter);
         return printer?.name || null;
     }
+
+    async openDrawer() {
+        if (!this.cashierPrinter || !this.cashierPrinter.characteristic) {
+            console.warn('Cashier Printer not connected. Cannot open drawer.');
+            return;
+        }
+        try {
+            // ESC p m t1 t2 - Pulse to open drawer
+            // m=0 (pin 2), t1=60 (on time), t2=120 (off time)
+            const command = new Uint8Array([0x1B, 0x70, 0x00, 0x3C, 0x78]);
+            await this.cashierPrinter.characteristic.writeValue(command);
+        } catch (e) {
+            console.error('Failed to open drawer:', e);
+        }
+    }
 }
 
 export const printerService = new PrinterService();
