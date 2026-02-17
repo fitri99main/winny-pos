@@ -198,7 +198,7 @@ export function BranchesView({
                                     required
                                     value={newBranch.name}
                                     onChange={(e) => setNewBranch({ ...newBranch, name: e.target.value })}
-                                    placeholder="contoh: Winny Cafe Cabang Bogor"
+                                    placeholder="contoh: Winny Pangeran Natakusuma Cabang Bogor"
                                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
                                 />
                             </div>

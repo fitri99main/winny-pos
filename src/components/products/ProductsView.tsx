@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Package, Tags, Scale, Ticket, Plus, Search, Edit, Trash2, Filter, ChefHat, Info, Calculator, Puzzle, Settings2, X, Image as ImageIcon, Upload, Check, Coffee } from 'lucide-react';
+import { Package, Tags, Scale, Ticket, Plus, Search, Edit, Trash2, Filter, ChefHat, Info, Calculator, Puzzle, Settings2, X, Check, Coffee } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -95,7 +95,7 @@ export function ProductsView({
     const [isRecipeOpen, setIsRecipeOpen] = useState(false);
     const [isAddonOpen, setIsAddonOpen] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-    const [isUploading, setIsUploading] = useState(false);
+
 
     // --- Generic Handlers ---
 
@@ -122,43 +122,7 @@ export function ProductsView({
         }, 0);
     };
 
-    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
 
-        // Basic validation
-        if (!file.type.startsWith('image/')) {
-            return toast.error('File harus berupa gambar');
-        }
-        if (file.size > 2 * 1024 * 1024) {
-            return toast.error('Ukuran gambar maksimal 2MB');
-        }
-
-        setIsUploading(true);
-        try {
-            const fileExt = file.name.split('.').pop();
-            const fileName = `prod-${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
-            const filePath = `${fileName}`;
-
-            const { error: uploadError } = await supabase.storage
-                .from('product-images')
-                .upload(filePath, file);
-
-            if (uploadError) throw uploadError;
-
-            const { data: { publicUrl } } = supabase.storage
-                .from('product-images')
-                .getPublicUrl(filePath);
-
-            setFormData({ ...formData, image_url: publicUrl });
-            toast.success('Gambar berhasil diunggah');
-        } catch (error: any) {
-            console.error('Upload error:', error);
-            toast.error('Gagal upload gambar: ' + error.message);
-        } finally {
-            setIsUploading(false);
-        }
-    };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -215,7 +179,7 @@ export function ProductsView({
                 <table className="w-full text-sm">
                     <thead className="bg-gray-50/50 text-gray-400 text-left border-b border-gray-100">
                         <tr>
-                            <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px] text-center">Gambar</th>
+
                             <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px]">Kode</th>
                             <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px]">Nama Produk</th>
                             <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px]">Kategori</th>
@@ -234,17 +198,7 @@ export function ProductsView({
                                 const margin = p.price - currentHPP;
                                 return (
                                     <tr key={p.id} className="group hover:bg-gray-50/50 transition-all">
-                                        <td className="px-4 py-5">
-                                            <div className="w-12 h-12 rounded-xl bg-primary/5 overflow-hidden border border-primary/10 flex items-center justify-center relative">
-                                                {p.image_url ? (
-                                                    <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
-                                                ) : (
-                                                    <span className="text-xs font-black text-primary">
-                                                        {getAcronym(p.name)}
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </td>
+
                                         <td className="px-4 py-5 font-mono text-gray-400 text-xs">{p.code}</td>
                                         <td className="px-4 py-5">
                                             <div className="font-bold text-gray-800">{p.name}</div>
@@ -375,52 +329,7 @@ export function ProductsView({
                                 {activeTab === 'products' ? (
                                     <div className="space-y-10">
                                         {/* Image Section */}
-                                        <div className="flex flex-col items-center gap-4 py-4 bg-gray-50/50 rounded-[32px] border-2 border-dashed border-gray-100 transition-all hover:bg-gray-50 hover:border-primary/20 group">
-                                            <div className="relative">
-                                                <div className="w-40 h-40 rounded-[40px] bg-white border border-gray-100 flex flex-col items-center justify-center overflow-hidden shadow-2xl shadow-gray-200/50 transition-all group-hover:scale-[1.02]">
-                                                    {formData.image_url ? (
-                                                        <img src={formData.image_url} alt="Preview" className="w-full h-full object-cover" />
-                                                    ) : (
-                                                        <div className="flex flex-col items-center gap-3">
-                                                            <div className="p-4 bg-primary/5 rounded-[24px]">
-                                                                <Upload className="w-6 h-6 text-primary" />
-                                                            </div>
-                                                            <div className="text-center">
-                                                                <span className="block text-[14px] font-black text-primary uppercase tracking-tighter mb-0.5">
-                                                                    {getAcronym(formData.name || "") || "Pilih Foto"}
-                                                                </span>
-                                                                <span className="block text-[9px] font-bold text-gray-400 uppercase tracking-widest">Maks 2MB</span>
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                    {isUploading && (
-                                                        <div className="absolute inset-0 bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center gap-3">
-                                                            <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" />
-                                                            <span className="text-[10px] font-black text-primary uppercase tracking-widest animate-pulse">Mengunggah...</span>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <input
-                                                    type="file"
-                                                    accept="image/*"
-                                                    onChange={handleImageUpload}
-                                                    className="absolute inset-0 opacity-0 cursor-pointer disabled:cursor-not-allowed"
-                                                    disabled={isUploading}
-                                                />
-                                                {formData.image_url && !isUploading && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={(e) => {
-                                                            e.preventDefault();
-                                                            setFormData({ ...formData, image_url: '' });
-                                                        }}
-                                                        className="absolute -top-3 -right-3 p-2.5 bg-red-500 text-white rounded-2xl shadow-xl hover:bg-red-600 transition-all hover:scale-110 border-4 border-white"
-                                                    >
-                                                        <X className="w-3.5 h-3.5" />
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
+
 
                                         {/* Informasi Utama Section */}
                                         <div className="space-y-6">

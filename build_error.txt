@@ -1,0 +1,152 @@
+﻿[36mvite v7.2.2 [32mbuilding client environment for production...[36m[39m
+transforming...
+[32mΓ£ô[39m 3000 modules transformed.
+rendering chunks...
+computing gzip size...
+[2mdist/[22m[32mmanifest.webmanifest                        [39m[1m[2m    0.42 kB[22m[1m[22m
+[2mdist/[22m[32mindex.html                                  [39m[1m[2m    0.55 kB[22m[1m[22m[2m Γöé gzip:   0.34 kB[22m
+[2mdist/[22m[35massets/index-MwNoTroJ.css                   [39m[1m[2m  134.70 kB[22m[1m[22m[2m Γöé gzip:  21.60 kB[22m
+[2mdist/[22m[36massets/browser-CpP2tYao.js                  [39m[1m[2m    0.34 kB[22m[1m[22m[2m Γöé gzip:   0.27 kB[22m
+[2mdist/[22m[36massets/workbox-window.prod.es5-vqzQaGvo.js  [39m[1m[2m    5.72 kB[22m[1m[22m[2m Γöé gzip:   2.35 kB[22m
+[2mdist/[22m[36massets/purify.es-Bzr520pe.js                [39m[1m[2m   22.45 kB[22m[1m[22m[2m Γöé gzip:   8.63 kB[22m
+[2mdist/[22m[36massets/index.es-DczYLeB1.js                 [39m[1m[2m  158.53 kB[22m[1m[22m[2m Γöé gzip:  52.92 kB[22m
+[2mdist/[22m[36massets/html2canvas.esm-Qnh7jv0Z.js          [39m[1m[2m  201.32 kB[22m[1m[22m[2m Γöé gzip:  47.47 kB[22m
+[2mdist/[22m[36massets/index-CnCUglJL.js                    [39m[1m[33m2,531.82 kB[39m[22m[2m Γöé gzip: 741.64 kB[22m
+node.exe : [33m
+At line:1 char:1
++ & "C:\Program Files
+\nodejs/node.exe" 
+"C:\Program 
+Files\nodejs/node_mo 
+...
++ ~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~
+    + CategoryInfo   
+           : NotSpe  
+  cified: ([33m:S   
+ tring) [], Remot    
+eException
+    + FullyQualified 
+   ErrorId : Native  
+  CommandError
+ 
+(!) Some chunks are 
+larger than 500 kB 
+after minification. 
+Consider:
+- Using dynamic 
+import() to 
+code-split the 
+application
+- Use build.rollupOpt
+ions.output.manualChu
+nks to improve 
+chunking: https://rol
+lupjs.org/configurati
+on-options/#output-ma
+nualchunks
+- Adjust chunk size 
+limit for this 
+warning via build.chu
+nkSizeWarningLimit.[
+39m
+[32mΓ£ô built in 35.47s[39m
+[31merror during 
+build:
+Error: 
+  Configure "workbox.
+maximumFileSizeToCach
+eInBytes" to change 
+the limit: the 
+default value is 2 
+MiB.
+  Check https://vite-
+pwa-org.netlify.app/g
+uide/faq.html#missing
+-assets-from-sw-preca
+che-manifest for 
+more information.
+  Assets exceeding 
+the limit:
+  - assets/index-CnCU
+glJL.js is 2.53 MB, 
+and won't be 
+precached.
+
+    at 
+logWorkboxResult (fil
+e:///C:/Users/USER/Do
+wnloads/kejaan%20ayah
+/winny-main/node_modu
+les/vite-plugin-pwa/d
+ist/chunk-G4TAN34B.js
+:44:13)
+    at generateServic
+eWorker (file:///C:/U
+sers/USER/Downloads/k
+ejaan%20ayah/winny-ma
+in/node_modules/vite-
+plugin-pwa/dist/index
+.js:209:3)
+    at async 
+_generateSW (file:///
+C:/Users/USER/Downloa
+ds/kejaan%20ayah/winn
+y-main/node_modules/v
+ite-plugin-pwa/dist/i
+ndex.js:234:5)
+    at async 
+Object.handler (file:
+///C:/Users/USER/Down
+loads/kejaan%20ayah/w
+inny-main/node_module
+s/vite-plugin-pwa/dis
+t/index.js:427:13)
+    at async PluginDr
+iver.hookParallel (fi
+le:///C:/Users/USER/D
+ownloads/kejaan%20aya
+h/winny-main/node_mod
+ules/rollup/dist/es/s
+hared/node-entry.js:2
+2341:17)
+    at async 
+Object.close (file://
+/C:/Users/USER/Downlo
+ads/kejaan%20ayah/win
+ny-main/node_modules/
+rollup/dist/es/shared
+/node-entry.js:23360:
+13)
+    at async 
+buildEnvironment (fil
+e:///C:/Users/USER/Do
+wnloads/kejaan%20ayah
+/winny-main/node_modu
+les/vite/dist/node/ch
+unks/config.js:34174:
+15)
+    at async 
+Object.build (file://
+/C:/Users/USER/Downlo
+ads/kejaan%20ayah/win
+ny-main/node_modules/
+vite/dist/node/chunks
+/config.js:34519:19)
+    at async 
+Object.buildApp (file
+:///C:/Users/USER/Dow
+nloads/kejaan%20ayah/
+winny-main/node_modul
+es/vite/dist/node/chu
+nks/config.js:34516:1
+53)
+    at async 
+CAC.<anonymous> (file
+:///C:/Users/USER/Dow
+nloads/kejaan%20ayah/
+winny-main/node_modul
+es/vite/dist/node/cli
+.js:629:3)[39m

@@ -80,6 +80,9 @@ export function KioskView() {
         window.addEventListener('storage', handleForceOffline);
         window.addEventListener('force-offline-change', handleForceOffline);
 
+        // Set Kiosk Mode Flag
+        localStorage.setItem('app_mode', 'kiosk');
+
         window.addEventListener('online', handleOnline);
         window.addEventListener('offline', handleOffline);
         return () => {
@@ -404,7 +407,7 @@ export function KioskView() {
         return (
             <div className="h-screen w-full bg-gray-50 px-4 py-10 md:px-10 md:py-20 flex flex-col items-center justify-start overflow-y-auto">
                 <div className="max-w-7xl w-full text-center">
-                    <h1 className="text-2xl md:text-4xl font-bold text-gray-800 mb-2">Selamat Datang di Winny Cafe</h1>
+                    <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">Winny Pangeran Natakusuma</h1>
 
                     <div className="flex justify-center mb-4">
                         <PWAInstallButton />
@@ -443,19 +446,19 @@ export function KioskView() {
                                         setStep('member_check');
                                     }}
                                     className={`
-                                    p-4 md:p-8 rounded-2xl md:rounded-3xl border-2 flex flex-col items-center gap-2 md:gap-4 transition-all
+                                    p-4 md:p-6 rounded-2xl md:rounded-3xl border-2 flex flex-col items-center gap-2 md:gap-3 transition-all
                                     ${isOccupied
                                             ? 'bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed'
                                             : 'bg-white border-gray-200 hover:border-primary hover:shadow-xl cursor-pointer scale-100 hover:scale-105 active:scale-95'
                                         }
                                 `}
                                 >
-                                    <div className={`w-12 h-12 md:w-16 md:h-16 rounded-full flex items-center justify-center text-lg md:text-xl font-bold
+                                    <div className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center text-base md:text-lg font-bold
                                     ${isOccupied ? 'bg-gray-200 text-gray-400' : 'bg-primary/10 text-primary'}
                                 `}>
                                         {table.number}
                                     </div>
-                                    <span className="font-bold text-gray-700 text-sm md:text-base">{isOccupied ? 'Terisi' : 'Kosong'}</span>
+                                    <span className="font-bold text-gray-700 text-xs md:text-sm">{isOccupied ? 'Terisi' : 'Kosong'}</span>
                                 </button>
                             );
                         })}
@@ -551,14 +554,47 @@ export function KioskView() {
                     <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-primary text-white flex items-center justify-center font-bold text-sm md:text-base">
                         Win
                     </div>
+                    <button
+                        onClick={() => {
+                            if (confirm('Keluar dari Mode Kiosk?')) {
+                                localStorage.removeItem('app_mode');
+                                window.location.href = '/';
+                            }
+                        }}
+                        className="text-[10px] text-gray-400 hover:text-primary transition-colors opacity-20 hover:opacity-100 uppercase tracking-widest font-bold px-1"
+                    >
+                        Exit
+                    </button>
                 </div>
             </header>
 
-            <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative min-h-0">
-                {/* Product Grid */}
-                <div className="flex-1 overflow-y-auto p-4 md:p-6 scrollbar-hide lg:pb-6 touch-pan-y">
-                    {/* Categories */}
-                    <div className="flex gap-2 md:gap-3 mb-6 md:mb-8 overflow-x-auto pb-2 scrollbar-hide">
+            <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative min-h-0 bg-gray-50/50">
+
+                {/* Left Sidebar: Categories (Desktop/Tablet) */}
+                <aside className="hidden md:flex flex-col w-[180px] lg:w-[220px] bg-white border-r border-gray-100 overflow-y-auto p-4 gap-2 z-10 shrink-0 h-full">
+                    <h3 className="font-bold text-gray-400 text-xs uppercase tracking-wider mb-2 px-2">Menu Kategori</h3>
+                    {categories.map(cat => (
+                        <button
+                            key={cat}
+                            onClick={() => setActiveCategory(cat)}
+                            className={`
+                                w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all flex items-center justify-between group
+                                ${activeCategory === cat
+                                    ? 'bg-primary text-white shadow-lg shadow-primary/30'
+                                    : 'bg-transparent text-gray-600 hover:bg-gray-50 hover:text-primary'
+                                }
+                            `}
+                        >
+                            <span>{cat}</span>
+                            {activeCategory === cat && <ChevronRight className="w-4 h-4" />}
+                        </button>
+                    ))}
+                </aside>
+
+                {/* Product Grid Area */}
+                <main className="flex-1 overflow-y-auto p-4 md:p-6 scrollbar-hide touch-pan-y w-full">
+                    {/* Mobile Categories (Horizontal Scroll) - Visible only on mobile/small tablet */}
+                    <div className="md:hidden flex gap-2 md:gap-3 mb-6 overflow-x-auto pb-2 scrollbar-hide">
                         {categories.map(cat => (
                             <button
                                 key={cat}
@@ -576,9 +612,9 @@ export function KioskView() {
                         ))}
                     </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 md:gap-3 lg:gap-4 pb-24 lg:pb-0">
                         {filteredProducts.map(product => (
-                            <div key={product.id} className="bg-white rounded-xl md:rounded-2xl p-2 md:p-3 shadow-sm hover:shadow-md transition-all border border-transparent hover:border-primary/20 flex flex-col gap-2 group">
+                            <div key={product.id} className="bg-white rounded-lg md:rounded-xl p-1.5 md:p-2 shadow-sm hover:shadow-md transition-all border border-transparent hover:border-primary/20 flex flex-col gap-1.5 group">
                                 <div className="aspect-[4/3] rounded-lg md:rounded-xl bg-gray-100 overflow-hidden relative">
                                     {product.image_url ? (
                                         <img src={product.image_url} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
@@ -591,25 +627,25 @@ export function KioskView() {
                                     )}
                                     <button
                                         onClick={() => handleAddToCart(product)}
-                                        className="absolute bottom-1 right-1 md:bottom-2 md:right-2 w-7 h-7 md:w-9 md:h-9 bg-white rounded-full shadow-lg flex items-center justify-center text-gray-800 hover:bg-primary hover:text-white transition-colors"
+                                        className="absolute bottom-1.5 right-1.5 md:bottom-2 md:right-2 w-7 h-7 md:w-9 md:h-9 lg:w-10 lg:h-10 bg-white rounded-full shadow-lg flex items-center justify-center text-gray-800 hover:bg-primary hover:text-white transition-colors border border-gray-100"
                                     >
-                                        <Plus className="w-4 h-4" />
+                                        <Plus className="w-4 h-4 md:w-5 h-5" />
                                     </button>
                                 </div>
                                 <div>
-                                    <h3 className="font-bold text-gray-800 line-clamp-1 text-xs md:text-sm leading-tight">{product.name}</h3>
-                                    <p className="text-primary font-bold text-xs md:text-sm">Rp {product.price.toLocaleString()}</p>
+                                    <h3 className="font-bold text-gray-800 line-clamp-2 text-sm md:text-base leading-tight mb-1">{product.name}</h3>
+                                    <p className="text-primary font-bold text-sm md:text-base lg:text-lg">Rp {product.price.toLocaleString()}</p>
                                 </div>
                             </div>
                         ))}
                     </div>
 
-                </div>
+                </main>
 
                 {/* Cart Sidebar (Fixed Bottom Sheet on Mobile/Tablet, Sidebar on Desktop) */}
                 {cart.length > 0 && (
-                    <div className="w-full lg:w-96 bg-white border-t lg:border-t-0 lg:border-l border-gray-100 shadow-[0_-5px_25px_-5px_rgba(0,0,0,0.1)] lg:shadow-2xl flex flex-col z-50 animate-in slide-in-from-bottom lg:slide-in-from-right duration-300 max-h-[85vh] lg:max-h-full">
-                        <div className="p-3 lg:p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50 cursor-pointer lg:cursor-default"
+                    <div className="w-full md:w-[300px] lg:w-[400px] xl:w-[450px] bg-white border-t md:border-t-0 md:border-l border-gray-100 shadow-[0_-5px_25px_-5px_rgba(0,0,0,0.1)] lg:shadow-2xl flex flex-col z-50 animate-in slide-in-from-bottom md:slide-in-from-right duration-300 max-h-[85vh] md:max-h-full">
+                        <div className="p-3 lg:p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50 cursor-pointer md:cursor-default"
                             onClick={(e) => {
                                 e.stopPropagation();
                             }}
@@ -630,10 +666,10 @@ export function KioskView() {
                                         <h4 className="font-bold text-gray-800 text-xs lg:text-sm truncate">{item.name}</h4>
                                         <p className="text-[10px] lg:text-xs text-gray-500">Rp {item.price.toLocaleString()}</p>
                                     </div>
-                                    <div className="flex items-center gap-2 lg:gap-3 bg-gray-50 rounded-lg p-1">
-                                        <button onClick={() => handleUpdateQuantity(item.id, -1)} className="w-5 h-5 lg:w-6 lg:h-6 flex items-center justify-center bg-white rounded-md shadow-sm hover:text-red-500"><Minus className="w-3 h-3" /></button>
-                                        <span className="text-xs lg:text-sm font-bold w-4 text-center">{item.quantity}</span>
-                                        <button onClick={() => handleUpdateQuantity(item.id, 1)} className="w-5 h-5 lg:w-6 lg:h-6 flex items-center justify-center bg-white rounded-md shadow-sm hover:text-green-500"><Plus className="w-3 h-3" /></button>
+                                    <div className="flex items-center gap-2 lg:gap-3 bg-gray-50 rounded-lg p-1.5">
+                                        <button onClick={() => handleUpdateQuantity(item.id, -1)} className="w-7 h-7 lg:w-9 lg:h-9 flex items-center justify-center bg-white rounded-md shadow-sm hover:text-red-500 active:scale-95 transition-all"><Minus className="w-4 h-4 lg:w-5 lg:h-5" /></button>
+                                        <span className="text-sm lg:text-base font-bold w-6 text-center">{item.quantity}</span>
+                                        <button onClick={() => handleUpdateQuantity(item.id, 1)} className="w-7 h-7 lg:w-9 lg:h-9 flex items-center justify-center bg-white rounded-md shadow-sm hover:text-green-500 active:scale-95 transition-all"><Plus className="w-4 h-4 lg:w-5 lg:h-5" /></button>
                                     </div>
                                 </div>
                             ))}
@@ -788,81 +824,87 @@ function MemberCheckView({ onSkip, onMemberVerified }: { onSkip: () => void, onM
 
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
-            <div className="bg-white max-w-md w-full rounded-3xl shadow-2xl p-6 md:p-8 text-center animate-in zoom-in duration-300">
-                <div className="flex justify-center mb-6">
-                    <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center">
-                        <User className="w-10 h-10 text-primary" />
-                    </div>
-                </div>
+            <div className="bg-white max-w-md md:max-w-3xl w-full rounded-3xl shadow-2xl p-6 md:p-10 text-center animate-in zoom-in duration-300">
 
-                <h2 className="text-2xl font-bold text-gray-800 mb-2">Member Login</h2>
-                <p className="text-gray-500 mb-8">Scan QR Member atau masukkan nomor HP untuk mendapatkan diskon & poin.</p>
+                <h2 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2 flex items-center justify-center gap-3">
+                    <User className="w-8 h-8 md:w-10 md:h-10 text-primary" />
+                    Member Login
+                </h2>
+                <p className="text-gray-500 mb-8 md:text-lg">Dapatkan poin & diskon khusus member!</p>
 
-                {/* Main Action Tabs */}
-                <div className="space-y-4">
-                    {/* Scanner Section */}
-                    {isScanning ? (
-                        <div className="relative overflow-hidden rounded-2xl bg-black aspect-square mb-4">
-                            <div id="reader" className="w-full h-full"></div>
-                            <button
-                                onClick={() => setIsScanning(false)}
-                                className="absolute top-2 right-2 bg-white/20 hover:bg-white/40 text-white rounded-full p-2 backdrop-blur-sm"
-                            >
-                                <X className="w-5 h-5" />
-                            </button>
-                            <div className="absolute inset-0 border-2 border-primary/50 pointer-events-none rounded-2xl"></div>
-                            {/* Scanning Animation */}
-                            <div className="absolute top-0 left-0 w-full h-1 bg-primary/80 shadow-[0_0_15px_rgba(var(--primary),1)] animate-[scan_2s_ease-in-out_infinite]"></div>
-                        </div>
-                    ) : (
-                        <button
-                            onClick={() => setIsScanning(true)}
-                            className="w-full py-4 bg-gray-900 text-white rounded-xl font-bold flex items-center justify-center gap-3 hover:scale-[1.02] transition-transform shadow-lg"
-                        >
-                            <Scan className="w-6 h-6" />
-                            Scan QR Member
-                        </button>
-                    )}
+                <div className="flex flex-col md:flex-row md:items-stretch gap-6 md:gap-10">
 
-                    <div className="relative flex py-2 items-center">
-                        <div className="flex-grow border-t border-gray-200"></div>
-                        <span className="flex-shrink-0 mx-4 text-gray-400 text-sm">ATAU</span>
-                        <div className="flex-grow border-t border-gray-200"></div>
-                    </div>
-
-                    {/* Phone Input */}
-                    <div className="flex gap-2">
-                        <div className="relative flex-1">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <Phone className="h-5 w-5 text-gray-400" />
+                    {/* Left: QR Scanner */}
+                    <div className="flex-1 flex flex-col justify-center">
+                        {isScanning ? (
+                            <div className="relative overflow-hidden rounded-2xl bg-black aspect-square shadow-inner">
+                                <div id="reader" className="w-full h-full"></div>
+                                <button
+                                    onClick={() => setIsScanning(false)}
+                                    className="absolute top-3 right-3 bg-white/20 hover:bg-white/40 text-white rounded-full p-2 backdrop-blur-sm transition-all"
+                                >
+                                    <X className="w-6 h-6" />
+                                </button>
+                                <div className="absolute inset-0 border-2 border-primary/50 pointer-events-none rounded-2xl"></div>
+                                <div className="absolute top-0 left-0 w-full h-1 bg-primary/80 shadow-[0_0_15px_rgba(var(--primary),1)] animate-[scan_2s_ease-in-out_infinite]"></div>
                             </div>
-                            <input
-                                type="tel"
-                                className="block w-full pl-10 pr-3 py-4 border border-gray-200 rounded-xl leading-5 bg-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary sm:text-sm transition-all"
-                                placeholder="08xxx (Nomor HP)"
-                                value={phone}
-                                onChange={(e) => setPhone(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleCheckPhone()}
-                            />
+                        ) : (
+                            <button
+                                onClick={() => setIsScanning(true)}
+                                className="w-full h-full min-h-[200px] md:min-h-[250px] bg-gray-900 text-white rounded-2xl font-bold flex flex-col items-center justify-center gap-4 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl group"
+                            >
+                                <div className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center group-hover:bg-white/20 transition-colors">
+                                    <Scan className="w-8 h-8" />
+                                </div>
+                                <span className="text-lg">Scan QR Member</span>
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Divider */}
+                    <div className="relative flex md:flex-col items-center justify-center py-2 md:py-0">
+                        <div className="flex-grow border-t md:border-t-0 md:border-l-2 border-dashed border-gray-200 w-full md:w-0 md:h-full"></div>
+                        <span className="flex-shrink-0 mx-4 md:mx-0 md:my-4 text-gray-400 text-sm font-bold bg-white p-2">ATAU</span>
+                        <div className="flex-grow border-t md:border-t-0 md:border-l-2 border-dashed border-gray-200 w-full md:w-0 md:h-full"></div>
+                    </div>
+
+                    {/* Right: Phone Input */}
+                    <div className="flex-1 flex flex-col justify-center gap-4">
+                        <div className="text-left">
+                            <label className="block text-sm font-bold text-gray-700 mb-2">Input Nomor HP</label>
+                            <div className="relative">
+                                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                    <Phone className="h-6 w-6 text-gray-400" />
+                                </div>
+                                <input
+                                    type="tel"
+                                    className="block w-full pl-12 pr-4 py-4 md:py-5 border-2 border-gray-100 rounded-xl leading-5 bg-gray-50 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary text-lg transition-all"
+                                    placeholder="08xxx"
+                                    value={phone}
+                                    onChange={(e) => setPhone(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleCheckPhone()}
+                                />
+                            </div>
                         </div>
+
                         <button
                             onClick={handleCheckPhone}
                             disabled={!phone}
-                            className="px-6 py-4 bg-primary/10 text-primary font-bold rounded-xl hover:bg-primary/20 disabled:opacity-50 transition-colors"
+                            className="w-full py-4 md:py-5 bg-primary text-white font-bold text-lg rounded-xl shadow-lg shadow-primary/20 hover:bg-primary/90 disabled:opacity-50 disabled:shadow-none transition-all"
                         >
-                            Check
+                            Cek Member
                         </button>
+
+                        <div className="mt-4 pt-6 border-t border-gray-100 pb-2">
+                            <button
+                                onClick={onSkip}
+                                className="w-full py-3 text-gray-400 hover:text-gray-600 font-medium flex items-center justify-center gap-2 transition-colors hover:bg-gray-50 rounded-lg"
+                            >
+                                Lewati, Lanjut sebagai Tamu <ChevronRight className="w-4 h-4" />
+                            </button>
+                        </div>
                     </div>
 
-                </div>
-
-                <div className="mt-8 pt-6 border-t border-gray-100">
-                    <button
-                        onClick={onSkip}
-                        className="text-gray-400 hover:text-gray-600 font-medium text-sm flex items-center justify-center gap-1 mx-auto transition-colors"
-                    >
-                        Lewati, Lanjut sebagai Tamu <ChevronRight className="w-4 h-4" />
-                    </button>
                 </div>
             </div>
         </div>

@@ -6,28 +6,31 @@ import { ContactData } from '../contacts/ContactsView';
 import { PaymentModal } from './PaymentModal';
 import { PaymentMethod } from '@/types/pos';
 import { printerService } from '../../lib/PrinterService';
+import { FingerprintAuthModal } from '../shared/FingerprintAuthModal';
 
 export interface SalesOrder {
     id: number;
     orderNo: string;
+    order_no?: string;
     date: string;
     items: number;
     productDetails: { name: string; quantity: number; price: number; isManual?: boolean }[];
     subtotal?: number;
     discount?: number;
+    tax?: number;
     totalAmount: number;
     paymentMethod: string;
-    paidAmount?: number;
-    change?: number;
-    status: 'Completed' | 'Returned' | 'Unpaid' | 'Pending' | 'Served' | 'Paid';
+    paymentType?: 'cash' | 'card' | 'e-wallet' | 'qris';
     tableNo?: string;
+    waiterName?: string;
     customerName?: string;
     branchId?: string;
-    waiterName?: string;
-    paymentType?: 'cash' | 'card' | 'e-wallet' | 'qris'; // Added for Accounting
+    status: 'Completed' | 'Returned' | 'Unpaid' | 'Pending' | 'Served' | 'Paid';
+    printCount?: number;
+    paidAmount?: number;
+    change?: number;
     waitingTime?: string;
     syncStatus?: 'synced' | 'pending' | 'syncing';
-    printCount?: number;
     lastPrintedAt?: string;
 }
 
@@ -121,6 +124,7 @@ interface SalesViewProps {
     paymentMethods?: any[];
     tables?: any[];
     onClearTableStatus?: (tableNo: string) => void;
+    settings?: any;
 }
 
 export function SalesView({
@@ -139,7 +143,8 @@ export function SalesView({
     onOpenCashier,
     paymentMethods = [],
     tables = [],
-    onClearTableStatus
+    onClearTableStatus,
+    settings = {}
 }: SalesViewProps) {
     const [activeTab, setActiveTab] = useState<'history' | 'returns'>(initialTab);
     // Date Filter State
@@ -237,27 +242,43 @@ export function SalesView({
         toast.success(`Pembayaran berhasil!`);
 
         // 3. Print Receipt in Background (Non-blocking)
-        printerService.printReceipt({
-            orderNo: saleToProcess.orderNo,
-            tableNo: saleToProcess.tableNo || '-',
-            waiterName: saleToProcess.waiterName || '-',
-            time: new Date().toLocaleString(),
-            items: saleToProcess.productDetails.map(item => ({
-                name: item.name,
-                quantity: item.quantity,
-                price: item.price
-            })),
-            subtotal: saleToProcess.totalAmount,
-            discount: 0,
-            tax: 0,
-            total: saleToProcess.totalAmount,
-            paymentType: updatedSale.paymentMethod,
-            amountPaid: payment.amount,
-            change: payment.change || 0
-        }).catch(error => {
-            console.error('Background print failed:', error);
-            toast.error('Gagal mencetak struk otomatis checks printer connection.');
-        });
+        const printReceiptData = async () => {
+            let wifiVoucher = undefined;
+            if (settings?.enable_wifi_vouchers) {
+                const { WifiVoucherService } = await import('../../lib/WifiVoucherService');
+                wifiVoucher = await WifiVoucherService.getVoucherForSale(saleToProcess.id, saleToProcess.branchId || 'default') || undefined;
+            }
+
+            try {
+                await printerService.printReceipt({
+                    orderNo: saleToProcess.orderNo,
+                    tableNo: saleToProcess.tableNo || '-',
+                    waiterName: saleToProcess.waiterName || '-',
+                    time: new Date().toLocaleString(),
+                    items: saleToProcess.productDetails.map(item => ({
+                        name: item.name,
+                        quantity: item.quantity,
+                        price: item.price
+                    })),
+                    subtotal: saleToProcess.totalAmount + (saleToProcess.discount || 0),
+                    discount: saleToProcess.discount || 0,
+                    tax: saleToProcess.tax || 0,
+                    total: saleToProcess.totalAmount,
+                    paymentType: updatedSale.paymentMethod,
+                    amountPaid: payment.amount,
+                    change: payment.change || 0,
+                    customerName: saleToProcess.customerName,
+                    customerLevel: contacts.find(c => c.name === saleToProcess.customerName)?.tier,
+                    wifiVoucher: wifiVoucher,
+                    wifiNotice: settings?.wifi_voucher_notice
+                });
+            } catch (error) {
+                console.error('Background print failed:', error);
+                toast.error('Gagal mencetak struk otomatis.');
+            }
+        };
+
+        printReceiptData();
     };
 
     useEffect(() => {
@@ -273,6 +294,8 @@ export function SalesView({
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [selectedOrderToEdit, setSelectedOrderToEdit] = useState<SalesOrder | null>(null);
     const [editForm, setEditForm] = useState<Partial<SalesOrder>>({});
+    const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+    const [pendingReturnAction, setPendingReturnAction] = useState<(() => void) | null>(null);
 
     // Keyboard Shortcuts
     useEffect(() => {
@@ -356,40 +379,37 @@ export function SalesView({
         const sale = receiptPreviewData;
         const loadingToast = toast.loading(`Sedang mencetak struk ${sale.orderNo}...`);
 
-        printerService.printReceipt({
-            orderNo: sale.orderNo,
-            tableNo: sale.tableNo || '-',
-            waiterName: sale.waiterName || '-',
-            time: new Date(sale.date).toLocaleString(),
-            items: sale.productDetails.map(item => ({
-                name: item.name,
-                quantity: item.quantity,
-                price: item.price
-            })),
-            subtotal: sale.totalAmount + (sale.discount || 0),
-            discount: sale.discount || 0,
-            tax: 0,
-            total: sale.totalAmount,
-            paymentType: sale.paymentMethod,
-            amountPaid: sale.paidAmount || sale.totalAmount,
-            change: sale.change || 0,
-            customerName: sale.customerName,
-            customerLevel: contacts.find(c => c.name === sale.customerName)?.tier
-        }).then(async () => {
-            // Update print status
-            try {
-                // Assuming we have access to supabase client here or pass it via props.
-                // Since this component is presentational-ish but 'Home' has the logic, ideally we callback.
-                // But for speed, let's use the valid supabase client if available or just optimistically update if we had a handler.
-                // Wait, we don't have onUpdateSale that handles 'partial' updates nicely for metrics?
-                // Let's rely on 'onUpdateSale' if it can handle it, or we need to pass a specific handler 'onPrintSuccess'.
-                // For now, I will use the global supabase client if imported, OR easier:
-                // Check if 'printerService' can handle the DB update? No.
-                // Let's try to fetch supabase here or callback.
-                // Given the context, I'll assume 'onUpdateSale' triggers a refresh or we add a new prop is better logic but
-                // let's do a direct dynamic import or window check? No, unsafe.
+        const printReceiptData = async () => {
+            let wifiVoucher = undefined;
+            if (settings?.enable_wifi_vouchers) {
+                const { WifiVoucherService } = await import('../../lib/WifiVoucherService');
+                wifiVoucher = await WifiVoucherService.getVoucherForSale(sale.id, sale.branchId || 'default') || undefined;
+            }
 
-                // BEST APPROACH: Add 'onPrintSuccess' prop to SalesView or use 'onUpdateSale' to optimistic update
+            try {
+                await printerService.printReceipt({
+                    orderNo: sale.orderNo,
+                    tableNo: sale.tableNo || '-',
+                    waiterName: sale.waiterName || '-',
+                    time: new Date(sale.date).toLocaleString(),
+                    items: sale.productDetails.map(item => ({
+                        name: item.name,
+                        quantity: item.quantity,
+                        price: item.price
+                    })),
+                    subtotal: sale.totalAmount + (sale.discount || 0),
+                    discount: sale.discount || 0,
+                    tax: sale.tax || 0,
+                    total: sale.totalAmount,
+                    paymentType: sale.paymentMethod,
+                    amountPaid: sale.paidAmount || sale.totalAmount,
+                    change: sale.change || 0,
+                    customerName: sale.customerName,
+                    customerLevel: contacts.find(c => c.name === sale.customerName)?.tier,
+                    wifiVoucher: wifiVoucher,
+                    wifiNotice: settings?.wifi_voucher_notice
+                });
+
                 if (onUpdateSale) {
                     onUpdateSale({
                         ...sale,
@@ -397,24 +417,17 @@ export function SalesView({
                         lastPrintedAt: new Date().toISOString()
                     });
                 }
-
-                // Also try to hit the DB directly via a standalone client if we can import it? 
-                // We see 'import { toast } from 'sonner';' but no supabase. 
-                // Let's checking imports... 'printerService'.
-                // I will add the supabase import to step 1 if not present.
-                // Converting this block to use supabase directly:
-            } catch (e) {
-                console.error("Failed to update print status", e);
+                toast.dismiss(loadingToast);
+                setIsReceiptPreviewOpen(false);
+                setReceiptPreviewData(null);
+                toast.success(`Struk ${sale.orderNo} berhasil dicetak`);
+            } catch (error: any) {
+                toast.dismiss(loadingToast);
+                toast.error('Gagal mencetak struk: ' + error.message);
             }
+        };
 
-            toast.dismiss(loadingToast);
-            setIsReceiptPreviewOpen(false);
-            setReceiptPreviewData(null);
-            toast.success(`Struk ${sale.orderNo} berhasil dicetak`);
-        }).catch(error => {
-            toast.dismiss(loadingToast);
-            toast.error('Gagal mencetak struk: ' + error.message);
-        });
+        printReceiptData();
     };
 
     const handleViewDetails = (sale: SalesOrder) => {
@@ -432,14 +445,22 @@ export function SalesView({
         e.preventDefault();
         if (!selectedOrder || !returnReason) return;
 
-        onAddReturn({
-            orderNo: selectedOrder.orderNo,
-            reason: returnReason,
-            refundAmount: selectedOrder.totalAmount,
-        });
+        const processReturn = () => {
+            onAddReturn({
+                orderNo: selectedOrder.orderNo,
+                reason: returnReason,
+                refundAmount: selectedOrder.totalAmount,
+            });
+            setIsReturnModalOpen(false);
+            toast.success('Retur penjualan berhasil diproses');
+        };
 
-        setIsReturnModalOpen(false);
-        toast.success('Retur penjualan berhasil diproses');
+        if (settings?.enable_manager_auth) {
+            setPendingReturnAction(() => processReturn);
+            setIsAuthModalOpen(true);
+        } else {
+            processReturn();
+        }
     };
 
     const handleEditClick = (sale: SalesOrder) => {
@@ -472,20 +493,20 @@ export function SalesView({
                 <table className="w-full text-[13px]">
                     <thead className="bg-gray-50 text-gray-500 text-left sticky top-0">
                         <tr>
-                            <th className="px-3 py-3">No. Invoice</th>
-                            <th className="px-3 py-3">Meja</th>
-                            <th className="px-3 py-3">Pelanggan</th>
-                            <th className="px-3 py-3">Tanggal</th>
-                            <th className="px-3 py-3 text-center hidden xl:table-cell">Item</th>
-                            <th className="px-3 py-3 text-right">Diskon</th>
-                            <th className="px-3 py-3 text-right">Total</th>
-                            <th className="px-3 py-3">Bayar</th>
-                            <th className="px-3 py-3">Pelayan</th>
-                            <th className="px-3 py-3 text-center">Cetak</th>
-                            <th className="px-3 py-3 text-center">Status</th>
-                            <th className="px-3 py-3 text-center hidden lg:table-cell">Sinkron</th>
-                            <th className="px-3 py-3 text-center">Durasi Saji</th>
-                            <th className="px-3 py-3 text-center whitespace-nowrap">Aksi</th>
+                            <th className="px-3 py-2">No. Invoice</th>
+                            <th className="px-3 py-2">Meja</th>
+                            <th className="px-3 py-2">Pelanggan</th>
+                            <th className="px-3 py-2">Tanggal</th>
+                            <th className="px-3 py-2 text-center hidden xl:table-cell">Item</th>
+                            <th className="px-3 py-2 text-right">Diskon</th>
+                            <th className="px-3 py-2 text-right">Total</th>
+                            <th className="px-3 py-2">Bayar</th>
+                            <th className="px-3 py-2">Pelayan</th>
+                            <th className="px-3 py-2 text-center">Cetak</th>
+                            <th className="px-3 py-2 text-center">Status</th>
+                            <th className="px-3 py-2 text-center hidden lg:table-cell">Sinkron</th>
+                            <th className="px-3 py-2 text-center">Durasi Saji</th>
+                            <th className="px-3 py-2 text-center whitespace-nowrap">Aksi</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -501,7 +522,7 @@ export function SalesView({
                         ) : (
                             filteredSales.map(sale => (
                                 <tr key={sale.id} className="hover:bg-gray-50">
-                                    <td className="px-3 py-3">
+                                    <td className="px-3 py-2">
                                         <div className="font-mono text-blue-600 font-medium mb-1 whitespace-nowrap">{sale.orderNo}</div>
                                         <div className="text-[10px] text-gray-400 space-y-0.5 max-w-[120px] truncate">
                                             {sale.productDetails.map((item, idx) => (
@@ -512,7 +533,7 @@ export function SalesView({
                                             ))}
                                         </div>
                                     </td>
-                                    <td className="px-3 py-3">
+                                    <td className="px-3 py-2">
                                         {sale.tableNo ? (
                                             <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-md text-[10px] font-bold font-mono">
                                                 {sale.tableNo}
@@ -521,7 +542,7 @@ export function SalesView({
                                             <span className="text-gray-300 text-xs">-</span>
                                         )}
                                     </td>
-                                    <td className="px-3 py-3">
+                                    <td className="px-3 py-2">
                                         {sale.customerName ? (
                                             <span className="text-gray-900 font-medium whitespace-nowrap">
                                                 {sale.customerName}
@@ -530,7 +551,7 @@ export function SalesView({
                                             <span className="text-gray-300 text-xs">-</span>
                                         )}
                                     </td>
-                                    <td className="px-3 py-3 text-gray-500 whitespace-nowrap">
+                                    <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
                                         {new Date(sale.date).toLocaleString('id-ID', {
                                             year: 'numeric',
                                             month: 'short',
@@ -542,13 +563,13 @@ export function SalesView({
                                             // timeZone: 'Asia/Jakarta' 
                                         })}
                                     </td>
-                                    <td className="px-3 py-3 text-center hidden xl:table-cell">{sale.items}</td>
-                                    <td className="px-3 py-3 text-right text-red-500 font-medium whitespace-nowrap">
+                                    <td className="px-3 py-2 text-center hidden xl:table-cell">{sale.items}</td>
+                                    <td className="px-3 py-2 text-right text-red-500 font-medium whitespace-nowrap">
                                         {sale.discount ? `- Rp ${sale.discount.toLocaleString()}` : '-'}
                                     </td>
-                                    <td className="px-3 py-3 text-right font-bold whitespace-nowrap">Rp {sale.totalAmount.toLocaleString()}</td>
-                                    <td className="px-3 py-3 text-gray-600 truncate max-w-[80px]">{sale.paymentMethod}</td>
-                                    <td className="px-3 py-3">
+                                    <td className="px-3 py-2 text-right font-bold whitespace-nowrap">Rp {sale.totalAmount.toLocaleString()}</td>
+                                    <td className="px-3 py-2 text-gray-600 truncate max-w-[80px]">{sale.paymentMethod}</td>
+                                    <td className="px-3 py-2">
                                         {sale.waiterName ? (
                                             <span className="text-gray-700 text-[10px] font-medium bg-gray-100 px-1.5 py-0.5 rounded whitespace-nowrap">
                                                 {sale.waiterName}
@@ -557,7 +578,7 @@ export function SalesView({
                                             <span className="text-gray-300 text-xs">-</span>
                                         )}
                                     </td>
-                                    <td className="px-3 py-3 text-center">
+                                    <td className="px-3 py-2 text-center">
                                         <div className="flex justify-center" title={sale.printCount ? `Dicetak ${sale.printCount}x\nTerakhir: ${new Date(sale.lastPrintedAt!).toLocaleString()}` : "Belum dicetak"}>
                                             <div className={`w-6 h-6 rounded-full flex items-center justify-center border ${!sale.printCount ? 'bg-gray-50 border-gray-200 text-gray-300' :
                                                 sale.printCount === 1 ? 'bg-green-50 border-green-200 text-green-600' :
@@ -570,7 +591,7 @@ export function SalesView({
                                             )}
                                         </div>
                                     </td>
-                                    <td className="px-3 py-3 text-center">
+                                    <td className="px-3 py-2 text-center">
                                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${sale.status === 'Completed' ? 'bg-green-50 text-green-700 border-green-200' :
                                             sale.status === 'Served' ? 'bg-blue-50 text-blue-700 border-blue-200' :
                                                 sale.status === 'Pending' ? 'bg-orange-50 text-orange-700 border-orange-200' :
@@ -587,7 +608,7 @@ export function SalesView({
                                                                 sale.status === 'Returned' ? 'Retur' : sale.status}
                                         </span>
                                     </td>
-                                    <td className="px-3 py-3 text-center hidden lg:table-cell">
+                                    <td className="px-3 py-2 text-center hidden lg:table-cell">
                                         {sale.syncStatus === 'synced' ? (
                                             <div className="flex justify-center" title="Tersinkron dengan cloud">
                                                 <div className="w-5 h-5 bg-blue-100 rounded-full flex items-center justify-center">
@@ -606,10 +627,10 @@ export function SalesView({
                                             </div>
                                         )}
                                     </td>
-                                    <td className="px-3 py-3 text-center">
+                                    <td className="px-3 py-2 text-center">
                                         <span className="text-xs font-mono text-gray-500">{sale.waitingTime || '-'}</span>
                                     </td>
-                                    <td className="px-3 py-3 flex justify-center gap-0.5 whitespace-nowrap">
+                                    <td className="px-3 py-2 flex justify-center gap-0.5 whitespace-nowrap">
                                         <button
                                             onClick={() => handleViewDetails(sale)}
                                             className="p-1.5 hover:bg-blue-50 text-blue-600 rounded-lg group"
@@ -1111,7 +1132,7 @@ export function SalesView({
                                 {/* Header */}
                                 <div className="space-y-0.5">
                                     <div className="font-bold text-xs uppercase text-gray-800">
-                                        {printerService.getTemplate().header || 'WINNY CAFE'}
+                                        {printerService.getTemplate().header || 'WINNY PANGERAN NATAKUSUMA'}
                                     </div>
                                     <div className="whitespace-pre-line">
                                         {printerService.getTemplate().address || ''}
@@ -1201,6 +1222,21 @@ export function SalesView({
                 totalAmount={selectedSaleForPayment?.totalAmount || 0}
                 onPaymentComplete={handlePaymentComplete}
                 paymentMethods={paymentMethods}
+            />
+
+            <FingerprintAuthModal
+                open={isAuthModalOpen}
+                onClose={() => {
+                    setIsAuthModalOpen(false);
+                    setPendingReturnAction(null);
+                }}
+                onSuccess={(manager) => {
+                    toast.success(`Diizinkan oleh ${manager.name}`);
+                    if (pendingReturnAction) {
+                        pendingReturnAction();
+                    }
+                }}
+                employees={employees}
             />
         </div>
     );

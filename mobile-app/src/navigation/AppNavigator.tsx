@@ -10,6 +10,7 @@ import HistoryScreen from '../screens/HistoryScreen';
 import ProductScreen from '../screens/ProductScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import AccountingScreen from '../screens/AccountingScreen';
+import StoreSettingsScreen from '../screens/StoreSettingsScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -24,6 +25,7 @@ export default function AppNavigator() {
                 <Stack.Screen name="Products" component={ProductScreen} />
                 <Stack.Screen name="Settings" component={SettingsScreen} />
                 <Stack.Screen name="Accounting" component={AccountingScreen} />
+                <Stack.Screen name="StoreSettings" component={StoreSettingsScreen} />
             </Stack.Navigator>
         </NavigationContainer>
     );

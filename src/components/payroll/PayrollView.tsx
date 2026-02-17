@@ -47,7 +47,7 @@ export function PayrollView({
         if (item) {
             onPayrollAction('update', {
                 ...item,
-                status: 'Paid',
+                receipt_header: 'Winny Pangeran Natakusuma',
                 paymentDate: new Date().toISOString().split('T')[0]
             });
         }
@@ -173,13 +173,13 @@ export function PayrollView({
                             <table className="w-full text-sm item-center">
                                 <thead className="bg-gray-50 text-gray-500 text-left">
                                     <tr>
-                                        <th className="px-6 py-4 font-medium">Karyawan</th>
-                                        <th className="px-6 py-4 font-medium text-right">Gaji Pokok</th>
-                                        <th className="px-6 py-4 font-medium text-right">Tunjangan</th>
-                                        <th className="px-6 py-4 font-medium text-right text-red-600">Potongan</th>
-                                        <th className="px-6 py-4 font-medium text-right">Total Terima</th>
-                                        <th className="px-6 py-4 font-medium text-center">Status</th>
-                                        <th className="px-6 py-4 font-medium text-center">Aksi</th>
+                                        <th className="px-4 py-2 font-medium">Karyawan</th>
+                                        <th className="px-4 py-2 font-medium text-right">Gaji Pokok</th>
+                                        <th className="px-4 py-2 font-medium text-right">Tunjangan</th>
+                                        <th className="px-4 py-2 font-medium text-right text-red-600">Potongan</th>
+                                        <th className="px-4 py-2 font-medium text-right">Total Terima</th>
+                                        <th className="px-4 py-2 font-medium text-center">Status</th>
+                                        <th className="px-4 py-2 font-medium text-center">Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
@@ -187,22 +187,22 @@ export function PayrollView({
                                         const total = item.basicSalary + item.allowance - item.deduction;
                                         return (
                                             <tr key={item.id} className="hover:bg-gray-50">
-                                                <td className="px-6 py-4">
+                                                <td className="px-4 py-2">
                                                     <div className="font-bold text-gray-800">{item.employeeName}</div>
                                                     <div className="text-xs text-gray-400">{item.position}</div>
                                                 </td>
-                                                <td className="px-6 py-4 text-right">Rp {item.basicSalary.toLocaleString()}</td>
-                                                <td className="px-6 py-4 text-right text-green-600">+ Rp {item.allowance.toLocaleString()}</td>
-                                                <td className="px-6 py-4 text-right text-red-600">- Rp {item.deduction.toLocaleString()}</td>
-                                                <td className="px-6 py-4 text-right font-bold text-gray-800">Rp {total.toLocaleString()}</td>
-                                                <td className="px-6 py-4 text-center">
-                                                    <span className={`px-2 py-1 rounded-full text-xs font-medium border ${item.status === 'Paid' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-orange-50 text-orange-700 border-orange-200'
+                                                <td className="px-4 py-2 text-right">Rp {item.basicSalary.toLocaleString()}</td>
+                                                <td className="px-4 py-2 text-right text-green-600">+ Rp {item.allowance.toLocaleString()}</td>
+                                                <td className="px-4 py-2 text-right text-red-600">- Rp {item.deduction.toLocaleString()}</td>
+                                                <td className="px-4 py-2 text-right font-bold text-gray-800">Rp {total.toLocaleString()}</td>
+                                                <td className="px-4 py-2 text-center">
+                                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${item.status === 'Paid' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-orange-50 text-orange-700 border-orange-200'
                                                         }`}>
                                                         {item.status}
                                                     </span>
                                                     {item.status === 'Paid' && <div className="text-[10px] text-gray-400 mt-1">{item.paymentDate}</div>}
                                                 </td>
-                                                <td className="px-6 py-4 flex justify-center gap-2 items-center">
+                                                <td className="px-4 py-2 flex justify-center gap-1 items-center">
                                                     {item.status === 'Pending' ? (
                                                         <>
                                                             <button onClick={() => { setFormData(item); setIsFormOpen(true); }} className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg" title="Edit">
@@ -329,7 +329,7 @@ export function PayrollView({
                                 <div className="bg-white p-8 shadow-sm border border-gray-200 mx-auto max-w-xl">
                                     {/* SLIP CONTENT */}
                                     <div className="text-center mb-6">
-                                        <h2 className="text-xl font-bold uppercase tracking-wider">{settings?.name || 'WINNY CAFE'}</h2>
+                                        <h2 className="text-xl font-bold uppercase tracking-wider">{settings?.name || 'WINNY PANGERAN NATAKUSUMA'}</h2>
                                         <p className="text-xs text-gray-500">{settings?.address || 'Jl. Contoh Alamat No. 123'}</p>
                                         <div className="w-full h-px bg-gray-300 my-4"></div>
                                         <h3 className="text-lg font-bold uppercase underline">SLIP GAJI KARYAWAN</h3>
@@ -405,7 +405,7 @@ export function PayrollView({
                     {/* Hidden Print Area - Only visible when printing */}
                     <div className="hidden print:block fixed inset-0 bg-white z-[100] p-8">
                         <div className="text-center mb-6">
-                            <h2 className="text-2xl font-bold uppercase tracking-wider">{settings?.name || 'WINNY CAFE'}</h2>
+                            <h2 className="text-2xl font-bold uppercase tracking-wider">{settings?.name || 'WINNY PANGERAN NATAKUSUMA'}</h2>
                             <p className="text-sm text-gray-500">{settings?.address || 'Jl. Contoh Alamat No. 123'}</p>
                             <div className="w-full h-px bg-black my-4"></div>
                             <h3 className="text-xl font-bold uppercase underline mb-1">SLIP GAJI KARYAWAN</h3>

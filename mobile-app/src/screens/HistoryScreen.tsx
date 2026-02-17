@@ -1,12 +1,7 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, FlatList } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, FlatList, StyleSheet, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { styled } from 'nativewind';
 import { useNavigation } from '@react-navigation/native';
-
-const StyledView = styled(View);
-const StyledText = styled(Text);
-const StyledTouchableOpacity = styled(TouchableOpacity);
 
 interface HistoryItem {
     name: string;
@@ -74,68 +69,209 @@ const MOCK_HISTORY: HistoryData[] = [
 export default function HistoryScreen() {
     const navigation = useNavigation();
 
+    const { width, height } = useWindowDimensions();
+    const isLandscape = width > height;
+    const isTablet = width >= 768 || height >= 768;
+
     const formatCurrency = (value: number) => {
         return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(value);
     };
 
     return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#f9fafb' }}>
-            <StyledView className="flex-1">
+        <SafeAreaView style={styles.container}>
+            <View style={styles.flex1}>
                 {/* Header */}
-                <StyledView className="bg-white p-4 flex-row items-center shadow-sm z-10">
-                    <StyledTouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
-                        <StyledText className="text-2xl">←</StyledText>
-                    </StyledTouchableOpacity>
-                    <StyledText className="text-xl font-bold text-gray-800">Riwayat Penjualan</StyledText>
-                </StyledView>
+                <View style={styles.header}>
+                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+                        <Text style={styles.backButtonText}>←</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.headerTitle}>Riwayat Penjualan</Text>
+                </View>
 
                 {/* List */}
                 <FlatList
+                    key={isLandscape ? 'landscape-list' : 'portrait-list'}
                     data={MOCK_HISTORY}
                     keyExtractor={(item) => item.id}
+                    numColumns={isLandscape ? 2 : 1}
                     contentContainerStyle={{ padding: 16 }}
+                    columnWrapperStyle={isLandscape ? { gap: 16 } : undefined}
                     renderItem={({ item }) => (
-                        <StyledView className="bg-white p-4 rounded-2xl mb-4 shadow-sm border border-gray-100">
-                            <StyledView className="flex-row justify-between items-start mb-3">
-                                <StyledView>
-                                    <StyledText className="text-blue-600 font-bold font-mono text-sm">{item.invoiceNo}</StyledText>
-                                    <StyledText className="text-gray-400 text-xs mt-1">{item.date}</StyledText>
-                                </StyledView>
-                                <StyledView className="bg-green-50 px-2 py-1 rounded-md border border-green-100">
-                                    <StyledText className="text-green-600 text-[10px] font-bold">Selesai</StyledText>
-                                </StyledView>
-                            </StyledView>
+                        <View style={[styles.card, isLandscape && { flex: 1 }]}>
+                            <View style={styles.cardHeader}>
+                                <View>
+                                    <Text style={styles.invoiceNo}>{item.invoiceNo}</Text>
+                                    <Text style={styles.date}>{item.date}</Text>
+                                </View>
+                                <View style={styles.statusBadge}>
+                                    <Text style={styles.statusText}>Selesai</Text>
+                                </View>
+                            </View>
 
                             {/* Products List */}
-                            <StyledView className="border-t border-b border-gray-50 py-3 mb-3">
-                                {item.items.map((prod, idx) => (
-                                    <StyledView key={idx} className="flex-row justify-between items-center mb-1">
-                                        <StyledView className="flex-row items-center flex-1">
-                                            <StyledText className="text-gray-600 text-sm">{prod.name} x{prod.quantity}</StyledText>
+                            <View style={styles.itemsList}>
+                                {item.items.map((prod: HistoryItem, idx: number) => (
+                                    <View key={idx} style={styles.itemRow}>
+                                        <View style={styles.itemNameContainer}>
+                                            <Text style={styles.itemName}>{prod.name} x{prod.quantity}</Text>
                                             {prod.isManual && (
-                                                <StyledView className="bg-orange-100 px-1 ml-1 rounded-sm">
-                                                    <StyledText className="text-orange-600 text-[8px] font-bold">MANUAL</StyledText>
-                                                </StyledView>
+                                                <View style={styles.manualBadge}>
+                                                    <Text style={styles.manualText}>MANUAL</Text>
+                                                </View>
                                             )}
-                                        </StyledView>
-                                        <StyledText className="text-gray-400 text-sm">{formatCurrency(prod.price * prod.quantity)}</StyledText>
-                                    </StyledView>
+                                        </View>
+                                        <Text style={styles.itemPrice}>{formatCurrency(prod.price * prod.quantity)}</Text>
+                                    </View>
                                 ))}
-                            </StyledView>
+                            </View>
 
-                            <StyledView className="flex-row justify-between items-center">
-                                <StyledView>
-                                    <StyledText className="text-gray-400 text-[10px]">Pembayaran: {item.paymentMethod}</StyledText>
-                                </StyledView>
-                                <StyledView className="items-end">
-                                    <StyledText className="text-gray-400 text-[10px]">Total</StyledText>
-                                    <StyledText className="text-lg font-bold text-gray-800">{formatCurrency(item.total)}</StyledText>
-                                </StyledView>
-                            </StyledView>
-                        </StyledView>
+                            <View style={styles.cardFooter}>
+                                <View>
+                                    <Text style={styles.paymentMethod}>Pembayaran: {item.paymentMethod}</Text>
+                                </View>
+                                <View style={styles.totalContainer}>
+                                    <Text style={styles.totalLabel}>Total</Text>
+                                    <Text style={styles.totalAmount}>{formatCurrency(item.total)}</Text>
+                                </View>
+                            </View>
+                        </View>
                     )}
                 />
-            </StyledView>
+            </View>
         </SafeAreaView>
     );
 }
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        backgroundColor: '#f9fafb',
+    },
+    flex1: {
+        flex: 1,
+    },
+    header: {
+        backgroundColor: 'white',
+        padding: 16,
+        flexDirection: 'row',
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 5,
+        elevation: 1,
+        zIndex: 10,
+    },
+    backButton: {
+        marginRight: 16,
+    },
+    backButtonText: {
+        fontSize: 24,
+        color: '#1f2937',
+    },
+    headerTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#1f2937',
+    },
+    card: {
+        backgroundColor: 'white',
+        padding: 16,
+        borderRadius: 16,
+        marginBottom: 16,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 5,
+        elevation: 1,
+        borderWidth: 1,
+        borderColor: '#f3f4f6',
+    },
+    cardHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        marginBottom: 12,
+    },
+    invoiceNo: {
+        color: '#2563eb',
+        fontWeight: 'bold',
+        fontSize: 14,
+    },
+    date: {
+        color: '#9ca3af',
+        fontSize: 12,
+        marginTop: 4,
+    },
+    statusBadge: {
+        backgroundColor: '#f0fdf4',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: '#dcfce7',
+    },
+    statusText: {
+        color: '#16a34a',
+        fontSize: 10,
+        fontWeight: 'bold',
+    },
+    itemsList: {
+        borderTopWidth: 1,
+        borderBottomWidth: 1,
+        borderColor: '#f9fafb',
+        paddingVertical: 12,
+        marginBottom: 12,
+    },
+    itemRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 4,
+    },
+    itemNameContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+    },
+    itemName: {
+        color: '#4b5563',
+        fontSize: 14,
+    },
+    manualBadge: {
+        backgroundColor: '#ffedd5',
+        paddingHorizontal: 4,
+        marginLeft: 4,
+        borderRadius: 2,
+    },
+    manualText: {
+        color: '#ea580c',
+        fontSize: 8,
+        fontWeight: 'bold',
+    },
+    itemPrice: {
+        color: '#9ca3af',
+        fontSize: 14,
+    },
+    cardFooter: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    paymentMethod: {
+        color: '#9ca3af',
+        fontSize: 10,
+    },
+    totalContainer: {
+        alignItems: 'flex-end',
+    },
+    totalLabel: {
+        color: '#9ca3af',
+        fontSize: 10,
+    },
+    totalAmount: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#1f2937',
+    },
+});

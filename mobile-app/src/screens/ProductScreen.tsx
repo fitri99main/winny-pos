@@ -1,34 +1,83 @@
 import React from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { styled } from 'nativewind';
 import { useNavigation } from '@react-navigation/native';
-
-const StyledView = styled(View);
-const StyledText = styled(Text);
-const StyledTouchableOpacity = styled(TouchableOpacity);
 
 export default function ProductScreen() {
     const navigation = useNavigation();
 
     return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#f9fafb' }}>
-            <StyledView className="flex-1 p-6">
-                <StyledView className="flex-row items-center mb-6">
-                    <StyledTouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
-                        <StyledText className="text-2xl">←</StyledText>
-                    </StyledTouchableOpacity>
-                    <StyledText className="text-2xl font-bold text-gray-800">Produk</StyledText>
-                </StyledView>
+        <SafeAreaView style={styles.container}>
+            <View style={styles.content}>
+                <View style={styles.header}>
+                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+                        <Text style={styles.backButtonText}>←</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.headerTitle}>Produk</Text>
+                </View>
 
-                <StyledView className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex-1 justify-center items-center">
-                    <StyledText className="text-4xl mb-4">📦</StyledText>
-                    <StyledText className="text-lg font-semibold text-gray-800 mb-2">Manajemen Produk</StyledText>
-                    <StyledText className="text-gray-500 text-center">
+                <View style={styles.emptyState}>
+                    <Text style={styles.emptyIcon}>📦</Text>
+                    <Text style={styles.emptyTitle}>Manajemen Produk</Text>
+                    <Text style={styles.emptyDescription}>
                         Daftar produk akan ditampilkan di sini.
-                    </StyledText>
-                </StyledView>
-            </StyledView>
+                    </Text>
+                </View>
+            </View>
         </SafeAreaView>
     );
 }
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        backgroundColor: '#f9fafb',
+    },
+    content: {
+        flex: 1,
+        padding: 24,
+    },
+    header: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 24,
+    },
+    backButton: {
+        marginRight: 16,
+    },
+    backButtonText: {
+        fontSize: 24,
+    },
+    headerTitle: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#1f2937',
+    },
+    emptyState: {
+        backgroundColor: 'white',
+        padding: 24,
+        borderRadius: 12,
+        shadowColor: '#1f2937',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 10,
+        elevation: 1,
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    emptyIcon: {
+        fontSize: 40,
+        marginBottom: 16,
+    },
+    emptyTitle: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: '#1f2937',
+        marginBottom: 8,
+    },
+    emptyDescription: {
+        color: '#6b7280',
+        textAlign: 'center',
+    },
+});

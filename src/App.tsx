@@ -1,8 +1,9 @@
-import { Suspense } from "react";
-import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { Suspense, useEffect } from "react";
+import { Routes, Route, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import Home from "./components/home";
 import LoginPage from "./components/auth/LoginPage";
 import { AuthProvider, useAuth } from "./components/auth/AuthProvider";
+import { SessionGuardProvider } from "./components/auth/SessionGuardContext";
 import { KioskView } from "./components/kiosk/KioskView";
 import { ESSView } from "./components/attendance/ESSView";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -28,28 +29,49 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function App() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const isKioskMode = localStorage.getItem('app_mode') === 'kiosk';
+
+  useEffect(() => {
+    if (searchParams.get('setup') === 'kiosk') {
+      localStorage.setItem('app_mode', 'kiosk');
+      navigate('/kiosk', { replace: true });
+    }
+  }, [searchParams, navigate]);
+
   return (
-    <AuthProvider>
-      <Suspense fallback={<p>Loading...</p>}>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/kiosk" element={
-            <ErrorBoundary>
-              <KioskView />
-            </ErrorBoundary>
-          } />
-          <Route path="/ess" element={<ESSView />} />
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <Home />
-              </ProtectedRoute>
-            }
-          />
-        </Routes>
-      </Suspense>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <SessionGuardProvider>
+          <Suspense fallback={<p>Loading...</p>}>
+            <Routes>
+              {isKioskMode ? (
+                <>
+                  <Route path="/kiosk" element={<KioskView />} />
+                  <Route path="*" element={<Navigate to="/kiosk" replace />} />
+                </>
+              ) : (
+                <>
+                  <Route path="/login" element={<LoginPage />} />
+                  <Route path="/kiosk" element={<KioskView />} />
+                  <Route path="/ess" element={<ESSView />} />
+                  <Route
+                    path="/"
+                    element={
+                      <ProtectedRoute>
+                        <Home />
+                      </ProtectedRoute>
+                    }
+                  />
+                </>
+              )}
+            </Routes>
+          </Suspense>
+        </SessionGuardProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 

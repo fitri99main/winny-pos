@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Search, Edit, Trash2, Mail, Phone, Briefcase, CreditCard, Printer, X, Settings2 } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, Mail, Phone, Briefcase, CreditCard, Printer, X, Settings2, Zap } from 'lucide-react';
 import { Button } from '../ui/button';
 import { QRCard } from '../ui/QRCard';
 import { toast } from 'sonner';
@@ -250,18 +250,19 @@ export function EmployeesView({
                                         />
                                     </div>
                                     <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Barcode / ID Card</label>
+                                        <label className="text-[10px] font-black text-blue-500 uppercase tracking-widest pl-1">Fingerprint ID / Barcode</label>
                                         <div className="relative">
                                             <input
-                                                className="w-full pl-12 p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-mono tracking-wider font-bold"
+                                                className="w-full pl-12 p-3 md:p-4 bg-blue-50/30 border border-blue-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-mono tracking-wider font-bold"
                                                 value={formData.barcode || ''}
                                                 onChange={e => setFormData({ ...formData, barcode: e.target.value })}
-                                                placeholder="Scan Here..."
+                                                placeholder="Scan Fingerprint..."
                                             />
                                             <div className="absolute left-4 top-1/2 -translate-y-1/2">
-                                                <CreditCard className="w-5 h-5 text-gray-400" />
+                                                <Zap className="w-5 h-5 text-blue-400" />
                                             </div>
                                         </div>
+                                        <p className="text-[9px] text-blue-600/60 pl-1">Tempelkan jari di scanner atau scan kartu untuk memasukkan ID.</p>
                                     </div>
                                     <div className="space-y-2">
                                         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Nomor WhatsApp</label>

@@ -34,7 +34,8 @@ class PrinterService {
     private barPrinter: PrinterDevice | null = null;
     private cashierPrinter: PrinterDevice | null = null;
     private template: any = {
-        header: 'WINNY CAFE',
+        store_name: 'Winny Pangeran Natakusuma',
+        receipt_header: 'Winny Pangeran Natakusuma',
         address: 'Jl. Contoh No. 123, Kota',
         footer: 'Terima Kasih Atas Kunjungan Anda',
         paperWidth: '58mm',
@@ -181,6 +182,8 @@ class PrinterService {
         change: number;
         customerName?: string;
         customerLevel?: string;
+        wifiVoucher?: string;
+        wifiNotice?: string;
     }) {
         const printer = this.cashierPrinter;
         if (!printer || !printer.characteristic) {
@@ -197,7 +200,7 @@ class PrinterService {
         // Header (Double Size)
         commands.push(new Uint8Array([this.GS, 0x21, 0x11])); // Double width & height
         commands.push(new Uint8Array([this.ESC, 0x61, 0x01])); // Center align
-        commands.push(encoder.encode(`${(this.template.header || 'WINNY CAFE').toUpperCase()}\n`));
+        commands.push(encoder.encode(`${(this.template.header || 'WINNY PANGERAN NATAKUSUMA').toUpperCase()}\n`));
 
         // Reset size & Address
         commands.push(new Uint8Array([this.GS, 0x21, 0x00]));
@@ -247,6 +250,18 @@ class PrinterService {
         commands.push(encoder.encode(`${data.paymentType.padEnd(labelWidth)}${data.amountPaid.toLocaleString('id-ID').padStart(valWidth)}\n`));
         commands.push(encoder.encode(`${'Kembali'.padEnd(labelWidth)}${data.change.toLocaleString('id-ID').padStart(valWidth)}\n`));
         commands.push(encoder.encode(line));
+
+        // WiFi Voucher
+        if (data.wifiVoucher) {
+            commands.push(encoder.encode(line));
+            commands.push(new Uint8Array([this.ESC, 0x61, 0x01])); // Center
+            if (data.wifiNotice) {
+                commands.push(encoder.encode(`${data.wifiNotice}\n`));
+            }
+            commands.push(new Uint8Array([this.GS, 0x21, 0x11])); // Double Size
+            commands.push(encoder.encode(`\n${data.wifiVoucher}\n\n`));
+            commands.push(new Uint8Array([this.GS, 0x21, 0x00])); // Reset
+        }
 
         // Footer
         if (this.template.footer) {

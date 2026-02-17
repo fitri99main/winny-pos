@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { ArrowLeft, ShoppingCart, Store, User, Users, ChevronDown, Check, Puzzle, LogOut, Cake, CreditCard, Search, Star } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '../auth/AuthProvider';
+import { useSessionGuard } from '../auth/SessionGuardContext';
 import { CashierSessionModal } from './CashierSessionModal';
 import { printerService } from '../../lib/PrinterService';
 import { ContactData } from '../contacts/ContactsView';
@@ -127,32 +128,23 @@ export function CashierInterface({
   const [addonPendingProduct, setAddonPendingProduct] = useState<Product | null>(null);
   const [tempSelectedAddons, setTempSelectedAddons] = useState<Addon[]>([]);
 
-  // Shift Session State
-  const { user } = useAuth();
-  const [currentSession, setCurrentSession] = useState<any>(null);
+  // Shift Session State (Managed by Context)
+  const { currentSession, checkSession, requireMandatorySession } = useSessionGuard();
   const [sessionModalOpen, setSessionModalOpen] = useState(false);
   const [sessionMode, setSessionMode] = useState<'open' | 'close'>('open');
 
+  // Initial Check
   useEffect(() => {
-    const checkSession = async () => {
-      if (!user) return;
-      const { data } = await supabase
-        .from('cashier_sessions')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('status', 'Open')
-        .maybeSingle();
-
-      setCurrentSession(data);
-
-      if (!data && settings?.require_starting_cash) {
-        setSessionMode('open');
-        setSessionModalOpen(true);
-      }
-    };
-
     checkSession();
-  }, [user, settings?.require_starting_cash]);
+  }, []);
+
+  // Enforce Mandatory Session
+  useEffect(() => {
+    if (!currentSession && requireMandatorySession && !sessionModalOpen) {
+      setSessionMode('open');
+      setSessionModalOpen(true);
+    }
+  }, [currentSession, requireMandatorySession]);
 
   // Calculate occupied tables based on active sales AND table status
   const occupiedTableNumbers = useMemo(() => {
@@ -592,11 +584,11 @@ export function CashierInterface({
   return (
     <div className="h-full flex flex-col bg-pos-cream noise-texture overflow-hidden relative">
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden pb-24">
+      <div className="flex-1 flex overflow-hidden pb-16 md:pb-20">
         {/* Left: Product Grid (75%) */}
-        <div className="flex-[0.75] flex flex-col p-6 overflow-hidden">
+        <div className="flex-[0.75] flex flex-col p-3 md:p-4 lg:p-5 overflow-hidden">
           {/* Header */}
-          <div className="flex items-center gap-3 mb-6">
+          <div className="flex items-center gap-3 mb-4">
             {onBack && (
               <button
                 onClick={() => setViewMode('tables')}
@@ -628,7 +620,7 @@ export function CashierInterface({
             <div className="flex-1 flex items-center gap-2 ml-6 pl-6 border-l border-gray-200 overflow-x-auto">
 
               {/* Table Selector */}
-              <div className="flex items-center gap-2 bg-white/60 px-3 py-2 rounded-xl border border-white/50 shadow-sm shrink-0">
+              <div className="flex items-center gap-2 bg-white/60 px-2 py-1.5 rounded-xl border border-white/50 shadow-sm shrink-0">
                 <div className="w-6 h-6 rounded-md bg-orange-100 flex items-center justify-center text-orange-600 shrink-0">
                   <Store className="w-3.5 h-3.5" />
                 </div>
@@ -651,7 +643,7 @@ export function CashierInterface({
               </div>
 
               {/* Customer Selector */}
-              <div className="flex items-center gap-2 bg-white/60 px-3 py-2 rounded-xl border border-white/50 shadow-sm shrink-0">
+              <div className="flex items-center gap-2 bg-white/60 px-2 py-1.5 rounded-xl border border-white/50 shadow-sm shrink-0">
                 <div className="w-6 h-6 rounded-md bg-blue-100 flex items-center justify-center text-blue-600 shrink-0">
                   <Users className="w-3.5 h-3.5" />
                 </div>
@@ -674,7 +666,7 @@ export function CashierInterface({
               </div>
 
               {/* Waiter Selector */}
-              <div className="flex items-center gap-2 bg-white/60 px-3 py-2 rounded-xl border border-white/50 shadow-sm shrink-0">
+              <div className="flex items-center gap-2 bg-white/60 px-2 py-1.5 rounded-xl border border-white/50 shadow-sm shrink-0">
                 <div className="w-6 h-6 rounded-md bg-purple-100 flex items-center justify-center text-purple-600 shrink-0">
                   <User className="w-3.5 h-3.5" />
                 </div>
@@ -700,7 +692,7 @@ export function CashierInterface({
           </div>
 
           {/* Search Bar */}
-          <div className="mb-6">
+          <div className="mb-4">
             <SearchBar
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
@@ -709,7 +701,7 @@ export function CashierInterface({
           </div>
 
           {/* Category Tabs */}
-          <div className="mb-6">
+          <div className="mb-4">
             <CategoryTabs
               categories={['Semua', ...(categories || []).filter(c => c && c.name).map(c => c.name)]}
               activeCategory={activeCategory}
@@ -719,7 +711,7 @@ export function CashierInterface({
 
           {/* Product Grid */}
           <div className="flex-1 overflow-y-auto">
-            <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 pb-6">
+            <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 md:gap-3 pb-6">
               {filteredProducts.filter(p => p && p.id).map((product) => (
                 <ProductTile
                   key={product.id}
@@ -907,17 +899,9 @@ export function CashierInterface({
         onOpenChange={setSessionModalOpen}
         mode={sessionMode}
         session={currentSession}
-        settings={settings}
+        settings={{ ...settings, require_mandatory_session: requireMandatorySession }}
         onSessionComplete={(session) => {
-          setCurrentSession(session);
-          // If session was closed (null), maybe redirect or show summary?
-          // User likely stays on POS but now in "Closed" state where they can try to open again.
-          if (!session && settings?.require_starting_cash) {
-            // If strict, maybe force open again logic handled by effect? 
-            // Effect depends on user/settings, so it might re-trigger if we don't be careful.
-            // But checkSession is only on mount/user change. 
-            // We should manually trigger check or just set state.
-          }
+          checkSession();
         }}
       />
     </div>

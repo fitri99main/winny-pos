@@ -1,21 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Image, SafeAreaView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, SafeAreaView, Alert, ActivityIndicator, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { styled } from 'nativewind';
 import { supabase } from '../lib/supabase';
-import { Alert, ActivityIndicator } from 'react-native';
-
-const StyledView = styled(View);
-const StyledText = styled(Text);
-const StyledTextInput = styled(TextInput);
-const StyledTouchableOpacity = styled(TouchableOpacity);
-const StyledSafeAreaView = styled(SafeAreaView);
 
 export default function LoginScreen() {
     const navigation = useNavigation<any>();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-
     const [loading, setLoading] = useState(false);
 
     const handleLogin = async () => {
@@ -39,56 +30,138 @@ export default function LoginScreen() {
     };
 
     return (
-        <StyledSafeAreaView className="flex-1 bg-gray-50">
-            <StyledView className="flex-1 justify-center px-8">
-                <StyledView className="items-center mb-10">
-                    <StyledText className="text-4xl font-bold text-blue-600 mb-2">Winny</StyledText>
-                    <StyledText className="text-gray-500 text-lg">POS & ERP System</StyledText>
-                </StyledView>
+        <SafeAreaView style={styles.container}>
+            <View style={styles.innerContainer}>
+                <View style={styles.header}>
+                    <Text style={styles.logo}>Winny</Text>
+                    <Text style={styles.subLogo}>POS & ERP System</Text>
+                </View>
 
-                <StyledView className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                    <StyledText className="text-xl font-semibold mb-6 text-gray-800">Sign In</StyledText>
+                <View style={styles.card}>
+                    <Text style={styles.cardTitle}>Sign In</Text>
 
-                    <StyledView className="mb-4">
-                        <StyledText className="text-gray-600 mb-2 font-medium">Email</StyledText>
-                        <StyledTextInput
-                            className="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-gray-800"
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.label}>Email</Text>
+                        <TextInput
+                            style={styles.input}
                             placeholder="Enter your email"
                             value={email}
                             onChangeText={setEmail}
                             autoCapitalize="none"
                             keyboardType="email-address"
                         />
-                    </StyledView>
+                    </View>
 
-                    <StyledView className="mb-6">
-                        <StyledText className="text-gray-600 mb-2 font-medium">Password</StyledText>
-                        <StyledTextInput
-                            className="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-gray-800"
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.label}>Password</Text>
+                        <TextInput
+                            style={styles.input}
                             placeholder="Enter your password"
                             value={password}
                             onChangeText={setPassword}
                             secureTextEntry
                         />
-                    </StyledView>
+                    </View>
 
-                    <StyledTouchableOpacity
-                        className="w-full bg-blue-600 p-4 rounded-xl items-center shadow-md active:bg-blue-700"
+                    <TouchableOpacity
+                        style={styles.button}
                         onPress={handleLogin}
                         disabled={loading}
                     >
                         {loading ? (
                             <ActivityIndicator color="white" />
                         ) : (
-                            <StyledText className="text-white font-bold text-lg">Login</StyledText>
+                            <Text style={styles.buttonText}>Login</Text>
                         )}
-                    </StyledTouchableOpacity>
-                </StyledView>
+                    </TouchableOpacity>
+                </View>
 
-                <StyledView className="mt-8 items-center">
-                    <StyledText className="text-gray-400 text-sm">© 2026 Winny System</StyledText>
-                </StyledView>
-            </StyledView>
-        </StyledSafeAreaView>
+                <View style={styles.footer}>
+                    <Text style={styles.footerText}>© 2026 Winny System</Text>
+                </View>
+            </View>
+        </SafeAreaView>
     );
 }
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        backgroundColor: '#f9fafb',
+    },
+    innerContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        paddingHorizontal: 32,
+    },
+    header: {
+        alignItems: 'center',
+        marginBottom: 40,
+    },
+    logo: {
+        fontSize: 36,
+        fontWeight: 'bold',
+        color: '#2563eb',
+        marginBottom: 8,
+    },
+    subLogo: {
+        fontSize: 18,
+        color: '#6b7280',
+    },
+    card: {
+        backgroundColor: 'white',
+        padding: 24,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: '#f3f4f6',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 15,
+        elevation: 2,
+    },
+    cardTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        marginBottom: 24,
+        color: '#1f2937',
+    },
+    inputGroup: {
+        marginBottom: 16,
+    },
+    label: {
+        color: '#4b5563',
+        marginBottom: 8,
+        fontWeight: '500',
+    },
+    input: {
+        width: '100%',
+        backgroundColor: '#f9fafb',
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+        borderRadius: 12,
+        padding: 16,
+        color: '#111827',
+    },
+    button: {
+        width: '100%',
+        backgroundColor: '#2563eb',
+        padding: 16,
+        borderRadius: 12,
+        alignItems: 'center',
+        marginTop: 8,
+    },
+    buttonText: {
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: 18,
+    },
+    footer: {
+        marginTop: 32,
+        alignItems: 'center',
+    },
+    footerText: {
+        color: '#9ca3af',
+        fontSize: 14,
+    },
+});

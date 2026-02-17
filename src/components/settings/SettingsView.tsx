@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, User, Monitor, Globe, Bell, Shield, Save, Clock, Calendar, Printer, FileText, LayoutGrid, Plus, Trash2, Edit, CreditCard, CheckCircle2, XCircle, Database, Upload, Download, AlertTriangle, Loader2, Calculator } from 'lucide-react';
+import { Settings, User, Monitor, Globe, Bell, Shield, Save, Clock, Calendar, Printer, FileText, LayoutGrid, Plus, Trash2, Edit, CreditCard, CheckCircle2, XCircle, Database, Upload, Download, AlertTriangle, Loader2, Calculator, RotateCcw, Zap } from 'lucide-react';
 import { printerService } from '../../lib/PrinterService';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -119,13 +119,14 @@ export function SettingsView({
     const tabs = [
         { id: 'general', label: 'Umum', icon: Globe },
         { id: 'account', label: 'Akun', icon: User },
-        { id: 'hours', label: 'Jam Kerja', icon: Clock },
+        { id: 'hours', label: 'Absensi & Jam Kerja', icon: Clock },
         { id: 'tables', label: 'Meja', icon: LayoutGrid },
         { id: 'appearance', label: 'Tampilan', icon: Monitor },
         { id: 'notifications', label: 'Notifikasi', icon: Bell },
         { id: 'cashier', label: 'Kasir', icon: Calculator },
         { id: 'printer', label: 'Printer', icon: Printer },
         { id: 'receipt', label: 'Templat Struk', icon: FileText },
+        { id: 'wifi', label: 'WiFi Voucher', icon: Globe },
         { id: 'payment_methods', label: 'Metode Pembayaran', icon: CreditCard },
         { id: 'security', label: 'Keamanan', icon: Shield },
         { id: 'backup', label: 'Backup & Data', icon: Database },
@@ -225,6 +226,25 @@ export function SettingsView({
     const [isBackingUp, setIsBackingUp] = useState(false);
     const [isRestoring, setIsRestoring] = useState(false);
     const [restoreProgress, setRestoreProgress] = useState('');
+
+    // WiFi Voucher Stats
+    const [voucherStats, setVoucherStats] = useState({ total: 0, used: 0, available: 0 });
+
+    useEffect(() => {
+        if (activeTab === 'wifi') {
+            loadVoucherStats();
+        }
+    }, [activeTab]);
+
+    const loadVoucherStats = async () => {
+        try {
+            const { WifiVoucherService } = await import('../../lib/WifiVoucherService');
+            const stats = await WifiVoucherService.getCounts(localSettings.branch_id || 'default');
+            setVoucherStats(stats);
+        } catch (e) {
+            console.error("Failed to load voucher stats", e);
+        }
+    };
 
     const handleBackup = async () => {
         setIsBackingUp(true);
@@ -528,8 +548,8 @@ export function SettingsView({
                 {activeTab === 'hours' && (
                     <div className="max-w-2xl space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
                         <div>
-                            <h3 className="text-lg font-bold text-gray-800">Pengaturan Jam Kerja</h3>
-                            <p className="text-sm text-gray-500">Atur jam operasional dan kebijakan waktu perusahaan.</p>
+                            <h3 className="text-lg font-bold text-gray-800">Absensi & Jam Kerja</h3>
+                            <p className="text-sm text-gray-500">Konfigurasi metode absensi dan jam operasional perusahaan.</p>
                         </div>
 
                         <div className="grid grid-cols-2 gap-6">
@@ -583,22 +603,55 @@ export function SettingsView({
                             </div>
                         </div>
 
-                        <div className="bg-orange-50/50 p-6 rounded-2xl border border-orange-100 space-y-4">
-                            <div className="flex items-center gap-3">
-                                <Clock className="w-5 h-5 text-orange-600" />
-                                <h4 className="font-bold text-orange-800">Kebijakan Toleransi</h4>
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-sm font-bold text-orange-700">Toleransi Keterlambatan (Menit)</label>
-                                <input
-                                    type="number"
-                                    value={localSettings.late_tolerance || 0}
-                                    onChange={e => handleLocalChange({ ...localSettings, late_tolerance: parseInt(e.target.value) || 0 })}
-                                    className="w-full px-4 py-3 border border-orange-200 rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none bg-white"
-                                    placeholder="contoh: 15"
+                        <div className="bg-blue-50/50 p-6 rounded-2xl border border-blue-100 space-y-4">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-blue-600 p-2 rounded-lg">
+                                        <Zap className="w-5 h-5 text-white" />
+                                    </div>
+                                    <div>
+                                        <h4 className="font-bold text-blue-800">Pengaturan Fingerprint USB</h4>
+                                        <p className="text-[10px] text-blue-600/70 italic">Gunakan scanner fingerprint mode HID (Keyboard Emulation).</p>
+                                    </div>
+                                </div>
+                                <Switch
+                                    checked={localSettings.enable_fingerprint || false}
+                                    onCheckedChange={c => handleLocalChange({ ...localSettings, enable_fingerprint: c })}
                                 />
-                                <p className="text-[10px] text-orange-600/70">Karyawan tidak akan dianggap terlambat jika absen dalam rentang waktu ini setelah shift dimulai.</p>
                             </div>
+
+                            {localSettings.enable_fingerprint && (
+                                <div className="space-y-4 pt-2 animate-in slide-in-from-top-2 duration-200">
+                                    <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-blue-100">
+                                        <div>
+                                            <p className="text-sm font-bold text-gray-700">Sembunyikan Kamera Scanner</p>
+                                            <p className="text-[10px] text-gray-400">Nonaktifkan QR Scanner di menu absensi.</p>
+                                        </div>
+                                        <Switch
+                                            checked={localSettings.hide_camera_scanner || false}
+                                            onCheckedChange={c => handleLocalChange({ ...localSettings, hide_camera_scanner: c })}
+                                        />
+                                    </div>
+                                    <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-blue-100">
+                                        <div>
+                                            <p className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                                                <Shield className="w-3.5 h-3.5" /> Otorisasi Manager
+                                            </p>
+                                            <p className="text-[10px] text-gray-400">Retur memerlukan scan fingerprint Manager/Admin.</p>
+                                        </div>
+                                        <Switch
+                                            checked={localSettings.enable_manager_auth || false}
+                                            onCheckedChange={c => handleLocalChange({ ...localSettings, enable_manager_auth: c })}
+                                        />
+                                    </div>
+                                    <div className="p-3 bg-white rounded-xl border border-blue-100">
+                                        <p className="text-xs font-bold text-gray-700 mb-2">Metode Input: <span className="text-blue-600">HID/Keyboard</span></p>
+                                        <p className="text-[10px] text-gray-500 leading-relaxed">
+                                            Aplikasi akan otomatis menangkap input dari scanner fingerprint USB Anda tanpa perlu klik kolom input apapun.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
@@ -728,6 +781,17 @@ export function SettingsView({
                                     onCheckedChange={c => handleLocalChange({ ...localSettings, auto_open_drawer: c })}
                                 />
                             </div>
+
+                            <div className="flex items-center justify-between p-4 bg-orange-50 rounded-xl border border-orange-200">
+                                <div>
+                                    <h4 className="font-bold text-orange-800">Wajib Buka/Tutup Shift</h4>
+                                    <p className="text-xs text-orange-600">Kasir harus membuka shift sebelum menggunakan aplikasi dan menutup shift sebelum logout.</p>
+                                </div>
+                                <Switch
+                                    checked={localSettings.require_mandatory_session ?? true}
+                                    onCheckedChange={c => handleLocalChange({ ...localSettings, require_mandatory_session: c })}
+                                />
+                            </div>
                         </div>
 
                         <div className="space-y-4 pt-4 border-t border-gray-100">
@@ -754,7 +818,7 @@ export function SettingsView({
                 )}
 
                 {activeTab === 'printer' && (
-                    <div className="max-w-2xl space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                    <div className="max-w-2xl space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
                         <div>
                             <h3 className="text-lg font-bold text-gray-800">Pengaturan Printer Bluetooth</h3>
                             <p className="text-sm text-gray-500">Hubungkan printer thermal Bluetooth untuk mencetak tiket Dapur dan Bar.</p>
@@ -917,7 +981,9 @@ export function SettingsView({
                                                 total: 15000,
                                                 paymentType: 'Tunai',
                                                 amountPaid: 20000,
-                                                change: 5000
+                                                change: 5000,
+                                                wifiVoucher: localSettings?.enable_wifi_vouchers ? 'TEST-WIFI' : undefined,
+                                                wifiNotice: localSettings?.wifi_voucher_notice
                                             });
                                         }}
                                         variant="outline"
@@ -939,7 +1005,7 @@ export function SettingsView({
                 )}
 
                 {activeTab === 'receipt' && (
-                    <div className="max-w-2xl space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                    <div className="max-w-2xl space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
                         <div>
                             <h3 className="text-lg font-bold text-gray-800">Pengaturan Templat Struk</h3>
                             <p className="text-sm text-gray-500">Sesuaikan tampilan struk yang dicetak ke pelanggan.</p>
@@ -954,7 +1020,7 @@ export function SettingsView({
                                         value={localSettings.receipt_header || ''}
                                         onChange={e => handleLocalChange({ ...localSettings, receipt_header: e.target.value })}
                                         className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 outline-none"
-                                        placeholder="Contoh: WINNY CAFE"
+                                        placeholder="Contoh: WINNY PANGERAN NATAKUSUMA"
                                     />
                                 </div>
                                 <div className="space-y-2">
@@ -1331,6 +1397,118 @@ export function SettingsView({
                                         {loadingPassword ? 'Menyimpan...' : 'Update Password'}
                                     </Button>
                                 </div>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-between p-4 bg-blue-50 rounded-xl border border-blue-200">
+                            <div>
+                                <h4 className="font-bold text-blue-800">Batasi Login Satu Perangkat</h4>
+                                <p className="text-xs text-blue-600">User hanya bisa login di satu perangkat. Login di perangkat baru akan logout perangkat lama secara otomatis.</p>
+                            </div>
+                            <Switch
+                                checked={localSettings.enforce_single_device ?? true}
+                                onCheckedChange={c => handleLocalChange({ ...localSettings, enforce_single_device: c })}
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === 'wifi' && (
+                    <div className="max-w-2xl space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                        <div>
+                            <h3 className="text-lg font-bold text-gray-800">WiFi Voucher</h3>
+                            <p className="text-sm text-gray-500">Kelola voucher WiFi yang akan dicetak pada struk belanja.</p>
+                        </div>
+
+                        {/* Stats Card */}
+                        <div className="grid grid-cols-3 gap-4">
+                            <div className="p-4 bg-white border border-gray-200 rounded-xl shadow-sm text-center">
+                                <p className="text-xs text-gray-500 font-medium uppercase">Total Voucher</p>
+                                <p className="text-2xl font-bold text-gray-800">{voucherStats.total}</p>
+                            </div>
+                            <div className="p-4 bg-white border border-gray-200 rounded-xl shadow-sm text-center">
+                                <p className="text-xs text-gray-500 font-medium uppercase">Terpakai</p>
+                                <p className="text-2xl font-bold text-orange-600">{voucherStats.used}</p>
+                            </div>
+                            <div className={`p-4 border rounded-xl shadow-sm text-center ${voucherStats.available < 10 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
+                                <p className={`text-xs font-medium uppercase ${voucherStats.available < 10 ? 'text-red-600' : 'text-green-600'}`}>Tersedia</p>
+                                <p className={`text-2xl font-bold ${voucherStats.available < 10 ? 'text-red-700' : 'text-green-700'}`}>{voucherStats.available}</p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between p-4 bg-blue-50 rounded-xl border border-blue-200">
+                                <div>
+                                    <h4 className="font-bold text-blue-800">Aktifkan WiFi Voucher</h4>
+                                    <p className="text-xs text-blue-600">Cetak kode voucher WiFi secara otomatis pada struk pelanggan.</p>
+                                </div>
+                                <Switch
+                                    checked={localSettings.enable_wifi_vouchers || false}
+                                    onCheckedChange={c => handleLocalChange({ ...localSettings, enable_wifi_vouchers: c })}
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label className="text-sm font-medium text-gray-700">Pesan Header Voucher</Label>
+                                <input
+                                    type="text"
+                                    value={localSettings.wifi_voucher_notice || ''}
+                                    onChange={e => handleLocalChange({ ...localSettings, wifi_voucher_notice: e.target.value })}
+                                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                    placeholder="Gunakan kode ini untuk akses WiFi"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="pt-6 border-t border-gray-100">
+                            <div className="flex items-center justify-between mb-4">
+                                <h4 className="font-bold text-gray-800">Import Voucher</h4>
+                                <Button variant="outline" size="sm" onClick={loadVoucherStats}>
+                                    <RotateCcw className="w-3 h-3 mr-2" /> Refresh Data
+                                </Button>
+                            </div>
+
+                            <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-200 mb-4 text-xs text-yellow-800 space-y-1">
+                                <p className="font-bold"><Globe className="w-3 h-3 inline mr-1" /> Cara Export dari Mikrotik:</p>
+                                <ul className="list-disc pl-5 space-y-0.5 opacity-90">
+                                    <li>Buka <strong>Mikrotik User Manager</strong> / Hotspot Users.</li>
+                                    <li>Select semua user yang ingin di-export.</li>
+                                    <li>Klik kanan &gt; Export atau Copy username/password.</li>
+                                    <li>Hanya perlu kolom <strong>Username (Kode Voucher)</strong>.</li>
+                                    <li>Paste daftar kode tersebut di bawah ini (satu baris satu kode).</li>
+                                </ul>
+                            </div>
+
+                            <div className="p-6 bg-gray-50 border border-dashed border-gray-200 rounded-2xl space-y-4">
+                                <div className="text-center">
+                                    <Globe className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+                                    <p className="text-sm text-gray-600 font-medium">Tempel kode voucher di bawah (1 kode per baris)</p>
+                                </div>
+                                <textarea
+                                    id="wifi-import-area"
+                                    className="w-full h-40 px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none font-mono text-sm"
+                                    placeholder="WIFI-12345&#10;WIFI-67890&#10;..."
+                                />
+                                <Button
+                                    onClick={async () => {
+                                        const area = document.getElementById('wifi-import-area') as HTMLTextAreaElement;
+                                        const codes = area.value.split('\n').map(c => c.trim()).filter(c => c.length > 0);
+                                        if (codes.length === 0) return toast.error('Masukkan setidaknya satu kode!');
+
+                                        try {
+                                            const { WifiVoucherService } = await import('../../lib/WifiVoucherService');
+                                            const count = await WifiVoucherService.importVouchers(codes, localSettings.branch_id || 'default');
+                                            toast.success(`${count} voucher berhasil diimport!`);
+                                            area.value = '';
+                                            loadVoucherStats(); // Refresh stats
+                                        } catch (err: any) {
+                                            toast.error('Gagal import voucher: ' + err.message);
+                                        }
+                                    }}
+                                    className="w-full bg-gray-900 text-white"
+                                >
+                                    Import Voucher Sekarang
+                                </Button>
                             </div>
                         </div>
                     </div>

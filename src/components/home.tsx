@@ -3,11 +3,12 @@ import {
   LayoutDashboard, Users, ShoppingCart, Settings, Coffee, FileText,
   LogOut, Bell, Search, Menu, Calculator, ChefHat, MonitorCheck,
   Contact, Archive, MapPin, CalendarCheck, History as ClockHistory, Wallet, Award,
-  Store, ChevronLeft, ChevronRight, CheckCircle, Package, RefreshCw, ShieldCheck, Clock
+  Store, ChevronLeft, ChevronRight, CheckCircle, Package, RefreshCw, ShieldCheck, Clock, History
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './auth/AuthProvider';
+import { useSessionGuard } from './auth/SessionGuardContext';
 import { DashboardView } from './dashboard/DashboardView';
 import { UsersView } from './users/UsersView';
 import { ContactsView, ContactData } from './contacts/ContactsView';
@@ -26,6 +27,7 @@ import { BranchesView } from './branches/BranchesView';
 import { ShiftsView } from './shifts/ShiftsView';
 import { InventoryView, Ingredient as InvIngredient, StockMovement } from './inventory/InventoryView';
 import { KDSView } from './pos/KDSView';
+import { SessionHistoryView } from './pos/SessionHistoryView';
 import { DashboardSkeleton } from './skeletons/DashboardSkeleton';
 import { PWAInstallButton } from './ui/PWAInstallButton';
 import { OrderItem } from '@/types/pos';
@@ -33,12 +35,19 @@ import { mockProducts } from '@/data/products';
 import { toast } from 'sonner';
 import { printerService } from '../lib/PrinterService';
 
-type ModuleType = 'dashboard' | 'users' | 'contacts' | 'products' | 'purchases' | 'pos' | 'kds' | 'reports' | 'accounting' | 'settings' | 'employees' | 'attendance' | 'payroll' | 'branches' | 'shifts' | 'performance' | 'inventory';
+type ModuleType = 'dashboard' | 'users' | 'contacts' | 'products' | 'purchases' | 'pos' | 'kds' | 'reports' | 'accounting' | 'settings' | 'employees' | 'attendance' | 'payroll' | 'branches' | 'shifts' | 'performance' | 'inventory' | 'session_history';
 
 
 
 function Home() {
+  // [DEBUG] Log URL on component load
+  console.log('[Home] Component loaded, URL:', window.location.href);
+  console.log('[Home] URL Search Params:', window.location.search);
+  const urlParams = new URLSearchParams(window.location.search);
+  console.log('[Home] Table param:', urlParams.get('table'));
+
   const { user, role, permissions } = useAuth(); // Retrieve actual user data
+  const { canLogout, currentSession, requireMandatorySession } = useSessionGuard();
 
   const [activeModule, setActiveModule] = useState<ModuleType>(
     (localStorage.getItem('winpos_active_module') as ModuleType) || 'dashboard'
@@ -64,6 +73,7 @@ function Home() {
   const [isCashierOpen, setIsCashierOpen] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [autoSelectedTable, setAutoSelectedTable] = useState<string>('');
+  const [urlParamProcessed, setUrlParamProcessed] = useState(false); // Track if URL param was processed
   const [pendingCount, setPendingCount] = useState(0); // New state for badge
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [contacts, setContacts] = useState<ContactData[]>([]);
@@ -222,8 +232,8 @@ function Home() {
 
   // --- Settings State ---
   const [storeSettings, setStoreSettings] = useState<any>({
-    store_name: 'WinPOS Store',
-    receipt_header: 'WinPOS',
+    store_name: 'Winny Pangeran Natakusuma',
+    receipt_header: 'Winny Pangeran Natakusuma',
     receipt_footer: 'Thank You',
     receipt_paper_width: '58mm',
     show_date: true,
@@ -311,7 +321,9 @@ function Home() {
 
     const [productsRes, schedulesRes, tablesRes, ingredientsRes, movementsRes] = results;
 
-    if (productsRes.data) setProducts(productsRes.data);
+    if (productsRes.data) {
+      setProducts(productsRes.data.map((p: any) => ({ ...p, image_url: undefined })));
+    }
 
     // Filter schedules for employees in this branch (done in employees fetch usually, or here if we have employees list?)
     // For now, setting all schedules. Ideally should filter.
@@ -429,18 +441,15 @@ function Home() {
 
             const targetTable = latestOrder.table_no || latestOrder.tableNo || latestOrder.table_number;
 
-            // Automatically open WinPOS (Cashier Interface)
-            // Trigger for Kiosk orders OR if user is Cashier (for any order)
-            if (role === 'Cashier' || latestOrder.waiter_name === 'Self-Service Kiosk' || latestOrder.waiter_name === 'Kiosk') {
-              console.log('Triggering Auto-Open for Order #' + latestOrder.id);
-              setIsCashierOpen(true);
-              toast.success(`Order Baru Masuk #${latestOrder.order_no} - Membuka Kasir`);
+            // [UPDATED] Auto-open for all Pending orders (from mobile app)
+            console.log('[Polling] Triggering Auto-Open for Order #' + latestOrder.id);
+            setIsCashierOpen(true);
+            toast.success(`Order Baru Masuk #${latestOrder.order_no} - Membuka Kasir`);
 
-              if (targetTable) {
-                setAutoSelectedTable(String(targetTable));
-              } else {
-                setAutoSelectedTable(''); // Show Table Grid (All Orders)
-              }
+            if (targetTable) {
+              setAutoSelectedTable(String(targetTable));
+            } else {
+              setAutoSelectedTable(''); // Show Table Grid (All Orders)
             }
           }
         }
@@ -670,18 +679,20 @@ function Home() {
           const isPaidCompleted = newOrder.status === 'Paid' || newOrder.status === 'Completed';
           const isMyOwnOrder = newOrder.id === lastProcessedOrderIdRef.current;
 
-          if (!isPaidCompleted && !isMyOwnOrder && (newOrder.status === 'Pending' || newOrder.status === 'Unpaid') &&
-            (role === 'Cashier' || newOrder.waiter_name === 'Self-Service Kiosk' || newOrder.waiter_name === 'Kiosk')) {
+          // [UPDATED] Auto-open for Mobile Orders (from any role)
+          if (!isPaidCompleted && !isMyOwnOrder && (newOrder.status === 'Pending' || newOrder.status === 'Unpaid')) {
             const targetTable = newOrder.table_no || newOrder.tableNo;
+
+            console.log('[Auto-Open] Opening cashier for table:', targetTable);
             setIsCashierOpen(true);
 
-            // If it's a Kiosk order, we might want to focus ALL orders or specific table
-            // For Cashiers, usually showing the table grid or specific table is fine
             if (targetTable) {
               setAutoSelectedTable(String(targetTable));
             } else {
               setAutoSelectedTable('');
             }
+
+            toast.success(`Membuka Kasir untuk Meja ${targetTable || 'Baru'}`);
           }
         }
       )
@@ -976,6 +987,7 @@ function Home() {
     }
 
     document.addEventListener('mousedown', handleClickOutside);
+
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
@@ -995,6 +1007,35 @@ function Home() {
   useEffect(() => {
     if (returns.length > 0) localStorage.setItem('winpos_returns', JSON.stringify(returns));
   }, [returns]);
+
+  // [NEW] Handle Table Direct Link (from Mobile Redirect) - Run after data is loaded
+  useEffect(() => {
+    // Only run once when component mounts and branch is set
+    if (!currentBranchId || urlParamProcessed) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const tableParam = params.get('table');
+
+    if (tableParam) {
+      console.log('[URL Param] Detected Table Link:', tableParam);
+      console.log('[URL Param] Current Branch:', currentBranchId);
+      console.log('[URL Param] Sales Count:', sales.length);
+
+      // Mark as processed immediately to prevent multiple runs
+      setUrlParamProcessed(true);
+
+      // Small delay to ensure data is fully loaded
+      setTimeout(() => {
+        console.log('[URL Param] Opening cashier for table:', tableParam);
+        setAutoSelectedTable(tableParam);
+        setIsCashierOpen(true);
+        toast.success(`Membuka Kasir untuk Meja ${tableParam}`);
+
+        // Clean up URL after opening cashier
+        window.history.replaceState({}, '', window.location.pathname);
+      }, 1000); // Increased to 1 second for better reliability
+    }
+  }, [currentBranchId, urlParamProcessed]); // Run when branch is set
 
   // Persist all other states
   useEffect(() => { localStorage.setItem('winpos_employees', JSON.stringify(employees)); }, [employees]);
@@ -1225,6 +1266,12 @@ function Home() {
       });
 
       // --- Automatic Printing ---
+      let wifiVoucher = undefined;
+      if (storeSettings?.enable_wifi_vouchers) {
+        const { WifiVoucherService } = await import('../lib/WifiVoucherService');
+        wifiVoucher = await WifiVoucherService.getVoucherForSale(sale.id, currentBranchId) || undefined;
+      }
+
       printerService.printReceipt({
         orderNo: orderNo,
         tableNo: saleData.tableNo,
@@ -1237,11 +1284,14 @@ function Home() {
         })),
         subtotal: saleData.subtotal || saleData.totalAmount,
         discount: saleData.discount || 0,
-        tax: 0,
+        tax: saleData.tax || 0,
         total: saleData.totalAmount,
         paymentType: saleData.paymentMethod || 'Tunai',
         amountPaid: saleData.paidAmount || saleData.totalAmount,
-        change: saleData.change || 0
+        change: saleData.change || 0,
+        customerName: saleData.customerName,
+        wifiVoucher: wifiVoucher,
+        wifiNotice: storeSettings?.wifi_voucher_notice
       });
 
       // 4. Force refresh the transactions list to show the new sale immediately
@@ -1527,7 +1577,7 @@ function Home() {
 
   /* OLD ROLE-BASED LOGIC DEPRECATED
   const modules = [
-    { id: 'dashboard', label: 'Winny Cafe', icon: LayoutDashboard, color: 'bg-blue-600' },
+    { id: 'dashboard', label: 'Winny Pangeran Natakusuma', icon: LayoutDashboard, color: 'bg-blue-600' },
     { id: 'users', label: 'Pengguna', icon: ShieldCheck, color: 'bg-indigo-600', roles: ['Administrator'] },
     // ...
   ];
@@ -1553,7 +1603,7 @@ function Home() {
     {
       title: 'Utama',
       modules: [
-        { id: 'dashboard', label: 'Winny Cafe', icon: LayoutDashboard, color: 'text-blue-600', bgColor: 'bg-blue-50' },
+        { id: 'dashboard', label: 'Winny Pangeran Natakusuma', icon: LayoutDashboard, color: 'text-blue-600', bgColor: 'bg-blue-50' },
         { id: 'pos', label: 'Penjualan', icon: MonitorCheck, color: 'text-pink-600', bgColor: 'bg-pink-50' },
         { id: 'kds', label: 'Dapur & Bar', icon: ChefHat, color: 'text-orange-500', bgColor: 'bg-orange-50' },
       ]
@@ -1582,6 +1632,7 @@ function Home() {
       modules: [
         { id: 'reports', label: 'Laporan', icon: FileText, color: 'text-teal-600', bgColor: 'bg-teal-50' },
         { id: 'accounting', label: 'Akuntansi', icon: Calculator, color: 'text-cyan-600', bgColor: 'bg-cyan-50' },
+        { id: 'session_history', label: 'Riwayat Session', icon: History, color: 'text-purple-600', bgColor: 'bg-purple-50' },
       ]
     },
     {
@@ -1991,7 +2042,7 @@ function Home() {
                 const { recipe, addons, id, ...rest } = data;
 
                 // Whitelist only valid columns to avoid schema errors and strip undefined values
-                const validColumns = ['code', 'name', 'category', 'brand', 'unit', 'price', 'cost', 'stock', 'image_url'];
+                const validColumns = ['code', 'name', 'category', 'brand', 'unit', 'price', 'cost', 'stock'];
                 const productData: any = {};
                 validColumns.forEach(col => {
                   if (rest[col] !== undefined) productData[col] = rest[col];
@@ -2099,6 +2150,7 @@ function Home() {
             currentBranchId={currentBranchId}
             onModeChange={(mode) => setSalesViewTab(mode)}
             onExit={() => setActiveModule('dashboard')}
+            settings={storeSettings}
           />
         );
       case 'reports': return <ReportsView sales={sales} returns={returns} paymentMethods={paymentMethods} />;
@@ -2115,6 +2167,7 @@ function Home() {
           onBack={() => setActiveModule('payroll')}
         />
       );
+      case 'session_history': return <SessionHistoryView />;
       case 'employees': return (
         <EmployeesView
           employees={employees}
@@ -2158,7 +2211,7 @@ function Home() {
       case 'attendance':
         // Filter logs to match employees in current branch
         const filteredLogs = attendanceLogs.filter(log => employees.some(e => e.id === log.employee_id || e.name === log.employeeName));
-        return <AttendanceView logs={filteredLogs} setLogs={setAttendanceLogs} employees={employees} />;
+        return <AttendanceView logs={filteredLogs} setLogs={setAttendanceLogs} employees={employees} settings={storeSettings} />;
       case 'payroll':
         // Filter payroll to match employees in current branch
         const filteredPayroll = payrollData.filter(p => employees.some(e => e.id === p.employee_id || e.name === p.employeeName));
@@ -2540,7 +2593,18 @@ function Home() {
                 </Button>
                 <Button
                   className="flex-1 h-12 bg-red-600 hover:bg-red-700 text-white rounded-xl shadow-lg shadow-red-100"
-                  onClick={() => supabase.auth.signOut()}
+                  onClick={() => {
+                    // Check if session guard prevents logout
+                    if (!canLogout()) {
+                      setShowLogoutConfirm(false);
+                      toast.error('Tidak dapat logout!', {
+                        description: 'Anda harus menutup shift kasir terlebih dahulu sebelum logout.',
+                        duration: 5000
+                      });
+                      return;
+                    }
+                    supabase.auth.signOut();
+                  }}
                 >
                   Keluar
                 </Button>

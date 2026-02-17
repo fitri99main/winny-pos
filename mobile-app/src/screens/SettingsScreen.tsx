@@ -1,12 +1,6 @@
-import React from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { styled } from 'nativewind';
+import * as React from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-
-const StyledView = styled(View);
-const StyledText = styled(Text);
-const StyledTouchableOpacity = styled(TouchableOpacity);
 
 export default function SettingsScreen() {
     const navigation = useNavigation();
@@ -15,42 +9,123 @@ export default function SettingsScreen() {
         // In a real app, you would clear auth state here
         navigation.reset({
             index: 0,
-            routes: [{ name: 'Login' }],
-        } as any);
+            routes: [{ name: 'Login' } as any],
+        });
     };
 
     return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#f9fafb' }}>
-            <StyledView className="flex-1 p-6">
-                <StyledView className="flex-row items-center mb-6">
-                    <StyledTouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
-                        <StyledText className="text-2xl">←</StyledText>
-                    </StyledTouchableOpacity>
-                    <StyledText className="text-2xl font-bold text-gray-800">Pengaturan</StyledText>
-                </StyledView>
+        <SafeAreaView style={styles.container}>
+            <View style={styles.innerContainer}>
+                <View style={styles.header}>
+                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+                        <Text style={styles.backButtonText}>←</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.headerTitle}>Pengaturan</Text>
+                </View>
 
-                <StyledView className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                    <StyledTouchableOpacity className="p-4 border-b border-gray-100 flex-row justify-between items-center">
-                        <StyledText className="text-gray-700 font-medium">Profil Pengguna</StyledText>
-                        <StyledText className="text-gray-400">›</StyledText>
-                    </StyledTouchableOpacity>
-                    <StyledTouchableOpacity className="p-4 border-b border-gray-100 flex-row justify-between items-center">
-                        <StyledText className="text-gray-700 font-medium">Notifikasi</StyledText>
-                        <StyledText className="text-gray-400">›</StyledText>
-                    </StyledTouchableOpacity>
-                    <StyledTouchableOpacity className="p-4 flex-row justify-between items-center">
-                        <StyledText className="text-gray-700 font-medium">Tentang Aplikasi</StyledText>
-                        <StyledText className="text-gray-400">›</StyledText>
-                    </StyledTouchableOpacity>
-                </StyledView>
+                <View style={styles.card}>
+                    <TouchableOpacity
+                        style={styles.item}
+                        onPress={() => navigation.navigate('StoreSettings' as any)}
+                    >
+                        <Text style={styles.itemText}>Pengaturan Toko</Text>
+                        <Text style={styles.chevron}>›</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.item}>
+                        <Text style={styles.itemText}>Profil Pengguna</Text>
+                        <Text style={styles.chevron}>›</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.item}>
+                        <Text style={styles.itemText}>Notifikasi</Text>
+                        <Text style={styles.chevron}>›</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.item, styles.lastItem]}>
+                        <Text style={styles.itemText}>Tentang Aplikasi</Text>
+                        <Text style={styles.chevron}>›</Text>
+                    </TouchableOpacity>
+                </View>
 
-                <StyledTouchableOpacity
+                <TouchableOpacity
                     onPress={handleLogout}
-                    className="mt-6 bg-red-50 p-4 rounded-xl border border-red-100 items-center"
+                    style={styles.logoutButton}
                 >
-                    <StyledText className="text-red-600 font-bold">Keluar</StyledText>
-                </StyledTouchableOpacity>
-            </StyledView>
+                    <Text style={styles.logoutText}>Keluar</Text>
+                </TouchableOpacity>
+            </View>
         </SafeAreaView>
     );
 }
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        backgroundColor: '#f9fafb',
+    },
+    innerContainer: {
+        flex: 1,
+        padding: 24,
+    },
+    header: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 24,
+    },
+    backButton: {
+        marginRight: 16,
+    },
+    backButtonText: {
+        fontSize: 24,
+        color: '#1f2937',
+    },
+    headerTitle: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#1f2937',
+    },
+    card: {
+        backgroundColor: 'white',
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#f3f4f6',
+        overflow: 'hidden',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 5,
+        elevation: 1,
+    },
+    item: {
+        padding: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f3f4f6',
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    lastItem: {
+        borderBottomWidth: 0,
+    },
+    itemText: {
+        color: '#374151',
+        fontWeight: '500',
+        fontSize: 16,
+    },
+    chevron: {
+        color: '#9ca3af',
+        fontSize: 20,
+    },
+    logoutButton: {
+        marginTop: 24,
+        backgroundColor: '#fef2f2',
+        padding: 16,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#fee2e2',
+        alignItems: 'center',
+    },
+    logoutText: {
+        color: '#dc2626',
+        fontWeight: 'bold',
+        fontSize: 16,
+    },
+});

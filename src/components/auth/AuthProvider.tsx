@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../../lib/supabase';
+import { getDeviceFingerprint, getDeviceInfo } from '../../lib/deviceFingerprint';
+import { toast } from 'sonner';
 
 interface AuthContextType {
     user: User | null;
@@ -49,7 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const { data: roleData, error: roleError } = await supabase
                 .from('roles')
                 .select('permissions')
-                .ilike('name', profile.role.trim())
+                .ilike('name', (profile.role || '').trim())
                 .maybeSingle(); // Use maybeSingle to avoid error if not found immediately
 
             if (roleData && roleData.permissions) {
@@ -117,6 +119,151 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setRole(null);
             setPermissions([]);
         }
+    }, [user]);
+
+    // 3. DEVICE SESSION MANAGEMENT
+    useEffect(() => {
+        if (!user) return;
+
+        let mounted = true;
+        let heartbeatInterval: NodeJS.Timeout;
+
+        const registerDeviceSession = async () => {
+            try {
+                // Check if single device enforcement is enabled
+                const { data: settings } = await supabase
+                    .from('store_settings')
+                    .select('enforce_single_device')
+                    .eq('id', 1)
+                    .single();
+
+                if (!settings?.enforce_single_device) {
+                    console.log('[DeviceSession] Single device enforcement disabled');
+                    return;
+                }
+
+                const deviceFingerprint = getDeviceFingerprint();
+                const deviceInfo = getDeviceInfo();
+
+                // Check for existing sessions from other devices
+                const { data: existingSessions } = await supabase
+                    .from('user_sessions')
+                    .select('*')
+                    .eq('user_id', user.id);
+
+                if (existingSessions && existingSessions.length > 0) {
+                    // Check if any session is from a different device
+                    const otherDeviceSessions = existingSessions.filter(
+                        s => s.device_fingerprint !== deviceFingerprint
+                    );
+
+                    if (otherDeviceSessions.length > 0) {
+                        console.log('[DeviceSession] Found sessions from other devices, logging them out');
+
+                        // Delete other device sessions
+                        await supabase
+                            .from('user_sessions')
+                            .delete()
+                            .eq('user_id', user.id)
+                            .neq('device_fingerprint', deviceFingerprint);
+
+                        toast.info('Perangkat lain telah logout otomatis', {
+                            description: 'Anda sekarang login di perangkat ini.',
+                            duration: 4000
+                        });
+                    }
+                }
+
+                // Register or update current device session
+                const { error: upsertError } = await supabase
+                    .from('user_sessions')
+                    .upsert({
+                        user_id: user.id,
+                        device_fingerprint: deviceFingerprint,
+                        device_info: deviceInfo,
+                        last_active_at: new Date().toISOString()
+                    }, {
+                        onConflict: 'user_id,device_fingerprint'
+                    });
+
+                if (upsertError) {
+                    console.error('[DeviceSession] Failed to register session:', upsertError);
+                    return;
+                }
+
+                console.log('[DeviceSession] Session registered successfully');
+
+                // Start heartbeat to keep session alive
+                heartbeatInterval = setInterval(async () => {
+                    if (!mounted) return;
+
+                    try {
+                        // Update last_active_at
+                        const { error: updateError } = await supabase
+                            .from('user_sessions')
+                            .update({ last_active_at: new Date().toISOString() })
+                            .eq('user_id', user.id)
+                            .eq('device_fingerprint', deviceFingerprint);
+
+                        if (updateError) {
+                            console.error('[DeviceSession] Heartbeat failed:', updateError);
+                        }
+
+                        // Check if this session still exists (might be deleted by another device)
+                        const { data: currentSession } = await supabase
+                            .from('user_sessions')
+                            .select('*')
+                            .eq('user_id', user.id)
+                            .eq('device_fingerprint', deviceFingerprint)
+                            .maybeSingle();
+
+                        if (!currentSession) {
+                            console.log('[DeviceSession] Session invalidated by another device, logging out');
+                            toast.error('Anda telah login di perangkat lain', {
+                                description: 'Sesi ini akan diakhiri.',
+                                duration: 3000
+                            });
+
+                            // Force logout
+                            setTimeout(() => {
+                                supabase.auth.signOut();
+                            }, 2000);
+                        }
+                    } catch (err) {
+                        console.error('[DeviceSession] Heartbeat error:', err);
+                    }
+                }, 5 * 60 * 1000); // Every 5 minutes
+
+            } catch (error) {
+                console.error('[DeviceSession] Registration error:', error);
+            }
+        };
+
+        registerDeviceSession();
+
+        return () => {
+            mounted = false;
+            if (heartbeatInterval) {
+                clearInterval(heartbeatInterval);
+            }
+
+            // Cleanup session on unmount (logout)
+            if (user) {
+                const deviceFingerprint = getDeviceFingerprint();
+                (async () => {
+                    try {
+                        await supabase
+                            .from('user_sessions')
+                            .delete()
+                            .eq('user_id', user.id)
+                            .eq('device_fingerprint', deviceFingerprint);
+                        console.log('[DeviceSession] Session cleaned up');
+                    } catch (err) {
+                        console.error('[DeviceSession] Cleanup error:', err);
+                    }
+                })();
+            }
+        };
     }, [user]);
 
     // SAFETY FALBACK: Force loading to false after 3 seconds max

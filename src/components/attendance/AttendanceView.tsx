@@ -32,7 +32,7 @@ const MOCK_SCHEDULES: Record<string, string> = {
 
 const DAYS_NAME = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 
-export function AttendanceView({ logs, setLogs, employees, onLogAttendance }: { logs: AttendanceLog[], setLogs: any, employees: Employee[], onLogAttendance?: (log: any) => Promise<void> }) {
+export function AttendanceView({ logs, setLogs, employees, onLogAttendance, settings }: { logs: AttendanceLog[], setLogs: any, employees: Employee[], onLogAttendance?: (log: any) => Promise<void>, settings?: any }) {
     const [tab, setTab] = useState<'scan' | 'history'>('scan');
     const [isCameraEnabled, setIsCameraEnabled] = useState(false);
     const [cameraActive, setCameraActive] = useState(false);
@@ -40,6 +40,12 @@ export function AttendanceView({ logs, setLogs, employees, onLogAttendance }: { 
     const [searchQuery, setSearchQuery] = useState('');
     const [filterDate, setFilterDate] = useState(new Date().toISOString().split('T')[0]);
     const [isManualModalOpen, setIsManualModalOpen] = useState(false);
+
+    // Fingerprint / HID State
+    const [inputBuffer, setInputBuffer] = useState('');
+    const lastInputTime = useRef<number>(0);
+    const isFingerprintMode = settings?.enable_fingerprint || false;
+    const hideCamera = settings?.hide_camera_scanner || false;
 
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
@@ -97,13 +103,39 @@ export function AttendanceView({ logs, setLogs, employees, onLogAttendance }: { 
     };
 
     useEffect(() => {
-        if (tab === 'scan' && isCameraEnabled) {
+        if (tab === 'scan' && isCameraEnabled && !hideCamera) {
             startCamera();
         } else {
             stopCamera();
         }
         return () => stopCamera();
-    }, [tab, isCameraEnabled]);
+    }, [tab, isCameraEnabled, hideCamera]);
+
+    // USB Fingerprint/Barcode HID Listener
+    useEffect(() => {
+        if (tab !== 'scan' || !isFingerprintMode) return;
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Check for timeout to reset buffer (if user types manually)
+            const now = Date.now();
+            if (now - lastInputTime.current > 100) {
+                setInputBuffer('');
+            }
+            lastInputTime.current = now;
+
+            if (e.key === 'Enter') {
+                if (inputBuffer.length >= 3) {
+                    handleScan(inputBuffer);
+                    setInputBuffer('');
+                }
+            } else if (e.key.length === 1) {
+                setInputBuffer(prev => prev + e.key);
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [tab, isFingerprintMode, inputBuffer, employees, logs]);
 
     const handleScan = (code: string) => {
         if (scannedData === code) return;
@@ -236,33 +268,61 @@ export function AttendanceView({ logs, setLogs, employees, onLogAttendance }: { 
 
             {tab === 'scan' ? (
                 <div className="flex-1 flex flex-col items-center justify-center gap-8">
-                    <div className="relative w-full max-w-xl aspect-video bg-black rounded-[40px] overflow-hidden shadow-2xl border-8 border-white ring-1 ring-gray-200">
-                        <video ref={videoRef} autoPlay playsInline className={`w-full h-full object-cover transform scale-x-[-1] transition-opacity duration-500 ${cameraActive ? 'opacity-100' : 'opacity-0'}`} />
-                        {!cameraActive && (
-                            <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-500 bg-gray-50">
-                                <QrCode className="w-16 h-16 mb-4 opacity-20" />
-                                <Button onClick={() => setIsCameraEnabled(true)} className="h-12 rounded-2xl px-8 shadow-xl shadow-primary/20">Aktifkan Kamera Scanner</Button>
-                            </div>
-                        )}
-                        {cameraActive && (
-                            <div className="absolute inset-0 flex items-center justify-center">
-                                <div className="w-56 h-56 border-2 border-white/30 rounded-3xl relative">
-                                    <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-primary rounded-tl-xl -mt-1 -ml-1"></div>
-                                    <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-primary rounded-tr-xl -mt-1 -mr-1"></div>
-                                    <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-primary rounded-bl-xl -mb-1 -ml-1"></div>
-                                    <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-primary rounded-br-xl -mb-1 -mr-1"></div>
-                                    <div className="absolute top-0 left-0 right-0 h-1 bg-primary/80 shadow-[0_0_15px_rgba(59,130,246,0.8)] animate-scan"></div>
+                    {!hideCamera && (
+                        <div className="relative w-full max-w-xl aspect-video bg-black rounded-[40px] overflow-hidden shadow-2xl border-8 border-white ring-1 ring-gray-200">
+                            <video ref={videoRef} autoPlay playsInline className={`w-full h-full object-cover transform scale-x-[-1] transition-opacity duration-500 ${cameraActive ? 'opacity-100' : 'opacity-0'}`} />
+                            {!cameraActive && (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-500 bg-gray-50">
+                                    <QrCode className="w-16 h-16 mb-4 opacity-20" />
+                                    <Button onClick={() => setIsCameraEnabled(true)} className="h-12 rounded-2xl px-8 shadow-xl shadow-primary/20">Aktifkan Kamera Scanner</Button>
                                 </div>
+                            )}
+                            {cameraActive && (
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                    <div className="w-56 h-56 border-2 border-white/30 rounded-3xl relative">
+                                        <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-primary rounded-tl-xl -mt-1 -ml-1"></div>
+                                        <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-primary rounded-tr-xl -mt-1 -mr-1"></div>
+                                        <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-primary rounded-bl-xl -mb-1 -ml-1"></div>
+                                        <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-primary rounded-br-xl -mb-1 -mr-1"></div>
+                                        <div className="absolute top-0 left-0 right-0 h-1 bg-primary/80 shadow-[0_0_15px_rgba(59,130,246,0.8)] animate-scan"></div>
+                                    </div>
+                                </div>
+                            )}
+                            {scannedData && (
+                                <div className="absolute inset-x-0 bottom-0 bg-emerald-600/90 backdrop-blur-md text-white p-6 text-center animate-in slide-in-from-bottom duration-300">
+                                    <UserCheck className="w-8 h-8 mx-auto mb-2" />
+                                    <p className="text-lg font-black tracking-tight">{employees.find(e => e.barcode === scannedData || `EMP-${e.id}` === scannedData)?.name}</p>
+                                    <p className="text-xs font-bold opacity-80 uppercase tracking-widest">Berhasil Dicatat</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {isFingerprintMode && (
+                        <div className={`w-full max-w-xl p-10 bg-white rounded-[40px] shadow-sm border border-gray-100 flex flex-col items-center gap-6 relative overflow-hidden ${hideCamera ? 'py-20' : ''}`}>
+                            <div className="absolute top-0 left-0 w-full h-1.5 bg-blue-500/10 overflow-hidden">
+                                <div className="h-full bg-blue-500 animate-pulse w-full"></div>
                             </div>
-                        )}
-                        {scannedData && (
-                            <div className="absolute inset-x-0 bottom-0 bg-emerald-600/90 backdrop-blur-md text-white p-6 text-center animate-in slide-in-from-bottom duration-300">
-                                <UserCheck className="w-8 h-8 mx-auto mb-2" />
-                                <p className="text-lg font-black tracking-tight">{employees.find(e => `EMP-${e.id}` === scannedData)?.name}</p>
-                                <p className="text-xs font-bold opacity-80 uppercase tracking-widest">Berhasil Dicatat</p>
+
+                            <div className="w-24 h-24 bg-blue-50 rounded-full flex items-center justify-center relative">
+                                <Zap className="w-10 h-10 text-blue-600 animate-pulse" />
+                                <div className="absolute inset-0 rounded-full border-2 border-blue-200 animate-ping opacity-20"></div>
                             </div>
-                        )}
-                    </div>
+
+                            <div className="text-center space-y-2">
+                                <h3 className="text-xl font-black text-gray-800 tracking-tight">Scanner Fingerprint Standby</h3>
+                                <p className="text-sm text-gray-500 font-medium">Tempelkan jari Anda pada alat scanner untuk absensi.</p>
+                            </div>
+
+                            {scannedData && isFingerprintMode && (
+                                <div className="flex items-center gap-3 px-6 py-3 bg-emerald-50 text-emerald-700 rounded-2xl border border-emerald-100 animate-in zoom-in-95 duration-200">
+                                    <UserCheck className="w-5 h-5" />
+                                    <span className="font-bold text-sm">{employees.find(e => e.barcode === scannedData || `EMP-${e.id}` === scannedData)?.name}</span>
+                                    <span className="text-[10px] font-black uppercase opacity-60">Berhasil</span>
+                                </div>
+                            )}
+                        </div>
+                    )}
                     <div className="flex flex-col items-center gap-4">
                         <Button variant="outline" className="h-12 rounded-2xl px-8 border-dashed border-2 hover:bg-gray-50 font-bold text-gray-600" onClick={() => setIsManualModalOpen(true)}>
                             <Plus className="w-4 h-4 mr-2" /> Absensi Manual

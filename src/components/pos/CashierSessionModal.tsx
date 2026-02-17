@@ -186,10 +186,13 @@ export function CashierSessionModal({
     return (
         <Dialog open={open} onOpenChange={(v) => {
             // Prevent closing if modal is required for open shift
-            if (!v && mode === 'open' && settings?.require_starting_cash && !session) {
-                // Determine if we can close? Maybe if user cancels, they can't use POS.
-                // For now allow close but they will be prompted again or blocked actions?
-                // Better to allow close so they can go back.
+            if (!v && mode === 'open' && settings?.require_mandatory_session && !session) {
+                // Block closing - user MUST open session
+                toast.warning('Anda harus membuka shift terlebih dahulu!', {
+                    description: 'Shift kasir wajib dibuka sebelum menggunakan aplikasi.',
+                    duration: 4000
+                });
+                return;
             }
             onOpenChange(v);
         }}>
@@ -286,8 +289,8 @@ export function CashierSessionModal({
                                 */}
                                 {!settings?.require_blind_close && actualCash && (
                                     <div className={`p-3 rounded-lg text-sm font-bold flex justify-between ${(parseFloat(actualCash) - (closingData?.expected_cash || 0)) === 0
-                                            ? 'bg-green-50 text-green-700'
-                                            : 'bg-red-50 text-red-700'
+                                        ? 'bg-green-50 text-green-700'
+                                        : 'bg-red-50 text-red-700'
                                         }`}>
                                         <span>Selisih:</span>
                                         <span>{formatPrice(parseFloat(actualCash) - (closingData?.expected_cash || 0))}</span>

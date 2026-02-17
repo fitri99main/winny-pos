@@ -15,8 +15,8 @@ export function QRCard({ type, name, id, roleOrTier, joinDateOrBirthday }: QRCar
     return (
         <div className="id-card-container print:m-0 print:p-0">
             <div className={`relative w-[350px] h-[210px] rounded-2xl shadow-2xl overflow-hidden flex transition-all duration-300 ${isEmployee
-                    ? 'bg-gradient-to-br from-indigo-600 via-indigo-700 to-indigo-900 border-2 border-indigo-400/30'
-                    : 'bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 border-2 border-amber-300/30'
+                ? 'bg-gradient-to-br from-indigo-600 via-indigo-700 to-indigo-900 border-2 border-indigo-400/30'
+                : 'bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 border-2 border-amber-300/30'
                 }`}>
                 {/* Decorative Elements */}
                 <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-10 -mt-10 blur-2xl" />
@@ -34,7 +34,7 @@ export function QRCard({ type, name, id, roleOrTier, joinDateOrBirthday }: QRCar
                                 {isEmployee ? 'Employee ID' : 'Member Card'}
                             </h3>
                             <p className="text-[10px] opacity-70 font-bold uppercase tracking-widest">
-                                Winny Cafe & Resto
+                                Winny Pangeran Natakusuma
                             </p>
                         </div>
                     </div>

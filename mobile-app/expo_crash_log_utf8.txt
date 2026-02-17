@@ -1,0 +1,97 @@
+﻿env: load .env
+env: export EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY
+Starting project at C:\Users\USER\Downloads\kejaan ayah\winny-main\mobile-app
+node.exe : Error: 
+The required package 
+`expo-asset` cannot 
+be found
+At line:1 char:1
++ & "C:\Program Files
+\nodejs/node.exe" 
+"C:\Program 
+Files\nodejs/node_mo 
+...
++ ~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~
+    + CategoryInfo   
+           : NotSpe  
+  cified: (Error:    
+ The requ...canno    
+t be found:Strin    
+g) [], RemoteExc    
+eption
+    + FullyQualified 
+   ErrorId : Native  
+  CommandError
+ 
+Error: The required 
+package `expo-asset` 
+cannot be found
+    at 
+getAssetPlugins (C:\U
+sers\USER\Downloads\k
+ejaan ayah\winny-main
+\mobile-app\node_modu
+les\@expo\metro-confi
+g\src\ExpoMetroConfig
+.ts:65:11)
+    at 
+getDefaultConfig (C:\
+Users\USER\Downloads\
+kejaan ayah\winny-mai
+n\mobile-app\node_mod
+ules\@expo\metro-conf
+ig\src\ExpoMetroConfi
+g.ts:373:21)
+    at 
+loadMetroConfigAsync 
+(C:\Users\USER\Downlo
+ads\kejaan ayah\winny
+-main\mobile-app\node
+_modules\@expo\cli\sr
+c\start\server\metro\
+instantiateMetro.ts:9
+6:43)
+    at instantiateMet
+roAsync (C:\Users\USE
+R\Downloads\kejaan ay
+ah\winny-main\mobile-
+app\node_modules\@exp
+o\cli\src\start\serve
+r\metro\instantiateMe
+tro.ts:195:53)
+    at MetroBundlerDe
+vServer.startImplemen
+tationAsync (C:\Users
+\USER\Downloads\kejaa
+n ayah\winny-main\mob
+ile-app\node_modules\
+@expo\cli\src\start\s
+erver\metro\MetroBund
+lerDevServer.ts:940:6
+9)
+    at MetroBundlerDe
+vServer.startAsync (C
+:\Users\USER\Download
+s\kejaan ayah\winny-m
+ain\mobile-app\node_m
+odules\@expo\cli\src\
+start\server\BundlerD
+evServer.ts:160:18)
+    at DevServerManag
+er.startAsync (C:\Use
+rs\USER\Downloads\kej
+aan ayah\winny-main\m
+obile-app\node_module
+s\@expo\cli\src\start
+\server\DevServerMana
+ger.ts:184:7)
+    at startAsync (C:
+\Users\USER\Downloads
+\kejaan ayah\winny-ma
+in\mobile-app\node_mo
+dules\@expo\cli\src\s
+tart\startAsync.ts:99
+:3)
