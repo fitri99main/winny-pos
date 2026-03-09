@@ -36,7 +36,7 @@ export default defineConfig({
   base: process.env.NODE_ENV === "development" ? "/" : process.env.VITE_BASE_PATH || "/",
   optimizeDeps: {
     entries: ["src/main.tsx", "src/tempobook/**/*"],
-    exclude: ["WebSdk", "@digitalpersona/websdk", "@digitalpersona/devices"],
+    exclude: ["WebSdk"],
   },
   build: {
     chunkSizeWarningLimit: 1000,

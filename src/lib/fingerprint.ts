@@ -1,17 +1,11 @@
 // src/lib/fingerprint.ts
-
-import { FingerprintReader, SampleFormat, DeviceConnected, DeviceDisconnected, SamplesAcquired, AcquisitionStarted, AcquisitionStopped } from '@digitalpersona/devices';
-
-/**
- * Utility Service untuk menghubungkan perangkat Fingerprint USB U.are.U 4500 (DigitalPersona / ZKTeco)
- * Beroperasi menggunakan official DigitalPersona Web SDK (@digitalpersona/devices).
- * Membutuhkan DigitalPersona Lite Client v2.1.1 atau HID Authentication Device Client sudah terinstal 
- * dan Service-nya berjalan di Windows.
- */
+// IMPORTANT: @digitalpersona/devices is loaded lazily via dynamic import
+// to prevent WebSdk (which contains legacy `var async` code) from being
+// bundled into the main chunk and crashing due to ES module reserved keyword conflict.
 
 export interface FingerprintResult {
     success: boolean;
-    template?: string; // Berisi Base64 string dari sidik jari
+    template?: string;
     message?: string;
     errorType?: 'NO_DEVICE' | 'SERVICE_NOT_RUNNING' | 'SCAN_FAILED' | 'UNKNOWN';
 }
@@ -19,27 +13,34 @@ export interface FingerprintResult {
 export type FingerprintCallback = (status: string, result?: FingerprintResult) => void;
 
 class FingerprintService {
-    private reader: FingerprintReader;
+    private reader: any = null;
     private isCapturing = false;
-    private isBusy = false; // Guard for SDK calls
+    private isBusy = false;
     private scanCallback: FingerprintCallback | null = null;
     private currentMode: 'CAPTURE' | 'ENROLL' = 'CAPTURE';
     private cachedDevice: any = null;
     private busyTimeout: NodeJS.Timeout | null = null;
     private currentPort: number = 52181;
     private initialized: boolean = false;
+    private devicesModule: any = null;
 
-    constructor() {
-        // Delay initialization to startCapture where we can try ports
-        this.reader = new FingerprintReader();
+    private async loadDevicesModule() {
+        if (this.devicesModule) return this.devicesModule;
+        try {
+            // Dynamic import — keeps WebSdk out of the initial bundle
+            this.devicesModule = await import('@digitalpersona/devices');
+            return this.devicesModule;
+        } catch (err) {
+            console.error('Failed to load @digitalpersona/devices:', err);
+            throw new Error('Modul fingerprint tidak dapat dimuat.');
+        }
     }
 
-    private initReader(port: number) {
-        // Re-instantiate reader with specific port
+    private async initReader(port: number) {
+        const { FingerprintReader } = await this.loadDevicesModule();
         this.reader = new FingerprintReader({ port });
         this.currentPort = port;
 
-        // Register event handlers
         this.reader.on('DeviceConnected', this.onDeviceConnected);
         this.reader.on('DeviceDisconnected', this.onDeviceDisconnected);
         this.reader.on('SamplesAcquired', this.onSamplesAcquired);
@@ -47,14 +48,12 @@ class FingerprintService {
         this.reader.on('AcquisitionStopped', this.onAcquisitionStopped);
     }
 
-    private onDeviceConnected = (event: DeviceConnected) => {
+    private onDeviceConnected = (event: any) => {
         console.log('DigitalPersona: Device Connected', event);
-        if (this.scanCallback) {
-            this.scanCallback('ALAT_TERDETEKSI');
-        }
+        if (this.scanCallback) this.scanCallback('ALAT_TERDETEKSI');
     };
 
-    private onDeviceDisconnected = (event: DeviceDisconnected) => {
+    private onDeviceDisconnected = (event: any) => {
         console.warn('DigitalPersona: Device Disconnected', event);
         if (this.isCapturing && this.scanCallback) {
             this.scanCallback('ERROR', {
@@ -66,14 +65,12 @@ class FingerprintService {
         }
     };
 
-    private onAcquisitionStarted = (event: AcquisitionStarted) => {
+    private onAcquisitionStarted = (_event: any) => {
         console.log('DigitalPersona: Acquisition Started');
-        if (this.scanCallback) {
-            this.scanCallback('WAITING_FOR_FINGER');
-        }
+        if (this.scanCallback) this.scanCallback('WAITING_FOR_FINGER');
     };
 
-    private onAcquisitionStopped = (event: AcquisitionStopped) => {
+    private onAcquisitionStopped = (_event: any) => {
         console.log('DigitalPersona: Acquisition Stopped');
         this.isCapturing = false;
         this.isBusy = false;
@@ -83,35 +80,19 @@ class FingerprintService {
         }
     };
 
-    private onSamplesAcquired = (event: SamplesAcquired) => {
+    private onSamplesAcquired = (event: any) => {
         console.log('DigitalPersona: Samples Acquired');
         if (!this.scanCallback) return;
-
         try {
-            // Get the first sample and extract its Base64 data
             if (event.samples && event.samples.length > 0) {
-                // The sample format depends on what we requested. Usually Intermediate/Raw or PngImage.
-                // We'll use the raw base64 string provided by the SDK as our template.
-                // Note: Real templating/matching requires @digitalpersona/services or a backend server.
-                // For simplicity in this POS context, we use the base64 string provided.
                 const sampleBase64 = event.samples[0].Data || event.samples[0];
-
-                // Assuming it's a string, if it's an object we might need to stringify
                 const template = typeof sampleBase64 === 'string' ? sampleBase64 : JSON.stringify(sampleBase64);
-
-                console.log('DigitalPersona: Sample captured analysis:', {
-                    length: template.length,
-                    prefix: template.substring(0, 50),
-                    isString: typeof sampleBase64 === 'string'
-                });
-
                 this.scanCallback('SUCCESS', {
                     success: true,
-                    template: template,
+                    template,
                     message: this.currentMode === 'ENROLL' ? 'Sidik jari berhasil didaftarkan' : 'Sidik jari berhasil dibaca'
                 });
             } else {
-                console.warn('DigitalPersona: Samples acquired but quality is poor or empty');
                 this.scanCallback('ERROR', {
                     success: false,
                     message: 'Kualitas scan jari kurang baik. Coba bersihkan jari atau tekan lebih mantap.',
@@ -130,39 +111,24 @@ class FingerprintService {
         }
     };
 
-    /**
-     * Helper to wrap a promise with a timeout
-     */
     private withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> {
         let timeoutHandle: NodeJS.Timeout;
         const timeoutPromise = new Promise<T>((_, reject) => {
             timeoutHandle = setTimeout(() => reject(new Error(errorMessage)), timeoutMs);
         });
-
         return Promise.race([
-            promise.then(result => {
-                clearTimeout(timeoutHandle);
-                return result;
-            }),
+            promise.then(result => { clearTimeout(timeoutHandle); return result; }),
             timeoutPromise
         ]);
     }
 
-    /**
-     * Force reset the busy state if something gets stuck
-     */
     forceResetBusy() {
         console.log('DigitalPersona: Force resetting busy state');
         this.isBusy = false;
-        if (this.busyTimeout) {
-            clearTimeout(this.busyTimeout);
-            this.busyTimeout = null;
-        }
+        if (this.busyTimeout) { clearTimeout(this.busyTimeout); this.busyTimeout = null; }
     }
 
-    getCurrentPort() {
-        return this.currentPort;
-    }
+    getCurrentPort() { return this.currentPort; }
 
     getServiceUrls() {
         return [
@@ -172,41 +138,28 @@ class FingerprintService {
         ];
     }
 
-    /**
-     * Mengecek apakah layanan DigitalPersona berjalan.
-     * Secara default SDK berjalan di port 52181 (HTTP) atau 52182 (HTTPS).
-     */
     async checkServiceAvailability(): Promise<{ available: boolean; error?: string }> {
         try {
             if (!this.initialized) {
-                // Trigger a dummy capture call to initialize (it will throw or succeed connection)
-                // but better just use the logic directly
                 const isHttps = window.location.protocol === 'https:';
                 const portsToTry = isHttps ? [52182, 52181] : [52181, 52182];
                 let success = false;
-                let lastError = "";
-
-                console.log('DigitalPersona: Probing service availability...', { isHttps, portsToTry });
-
+                let lastError = '';
                 for (const port of portsToTry) {
                     try {
-                        this.initReader(port);
-                        // Using a very short timeout for probing
-                        await this.withTimeout(this.reader.enumerateDevices(), 2000, "Timeout");
+                        await this.initReader(port);
+                        await this.withTimeout(this.reader.enumerateDevices() as Promise<any[]>, 2000, 'Timeout');
                         success = true;
-                        console.log(`DigitalPersona: Service found on port ${port}`);
                         break;
                     } catch (e: any) {
-                        lastError = e?.message || "Unknown error";
-                        console.warn(`DigitalPersona: Port ${port} probe failed: ${lastError}`);
+                        lastError = e?.message || 'Unknown error';
                     }
                 }
                 if (!success) throw new Error(`Layanan tidak merespon: ${lastError}`);
                 this.initialized = true;
             }
             return { available: true };
-        } catch (err: any) {
-            console.warn('DigitalPersona Service not responding');
+        } catch {
             return {
                 available: false,
                 error: 'Service @digitalpersona/devices tidak merespon. Pastikan "DigitalPersona Biometric Service" berjalan.'
@@ -214,20 +167,10 @@ class FingerprintService {
         }
     }
 
-    /**
-     * Refreshes the cached device list
-     */
     async refreshDevices() {
         try {
-            const devices = await this.withTimeout(
-                this.reader.enumerateDevices(),
-                10000,
-                'Refresh devices timed out'
-            );
-            if (devices.length > 0) {
-                this.cachedDevice = devices[0];
-                return devices;
-            }
+            const devices = await this.withTimeout(this.reader.enumerateDevices() as Promise<any[]>, 10000, 'Refresh devices timed out');
+            if (devices && (devices as any[]).length > 0) { this.cachedDevice = (devices as any[])[0]; return devices; }
             this.cachedDevice = null;
             return [];
         } catch (err) {
@@ -237,35 +180,21 @@ class FingerprintService {
         }
     }
 
-    /**
-     * Memulai proses tangkap sidik jari menggunakan Web SDK
-     */
     async startCapture(onStatusUpdate: FingerprintCallback, mode: 'CAPTURE' | 'ENROLL' = 'CAPTURE') {
         if (this.isCapturing) return;
-
         this.scanCallback = onStatusUpdate;
         this.currentMode = mode;
-
         if (this.isBusy) {
-            console.warn('DigitalPersona: Service is busy.');
-            if (!this.busyTimeout) this.isBusy = false; // Reset if no active timeout
-            else {
-                onStatusUpdate('ERROR', { success: false, message: 'Alat sedang sibuk.', errorType: 'UNKNOWN' });
-                return;
-            }
+            if (!this.busyTimeout) this.isBusy = false;
+            else { onStatusUpdate('ERROR', { success: false, message: 'Alat sedang sibuk.', errorType: 'UNKNOWN' }); return; }
         }
 
-        console.log('DigitalPersona: startCapture requested', { mode, currentPort: this.currentPort });
-
-        // Global timeout for the entire capture process (20 seconds) 
-        // to prevent perpetual loading if SDK or browser hangs
         const globalTimeout = setTimeout(() => {
             if (this.isBusy && !this.isCapturing) {
-                console.error('DigitalPersona: GLOBAL TIMEOUT triggered');
                 this.isBusy = false;
                 onStatusUpdate('ERROR', {
                     success: false,
-                    message: 'Gagal menghubungkan ke scanner (Service Timeout). Mohon gunakan link diagnosa di bawah.',
+                    message: 'Gagal menghubungkan ke scanner (Service Timeout).',
                     errorType: 'SERVICE_NOT_RUNNING'
                 });
             }
@@ -275,51 +204,33 @@ class FingerprintService {
             this.isBusy = true;
             onStatusUpdate('Menghubungkan...');
 
-            // 1. Initialize Service Connection (Port Negotiation)
             if (!this.initialized) {
+                const modules = await this.loadDevicesModule();
+                const { SampleFormat } = modules;
                 const isHttps = window.location.protocol === 'https:';
                 const portsToTry = isHttps ? [52182, 52181] : [52181, 52182];
-
                 let success = false;
                 for (const port of portsToTry) {
                     try {
                         onStatusUpdate(`Mengecek Port ${port}...`);
-                        console.log(`DigitalPersona: Trying Port ${port}...`);
-                        this.initReader(port);
-
-                        // Short timeout for port probing
-                        await this.withTimeout(this.reader.enumerateDevices(), 4000, `Timeout di Port ${port}`);
-
-                        console.log(`DigitalPersona: Connected via Port ${port}`);
+                        await this.initReader(port);
+                        await this.withTimeout(this.reader.enumerateDevices() as Promise<any[]>, 4000, `Timeout di Port ${port}`);
                         success = true;
                         break;
                     } catch (e: any) {
                         console.warn(`DigitalPersona: Port ${port} failed: ${e.message}`);
                     }
                 }
-
-                if (!success) {
-                    throw new Error("Layanan biometrik tidak merespon (Gunakan link bantuan di bawah untuk verifikasi).");
-                }
+                if (!success) throw new Error('Layanan biometrik tidak merespon.');
                 this.initialized = true;
             }
 
-            // 2. Get Device
             let device = this.cachedDevice;
             if (!device) {
                 onStatusUpdate('Mencari Alat...');
-                const devices = await this.withTimeout(
-                    this.reader.enumerateDevices(),
-                    10000,
-                    'Gagal mendeteksi alat (Service Timeout). Pastikan service DigitalPersona berjalan.'
-                );
-
-                if (devices.length === 0) {
-                    onStatusUpdate('ERROR', {
-                        success: false,
-                        message: 'Alat fingerprint tidak terdeteksi. Silakan cabut dan pasang kembali USB.',
-                        errorType: 'NO_DEVICE'
-                    });
+                const devices = await this.withTimeout(this.reader.enumerateDevices() as Promise<any[]>, 10000, 'Gagal mendeteksi alat');
+                if (!devices || (devices as any[]).length === 0) {
+                    onStatusUpdate('ERROR', { success: false, message: 'Alat fingerprint tidak terdeteksi.', errorType: 'NO_DEVICE' });
                     this.isBusy = false;
                     return;
                 }
@@ -327,25 +238,20 @@ class FingerprintService {
                 this.cachedDevice = device;
             }
 
-            // 3. Start Acquisition
+            const { SampleFormat } = await this.loadDevicesModule();
             onStatusUpdate('Menyiapkan Scanner...');
             await this.withTimeout(
                 this.reader.startAcquisition(SampleFormat.Intermediate, device),
-                10000,
-                'Gagal memulai pemindaian (Timeout).'
+                10000, 'Gagal memulai pemindaian (Timeout).'
             );
-
             clearTimeout(globalTimeout);
             this.isCapturing = true;
             this.isBusy = false;
-            console.log('DigitalPersona: Capture started successfully');
 
         } catch (err: any) {
             clearTimeout(globalTimeout);
-            console.error('Failed to start capture:', err);
             this.isBusy = false;
             this.isCapturing = false;
-
             onStatusUpdate('ERROR', {
                 success: false,
                 message: err.message || 'Gagal inisialisasi hardware.',
@@ -354,18 +260,10 @@ class FingerprintService {
         }
     }
 
-    /**
-     * Membatalkan proses scan
-     */
     async stopCapture() {
         if (this.isCapturing) {
             try {
-                // Adding a 3-second timeout to stopAcquisition
-                await this.withTimeout(
-                    this.reader.stopAcquisition(),
-                    3000,
-                    'DigitalPersona acquisition stop timed out'
-                );
+                await this.withTimeout(this.reader.stopAcquisition(), 3000, 'Stop acquisition timed out');
             } catch (err) {
                 console.warn('Error stopping acquisition', err);
             } finally {
@@ -376,12 +274,8 @@ class FingerprintService {
         this.scanCallback = null;
     }
 
-    /**
-     * [MOCK] Untuk Development Test jika alat fisik/client tidak ada
-     */
     mockCapture(onStatusUpdate: FingerprintCallback, shouldSuccess: boolean = true) {
         onStatusUpdate('WAITING_FOR_FINGER');
-
         setTimeout(() => {
             if (shouldSuccess) {
                 onStatusUpdate('SUCCESS', {
