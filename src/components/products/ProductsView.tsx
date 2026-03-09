@@ -173,7 +173,7 @@ export function ProductsView({
             for (let i = 0; i < printQty; i++) {
                 await printerService.printBarcode(selectedProduct.code);
                 // Tiny delay for printer buffer stability
-                if (printQty > 1) await new Promise(r => setTimeout(r, 500));
+                if (printQty > 1) await new Promise((resolve) => setTimeout(resolve, 500));
             }
             toast.success(`${printQty} Label barcode dicetak untuk ${selectedProduct.name}`);
             setIsPrintModalOpen(false);
