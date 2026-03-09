@@ -5,21 +5,25 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 // Custom plugin to patch @digitalpersona/websdk which embeds old caolan/async
 // library that uses `async` as a variable name — reserved keyword in ES modules.
+// Uses global word boundary replacement to catch ALL occurrences of `async`.
 function patchWebSdkAsync(): Plugin {
   return {
     name: 'patch-websdk-async',
+    enforce: 'pre',
     transform(code, id) {
+      if (
+        (id.includes('@digitalpersona') || id.includes('websdk')) &&
+        code.includes('/* PATCHED:async->_asyncLib */')
+      ) {
+        // File already patched by postinstall script, serve as-is
+        return null;
+      }
       if (
         (id.includes('@digitalpersona') || id.includes('websdk')) &&
         (code.includes('var async = {}') || code.includes('previous_async'))
       ) {
-        const patched = code
-          .replace(/\bvar async\s*=/g, 'var _asyncLib =')       // rename var declaration
-          .replace(/\bprevious_async\b/g, '_previous_asyncLib')  // rename previous_ var
-          .replace(/\broot\.async\b/g, 'root._asyncLib')         // root.async assignment
-          .replace(/\basync\./g, '_asyncLib.')                    // all async.method calls
-          .replace(/\breturn async;/g, 'return _asyncLib;')       // return statement
-          .replace(/\bmodule\.exports\s*=\s*async\b/g, 'module.exports = _asyncLib');
+        // Global replacement — all `async` identifiers → `_asyncLib`
+        const patched = code.replace(/\basync\b/g, '_asyncLib');
         return { code: patched, map: null };
       }
       return null;
@@ -27,13 +31,12 @@ function patchWebSdkAsync(): Plugin {
   };
 }
 
-
 // https://vitejs.dev/config/
 export default defineConfig({
   base: process.env.NODE_ENV === "development" ? "/" : process.env.VITE_BASE_PATH || "/",
   optimizeDeps: {
     entries: ["src/main.tsx", "src/tempobook/**/*"],
-    exclude: ["WebSdk"],
+    exclude: ["WebSdk", "@digitalpersona/websdk", "@digitalpersona/devices"],
   },
   build: {
     chunkSizeWarningLimit: 1000,
