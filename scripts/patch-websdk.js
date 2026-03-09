@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 /**
- * Patches @digitalpersona/websdk files to rename the legacy "async" variable
- * (from embedded caolan/async library) which conflicts with the ES module
- * reserved keyword `async`, causing: ReferenceError: async is not defined
+ * Patches @digitalpersona/websdk files to rename ALL occurrences of the word
+ * "async" (used as a variable by the embedded caolan/async library) to
+ * "_asyncLib". This prevents ReferenceError: async is not defined in ES modules.
+ *
+ * Run: node scripts/patch-websdk.js
+ * Auto-runs via: npm install (postinstall hook in package.json)
  */
 
 import fs from 'fs';
@@ -31,23 +34,20 @@ function patchFile(filePath) {
 
     let code = fs.readFileSync(absPath, 'utf8');
 
-    if (code.includes(MARKER)) {
-        console.log(`[patch-websdk] Already patched: ${filePath}`);
-        return;
+    // Remove old marker and re-patch if already patched (force re-apply)
+    if (code.startsWith(MARKER + '\n')) {
+        code = code.slice((MARKER + '\n').length);
     }
 
-    if (!code.includes('var async = {}') && !code.includes('previous_async')) {
+    if (!code.includes('var async = {}') && !code.includes('previous_async') && !code.includes('var _asyncLib')) {
         console.log(`[patch-websdk] No conflict found, skipping: ${filePath}`);
         return;
     }
 
-    const patched = code
-        .replace(/\bvar async\s*=/g, 'var _asyncLib =')
-        .replace(/\bprevious_async\b/g, '_previous_asyncLib')
-        .replace(/\broot\.async\b/g, 'root._asyncLib')
-        .replace(/\basync\./g, '_asyncLib.')
-        .replace(/\breturn async;/g, 'return _asyncLib;')
-        .replace(/\bmodule\.exports\s*=\s*async\b/g, 'module.exports = _asyncLib');
+    // Global word replacement: every standalone `async` identifier → `_asyncLib`
+    // This file is pure ES5 (caolan/async embedded in WebSdk) — no native async/await
+    // so replacing all \basync\b is safe and complete.
+    const patched = code.replace(/\basync\b/g, '_asyncLib');
 
     fs.writeFileSync(absPath, MARKER + '\n' + patched, 'utf8');
     console.log(`[patch-websdk] ✓ Patched: ${filePath}`);
