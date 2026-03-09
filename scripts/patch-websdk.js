@@ -1,58 +1,57 @@
 #!/usr/bin/env node
 /**
- * Patches @digitalpersona/websdk files to rename ALL occurrences of the word
- * "async" (used as a variable by the embedded caolan/async library) to
- * "_asyncLib". This prevents ReferenceError: async is not defined in ES modules.
- *
- * Run: node scripts/patch-websdk.js
- * Auto-runs via: npm install (postinstall hook in package.json)
+ * Patches @digitalpersona/websdk files to rename the legacy "async" variable
+ * (from embedded caolan/async library) which conflicts with the ES module
+ * reserved keyword `async`, causing: ReferenceError: async is not defined.
+ * 
+ * This version is targeted ONLY at the legacy UMD bundles.
  */
-
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const rootDir = path.resolve(__dirname, '..');
 
 const filesToPatch = [
     'node_modules/@digitalpersona/websdk/dist/websdk.client.js',
-    'node_modules/@digitalpersona/websdk/dist/websdk.client.ui.js',
     'node_modules/@digitalpersona/websdk/dist/websdk.client.min.js',
-    'node_modules/@digitalpersona/websdk/dist/websdk.client.ui.min.js',
+    'node_modules/@digitalpersona/websdk/dist/websdk.client.ui.js',
+    'node_modules/@digitalpersona/websdk/dist/websdk.client.ui.min.js'
 ];
 
-const MARKER = '/* PATCHED:async->_asyncLib */';
+const PATCH_MARKER = '/* PATCHED:async->_asyncLib */';
 
-function patchFile(filePath) {
-    const absPath = path.resolve(__dirname, '..', filePath);
+console.log('[patch-websdk] Running targeted patch for legacy WebSDK bundles...');
 
-    if (!fs.existsSync(absPath)) {
-        console.log(`[patch-websdk] Skipping (not found): ${filePath}`);
+filesToPatch.forEach(relPath => {
+    const fullPath = path.join(rootDir, relPath);
+
+    if (!fs.existsSync(fullPath)) {
+        console.warn(`[patch-websdk] File not found, skipping: ${relPath}`);
         return;
     }
 
-    let code = fs.readFileSync(absPath, 'utf8');
+    let content = fs.readFileSync(fullPath, 'utf8');
 
-    // Remove old marker and re-patch if already patched (force re-apply)
-    if (code.startsWith(MARKER + '\n')) {
-        code = code.slice((MARKER + '\n').length);
-    }
-
-    if (!code.includes('var async = {}') && !code.includes('previous_async') && !code.includes('var _asyncLib')) {
-        console.log(`[patch-websdk] No conflict found, skipping: ${filePath}`);
+    if (content.includes(PATCH_MARKER)) {
+        console.log(`[patch-websdk] Already patched: ${relPath}`);
         return;
     }
 
-    // Global word replacement: every standalone `async` identifier → `_asyncLib`
-    // This file is pure ES5 (caolan/async embedded in WebSdk) — no native async/await
-    // so replacing all \basync\b is safe and complete.
-    const patched = code.replace(/\basync\b/g, '_asyncLib');
+    if (content.includes('var async = {}') || content.includes('previous_async')) {
+        console.log(`[patch-websdk] Patching: ${relPath}`);
 
-    fs.writeFileSync(absPath, MARKER + '\n' + patched, 'utf8');
-    console.log(`[patch-websdk] ✓ Patched: ${filePath}`);
-}
+        // Globally replace word 'async' with '_asyncLib'
+        // This is safe for these specific files as they are legacy UMD bundles
+        // and do not contain modern 'async function' syntax.
+        const patchedContent = content.replace(/\basync\b/g, '_asyncLib');
 
-console.log('[patch-websdk] Patching @digitalpersona/websdk files...');
-filesToPatch.forEach(patchFile);
-console.log('[patch-websdk] Done.');
+        fs.writeFileSync(fullPath, PATCH_MARKER + '\n' + patchedContent, 'utf8');
+        console.log(`[patch-websdk] Success: ${relPath}`);
+    } else {
+        console.log(`[patch-websdk] No conflicting async pattern found in: ${relPath}`);
+    }
+});
+
+console.log('[patch-websdk] Targeted patching done.');

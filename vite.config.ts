@@ -1,35 +1,8 @@
 import path from "path";
-import { defineConfig, Plugin } from "vite";
+import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import { VitePWA } from 'vite-plugin-pwa';
 
-// Custom plugin to patch @digitalpersona/websdk which embeds old caolan/async
-// library that uses `async` as a variable name — reserved keyword in ES modules.
-// Uses global word boundary replacement to catch ALL occurrences of `async`.
-function patchWebSdkAsync(): Plugin {
-  return {
-    name: 'patch-websdk-async',
-    enforce: 'pre',
-    transform(code, id) {
-      if (
-        (id.includes('@digitalpersona') || id.includes('websdk')) &&
-        code.includes('/* PATCHED:async->_asyncLib */')
-      ) {
-        // File already patched by postinstall script, serve as-is
-        return null;
-      }
-      if (
-        (id.includes('@digitalpersona') || id.includes('websdk')) &&
-        (code.includes('var async = {}') || code.includes('previous_async'))
-      ) {
-        // Global replacement — all `async` identifiers → `_asyncLib`
-        const patched = code.replace(/\basync\b/g, '_asyncLib');
-        return { code: patched, map: null };
-      }
-      return null;
-    }
-  };
-}
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -74,7 +47,7 @@ export default defineConfig({
     }
   },
   plugins: [
-    patchWebSdkAsync(),
+
     react(),
     VitePWA({
       devOptions: {
