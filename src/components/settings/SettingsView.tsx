@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, User, Monitor, Globe, Bell, Shield, Save, Clock, Calendar, Printer, FileText, LayoutGrid, Plus, Trash2, Edit, CreditCard, CheckCircle2, XCircle, Database, Upload, Download, AlertTriangle, Loader2, Calculator, RotateCcw, Zap } from 'lucide-react';
+import { Settings, User, Monitor, Globe, Bell, Shield, Save, Clock, Calendar, Printer, FileText, LayoutGrid, Plus, Trash2, Edit, CreditCard, CheckCircle2, XCircle, Database, Upload, Download, AlertTriangle, Loader2, Calculator, RotateCcw, Zap, Info } from 'lucide-react';
 import { printerService } from '../../lib/PrinterService';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -8,6 +8,7 @@ import { Switch } from '../ui/switch';
 import { Label } from '../ui/label';
 
 import { supabase } from '../../lib/supabase';
+import { fingerprint } from '../../lib/fingerprint';
 
 interface SettingsViewProps {
     settings: any;
@@ -35,6 +36,7 @@ export function SettingsView({
     const [profileName, setProfileName] = useState('');
     const [updatingProfile, setUpdatingProfile] = useState(false);
     const [uploadingLogo, setUploadingLogo] = useState(false);
+    const [sdkStatus, setSdkStatus] = useState<'idle' | 'checking' | 'active' | 'error'>('idle');
 
     useEffect(() => {
         if (user) {
@@ -606,12 +608,15 @@ export function SettingsView({
                         <div className="bg-blue-50/50 p-6 rounded-2xl border border-blue-100 space-y-4">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-3">
-                                    <div className="bg-blue-600 p-2 rounded-lg">
+                                    <div className="bg-blue-600 p-2 rounded-lg shadow-lg shadow-blue-100">
                                         <Zap className="w-5 h-5 text-white" />
                                     </div>
                                     <div>
-                                        <h4 className="font-bold text-blue-800">Pengaturan Fingerprint USB</h4>
-                                        <p className="text-[10px] text-blue-600/70 italic">Gunakan scanner fingerprint mode HID (Keyboard Emulation).</p>
+                                        <div className="flex items-center gap-2">
+                                            <h4 className="font-bold text-blue-800">Fingerprint Scanner (USB)</h4>
+                                            <span className="px-1.5 py-0.5 bg-blue-100 text-blue-600 text-[9px] font-bold rounded-md uppercase">SDK Mode</span>
+                                        </div>
+                                        <p className="text-[10px] text-blue-600/70 italic">Gunakan alat pemindai sidik jari DigitalPersona.</p>
                                     </div>
                                 </div>
                                 <Switch
@@ -625,7 +630,7 @@ export function SettingsView({
                                     <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-blue-100">
                                         <div>
                                             <p className="text-sm font-bold text-gray-700">Sembunyikan Kamera Scanner</p>
-                                            <p className="text-[10px] text-gray-400">Nonaktifkan QR Scanner di menu absensi.</p>
+                                            <p className="text-[10px] text-gray-400">Gunakan fingerprint sebagai metode utama absensi.</p>
                                         </div>
                                         <Switch
                                             checked={localSettings.hide_camera_scanner || false}
@@ -637,17 +642,55 @@ export function SettingsView({
                                             <p className="text-sm font-bold text-gray-700 flex items-center gap-2">
                                                 <Shield className="w-3.5 h-3.5" /> Otorisasi Manager
                                             </p>
-                                            <p className="text-[10px] text-gray-400">Retur memerlukan scan fingerprint Manager/Admin.</p>
+                                            <p className="text-[10px] text-gray-400">Retur & pembatalan memerlukan scan fingerprint Manager.</p>
                                         </div>
                                         <Switch
                                             checked={localSettings.enable_manager_auth || false}
                                             onCheckedChange={c => handleLocalChange({ ...localSettings, enable_manager_auth: c })}
                                         />
                                     </div>
-                                    <div className="p-3 bg-white rounded-xl border border-blue-100">
-                                        <p className="text-xs font-bold text-gray-700 mb-2">Metode Input: <span className="text-blue-600">HID/Keyboard</span></p>
-                                        <p className="text-[10px] text-gray-500 leading-relaxed">
-                                            Aplikasi akan otomatis menangkap input dari scanner fingerprint USB Anda tanpa perlu klik kolom input apapun.
+                                    <div className="p-3 bg-blue-100/30 rounded-xl border border-blue-100 space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <p className="text-[10px] font-bold text-blue-700 flex items-center gap-1.5">
+                                                <Info className="w-3 h-3" /> Status SDK
+                                            </p>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-6 px-2 text-[9px] bg-blue-600 text-white hover:bg-blue-700 rounded-md"
+                                                disabled={sdkStatus === 'checking'}
+                                                onClick={async () => {
+                                                    setSdkStatus('checking');
+                                                    const isAvailable = await fingerprint.checkServiceAvailability();
+                                                    if (isAvailable) {
+                                                        setSdkStatus('active');
+                                                        toast.success('DigitalPersona SDK aktif dan terdeteksi.');
+                                                    } else {
+                                                        setSdkStatus('error');
+                                                        toast.error('Gagal mendeteksi SDK. Cek instruksi di bawah.');
+                                                    }
+                                                }}
+                                            >
+                                                {sdkStatus === 'checking' ? <Loader2 className="w-2.5 h-2.5 animate-spin mr-1" /> : null}
+                                                Cek Status SDK
+                                            </Button>
+                                        </div>
+
+                                        {sdkStatus === 'active' && (
+                                            <p className="text-[10px] text-green-600 font-medium bg-green-50 p-2 rounded-lg border border-green-100">
+                                                ✓ SDK Terdeteksi: Siap digunakan.
+                                            </p>
+                                        )}
+
+                                        {sdkStatus === 'error' && (
+                                            <div className="text-[10px] text-red-600 bg-red-50 p-2 rounded-lg border border-red-100 space-y-1">
+                                                <p className="font-bold">✗ Client Tidak Terdeteksi</p>
+                                                <p className="leading-relaxed">Solusi: Pastikan <strong>DigitalPersona Lite Client v2.1.1</strong> atau <strong>HID Authentication Device Client</strong> sudah terinstal dan Service-nya berjalan di Windows.</p>
+                                            </div>
+                                        )}
+
+                                        <p className="text-[10px] text-blue-600/80 leading-relaxed">
+                                            Pastikan layanan <strong>DigitalPersona Web SDK Service</strong> sudah berjalan agar browser dapat mengakses hardware scanner.
                                         </p>
                                     </div>
                                 </div>

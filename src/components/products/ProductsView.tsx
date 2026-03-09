@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Package, Tags, Scale, Ticket, Plus, Search, Edit, Trash2, Filter, ChefHat, Info, Calculator, Puzzle, Settings2, X, Check, Coffee } from 'lucide-react';
+import { Package, Tags, Scale, Ticket, Plus, Search, Edit, Trash2, Filter, ChefHat, Info, Calculator, Puzzle, Settings2, X, Check, Coffee, Barcode, Printer } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
 import { getAcronym } from '../../lib/utils';
+import { printerService } from '../../lib/PrinterService';
 
 // --- Types ---
 
@@ -95,6 +96,8 @@ export function ProductsView({
     const [isRecipeOpen, setIsRecipeOpen] = useState(false);
     const [isAddonOpen, setIsAddonOpen] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+    const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+    const [printQty, setPrintQty] = useState(1);
 
 
     // --- Generic Handlers ---
@@ -164,6 +167,22 @@ export function ProductsView({
         setFormData({});
     };
 
+    const handlePrintBarcode = async () => {
+        if (!selectedProduct) return;
+        try {
+            for (let i = 0; i < printQty; i++) {
+                await printerService.printBarcode(selectedProduct.code);
+                // Tiny delay for printer buffer stability
+                if (printQty > 1) await new Promise(r => setTimeout(r, 500));
+            }
+            toast.success(`${printQty} Label barcode dicetak untuk ${selectedProduct.name}`);
+            setIsPrintModalOpen(false);
+            setPrintQty(1);
+        } catch (error: any) {
+            toast.error('Gagal mencetak: ' + error.message);
+        }
+    };
+
     // --- Renderers ---
 
     const renderProductsTable = () => (
@@ -227,6 +246,7 @@ export function ProductsView({
                                         <td className="px-4 py-5 flex justify-center gap-1">
                                             <button onClick={() => { setSelectedProduct(p); setIsRecipeOpen(true); }} className="p-2.5 bg-orange-50 text-orange-600 rounded-xl hover:bg-orange-100 transition-colors" title="Atur Resep & HPP"><ChefHat className="w-4.5 h-4.5" /></button>
                                             <button onClick={() => { setSelectedProduct(p); setIsAddonOpen(true); }} className="p-2.5 bg-purple-50 text-purple-600 rounded-xl hover:bg-purple-100 transition-colors" title="Atur Toping / Add-ons"><Puzzle className="w-4.5 h-4.5" /></button>
+                                            <button onClick={() => { setSelectedProduct(p); setIsPrintModalOpen(true); }} className="p-2.5 bg-gray-50 text-gray-600 rounded-xl hover:bg-gray-100 transition-colors" title="Cetak Barcode"><Barcode className="w-4.5 h-4.5" /></button>
                                             <button onClick={() => handleOpenForm(p)} className="p-2.5 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors" title="Edit"><Edit className="w-4.5 h-4.5" /></button>
                                             <button onClick={() => handleDelete(p.id, 'product')} className="p-2.5 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors" title="Hapus"><Trash2 className="w-4.5 h-4.5" /></button>
                                         </td>
@@ -315,8 +335,8 @@ export function ProductsView({
             {isFormOpen && (() => {
                 const currentLabel = activeTab === 'products' ? 'Produk' : activeTab === 'categories' ? 'Kategori' : activeTab === 'units' ? 'Satuan' : 'Merek';
                 return (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-                        <div className="bg-white rounded-[48px] shadow-[0_32px_120px_-20px_rgba(0,0,0,0.3)] w-full max-w-2xl animate-in zoom-in-95 fade-in duration-300 overflow-hidden border border-white/20">
+                    <div onClick={() => setIsFormOpen(false)} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                        <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-[48px] shadow-[0_32px_120px_-20px_rgba(0,0,0,0.3)] w-full max-w-2xl animate-in zoom-in-95 fade-in duration-300 overflow-hidden border border-white/20">
                             <div className="px-10 py-8 border-b bg-gray-50/50 flex justify-between items-center">
                                 <div>
                                     <h3 className="font-black text-2xl text-gray-800 tracking-tight">
@@ -499,8 +519,8 @@ export function ProductsView({
 
             {/* Recipe Modal */}
             {isRecipeOpen && selectedProduct && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-[44px] shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                <div onClick={() => setIsRecipeOpen(false)} className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+                    <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-[44px] shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="px-10 py-8 border-b border-gray-50 flex items-center justify-between bg-gray-50/50">
                             <div>
                                 <h3 className="text-2xl font-black text-gray-800 tracking-tight">Resep & Kalkulasi HPP</h3>
@@ -624,8 +644,8 @@ export function ProductsView({
 
             {/* Addon Modal */}
             {isAddonOpen && selectedProduct && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-[44px] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+                <div onClick={() => setIsAddonOpen(false)} className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+                    <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-[44px] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="px-10 py-8 border-b border-gray-50 flex items-center justify-between bg-gray-50/50">
                             <div>
                                 <h3 className="text-2xl font-black text-gray-800 tracking-tight">Toping / Add-ons</h3>
@@ -690,6 +710,66 @@ export function ProductsView({
                                         <Plus className="w-4 h-4 mr-2" /> Pasangkan Toping
                                     </Button>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Print Barcode Modal */}
+            {isPrintModalOpen && selectedProduct && (
+                <div onClick={() => setIsPrintModalOpen(false)} className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+                    <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-[44px] shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="px-10 py-8 border-b border-gray-50 flex items-center justify-between bg-gray-50/50">
+                            <div>
+                                <h3 className="text-xl font-black text-gray-800 tracking-tight">Cetak Barcode</h3>
+                                <p className="text-xs text-gray-500 font-medium">{selectedProduct.name}</p>
+                            </div>
+                            <button onClick={() => setIsPrintModalOpen(false)} className="p-3 hover:bg-gray-100 rounded-2xl">
+                                <X className="w-5 h-5 text-gray-400" />
+                            </button>
+                        </div>
+                        <div className="p-10 space-y-8">
+                            <div className="flex flex-col items-center justify-center p-6 bg-gray-50 rounded-[32px] border border-gray-100 mb-4">
+                                <Barcode className="w-12 h-12 text-gray-300 mb-3" />
+                                <div className="text-center">
+                                    <p className="font-mono font-bold text-gray-800 text-lg uppercase">{selectedProduct.code}</p>
+                                    <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">SKU Produk</p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Jumlah Label (Qty)</label>
+                                <div className="flex items-center gap-4">
+                                    <button
+                                        onClick={() => setPrintQty(Math.max(1, printQty - 1))}
+                                        className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-gray-200 transition-all font-bold text-xl"
+                                    >
+                                        -
+                                    </button>
+                                    <input
+                                        type="number"
+                                        value={printQty}
+                                        onChange={(e) => setPrintQty(Math.max(1, parseInt(e.target.value) || 1))}
+                                        className="flex-1 h-14 bg-white border border-gray-200 rounded-2xl text-center font-black text-xl outline-none focus:ring-4 focus:ring-primary/5"
+                                    />
+                                    <button
+                                        onClick={() => setPrintQty(printQty + 1)}
+                                        className="w-14 h-14 rounded-2xl bg-primary text-white flex items-center justify-center shadow-lg shadow-primary/20 hover:scale-105 transition-all font-bold text-xl"
+                                    >
+                                        +
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="pt-4">
+                                <Button
+                                    onClick={handlePrintBarcode}
+                                    className="w-full h-16 rounded-[24px] bg-gray-900 hover:bg-black text-white shadow-xl shadow-gray-200 transition-all font-black flex items-center justify-center gap-3"
+                                >
+                                    <Printer className="w-5 h-5" />
+                                    Cetak Label
+                                </Button>
                             </div>
                         </div>
                     </div>

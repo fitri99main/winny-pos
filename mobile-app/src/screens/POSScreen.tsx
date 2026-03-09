@@ -38,13 +38,13 @@ export default function POSScreen() {
     // UI State
     const [showTableModal, setShowTableModal] = useState(false);
     const [showCustomerModal, setShowCustomerModal] = useState(false);
-    const [showWaiterModal, setShowWaiterModal] = useState(false);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [lastOrderNo, setLastOrderNo] = useState('');
     const [showCartModal, setShowCartModal] = useState(false);
     // const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [currentSaleId, setCurrentSaleId] = useState<number | null>(null);
     const [showMemberLoginModal, setShowMemberLoginModal] = useState(false);
+    const [countdown, setCountdown] = useState(5);
 
     const [memberPhone, setMemberPhone] = useState('');
 
@@ -56,11 +56,59 @@ export default function POSScreen() {
     const [selectedWaiter, setSelectedWaiter] = useState(initialWaiter || '');
     const [currentBranchId] = useState('7'); // Pangeran Natakusuma
 
+    // Countdown effect for success screen
+    useEffect(() => {
+        let timer: any;
+        if (showSuccessModal) {
+            setCountdown(5);
+            timer = setInterval(() => {
+                setCountdown((prev) => {
+                    if (prev <= 1) {
+                        clearInterval(timer);
+                        setShowSuccessModal(false);
+                        // @ts-ignore
+                        navigation.navigate('Main');
+                        return 0;
+                    }
+                    return prev - 1;
+                });
+            }, 1000);
+        }
+        return () => {
+            if (timer) clearInterval(timer);
+        };
+    }, [showSuccessModal, navigation]);
+
     // Fetch Initial Data
     useEffect(() => {
-        fetchProducts();
-        fetchCategories();
-        fetchMasterData();
+        let isMounted = true;
+
+        const loadData = async () => {
+            console.log('POSScreen: Loading data for branch', currentBranchId);
+            try {
+                await Promise.all([
+                    fetchProducts(),
+                    fetchCategories(),
+                    fetchMasterData()
+                ]);
+            } catch (err) {
+                console.error('POSScreen: Error in loadData:', err);
+            } finally {
+                if (isMounted) setLoadingProducts(false);
+            }
+        };
+
+        loadData();
+
+        // Safety timeout: stop spinning after 10 seconds regardless
+        const timer = setTimeout(() => {
+            if (isMounted) setLoadingProducts(false);
+        }, 10000);
+
+        return () => {
+            isMounted = false;
+            clearTimeout(timer);
+        };
     }, [currentBranchId]);
 
     // DEBUG LOG
@@ -112,15 +160,7 @@ export default function POSScreen() {
                 setTables(tableData);
             }
 
-            // 5. Fetch Waiters
-            const { data: waiterData } = await supabase
-                .from('employees')
-                .select('id, name')
-                .eq('status', 'Active');
-
-            if (waiterData) {
-                setWaiters(waiterData);
-            }
+            // 5. Waiters skipped (feature hidden)
 
         } catch (error) {
             console.error('Error fetching master data:', error);
@@ -345,10 +385,8 @@ export default function POSScreen() {
             clearCart();
             setShowCartModal(false);
 
-            // 4. Navigate back to Main (Table Selection)
-            // Web app will auto-detect new order via realtime listener
-            // @ts-ignore
-            navigation.navigate('Main');
+            // Show Success Screen (Redesign with 5s redirect)
+            setShowSuccessModal(true);
         } catch (error: any) {
             console.error('Checkout Error:', error);
             Alert.alert('Error', 'Gagal memproses pesanan: ' + error.message);
@@ -366,26 +404,21 @@ export default function POSScreen() {
                         <Text style={styles.backButtonText}>🔙</Text>
                     </TouchableOpacity>
                     <View style={styles.headerTitleContainer}>
-                        <Text style={styles.headerTitleText}>Winny Pangeran Natakusuma</Text>
+                        <Text style={styles.headerTitleText}>Winny PNK</Text>
                     </View>
                     <View style={{ width: 44 }} />
                 </View>
 
                 {/* Info Bar (Meja, Pelanggan, Pelayan) */}
-                <View style={styles.headerInfoBar}>
-                    <TouchableOpacity style={styles.infoBarItem} onPress={() => setShowTableModal(true)}>
+                <View style={[styles.headerInfoBar, { justifyContent: 'space-around' }]}>
+                    <TouchableOpacity style={[styles.infoBarItem, { flex: 1 }]} onPress={() => setShowTableModal(true)}>
                         <Text style={styles.infoBarLabel}>Meja</Text>
                         <Text style={styles.infoBarValue}>{selectedTable || '-'}</Text>
                     </TouchableOpacity>
                     <View style={styles.infoBarDivider} />
-                    <TouchableOpacity style={styles.infoBarItem} onPress={() => setShowMemberLoginModal(true)}>
+                    <TouchableOpacity style={[styles.infoBarItem, { flex: 1 }]} onPress={() => setShowMemberLoginModal(true)}>
                         <Text style={styles.infoBarLabel}>Pelanggan</Text>
                         <Text style={styles.infoBarValue} numberOfLines={1}>{customerName}</Text>
-                    </TouchableOpacity>
-                    <View style={styles.infoBarDivider} />
-                    <TouchableOpacity style={styles.infoBarItem} onPress={() => setShowWaiterModal(true)}>
-                        <Text style={styles.infoBarLabel}>Pelayan</Text>
-                        <Text style={styles.infoBarValue} numberOfLines={1}>{selectedWaiter || '-'}</Text>
                     </TouchableOpacity>
                 </View>
 
@@ -465,8 +498,8 @@ export default function POSScreen() {
                                         styles.productCard,
                                         {
                                             flex: 1,
-                                            margin: isTablet ? 10 : 6,
-                                            height: isLargeTablet ? 220 : 180
+                                            margin: isTablet ? 12 : 6,
+                                            height: isLargeTablet ? 240 : 180
                                         }
                                     ]}
                                     activeOpacity={0.7}
@@ -498,34 +531,77 @@ export default function POSScreen() {
 
 
 
-                {/* Success Modal */}
+                {/* Success Modal (Full Screen Green) */}
                 <Modal visible={showSuccessModal} transparent animationType="fade" onRequestClose={() => setShowSuccessModal(false)}>
-                    <View style={styles.modalOverlay}>
-                        <View style={[styles.modalContent, { maxWidth: 400, alignItems: 'center', padding: 30 }]}>
-                            <View style={styles.successIconCircle}>
-                                <Text style={styles.successIconText}>✓</Text>
+                    <View style={[styles.modalOverlay, { backgroundColor: '#22c55e', padding: 0 }]}>
+                        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+                            <View style={{
+                                width: 100,
+                                height: 100,
+                                borderRadius: 50,
+                                backgroundColor: 'rgba(255,255,255,0.2)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                marginBottom: 30
+                            }}>
+                                <View style={{
+                                    width: 60,
+                                    height: 60,
+                                    borderRadius: 30,
+                                    backgroundColor: 'white',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                }}>
+                                    <Text style={{ fontSize: 32, color: '#22c55e', fontWeight: 'bold' }}>✓</Text>
+                                </View>
                             </View>
-                            <Text style={styles.successTitleText}>Pesanan Berhasil!</Text>
-                            <Text style={styles.successSubtitleText}>Pesanan sedang diproses oleh kasir</Text>
 
-                            <View style={styles.orderNumberBadge}>
-                                <Text style={styles.orderNumberLabel}>NOMOR INVOICE</Text>
-                                <Text style={styles.orderNumberValue}>{lastOrderNo}</Text>
+                            <Text style={{ fontSize: 32, fontWeight: 'bold', color: 'white', textAlign: 'center' }}>
+                                Pesanan Diterima!
+                            </Text>
+                            <Text style={{ fontSize: 16, color: 'white', textAlign: 'center', marginTop: 12, opacity: 0.9 }}>
+                                Mohon tunggu sebentar, kami sedang menyiapkan pesanan Anda.
+                            </Text>
+
+                            <View style={{ marginTop: 60, alignItems: 'center' }}>
+                                <Text style={{ fontSize: 14, color: 'white', opacity: 0.7 }}>
+                                    Layar akan kembali ke awal dalam {countdown} detik.
+                                </Text>
                             </View>
 
                             <TouchableOpacity
-                                style={[styles.modalButton, styles.confirmButton, { width: '100%', marginTop: 10 }]}
-                                onPress={() => setShowSuccessModal(false)}
+                                style={{
+                                    marginTop: 40,
+                                    paddingVertical: 12,
+                                    paddingHorizontal: 24,
+                                    borderRadius: 12,
+                                    backgroundColor: 'rgba(255,255,255,0.1)',
+                                    borderWidth: 1,
+                                    borderColor: 'rgba(255,255,255,0.2)'
+                                }}
+                                onPress={() => {
+                                    setShowSuccessModal(false);
+                                    // @ts-ignore
+                                    navigation.navigate('Main');
+                                }}
                             >
-                                <Text style={styles.modalButtonText}>Kembali ke Menu</Text>
+                                <Text style={{ color: 'white', fontWeight: '600' }}>Kembali Sekarang</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
                 </Modal>
                 {/* Member Login Modal */}
                 <Modal visible={showMemberLoginModal} transparent animationType="fade" onRequestClose={skipMemberLogin}>
-                    <View style={styles.modalOverlay}>
-                        <View style={[styles.modalContent, { maxWidth: 500, width: '90%' }]}>
+                    <TouchableOpacity
+                        style={styles.modalOverlay}
+                        activeOpacity={1}
+                        onPress={skipMemberLogin}
+                    >
+                        <TouchableOpacity
+                            activeOpacity={1}
+                            style={[styles.modalContent, { maxWidth: 500, width: '90%' }]}
+                            onPress={(e) => e.stopPropagation()}
+                        >
                             <View style={{ alignItems: 'center', marginBottom: 20 }}>
                                 <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff7ed', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
                                     <Text style={{ fontSize: 20 }}>👤</Text>
@@ -589,8 +665,8 @@ export default function POSScreen() {
                                     </TouchableOpacity>
                                 </View>
                             </View>
-                        </View>
-                    </View>
+                        </TouchableOpacity>
+                    </TouchableOpacity>
                 </Modal>
 
                 {/* Table Selection Modal */}
@@ -682,32 +758,6 @@ export default function POSScreen() {
                     </TouchableOpacity>
                 </Modal>
 
-                {/* Waiter Selection Modal */}
-                <Modal visible={showWaiterModal} transparent animationType="fade" onRequestClose={() => setShowWaiterModal(false)}>
-                    <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowWaiterModal(false)}>
-                        <TouchableOpacity activeOpacity={1} style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
-                            <Text style={styles.modalTitle}>Pilih Pelayan</Text>
-                            <ScrollView style={{ maxHeight: 300 }}>
-                                {waiters.map((waiter) => (
-                                    <TouchableOpacity
-                                        key={waiter.id}
-                                        style={styles.modalOptionItem}
-                                        onPress={() => {
-                                            setSelectedWaiter(waiter.name);
-                                            setShowWaiterModal(false);
-                                        }}
-                                    >
-                                        <Text style={styles.modalOptionText}>{waiter.name}</Text>
-                                    </TouchableOpacity>
-                                ))}
-                                {waiters.length === 0 && <Text style={{ textAlign: 'center', color: '#6b7280' }}>Tidak ada data pelayan</Text>}
-                            </ScrollView>
-                            <TouchableOpacity style={[styles.modalButton, styles.cancelButton, { marginTop: 16 }]} onPress={() => setShowWaiterModal(false)}>
-                                <Text style={styles.cancelButtonText}>Tutup</Text>
-                            </TouchableOpacity>
-                        </TouchableOpacity>
-                    </TouchableOpacity>
-                </Modal>
 
                 {/* Cart Summary Bar (Automatic Appearance) */}
                 {cart.length > 0 && (
@@ -1045,12 +1095,12 @@ const styles = StyleSheet.create({
     },
     tableOptionItem: {
         width: '30%',
-        padding: 12,
-        borderRadius: 8,
+        padding: 20,
+        borderRadius: 12,
         borderWidth: 1,
         borderColor: '#e5e7eb',
         alignItems: 'center',
-        marginBottom: 8,
+        marginBottom: 12,
     },
     selectedTableOption: {
         backgroundColor: '#ebf5ff',
@@ -1062,7 +1112,7 @@ const styles = StyleSheet.create({
         opacity: 0.7,
     },
     tableOptionText: {
-        fontSize: 16,
+        fontSize: 22,
         fontWeight: 'bold',
         color: '#111827',
     },

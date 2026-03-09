@@ -8,6 +8,7 @@ export default defineConfig({
   base: process.env.NODE_ENV === "development" ? "/" : process.env.VITE_BASE_PATH || "/",
   optimizeDeps: {
     entries: ["src/main.tsx", "src/tempobook/**/*"],
+    exclude: ["WebSdk"],
   },
   plugins: [
     react(),
@@ -51,7 +52,11 @@ export default defineConfig({
     preserveSymlinks: true,
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "WebSdk": path.resolve(__dirname, "node_modules/@digitalpersona/websdk/dist/websdk.client.ui.js"),
     },
+  },
+  define: {
+    'window.ES6Promise': 'window.Promise',
   },
   server: {
     port: 3000,

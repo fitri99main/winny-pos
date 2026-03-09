@@ -129,6 +129,7 @@ export function CashierInterface({
   const [tempSelectedAddons, setTempSelectedAddons] = useState<Addon[]>([]);
 
   // Shift Session State (Managed by Context)
+  const { role, loading } = useAuth();
   const { currentSession, checkSession, requireMandatorySession } = useSessionGuard();
   const [sessionModalOpen, setSessionModalOpen] = useState(false);
   const [sessionMode, setSessionMode] = useState<'open' | 'close'>('open');
@@ -140,11 +141,14 @@ export function CashierInterface({
 
   // Enforce Mandatory Session
   useEffect(() => {
-    if (!currentSession && requireMandatorySession && !sessionModalOpen) {
+    if (loading) return; // Tunggu hingga data user/role selesai dimuat
+    const lowerRole = role?.toLowerCase() || '';
+    const isAdmin = lowerRole === 'admin' || lowerRole === 'administrator' || lowerRole === 'owner';
+    if (!currentSession && requireMandatorySession && !sessionModalOpen && !isAdmin) {
       setSessionMode('open');
       setSessionModalOpen(true);
     }
-  }, [currentSession, requireMandatorySession]);
+  }, [currentSession, requireMandatorySession, role, sessionModalOpen, loading]);
 
   // Calculate occupied tables based on active sales AND table status
   const occupiedTableNumbers = useMemo(() => {

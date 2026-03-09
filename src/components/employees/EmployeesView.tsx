@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Plus, Search, Edit, Trash2, Mail, Phone, Briefcase, CreditCard, Printer, X, Settings2, Zap } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, Mail, Phone, Briefcase, CreditCard, Printer, X, Settings2, Zap, AlertCircle, ExternalLink, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/button';
 import { QRCard } from '../ui/QRCard';
 import { toast } from 'sonner';
+import { fingerprint, FingerprintResult } from '../../lib/fingerprint';
 
 export interface Employee {
     id: number;
@@ -17,6 +18,7 @@ export interface Employee {
     pin?: string; // PIN for Kiosk Access
     system_role?: string; // NEW: System Role (Admin, Cashier, etc.)
     barcode?: string; // NEW: Barcode for Attendance
+    fingerprint_template?: string; // NEW: Fingerprint Template (Base64)
 }
 
 export interface Department {
@@ -49,6 +51,16 @@ export function EmployeesView({
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCard, setSelectedCard] = useState<Employee | null>(null);
     const [newDeptName, setNewDeptName] = useState('');
+    const [isScanning, setIsScanning] = useState(false);
+    const [fpStatus, setFpStatus] = useState('');
+    const [fpError, setFpError] = useState<string | null>(null);
+    const [retryCount, setRetryCount] = useState(0);
+
+    const handleFpRetry = () => {
+        fingerprint.forceResetBusy();
+        setRetryCount(prev => prev + 1);
+        setIsScanning(false);
+    };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -103,6 +115,44 @@ export function EmployeesView({
     const handleDelete = (id: number) => {
         if (confirm('Yakin ingin menghapus data karyawan ini?')) {
             onEmployeeCRUD('delete', { id });
+        }
+    };
+
+    const handleFingerprintEnroll = async (useMock: boolean = false) => {
+        console.log(`Memulai Enrollment Fingerprint... (${useMock ? 'SIMULASI' : 'REAL'})`);
+        setIsScanning(true);
+        setFpStatus(useMock ? 'Simulasi: Tempel Jari...' : 'Menghubungkan ke Scanner...');
+
+        const callback = (status: string, result?: FingerprintResult) => {
+            console.log('Fingerprint Status:', status, result);
+            if (status === 'SUCCESS' && result?.success) {
+                console.log('Enrollment Berhasil, Template:', result.template?.substring(0, 20) + '...');
+                setFormData(prev => ({ ...prev, fingerprint_template: result.template }));
+                toast.success(`Sidik jari berhasil didaftarkan! (${useMock ? 'Simulasi' : 'Real'})`);
+                setIsScanning(false);
+                setFpStatus('');
+            } else if (status === 'ERROR') {
+                console.error('Enrollment Error:', result);
+                const errorMessage = result?.message || 'Gagal mendaftarkan sidik jari';
+                setFpError(errorMessage);
+                toast.error(errorMessage);
+                setIsScanning(false);
+                setFpStatus('');
+            } else {
+                if (status === 'WAITING_FOR_FINGER') {
+                    setFpStatus('Silakan Tempel Jari Anda');
+                    setIsScanning(false);
+                } else {
+                    setFpStatus(status === 'ALAT_TERDETEKSI' ? 'Alat Terdeteksi! Menyiapkan...' : status);
+                }
+                if (status === 'ALAT_TERDETEKSI') setFpError(null);
+            }
+        };
+
+        if (useMock) {
+            fingerprint.mockCapture(callback);
+        } else {
+            await fingerprint.startCapture(callback, 'ENROLL');
         }
     };
 
@@ -250,19 +300,84 @@ export function EmployeesView({
                                         />
                                     </div>
                                     <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-blue-500 uppercase tracking-widest pl-1">Fingerprint ID / Barcode</label>
-                                        <div className="relative">
-                                            <input
-                                                className="w-full pl-12 p-3 md:p-4 bg-blue-50/30 border border-blue-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-mono tracking-wider font-bold"
-                                                value={formData.barcode || ''}
-                                                onChange={e => setFormData({ ...formData, barcode: e.target.value })}
-                                                placeholder="Scan Fingerprint..."
-                                            />
-                                            <div className="absolute left-4 top-1/2 -translate-y-1/2">
-                                                <Zap className="w-5 h-5 text-blue-400" />
+                                        <label className="text-[10px] font-black text-blue-500 uppercase tracking-widest pl-1">Akses Biometrik (Fingerprint)</label>
+                                        <div className="flex gap-2">
+                                            <div className="relative flex-1">
+                                                <input
+                                                    className="w-full pl-12 p-3 md:p-4 bg-blue-50/30 border border-blue-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all text-[10px] font-mono tracking-wider font-bold truncate"
+                                                    value={formData.fingerprint_template ? 'TEMPLATE_REGISTERED' : ''}
+                                                    readOnly
+                                                    placeholder="Belum terdaftar..."
+                                                />
+                                                <div className="absolute left-4 top-1/2 -translate-y-1/2">
+                                                    <Zap className={`w-5 h-5 ${formData.fingerprint_template ? 'text-emerald-500' : 'text-blue-400'}`} />
+                                                </div>
                                             </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setFpError(null);
+                                                    handleFingerprintEnroll(false);
+                                                }}
+                                                disabled={isScanning}
+                                                className={`px-4 rounded-2xl font-bold text-[10px] uppercase transition-all flex items-center gap-2 ${isScanning
+                                                    ? 'bg-blue-100 text-blue-400 cursor-not-allowed'
+                                                    : 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-200 active:scale-95'
+                                                    }`}
+                                            >
+                                                {isScanning ? (
+                                                    <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                                                ) : <Plus className="w-4 h-4" />}
+                                                {isScanning ? 'Scanning...' : 'Daftar'}
+                                            </button>
                                         </div>
-                                        <p className="text-[9px] text-blue-600/60 pl-1">Tempelkan jari di scanner atau scan kartu untuk memasukkan ID.</p>
+                                        {isScanning && <p className="text-[9px] text-blue-600 font-bold animate-pulse pl-1 italic">{fpStatus}</p>}
+                                        {!isScanning && !fpError && <p className="text-[9px] text-gray-400 pl-1">Daftarkan sidik jari untuk login ESS tanpa PIN.</p>}
+
+                                        {/* Diagnostic UI when error occurs */}
+                                        {fpError && (
+                                            <div className="mt-4 p-4 bg-red-50/50 border border-red-100 rounded-2xl animate-in fade-in zoom-in-95">
+                                                <div className="flex items-center gap-2 text-red-600 mb-2">
+                                                    <AlertCircle className="w-3.5 h-3.5" />
+                                                    <span className="font-bold text-[9px] uppercase">Diagnosa Masalah</span>
+                                                </div>
+                                                <p className="text-[9px] text-gray-500 mb-3 leading-relaxed">
+                                                    Jika loading terus atau error, browser mungkin memblokir akses ke hardware. Klik link di bawah untuk memberikan izin:
+                                                </p>
+                                                <div className="space-y-2">
+                                                    {fingerprint.getServiceUrls().map((svc) => (
+                                                        <a
+                                                            key={svc.port}
+                                                            href={svc.url}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="flex items-center justify-between px-3 py-1.5 bg-white border border-gray-100 rounded-xl hover:bg-gray-50 transition-all group"
+                                                        >
+                                                            <span className="text-[9px] font-bold text-gray-600">Port {svc.port} ({svc.protocol})</span>
+                                                            <ExternalLink className="w-3 h-3 text-red-400 group-hover:text-red-600" />
+                                                        </a>
+                                                    ))}
+                                                </div>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    type="button"
+                                                    onClick={handleFpRetry}
+                                                    className="w-full mt-3 h-9 rounded-xl border-red-200 text-red-600 hover:bg-red-50 font-bold text-[10px]"
+                                                >
+                                                    <RefreshCw className="w-3 h-3 mr-2" /> Reset & Coba Lagi
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1 text-right">Barcode ID</label>
+                                        <input
+                                            className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-mono tracking-wider font-bold"
+                                            value={formData.barcode || ''}
+                                            onChange={e => setFormData({ ...formData, barcode: e.target.value })}
+                                            placeholder="Scan barcode kartu..."
+                                        />
                                     </div>
                                     <div className="space-y-2">
                                         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Nomor WhatsApp</label>

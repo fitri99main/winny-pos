@@ -8,6 +8,12 @@ export default function LoginScreen() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
+    const isMounted = React.useRef(true);
+
+    React.useEffect(() => {
+        isMounted.current = true;
+        return () => { isMounted.current = false; };
+    }, []);
 
     const handleLogin = async () => {
         if (!email || !password) {
@@ -16,16 +22,37 @@ export default function LoginScreen() {
         }
 
         setLoading(true);
-        const { error } = await supabase.auth.signInWithPassword({
-            email,
-            password,
-        });
 
-        setLoading(false);
-        if (error) {
-            Alert.alert('Autentikasi Gagal', error.message);
-        } else {
-            navigation.navigate('Main');
+        // Safety timeout to prevent infinite spinning
+        const timeoutId = setTimeout(() => {
+            if (isMounted.current) {
+                setLoading(false);
+                Alert.alert('Waktu Habis', 'Proses login terlalu lama. Periksa koneksi internet Anda.');
+            }
+        }, 10000); // 10 seconds timeout
+
+        try {
+            const { error } = await supabase.auth.signInWithPassword({
+                email,
+                password,
+            });
+
+            clearTimeout(timeoutId);
+
+            if (isMounted.current) {
+                setLoading(false);
+                if (error) {
+                    Alert.alert('Autentikasi Gagal', error.message);
+                } else {
+                    navigation.navigate('Main');
+                }
+            }
+        } catch (err) {
+            clearTimeout(timeoutId);
+            if (isMounted.current) {
+                setLoading(false);
+                Alert.alert('Eror', 'Terjadi kesalahan sistem saat login.');
+            }
         }
     };
 

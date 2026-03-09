@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { QrCode, History, Camera, UserCheck, XCircle, Search, Zap, Plus, X, AlertCircle } from 'lucide-react';
+import { QrCode, History, Camera, UserCheck, XCircle, Search, Zap, Plus, X, AlertCircle, RefreshCw, ExternalLink } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
 import { Employee } from '../employees/EmployeesView';
+import { fingerprint, FingerprintResult } from '../../lib/fingerprint';
+import { useBarcodeScanner } from '../../hooks/useBarcodeScanner';
 
 interface AttendanceLog {
     id: number;
@@ -111,32 +113,6 @@ export function AttendanceView({ logs, setLogs, employees, onLogAttendance, sett
         return () => stopCamera();
     }, [tab, isCameraEnabled, hideCamera]);
 
-    // USB Fingerprint/Barcode HID Listener
-    useEffect(() => {
-        if (tab !== 'scan' || !isFingerprintMode) return;
-
-        const handleKeyDown = (e: KeyboardEvent) => {
-            // Check for timeout to reset buffer (if user types manually)
-            const now = Date.now();
-            if (now - lastInputTime.current > 100) {
-                setInputBuffer('');
-            }
-            lastInputTime.current = now;
-
-            if (e.key === 'Enter') {
-                if (inputBuffer.length >= 3) {
-                    handleScan(inputBuffer);
-                    setInputBuffer('');
-                }
-            } else if (e.key.length === 1) {
-                setInputBuffer(prev => prev + e.key);
-            }
-        };
-
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [tab, isFingerprintMode, inputBuffer, employees, logs]);
-
     const handleScan = (code: string) => {
         if (scannedData === code) return;
 
@@ -157,7 +133,7 @@ export function AttendanceView({ logs, setLogs, employees, onLogAttendance, sett
                 if (onLogAttendance) {
                     onLogAttendance({ ...existingLog, checkOut: checkOutTime, isNew: false });
                 } else {
-                    setLogs(prev => prev.map(l => l.id === existingLog.id ? { ...l, checkOut: checkOutTime } : l));
+                    setLogs((prev: AttendanceLog[]) => prev.map(l => l.id === existingLog.id ? { ...l, checkOut: checkOutTime } : l));
                 }
                 toast.success(`Check-Out Berhasil: ${employee.name}`);
             } else if (existingLog && existingLog.checkOut) {
@@ -205,6 +181,125 @@ export function AttendanceView({ logs, setLogs, employees, onLogAttendance, sett
         }
     };
 
+    // USB Fingerprint Scanner SDK Effect
+    const [fpError, setFpError] = useState<string | null>(null);
+    const [fpStatus, setFpStatus] = useState<string>('Initializing...');
+    const [retryCount, setRetryCount] = useState(0);
+    const employeesRef = useRef(employees);
+
+    // Update ref when employees change
+    useEffect(() => {
+        employeesRef.current = employees;
+    }, [employees]);
+
+    const handleFpRetry = () => {
+        fingerprint.forceResetBusy();
+        setRetryCount(prev => prev + 1);
+    };
+
+    useEffect(() => {
+        if (tab !== 'scan' || !isFingerprintMode) {
+            fingerprint.stopCapture();
+            return;
+        }
+
+        let isRunning = true;
+        setFpError(null);
+        setFpStatus('Mencari Perangkat...');
+
+        // Moderate calibration: Strip 15% from ends, windowSize=40, step=1 alignment
+        const calculateSimilarity = (str1: string, str2: string): number => {
+            if (!str1 || !str2) return 0;
+            if (str1 === str2) return 100;
+
+            const s1 = str1.substring(Math.floor(str1.length * 0.15), Math.floor(str1.length * 0.85));
+            const s2 = str2.substring(Math.floor(str2.length * 0.15), Math.floor(str2.length * 0.85));
+            if (s1.length < 50 || s2.length < 50) return 0;
+
+            const shorter = s1.length < s2.length ? s1 : s2;
+            const longer = s1.length < s2.length ? s2 : s1;
+            const windowSize = Math.min(80, shorter.length);
+            let maxMatches = 0;
+
+            for (let i = 0; i <= longer.length - windowSize; i++) {
+                let currentMatches = 0;
+                for (let j = 0; j < windowSize; j++) {
+                    if (longer[i + j] === shorter[j]) currentMatches++;
+                }
+                if (currentMatches > maxMatches) maxMatches = currentMatches;
+                if (maxMatches === windowSize) break;
+            }
+            return (maxMatches / windowSize) * 100;
+        };
+
+        const callback = (status: string, result?: FingerprintResult) => {
+            if (!isRunning) return;
+
+            if (status === 'SUCCESS' && result?.success && result.template) {
+                setFpStatus('Sidik Jari Terdeteksi!');
+                const currentEmployees = employeesRef.current;
+
+                // Track all scores for calibration
+                const matches = currentEmployees
+                    .filter(e => e.fingerprint_template)
+                    .map(emp => ({
+                        emp,
+                        score: calculateSimilarity(emp.fingerprint_template!, result.template!)
+                    }))
+                    .sort((a, b) => b.score - a.score);
+
+                const bestMatch = matches[0];
+                const secondBest = matches[1];
+                const THRESHOLD = 15; // Set above the noise floor
+
+                console.log('Fp Match Profile:', matches.slice(0, 3).map(m => `${m.emp.name}: ${m.score.toFixed(1)}%`));
+
+                // Detect boilerplate matching: if different people have exactly the same score
+                const isNoiseFloor = secondBest && (Math.abs(bestMatch.score - secondBest.score) < 0.1) && bestMatch.score < 25;
+
+                if (bestMatch && bestMatch.score >= THRESHOLD && !isNoiseFloor) {
+                    handleScan(bestMatch.emp.barcode || `EMP-${bestMatch.emp.id}`);
+                } else {
+                    const errorSuffix = isNoiseFloor ? '(Banyak kemiripan terdeteksi - Noise)' : `(Skor: ${bestMatch?.score.toFixed(0) || 0}%)`;
+                    toast.error(`Sidik jari tidak dikenali ${errorSuffix}.`);
+                }
+
+                // Restart capture after a short delay for next person
+                setTimeout(() => {
+                    if (isRunning && tab === 'scan' && isFingerprintMode) {
+                        fingerprint.startCapture(callback, 'CAPTURE');
+                    }
+                }, 2000);
+            } else if (status === 'ERROR') {
+                console.error('Fingerprint Error:', result);
+                let errorMessage = result?.message || 'Gagal terhubung ke scanner.';
+                setFpError(errorMessage);
+                setFpStatus('ERROR');
+            } else {
+                if (status === 'WAITING_FOR_FINGER') {
+                    setFpStatus('Silakan Tempel Jari Anda');
+                } else if (status === 'ALAT_TERDETEKSI') {
+                    setFpStatus('Alat Terdeteksi! Menyiapkan...');
+                } else {
+                    setFpStatus(status);
+                }
+            }
+        };
+
+        fingerprint.startCapture(callback, 'CAPTURE');
+
+        return () => {
+            isRunning = false;
+            fingerprint.stopCapture();
+        };
+    }, [tab, isFingerprintMode, retryCount]);
+
+    // Keyboard Barcode Scanner Hook
+    useBarcodeScanner({
+        onScan: handleScan,
+        enabled: tab === 'scan'
+    });
+
     const handleManualAttendance = (employee: Employee) => {
         const today = new Date().toISOString().split('T')[0];
         const dayOfWeek = new Date().getDay();
@@ -215,7 +310,7 @@ export function AttendanceView({ logs, setLogs, employees, onLogAttendance, sett
             if (onLogAttendance) {
                 onLogAttendance({ ...existingLog, checkOut: checkOutTime, isNew: false });
             } else {
-                setLogs(prev => prev.map(l => l.id === existingLog.id ? { ...l, checkOut: checkOutTime } : l));
+                setLogs((prev: AttendanceLog[]) => prev.map(l => l.id === existingLog.id ? { ...l, checkOut: checkOutTime } : l));
             }
             toast.success(`Check-Out Berhasil: ${employee.name}`);
         } else if (existingLog && existingLog.checkOut) {
@@ -310,9 +405,87 @@ export function AttendanceView({ logs, setLogs, employees, onLogAttendance, sett
                             </div>
 
                             <div className="text-center space-y-2">
-                                <h3 className="text-xl font-black text-gray-800 tracking-tight">Scanner Fingerprint Standby</h3>
-                                <p className="text-sm text-gray-500 font-medium">Tempelkan jari Anda pada alat scanner untuk absensi.</p>
+                                <h3 className="text-xl font-black text-gray-800 tracking-tight">
+                                    {fpError ? 'Gagal Inisialisasi Scanner' : (fpStatus === 'WAITING_FOR_FINGER' ? 'Scan Sidik Jari Ready' : 'Scanner Fingerprint Standby')}
+                                </h3>
+                                <p className="text-sm text-gray-500 font-medium">
+                                    {fpError || 'Tempelkan jari Anda pada alat scanner untuk absensi.'}
+                                </p>
+                                {fpStatus !== 'ERROR' && !fpError && (
+                                    <div className="mt-2 text-[10px] text-blue-400 font-mono opacity-60">
+                                        Status: {fpStatus}
+                                    </div>
+                                )}
                             </div>
+
+                            {fpError && (
+                                <div className="mt-4 p-5 bg-red-50/50 border border-red-100 rounded-[32px] w-full max-w-xs animate-in fade-in zoom-in-95 duration-500">
+                                    <div className="flex items-center gap-2 text-red-600 mb-2 justify-center">
+                                        <AlertCircle className="w-4 h-4" />
+                                        <span className="font-bold text-[11px] uppercase tracking-wider">Bantuan Diagnosa</span>
+                                    </div>
+                                    <p className="text-[10px] text-gray-500 mb-4 leading-relaxed text-center font-medium">
+                                        Jika menggunakan HTTPS, Anda perlu memberikan izin akses manual ke service lokal Browser.
+                                    </p>
+
+                                    <div className="space-y-4">
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {fingerprint.getServiceUrls().map((svc) => (
+                                                <a
+                                                    key={svc.port}
+                                                    href={svc.url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="flex items-center justify-between px-4 py-2 bg-white border border-gray-100 rounded-2xl hover:bg-gray-50 transition-all group shadow-sm"
+                                                >
+                                                    <span className="text-[10px] font-black text-gray-500">
+                                                        CHECK {svc.protocol} PORT {svc.port}
+                                                    </span>
+                                                    <ExternalLink className="w-3 h-3 text-red-400 group-hover:text-red-600 transition-colors" />
+                                                </a>
+                                            ))}
+                                        </div>
+
+                                        {/* Service Restoration Guide */}
+                                        <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
+                                            <p className="text-[10px] text-blue-700 font-black uppercase tracking-wider mb-2">
+                                                Layanan Tidak Ditemukan?
+                                            </p>
+                                            <p className="text-[9px] text-blue-600 leading-relaxed mb-3">
+                                                Jika link "CHECK" di atas bertuliskan <b>Refused to connect</b>, service tidak berjalan.
+                                            </p>
+                                            <ol className="text-[9px] text-gray-500 list-decimal list-inside space-y-1.5 font-medium">
+                                                <li>Buka <b>C:\Program Files\DigitalPersona\Bin</b></li>
+                                                <li>Cari file <b>DpHost.exe</b></li>
+                                                <li>Klik kanan & pilih <b>Run as Administrator</b></li>
+                                                <li>Cek kembali <b>services.msc</b></li>
+                                            </ol>
+                                        </div>
+
+                                        <div className="bg-white/50 p-3 rounded-2xl border border-dashed border-red-200">
+                                            <p className="text-[9px] text-red-500 font-bold leading-tight">
+                                                Langkah Protokol (HTTPS):
+                                            </p>
+                                            <ol className="text-[8px] text-gray-400 list-decimal list-inside mt-1 space-y-0.5">
+                                                <li>Klik link port di atas</li>
+                                                <li>Pilih "Lanjutkan/Advanced" jika ada peringatan privasi</li>
+                                                <li>Tutup tab tersebut after loading</li>
+                                                <li>Klik tombol Reset di bawah</li>
+                                            </ol>
+                                        </div>
+                                    </div>
+
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={handleFpRetry}
+                                        className="w-full mt-4 h-10 rounded-xl border-red-200 text-red-600 hover:bg-red-50 font-bold"
+                                    >
+                                        <RefreshCw className="w-4 h-4 mr-2" />
+                                        Reset & Coba Lagi
+                                    </Button>
+                                </div>
+                            )}
 
                             {scannedData && isFingerprintMode && (
                                 <div className="flex items-center gap-3 px-6 py-3 bg-emerald-50 text-emerald-700 rounded-2xl border border-emerald-100 animate-in zoom-in-95 duration-200">

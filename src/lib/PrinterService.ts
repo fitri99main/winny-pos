@@ -292,6 +292,56 @@ class PrinterService {
         return printer?.name || null;
     }
 
+    async printBarcode(code: string, options?: {
+        width?: number;
+        height?: number;
+        showText?: boolean;
+    }) {
+        const printer = this.cashierPrinter;
+        if (!printer || !printer.characteristic) {
+            console.warn('Cashier Printer not connected. Cannot print barcode.');
+            return;
+        }
+
+        const encoder = new TextEncoder();
+        let commands: Uint8Array[] = [];
+
+        // 1. Initialize
+        commands.push(new Uint8Array([this.ESC, 0x40]));
+
+        // 2. Center Align
+        commands.push(new Uint8Array([this.ESC, 0x61, 0x01]));
+
+        // 3. Barcode Settings
+        const width = options?.width || this.template.barcodeWidth || 2; // 2-6
+        const height = options?.height || this.template.barcodeHeight || 80; // 1-255
+        const showText = options?.showText !== undefined ? options.showText : (this.template.showBarcodeText ?? true);
+
+        commands.push(new Uint8Array([this.GS, 0x77, width])); // GS w
+        commands.push(new Uint8Array([this.GS, 0x68, height])); // GS h
+        commands.push(new Uint8Array([this.GS, 0x48, showText ? 0x02 : 0x00])); // GS H (2: below)
+
+        // 4. Print Barcode (CODE128 - Type B)
+        // Format: GS k m n d1...dn
+        // m = 73 (CODE128), n = data length
+        // For CODE128, data must start with subset selector, e.g., {B (sub-code B)
+        const data = encoder.encode(code);
+        const code128Data = new Uint8Array(data.length + 2);
+        code128Data[0] = 123; // '{'
+        code128Data[1] = 66;  // 'B'
+        code128Data.set(data, 2);
+
+        commands.push(new Uint8Array([this.GS, 0x6B, 73, code128Data.length]));
+        commands.push(code128Data);
+
+        // 5. Feed & Cut
+        commands.push(new Uint8Array([this.LF, this.LF, this.LF]));
+        commands.push(new Uint8Array([this.GS, 0x56, 0x41, 0x00]));
+
+        const finalBuffer = this.concatenateTypedArrays(commands);
+        await printer.characteristic.writeValue(finalBuffer as any);
+    }
+
     async openDrawer() {
         if (!this.cashierPrinter || !this.cashierPrinter.characteristic) {
             console.warn('Cashier Printer not connected. Cannot open drawer.');

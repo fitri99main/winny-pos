@@ -1,9 +1,18 @@
-import { useState } from 'react';
-import { ShoppingCart, Plus, History, RotateCcw, Search, Calendar, FileText, CheckCircle, AlertTriangle, Trash2, Edit } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { ShoppingCart, Plus, History, RotateCcw, Search, Calendar, FileText, CheckCircle, AlertTriangle, Trash2, Edit, ScanLine } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
+import { useBarcodeScanner } from '../../hooks/useBarcodeScanner';
 
 // --- Types ---
+
+interface PurchaseItem {
+    id: string;
+    itemId: number | string;
+    name: string;
+    quantity: number;
+    price: number;
+}
 
 interface PurchaseOrder {
     id: number;
@@ -13,6 +22,7 @@ interface PurchaseOrder {
     items: number;
     totalAmount: number;
     status: 'Pending' | 'Completed' | 'Returned';
+    itemsList?: PurchaseItem[];
 }
 
 interface PurchaseReturn {
@@ -24,40 +34,113 @@ interface PurchaseReturn {
     status: 'Processed' | 'Pending';
 }
 
-// --- Initial Data ---
-
-const INITIAL_PURCHASES: PurchaseOrder[] = [
-    { id: 1, purchaseNo: 'PO-2026-001', supplierName: 'PT. Kopi Nusantara', date: '2026-01-15', items: 3, totalAmount: 4500000, status: 'Completed' },
-    { id: 2, purchaseNo: 'PO-2026-002', supplierName: 'CV. Susu Murni Jaya', date: '2026-01-18', items: 5, totalAmount: 1200000, status: 'Pending' },
-];
-
-const INITIAL_RETURNS: PurchaseReturn[] = [
-    { id: 1, returnNo: 'RET-2026-001', purchaseNo: 'PO-2026-001', date: '2026-01-16', reason: 'Barang rusak saat pengiriman', status: 'Processed' },
-];
-
 interface PurchasesViewProps {
     purchases: any[];
     returns: any[];
     onCRUD: (table: string, action: 'create' | 'update' | 'delete', data: any) => void;
     currentBranchId?: string;
     contacts?: any[];
+    products?: any[];
+    ingredients?: any[];
 }
 
-export function PurchasesView({ purchases = [], returns = [], onCRUD, currentBranchId, contacts = [] }: PurchasesViewProps) {
+export function PurchasesView({
+    purchases = [],
+    returns = [],
+    onCRUD,
+    currentBranchId,
+    contacts = [],
+    products = [],
+    ingredients = []
+}: PurchasesViewProps) {
     const [activeTab, setActiveTab] = useState<'history' | 'input' | 'returns'>('history');
     const [searchQuery, setSearchQuery] = useState('');
     const [returnSearchQuery, setReturnSearchQuery] = useState('');
 
-    // Forms
-    const [inputForm, setInputForm] = useState<Partial<PurchaseOrder>>({ date: new Date().toISOString().split('T')[0] });
+    // Form Tracking
+    const [inputForm, setInputForm] = useState<Partial<PurchaseOrder>>({
+        date: new Date().toISOString().split('T')[0],
+        supplierName: ''
+    });
+    const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([]);
     const [returnForm, setReturnForm] = useState<Partial<PurchaseReturn>>({ date: new Date().toISOString().split('T')[0] });
+
+    // Scanner Hook
+    useBarcodeScanner({
+        onScan: (code) => {
+            if (activeTab !== 'input') return;
+
+            // Try to find ingredient by code first (purchases usually involve ingredients)
+            const ingredient = ingredients.find(i => i.code === code);
+            if (ingredient) {
+                handleAddItem({
+                    itemId: ingredient.id,
+                    name: ingredient.name,
+                    price: ingredient.costPerUnit || 0
+                });
+                return;
+            }
+
+            // Fallback to products
+            const product = products.find(p => p.code === code);
+            if (product) {
+                handleAddItem({
+                    itemId: product.id,
+                    name: product.name,
+                    price: product.cost || 0
+                });
+                return;
+            }
+
+            toast.error(`Item dengan kode ${code} tidak ditemukan`);
+        },
+        enabled: activeTab === 'input'
+    });
 
     // --- Handlers ---
 
+    const handleAddItem = (item: { itemId: number | string, name: string, price: number }) => {
+        setPurchaseItems(prev => {
+            const existing = prev.find(i => i.itemId === item.itemId);
+            if (existing) {
+                return prev.map(i => i.itemId === item.itemId ? { ...i, quantity: i.quantity + 1 } : i);
+            }
+            return [...prev, {
+                id: `pitem-${Date.now()}`,
+                itemId: item.itemId,
+                name: item.name,
+                quantity: 1,
+                price: item.price
+            }];
+        });
+        toast.success(`Menambahkan ${item.name}`);
+    };
+
+    const handleUpdateQty = (id: string, qty: number) => {
+        if (qty <= 0) {
+            setPurchaseItems(prev => prev.filter(i => i.id !== id));
+            return;
+        }
+        setPurchaseItems(prev => prev.map(i => i.id === id ? { ...i, quantity: qty } : i));
+    };
+
+    const handleUpdatePrice = (id: string, price: number) => {
+        setPurchaseItems(prev => prev.map(i => i.id === id ? { ...i, price } : i));
+    };
+
+    const totalAmount = useMemo(() => {
+        return purchaseItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    }, [purchaseItems]);
+
     const handleInputSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!inputForm.supplierName || !inputForm.totalAmount) {
-            toast.error('Mohon lengkapi data pembelian');
+        if (!inputForm.supplierName) {
+            toast.error('Mohon pilih supplier');
+            return;
+        }
+
+        if (purchaseItems.length === 0) {
+            toast.error('Mohon tambahkan setidaknya satu item');
             return;
         }
 
@@ -65,14 +148,16 @@ export function PurchasesView({ purchases = [], returns = [], onCRUD, currentBra
             purchase_no: `PO-2026-${String(purchases.length + 1).padStart(3, '0')}`,
             supplier_name: inputForm.supplierName,
             date: inputForm.date || new Date().toISOString().split('T')[0],
-            items_count: inputForm.items || 1,
-            total_amount: Number(inputForm.totalAmount),
+            items_count: purchaseItems.reduce((sum, i) => sum + i.quantity, 0),
+            total_amount: totalAmount,
             status: 'Pending',
-            branch_id: currentBranchId
+            branch_id: currentBranchId,
+            items_list: purchaseItems // This depends on DB schema supporting item details
         };
 
         onCRUD('purchases', 'create', newPurchase);
-        setInputForm({ date: new Date().toISOString().split('T')[0], supplierName: '', totalAmount: 0 });
+        setInputForm({ date: new Date().toISOString().split('T')[0], supplierName: '' });
+        setPurchaseItems([]);
         setActiveTab('history');
     };
 
@@ -168,86 +253,161 @@ export function PurchasesView({ purchases = [], returns = [], onCRUD, currentBra
                             </td>
                         </tr>
                     ))}
+                    {filteredPurchases.length === 0 && (
+                        <tr>
+                            <td colSpan={7} className="px-6 py-10 text-center text-gray-400">Belum ada riwayat pembelian</td>
+                        </tr>
+                    )}
                 </tbody>
             </table>
         </div>
     );
 
     const renderInput = () => (
-        <div className="max-w-2xl mx-auto bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="p-6 border-b border-gray-100 bg-gray-50/50">
-                <h3 className="text-lg font-bold text-gray-800">Buat Pesanan Pembelian Baru (PO)</h3>
-                <p className="text-sm text-gray-500">Isi form di bawah untuk membuat PO ke supplier.</p>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 space-y-6">
+                {/* Header & Item List */}
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col min-h-[500px]">
+                    <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+                        <div>
+                            <h3 className="text-lg font-bold text-gray-800">Daftar Item Pembelian</h3>
+                            <p className="text-sm text-gray-500">Scan barcode atau pilih item secara manual.</p>
+                        </div>
+                        <div className="flex items-center gap-2 bg-orange-50 text-orange-600 px-4 py-2 rounded-xl text-xs font-bold border border-orange-100">
+                            <ScanLine className="w-4 h-4 animate-pulse" />
+                            Scanner Ready
+                        </div>
+                    </div>
+
+                    <div className="flex-1 overflow-auto">
+                        <table className="w-full text-sm">
+                            <thead className="bg-gray-50 text-gray-500 text-left sticky top-0 z-10">
+                                <tr>
+                                    <th className="px-6 py-4">Item</th>
+                                    <th className="px-6 py-4 text-center">Qty</th>
+                                    <th className="px-6 py-4 text-right">Harga Satuan</th>
+                                    <th className="px-6 py-4 text-right">Subtotal</th>
+                                    <th className="px-6 py-4 text-center">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {purchaseItems.map(item => (
+                                    <tr key={item.id} className="hover:bg-gray-50">
+                                        <td className="px-6 py-4 font-bold text-gray-700">{item.name}</td>
+                                        <td className="px-6 py-4 text-center">
+                                            <div className="flex items-center justify-center gap-2">
+                                                <button onClick={() => handleUpdateQty(item.id, item.quantity - 1)} className="w-6 h-6 rounded-md bg-gray-100 flex items-center justify-center">-</button>
+                                                <input
+                                                    type="number"
+                                                    value={item.quantity}
+                                                    onChange={(e) => handleUpdateQty(item.id, parseInt(e.target.value) || 0)}
+                                                    className="w-12 text-center border-none bg-transparent font-bold"
+                                                />
+                                                <button onClick={() => handleUpdateQty(item.id, item.quantity + 1)} className="w-6 h-6 rounded-md bg-gray-100 flex items-center justify-center">+</button>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 text-right">
+                                            <input
+                                                type="number"
+                                                value={item.price}
+                                                onChange={(e) => handleUpdatePrice(item.id, parseFloat(e.target.value) || 0)}
+                                                className="w-24 text-right border-none bg-transparent font-bold"
+                                            />
+                                        </td>
+                                        <td className="px-6 py-4 text-right font-black">Rp {(item.price * item.quantity).toLocaleString()}</td>
+                                        <td className="px-6 py-4 text-center">
+                                            <button onClick={() => handleUpdateQty(item.id, 0)} className="text-red-400 hover:text-red-600">
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                                {purchaseItems.length === 0 && (
+                                    <tr>
+                                        <td colSpan={5} className="px-6 py-20 text-center">
+                                            <div className="flex flex-col items-center gap-3 text-gray-300">
+                                                <ScanLine className="w-12 h-12 opacity-20" />
+                                                <p className="italic">Gunakan scanner atau pilih item dari menu pencarian di samping.</p>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
-            <form onSubmit={handleInputSubmit} className="p-8 space-y-6">
-                <div className="grid grid-cols-2 gap-6">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Tanggal</label>
-                        <div className="relative">
-                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+
+            <div className="space-y-6">
+                {/* Form & Totals */}
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-6">
+                    <h3 className="font-bold text-gray-800">Ringkasan Pembelian</h3>
+
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Tanggal</label>
                             <input
                                 type="date"
-                                className="w-full pl-10 p-2.5 border rounded-xl focus:ring-2 focus:ring-primary/20"
+                                className="w-full p-2.5 border rounded-xl"
                                 value={inputForm.date}
                                 onChange={e => setInputForm({ ...inputForm, date: e.target.value })}
-                                required
                             />
                         </div>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Supplier</label>
-                        <select
-                            className="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-primary/20"
-                            value={inputForm.supplierName || ''}
-                            onChange={e => setInputForm({ ...inputForm, supplierName: e.target.value })}
-                            required
-                        >
-                            <option value="">Pilih Supplier...</option>
-                            {contacts.filter(c => c.type === 'Supplier').map(c => (
-                                <option key={c.id} value={c.name}>{c.name}</option>
-                            ))}
-                        </select>
-                    </div>
-                </div>
-
-                <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-200">
-                    <div className="flex gap-3">
-                        <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0" />
-                        <div className="text-sm text-yellow-800">
-                            Mode Ringkas: Detail item barang akan diinput setelah PO dibuat atau saat penerimaan barang. Masukkan total estimasi dulu.
+                        <div>
+                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Supplier</label>
+                            <select
+                                className="w-full p-2.5 border rounded-xl"
+                                value={inputForm.supplierName}
+                                onChange={e => setInputForm({ ...inputForm, supplierName: e.target.value })}
+                            >
+                                <option value="">Pilih Supplier...</option>
+                                {contacts.filter(c => c.type === 'Supplier').map(c => (
+                                    <option key={c.id} value={c.name}>{c.name}</option>
+                                ))}
+                            </select>
                         </div>
                     </div>
+
+                    <div className="pt-6 border-t border-gray-100 space-y-3">
+                        <div className="flex justify-between text-sm">
+                            <span className="text-gray-500">Subtotal</span>
+                            <span className="font-bold">Rp {totalAmount.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between text-lg font-black text-gray-800">
+                            <span>Total</span>
+                            <span className="text-blue-600">Rp {totalAmount.toLocaleString()}</span>
+                        </div>
+                    </div>
+
+                    <Button onClick={handleInputSubmit} className="w-full h-14 rounded-2xl text-lg font-black" disabled={purchaseItems.length === 0}>
+                        Simpan Pembelian
+                    </Button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-6">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Jumlah Item</label>
-                        <input
-                            type="number"
-                            className="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-primary/20"
-                            placeholder="0"
-                            value={inputForm.items || ''}
-                            onChange={e => setInputForm({ ...inputForm, items: parseInt(e.target.value) })}
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Total Estimasi (Rp)</label>
-                        <input
-                            type="number"
-                            className="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-primary/20"
-                            placeholder="0"
-                            value={inputForm.totalAmount || ''}
-                            onChange={e => setInputForm({ ...inputForm, totalAmount: parseFloat(e.target.value) })}
-                            required
-                        />
+                {/* Additional Item Selection (Manual) */}
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                    <h3 className="font-bold text-gray-800 mb-4">Pencarian Manual</h3>
+                    <div className="space-y-2 max-h-[300px] overflow-auto pr-2">
+                        {ingredients.concat(products).map((item: any) => (
+                            <button
+                                key={item.id}
+                                onClick={() => handleAddItem({
+                                    itemId: item.id,
+                                    name: item.name,
+                                    price: item.cost || item.cost_per_unit || 0
+                                })}
+                                className="w-full flex items-center justify-between p-3 hover:bg-gray-50 rounded-xl border border-transparent hover:border-gray-100 transition-all text-left"
+                            >
+                                <div>
+                                    <div className="text-sm font-bold text-gray-700">{item.name}</div>
+                                    <div className="text-[10px] text-gray-400 font-mono">{item.code}</div>
+                                </div>
+                                <Plus className="w-4 h-4 text-gray-300" />
+                            </button>
+                        ))}
                     </div>
                 </div>
-
-                <div className="pt-4 flex justify-end gap-3">
-                    <Button type="button" variant="outline" onClick={() => setActiveTab('history')}>Batal</Button>
-                    <Button type="submit">Buat Purchase Order</Button>
-                </div>
-            </form>
+            </div>
         </div>
     );
 

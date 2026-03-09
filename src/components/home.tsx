@@ -46,7 +46,7 @@ function Home() {
   const urlParams = new URLSearchParams(window.location.search);
   console.log('[Home] Table param:', urlParams.get('table'));
 
-  const { user, role, permissions } = useAuth(); // Retrieve actual user data
+  const { user, role, permissions, loading } = useAuth(); // Retrieve actual user data
   const { canLogout, currentSession, requireMandatorySession } = useSessionGuard();
 
   const [activeModule, setActiveModule] = useState<ModuleType>(
@@ -402,10 +402,12 @@ function Home() {
   // Polling for Kiosk Orders and Badge Count
   // Ref to track last processed order ID for immediate access in listeners
   const lastProcessedOrderIdRef = useRef<number | null>(null);
-  const [lastProcessedOrderId, setLastProcessedOrderId] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!currentBranchId) return;
+    if (!currentBranchId || loading) return;
+
+    let isMounted = true;
+    let timeoutId: NodeJS.Timeout;
 
     const checkNewOrders = async () => {
       try {
@@ -416,7 +418,7 @@ function Home() {
           .eq('branch_id', currentBranchId)
           .eq('status', 'Pending');
 
-        if (!countError) setPendingCount(count || 0);
+        if (isMounted && !countError) setPendingCount(count || 0);
 
         // 2. Check for NEW order to notify
         const { data } = await supabase
@@ -424,44 +426,51 @@ function Home() {
           .select('*')
           .eq('branch_id', currentBranchId)
           .eq('status', 'Pending')
-          .gt('id', lastProcessedOrderId || 0) // [FIX] Default to 0 to avoid 'gt.null' error
+          .gt('id', lastProcessedOrderIdRef.current || 0) // [FIX] Default to 0 to avoid 'gt.null' error
           .order('id', { ascending: false })
           .limit(1);
 
-        // DEBUG LOGS
-        // console.log('Polling Check:', { lastId: lastProcessedOrderId, found: data?.length });
-
-        if (data && data.length > 0) {
+        if (isMounted && data && data.length > 0) {
           const latestOrder = data[0];
-          console.log('Found Latest Order:', latestOrder.id, 'Last Processed:', lastProcessedOrderId);
+          console.log('Found Latest Order:', latestOrder.id, 'Last Processed:', lastProcessedOrderIdRef.current);
 
           // Only notify if we haven't processed this ID yet
-          if (latestOrder.id > lastProcessedOrderId) {
-            setLastProcessedOrderId(latestOrder.id); // <--- CRITICAL: Update state to prevent loop
+          if (latestOrder.id > (lastProcessedOrderIdRef.current || 0)) {
+            lastProcessedOrderIdRef.current = latestOrder.id; // <--- CRITICAL: Update state to prevent loop
 
             const targetTable = latestOrder.table_no || latestOrder.tableNo || latestOrder.table_number;
 
-            // [UPDATED] Auto-open for all Pending orders (from mobile app)
-            console.log('[Polling] Triggering Auto-Open for Order #' + latestOrder.id);
-            setIsCashierOpen(true);
-            toast.success(`Order Baru Masuk #${latestOrder.order_no} - Membuka Kasir`);
+            // [FIX] Auto-open only for non-admin
+            const lowerRole = role?.toLowerCase() || '';
+            const isManager = lowerRole === 'admin' || lowerRole === 'administrator' || lowerRole === 'owner';
+            if (!isManager) {
+              console.log('[Polling] Triggering Auto-Open for Order #' + latestOrder.id);
+              setIsCashierOpen(true);
 
-            if (targetTable) {
-              setAutoSelectedTable(String(targetTable));
-            } else {
-              setAutoSelectedTable(''); // Show Table Grid (All Orders)
+              if (targetTable) {
+                setAutoSelectedTable(String(targetTable));
+              } else {
+                setAutoSelectedTable(''); // Show Table Grid (All Orders)
+              }
             }
+            toast.success(`Order Baru Masuk #${latestOrder.order_no}`);
           }
         }
       } catch (err) {
-        console.error('Polling Error:', err);
+        if (isMounted) console.error('Polling Error:', err);
+      } finally {
+        if (isMounted) {
+          timeoutId = setTimeout(checkNewOrders, 3000); // 3 seconds delay after previous finishes
+        }
       }
     };
 
-    const intervalId = setInterval(checkNewOrders, 3000); // Check every 3 seconds
     checkNewOrders(); // Run immediately once
-    return () => clearInterval(intervalId);
-  }, [currentBranchId, lastProcessedOrderId]);
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [currentBranchId, role, loading]);
 
   const fetchTransactions = async () => {
     if (!currentBranchId) return;
@@ -618,7 +627,7 @@ function Home() {
   // --- Realtime Order Notifications for Cashier (Restored & Modified) ---
   // --- Realtime Order Notifications & Sync ---
   useEffect(() => {
-    if (!currentBranchId) return;
+    if (!currentBranchId || loading) return;
 
     const channel = supabase
       .channel('sales_realtime_sync')
@@ -679,20 +688,24 @@ function Home() {
           const isPaidCompleted = newOrder.status === 'Paid' || newOrder.status === 'Completed';
           const isMyOwnOrder = newOrder.id === lastProcessedOrderIdRef.current;
 
-          // [UPDATED] Auto-open for Mobile Orders (from any role)
+          // [FIX] Auto-open for Mobile Orders, but NOT for Admin
           if (!isPaidCompleted && !isMyOwnOrder && (newOrder.status === 'Pending' || newOrder.status === 'Unpaid')) {
             const targetTable = newOrder.table_no || newOrder.tableNo;
 
-            console.log('[Auto-Open] Opening cashier for table:', targetTable);
-            setIsCashierOpen(true);
+            const lowerRole = role?.toLowerCase() || '';
+            const isManager = lowerRole === 'admin' || lowerRole === 'administrator' || lowerRole === 'owner';
+            if (!isManager) {
+              console.log('[Auto-Open] Opening cashier for table:', targetTable);
+              setIsCashierOpen(true);
 
-            if (targetTable) {
-              setAutoSelectedTable(String(targetTable));
-            } else {
-              setAutoSelectedTable('');
+              if (targetTable) {
+                setAutoSelectedTable(String(targetTable));
+              } else {
+                setAutoSelectedTable('');
+              }
             }
 
-            toast.success(`Membuka Kasir untuk Meja ${targetTable || 'Baru'}`);
+            toast.success(`Order Masuk Meja ${targetTable || 'Baru'}`);
           }
         }
       )
@@ -701,7 +714,7 @@ function Home() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [currentBranchId]);
+  }, [currentBranchId, loading, role]);
 
   // --- Attendance Integration ---
   useEffect(() => {
@@ -1011,7 +1024,11 @@ function Home() {
   // [NEW] Handle Table Direct Link (from Mobile Redirect) - Run after data is loaded
   useEffect(() => {
     // Only run once when component mounts and branch is set
-    if (!currentBranchId || urlParamProcessed) return;
+    if (!currentBranchId || urlParamProcessed || loading) return;
+
+    const lowerRole = role?.toLowerCase() || '';
+    const isManager = lowerRole === 'admin' || lowerRole === 'administrator' || lowerRole === 'owner';
+    if (isManager) return; // [FIX] Prevents Cashier loop for Admin roles on page load
 
     const params = new URLSearchParams(window.location.search);
     const tableParam = params.get('table');
@@ -1035,7 +1052,7 @@ function Home() {
         window.history.replaceState({}, '', window.location.pathname);
       }, 1000); // Increased to 1 second for better reliability
     }
-  }, [currentBranchId, urlParamProcessed]); // Run when branch is set
+  }, [currentBranchId, urlParamProcessed, loading, role]); // Run when branch is set
 
   // Persist all other states
   useEffect(() => { localStorage.setItem('winpos_employees', JSON.stringify(employees)); }, [employees]);
@@ -1249,7 +1266,6 @@ function Home() {
       setActiveModule('kds');
 
       // 6. [FIX] Prevent Auto-Open Loop by updating the last processed ID immediately
-      setLastProcessedOrderId(sale.id);
       lastProcessedOrderIdRef.current = sale.id; // Update Ref for immediate listener availability
 
       // 7. [CHANGED] Table Clearing is now MANUAL only (per user request)
@@ -1993,9 +2009,11 @@ function Home() {
         showWaiter: storeSettings.show_waiter,
         showTable: storeSettings.show_table,
         showCustomerName: storeSettings.show_customer_name,
-        showCustomerStatus: storeSettings.show_customer_status,
         showLogo: storeSettings.show_logo,
-        logoUrl: storeSettings.receipt_logo_url
+        logoUrl: storeSettings.receipt_logo_url,
+        barcodeHeight: storeSettings.barcodeHeight,
+        barcodeWidth: storeSettings.barcodeWidth,
+        showBarcodeText: storeSettings.showBarcodeText
       });
     }
   }, [storeSettings]);

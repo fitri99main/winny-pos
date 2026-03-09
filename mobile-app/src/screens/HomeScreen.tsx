@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { View, Text, TouchableOpacity, ScrollView, SafeAreaView, StyleSheet, useWindowDimensions, TextInput, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, SafeAreaView, StyleSheet, useWindowDimensions, TextInput, ActivityIndicator, Alert, Modal } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 
@@ -12,6 +12,7 @@ export default function HomeScreen() {
 
     const [tables, setTables] = React.useState<any[]>([]);
     const [loading, setLoading] = React.useState(true);
+    const [showOccupiedModal, setShowOccupiedModal] = React.useState(false);
 
     React.useEffect(() => {
         fetchTables();
@@ -62,6 +63,11 @@ export default function HomeScreen() {
     };
 
     const handleTablePress = (table: any) => {
+        if (table.status === 'Occupied') {
+            setShowOccupiedModal(true);
+            return;
+        }
+
         // @ts-ignore
         navigation.navigate('POS', {
             tableId: table.id,
@@ -90,13 +96,13 @@ export default function HomeScreen() {
                         <View style={styles.headerRow}>
                             <View>
                                 <Text style={[styles.greeting, isTablet && styles.tabletGreeting]}>Selamat Datang di</Text>
-                                <Text style={[styles.username, isTablet && styles.tabletUsername]}>Winny Pangeran Natakusuma</Text>
+                                <Text style={[styles.username, isTablet && styles.tabletUsername]}>Winny PNK</Text>
                             </View>
                             <TouchableOpacity
                                 style={styles.logoutButton}
                                 onPress={handleLogout}
                             >
-                                <Text style={styles.logoutButtonText}>Kembali ke Login</Text>
+                                <Text style={styles.logoutButtonIcon}>🔌</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -109,49 +115,88 @@ export default function HomeScreen() {
                         </View>
 
                         <View style={styles.menuGrid}>
-                            {tables.map((table) => (
-                                <TouchableOpacity
-                                    key={table.id}
-                                    style={[
-                                        styles.tableCard,
-                                        isTablet && styles.tabletTableCard,
-                                        isLandscape && { width: isLargeTablet ? '15%' : '23%' },
-                                        table.status === 'Occupied' && styles.tableCardOccupied
-                                    ]}
-                                    onPress={() => handleTablePress(table)}
-                                >
-                                    <View style={styles.cardHeaderRow}>
-                                        <Text style={[styles.tableNumber, isTablet && styles.tabletTableNumber]}>
-                                            {table.number}
-                                        </Text>
-                                        <View style={[
-                                            styles.statusBadge,
-                                            { backgroundColor: table.status === 'Occupied' ? '#fee2e2' : '#dcfce7' }
-                                        ]}>
-                                            <View style={[
-                                                styles.statusDot,
-                                                { backgroundColor: table.status === 'Occupied' ? '#ef4444' : '#16a34a' }
-                                            ]} />
-                                        </View>
-                                    </View>
+                            {tables.map((table) => {
+                                // Dynamic width: 3 columns for portrait, ~4-5 for mobile landscape, ~6-7 for tablet landscape
+                                const cardWidth = isLandscape
+                                    ? (isLargeTablet ? '15%' : (isTablet ? '23%' : '23%'))
+                                    : '31.3%';
 
-                                    <View style={styles.cardFooterRow}>
-                                        <Text style={[
-                                            styles.tableStatusText,
-                                            { color: table.status === 'Occupied' ? '#dc2626' : '#166534' }
-                                        ]}>
-                                            {table.status === 'Occupied' ? 'Terisi' : 'Tersedia'}
-                                        </Text>
-                                        {table.status === 'Occupied' && (
-                                            <Text style={styles.tableTime}>1j 20m</Text>
-                                        )}
-                                    </View>
-                                </TouchableOpacity>
-                            ))}
+                                return (
+                                    <TouchableOpacity
+                                        key={table.id}
+                                        style={[
+                                            styles.tableCard,
+                                            isTablet && styles.tabletTableCard,
+                                            { width: cardWidth },
+                                            table.status === 'Occupied' && styles.tableCardOccupied
+                                        ]}
+                                        activeOpacity={0.8}
+                                        onPress={() => handleTablePress(table)}
+                                    >
+                                        <View style={styles.cardHeaderRow}>
+                                            <Text style={[styles.tableNumber, isTablet && styles.tabletTableNumber]}>
+                                                {table.number}
+                                            </Text>
+                                            <View style={[
+                                                styles.statusBadge,
+                                                { backgroundColor: table.status === 'Occupied' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(34, 197, 94, 0.1)' }
+                                            ]}>
+                                                <Text style={[styles.statusIcon, { color: table.status === 'Occupied' ? '#ef4444' : '#22c55e' }]}>
+                                                    {table.status === 'Occupied' ? '🔴' : '🟢'}
+                                                </Text>
+                                            </View>
+                                        </View>
+
+                                        <View style={styles.cardInfoRow}>
+                                            <Text style={styles.capacityText}>👤 {table.capacity || 4} Kursi</Text>
+                                        </View>
+
+                                        <View style={styles.cardFooterRow}>
+                                            <View style={[
+                                                styles.pillBadge,
+                                                { backgroundColor: table.status === 'Occupied' ? '#ef4444' : '#22c55e' }
+                                            ]}>
+                                                <Text style={styles.pillBadgeText}>
+                                                    {table.status === 'Occupied' ? 'TERISI' : 'TERSEDIA'}
+                                                </Text>
+                                            </View>
+                                            {table.status === 'Occupied' && (
+                                                <Text style={styles.tableTime}>⌛ 1j 20m</Text>
+                                            )}
+                                        </View>
+                                    </TouchableOpacity>
+                                );
+                            })}
                         </View>
                     </View>
                 </ScrollView>
             </View>
+
+            {/* Modern Occupied Table Modal */}
+            <Modal
+                visible={showOccupiedModal}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setShowOccupiedModal(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modernModalContent}>
+                        <View style={styles.modalIconContainer}>
+                            <Text style={styles.modalIcon}>🚫</Text>
+                        </View>
+                        <Text style={styles.modalTitle}>Meja Sedang Terisi</Text>
+                        <Text style={styles.modalDescription}>
+                            Maaf, meja ini sedang digunakan oleh pelanggan lain. Silakan pilih meja lain yang masih tersedia (berwarna hijau).
+                        </Text>
+                        <TouchableOpacity
+                            style={styles.modalCloseButton}
+                            onPress={() => setShowOccupiedModal(false)}
+                        >
+                            <Text style={styles.modalCloseButtonText}>Saya Mengerti</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 }
@@ -159,22 +204,22 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f9fafb',
+        backgroundColor: '#d9c3a3',
     },
     flex1: {
         flex: 1,
     },
     header: {
-        backgroundColor: 'white',
-        padding: 16,
-        paddingBottom: 20,
-        borderBottomLeftRadius: 20,
-        borderBottomRightRadius: 20,
+        backgroundColor: '#d9c3a3',
+        padding: 20,
+        paddingBottom: 24,
+        borderBottomLeftRadius: 30,
+        borderBottomRightRadius: 30,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 10,
-        elevation: 1,
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.08,
+        shadowRadius: 15,
+        elevation: 5,
     },
     headerRow: {
         flexDirection: 'row',
@@ -193,17 +238,16 @@ const styles = StyleSheet.create({
         color: '#1f2937',
     },
     logoutButton: {
-        backgroundColor: '#fee2e2',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: '#fecaca',
+        backgroundColor: '#8b4513', // SaddleBrown color
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+        opacity: 0.6, // Low opacity to blend in
     },
-    logoutButtonText: {
-        color: '#dc2626',
-        fontSize: 12,
-        fontWeight: 'bold',
+    logoutButtonIcon: {
+        fontSize: 18,
     },
     locationContainer: {
         flexDirection: 'row',
@@ -272,37 +316,39 @@ const styles = StyleSheet.create({
         padding: 16,
     },
     sectionTitle: {
-        fontSize: 18,
+        fontSize: 14,
         fontWeight: 'bold',
         color: '#1f2937',
-        marginBottom: 16,
+        marginBottom: 12,
+        textTransform: 'uppercase',
+        letterSpacing: 1,
     },
     menuGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
         justifyContent: 'flex-start',
-        gap: 12,
+        gap: 10,
     },
     // New Card Styles
     tableCard: {
-        width: '48%',
         backgroundColor: 'white',
         padding: 16,
-        borderRadius: 16,
-        marginBottom: 4,
+        borderRadius: 20,
+        marginBottom: 10,
         justifyContent: 'space-between',
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
-        elevation: 2,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 10,
+        elevation: 3,
         borderWidth: 1,
-        borderColor: '#f3f4f6',
-        minHeight: 100,
+        borderColor: 'rgba(229, 231, 235, 0.5)',
+        minHeight: 130,
     },
     tableCardOccupied: {
         borderColor: '#fecaca',
         backgroundColor: '#fef2f2',
+        opacity: 0.7, // Dimmed to show it's unavailable/disabled
     },
     cardHeaderRow: {
         flexDirection: 'row',
@@ -312,17 +358,38 @@ const styles = StyleSheet.create({
     },
     tableNumber: {
         fontSize: 24,
-        fontWeight: '800',
+        fontWeight: '900',
         color: '#1f2937',
     },
     statusBadge: {
-        padding: 6,
+        padding: 8,
         borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
-    statusDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
+    statusIcon: {
+        fontSize: 12,
+    },
+    cardInfoRow: {
+        marginBottom: 8,
+    },
+    capacityText: {
+        fontSize: 13,
+        color: '#6b7280',
+        fontWeight: '500',
+    },
+    pillBadge: {
+        paddingHorizontal: 12,
+        paddingVertical: 4,
+        borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    pillBadgeText: {
+        fontSize: 10,
+        fontWeight: 'bold',
+        color: 'white',
+        letterSpacing: 0.5,
     },
     cardFooterRow: {
         flexDirection: 'row',
@@ -342,12 +409,12 @@ const styles = StyleSheet.create({
 
     // Tablet Styles for Cards
     tabletTableCard: {
-        padding: 24,
-        borderRadius: 20,
-        minHeight: 140,
+        padding: 32,
+        borderRadius: 24,
+        minHeight: 180,
     },
     tabletTableNumber: {
-        fontSize: 32,
+        fontSize: 48,
     },
 
     // Legacy Styles (Keep if needed elsewhere or remove if unused)
@@ -543,5 +610,65 @@ const styles = StyleSheet.create({
     },
     tabletAmount: {
         fontSize: 18,
+    },
+    // Modern Modal Styles
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.4)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    modernModalContent: {
+        width: '90%',
+        maxWidth: 400,
+        backgroundColor: 'white',
+        borderRadius: 32,
+        padding: 32,
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 20 },
+        shadowOpacity: 0.15,
+        shadowRadius: 30,
+        elevation: 10,
+    },
+    modalIconContainer: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: '#fef2f2',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 24,
+    },
+    modalIcon: {
+        fontSize: 40,
+    },
+    modalTitle: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#1f2937',
+        marginBottom: 12,
+        textAlign: 'center',
+    },
+    modalDescription: {
+        fontSize: 16,
+        color: '#6b7280',
+        lineHeight: 24,
+        textAlign: 'center',
+        marginBottom: 32,
+    },
+    modalCloseButton: {
+        backgroundColor: '#8b4513',
+        paddingVertical: 16,
+        paddingHorizontal: 32,
+        borderRadius: 16,
+        width: '100%',
+        alignItems: 'center',
+    },
+    modalCloseButtonText: {
+        color: 'white',
+        fontSize: 16,
+        fontWeight: 'bold',
     },
 });

@@ -169,11 +169,15 @@ const MobileNavBtn = ({ active, icon, label, onClick }: any) => (
     </button>
 );
 
+import { fingerprint, FingerprintResult } from '../../lib/fingerprint';
+
 // --- Sub-Screens ---
 
 function IdleScreen({ onLogin }: { onLogin: (emp: Employee) => void }) {
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [pinDisplay, setPinDisplay] = useState('');
+    const [fpStatus, setFpStatus] = useState<string>('');
+    const [isScanning, setIsScanning] = useState(false);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -199,6 +203,66 @@ function IdleScreen({ onLogin }: { onLogin: (emp: Employee) => void }) {
         if (num === 'C') setPinDisplay('');
         else if (num === 'BS') setPinDisplay(prev => prev.slice(0, -1));
         else if (pinDisplay.length < 6) setPinDisplay(prev => prev + num);
+    };
+
+    const handleFingerprintScan = async (useMock: boolean = false) => {
+        if (isScanning) {
+            await fingerprint.stopCapture();
+            setIsScanning(false);
+            setFpStatus('');
+            return;
+        }
+
+        setIsScanning(true);
+        setFpStatus(useMock ? 'Simulasi: Memindai Jari...' : 'Menghubungkan ke Pemindai...');
+
+        const callback = (status: string, result?: FingerprintResult) => {
+            if (status === 'SUCCESS' && result?.success && result.template) {
+                setFpStatus('Mencocokkan Sidik Jari...');
+
+                const matchedEmp = employees.find(e => e.fingerprint_template === result.template);
+
+                if (matchedEmp) {
+                    setFpStatus(`Selamat Datang, ${matchedEmp.name}!`);
+                    setTimeout(() => {
+                        onLogin(matchedEmp);
+                        setIsScanning(false);
+                        setFpStatus('');
+                    }, 1000);
+                } else {
+                    setFpStatus('Sidik jari tidak terdaftar.');
+                    toast.error('Sidik jari tidak terdaftar. Hubungi Admin.');
+                    setIsScanning(false);
+                }
+            } else if (status === 'ERROR') {
+                if (!useMock && result?.errorType === 'SERVICE_NOT_RUNNING') {
+                    if (confirm('Aplikasi Bridge tidak jalan. Gunakan SIMULASI untuk tes?')) {
+                        handleFingerprintScan(true);
+                        return;
+                    }
+                }
+                setFpStatus(result?.message || 'Gagal membaca sidik jari');
+                setIsScanning(false);
+                toast.error(result?.message || 'Gagal membaca sidik jari');
+            } else {
+                setFpStatus(status === 'WAITING_FOR_FINGER' ? 'Silakan Tempel Jari Anda' : status);
+            }
+        };
+
+        if (useMock) {
+            // Kita gunakan first employee template agar simulasi login berhasil
+            const firstEmpTemplate = employees.find(e => e.fingerprint_template)?.fingerprint_template;
+
+            fingerprint.mockCapture((status, result) => {
+                if (status === 'SUCCESS' && result && firstEmpTemplate) {
+                    // Paksa template cocok dengan yang ada di DB untuk simulasi
+                    result.template = firstEmpTemplate;
+                }
+                callback(status, result);
+            });
+        } else {
+            await fingerprint.startCapture(callback);
+        }
     };
 
     return (
@@ -249,6 +313,29 @@ function IdleScreen({ onLogin }: { onLogin: (emp: Employee) => void }) {
                             <ChevronRight className="w-6 h-6" />
                         </button>
                     </div>
+                </div>
+
+                {/* Fingerprint Scanner Button */}
+                <div className="mt-6 w-full max-w-[320px] mx-auto">
+                    <button
+                        onClick={() => handleFingerprintScan(false)}
+                        className={`w-full py-4 rounded-2xl flex items-center justify-center gap-3 transition-all duration-300 font-bold ${isScanning
+                            ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                            : 'bg-white/5 hover:bg-white/10 text-white border border-white/10'
+                            }`}
+                    >
+                        {isScanning ? (
+                            <>
+                                <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                                <span>{fpStatus || 'Memproses...'}</span>
+                            </>
+                        ) : (
+                            <>
+                                <QrCode className="w-5 h-5" /> {/* Ganti QrCode dengan icon Fingerprint jika tersedia, QrCode sbg placeholder */}
+                                <span>Gunakan Sidik Jari (4500 USB)</span>
+                            </>
+                        )}
+                    </button>
                 </div>
 
                 <p className="mt-8 text-xs text-gray-500 text-center max-w-xs">

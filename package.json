@@ -12,6 +12,10 @@
     "types:supabase": "npx supabase gen types typescript --project-id $SUPABASE_PROJECT_ID > src/types/supabase.ts"
   },
   "dependencies": {
+    "@digitalpersona/core": "^0.2.6",
+    "@digitalpersona/devices": "^0.2.6",
+    "@digitalpersona/services": "^0.2.8",
+    "@digitalpersona/websdk": "^1.1.0",
     "@hookform/resolvers": "^3.10.0",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Winny Fingerprint Diagnostic Tool</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+            line-height: 1.5;
+            color: #333;
+        }
+
+        .card {
+            border: 1px solid #ddd;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            background: #f9f9f9;
+        }
+
+        .success {
+            color: green;
+            font-weight: bold;
+        }
+
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+
+        .warning {
+            color: orange;
+            font-weight: bold;
+        }
+
+        pre {
+            background: #eee;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+
+        button {
+            padding: 10px 20px;
+            cursor: pointer;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Fingerprint Diagnostic Tool</h1>
+    <p>Alat ini mengecek koneksi langsung ke layanan DigitalPersona tanpa menggunakan SDK aplikasi.</p>
+
+    <div class="card">
+        <h3>1. Cek Port 52181 (Official SDK)</h3>
+        <button onclick="testPort('http://localhost:52181/get_device_list', 'res1')">Test HTTP 52181</button>
+        <div id="res1" style="margin-top:10px">Menunggu...</div>
+    </div>
+
+    <div class="card">
+        <h3>2. Cek Port 8080 (Winny Bridge)</h3>
+        <button onclick="testPort('http://localhost:8080/DPBiotek/Fingerprint/Status', 'res3')">Test Bridge
+            8080</button>
+        <div id="res3" style="margin-top:10px">Menunggu...</div>
+    </div>
+
+    <div class="card">
+        <h3>3. Cek Port 52182 (HTTPS SDK)</h3>
+        <button onclick="testPort('https://localhost:52182/get_device_list', 'res2')">Test HTTPS</button>
+        <p><small>Jika test ini "Failed", klik link ini: <a href="https://localhost:52182/get_device_list"
+                    target="_blank">https://localhost:52182/get_device_list</a> dan pilih "Proceed to localhost
+                (unsafe)".</small></p>
+        <div id="res2" style="margin-top:10px">Menunggu...</div>
+    </div>
+
+    <div class="card">
+        <h3>3. Rekomendasi</h3>
+        <div id="recommendation">Silakan jalankan test di atas.</div>
+    </div>
+
+    <script>
+        async function testPort(url, elementId) {
+            const el = document.getElementById(elementId);
+            el.innerHTML = "Menghubungkan...";
+            el.className = "";
+
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+                const response = await fetch(url, {
+                    method: 'GET',
+                    mode: 'no-cors', // Kita hanya butuh tahu apakah dia menjawab
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+                el.innerHTML = '<span class="success">TERHUBUNG!</span> Layanan merespon di ' + url;
+                updateRecommendation(true);
+            } catch (err) {
+                if (err.name === 'AbortError') {
+                    el.innerHTML = '<span class="error">TIMEOUT.</span> Layanan tidak merespon dalam 3 detik.';
+                } else {
+                    el.innerHTML = '<span class="error">GAGAL.</span> ' + err.message;
+                }
+                updateRecommendation(false);
+            }
+        }
+
+        function updateRecommendation(isSuccess) {
+            const rec = document.getElementById('recommendation');
+            if (isSuccess) {
+                rec.innerHTML = '<p class="success">Koneksi jaringan OK. Jika alat belum nyala, masalah mungkin ada di Driver atau Konflik Device (Windows Hello).</p>';
+            } else {
+                rec.innerHTML = '<p class="error">Koneksi jaringan masih terblokir. Pastikan "DigitalPersona Biometric Service" di services.msc berstatus RUNNING dan Matikan Antivirus/Firewall.</p>';
+            }
+        }
+    </script>
+</body>
+
+</html>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Shield, Zap, X, UserCheck, AlertCircle } from 'lucide-react';
 import { Button } from '../ui/button';
+import { fingerprint, FingerprintResult } from '../../lib/fingerprint';
 
 interface FingerprintAuthModalProps {
     open: boolean;
@@ -19,50 +20,82 @@ export function FingerprintAuthModal({
     title = "Otorisasi Manager Dibutuhkan",
     description = "Silakan tempelkan jari Manager atau Administrator pada scanner untuk melanjutkan."
 }: FingerprintAuthModalProps) {
-    const [inputBuffer, setInputBuffer] = useState('');
-    const lastInputTime = useRef<number>(0);
     const [error, setError] = useState<string | null>(null);
+    const [isScanning, setIsScanning] = useState(false);
+    const [fpStatus, setFpStatus] = useState<string>('');
 
     useEffect(() => {
-        if (!open) {
-            setInputBuffer('');
-            setError(null);
-            return;
+        if (open) {
+            handleStartScanning();
+        } else {
+            handleStopScanning();
         }
+    }, [open]);
 
-        const handleKeyDown = (e: KeyboardEvent) => {
-            const now = Date.now();
-            if (now - lastInputTime.current > 100) {
-                setInputBuffer('');
-            }
-            lastInputTime.current = now;
+    const handleStopScanning = async () => {
+        await fingerprint.stopCapture();
+        setIsScanning(false);
+        setFpStatus('');
+    };
 
-            if (e.key === 'Enter') {
-                if (inputBuffer.length >= 3) {
-                    validateAuth(inputBuffer);
-                    setInputBuffer('');
+    const handleStartScanning = async (useMock: boolean = false) => {
+        setIsScanning(true);
+        setFpStatus(useMock ? 'Simulasi: Memindai Jari...' : 'Menghubungkan ke Pemindai...');
+        setError(null);
+
+        const callback = (status: string, result?: FingerprintResult) => {
+            console.log('Fingerprint Auth Status:', status, result);
+
+            if (status === 'SUCCESS' && result?.success && result.template) {
+                setFpStatus('Mencocokkan Sidik Jari...');
+
+                // Validate against Manager/Admin templates
+                const manager = employees.find(e =>
+                    e.fingerprint_template === result.template &&
+                    (e.system_role === 'Administrator' || e.position?.toLowerCase().includes('manager'))
+                );
+
+                if (manager) {
+                    setFpStatus('Otorisasi Berhasil!');
+                    setTimeout(() => {
+                        onSuccess(manager);
+                        onClose();
+                        setIsScanning(false);
+                    }, 1000);
+                } else {
+                    setError("Otorisasi Gagal: Sidik jari tidak dikenali sebagai Manager/Admin.");
+                    setFpStatus('');
+                    handleStartScanning(useMock); // Restart scanning
                 }
-            } else if (e.key.length === 1) {
-                setInputBuffer(prev => prev + e.key);
+            } else if (status === 'ERROR') {
+                if (!useMock && result?.errorType === 'SERVICE_NOT_RUNNING') {
+                    if (confirm('Layanan DigitalPersona tidak terdeteksi. Gunakan SIMULASI untuk tes?')) {
+                        handleStartScanning(true);
+                        return;
+                    }
+                }
+                setError(result?.message || 'Gagal membaca sidik jari');
+                setIsScanning(false);
+            } else {
+                setFpStatus(status === 'WAITING_FOR_FINGER' ? 'Silakan Tempel Jari Anda' : status);
             }
         };
 
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [open, inputBuffer, employees]);
+        if (useMock) {
+            // Pick a manager template from the list for simulation if available
+            const managerTemplate = employees.find(e =>
+                e.fingerprint_template &&
+                (e.system_role === 'Administrator' || e.position?.toLowerCase().includes('manager'))
+            )?.fingerprint_template;
 
-    const validateAuth = (id: string) => {
-        const manager = employees.find(e =>
-            (e.barcode === id || `EMP-${e.id}` === id || e.id.toString() === id) &&
-            (e.system_role === 'Administrator' || e.position?.toLowerCase().includes('manager'))
-        );
-
-        if (manager) {
-            onSuccess(manager);
-            onClose();
+            fingerprint.mockCapture((status, result) => {
+                if (status === 'SUCCESS' && result && managerTemplate) {
+                    result.template = managerTemplate;
+                }
+                callback(status, result);
+            });
         } else {
-            setError("Otorisasi Gagal: Fingerprint tidak dikenali sebagai Manager/Admin.");
-            setTimeout(() => setError(null), 3000);
+            await fingerprint.startCapture(callback, 'CAPTURE');
         }
     };
 
