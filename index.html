@@ -11,7 +11,12 @@
   <meta name="apple-mobile-web-app-title" content="WinPOS" />
   <title>WinPOS - Cashier System</title>
   <!-- Polyfill for DigitalPersona WebSdk legacy dependencies -->
-  window.ES6Promise = window.Promise;
+  <script>
+    window.ES6Promise = window.Promise;
+    if (window.ES6Promise && !window.ES6Promise.Promise) {
+      window.ES6Promise.Promise = window.Promise;
+    }
+  </script>
 </head>
 
 <body>

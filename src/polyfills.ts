@@ -3,7 +3,11 @@
 // to guarantee definitions exist before the Vite pre-bundle imports WebSdk.
 
 if (typeof window !== "undefined") {
-    (window as any).ES6Promise = window.Promise;
+    const nativePromise = window.Promise;
+    (window as any).ES6Promise = nativePromise;
+    if (nativePromise && !(nativePromise as any).Promise) {
+        (nativePromise as any).Promise = nativePromise;
+    }
     // Provide a placeholder for WebSdkCore that is expected by some parts of the library
     (window as any).WebSdkCore = (window as any).WebSdkCore || {
         WebSdk: { version: 4, port: 52181 },
