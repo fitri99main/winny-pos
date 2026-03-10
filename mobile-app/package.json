@@ -17,6 +17,7 @@
     "expo": "~54.0.33",
     "expo-barcode-scanner": "^13.0.1",
     "expo-camera": "~17.0.10",
+    "expo-image-picker": "~17.0.10",
     "expo-status-bar": "~3.0.9",
     "lucide-react-native": "^0.562.0",
     "nativewind": "^2.0.11",

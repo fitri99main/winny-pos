@@ -98,6 +98,7 @@ export function ProductsView({
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
     const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
     const [printQty, setPrintQty] = useState(1);
+    const [uploadingImage, setUploadingImage] = useState(false);
 
 
     // --- Generic Handlers ---
@@ -125,7 +126,43 @@ export function ProductsView({
         }, 0);
     };
 
+    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
 
+        // Validation
+        if (!file.type.startsWith('image/')) {
+            return toast.error('Pilih file gambar yang valid');
+        }
+        if (file.size > 2 * 1024 * 1024) {
+            return toast.error('Ukuran gambar maksimal 2MB');
+        }
+
+        try {
+            setUploadingImage(true);
+            const fileExt = file.name.split('.').pop();
+            const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
+            const filePath = `${fileName}`;
+
+            const { error: uploadError } = await supabase.storage
+                .from('product-images')
+                .upload(filePath, file);
+
+            if (uploadError) throw uploadError;
+
+            const { data: { publicUrl } } = supabase.storage
+                .from('product-images')
+                .getPublicUrl(filePath);
+
+            setFormData({ ...formData, image_url: publicUrl });
+            toast.success('Gambar berhasil diunggah');
+        } catch (error: any) {
+            console.error('Error uploading:', error);
+            toast.error('Gagal mengunggah gambar: ' + error.message);
+        } finally {
+            setUploadingImage(false);
+        }
+    };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -220,8 +257,19 @@ export function ProductsView({
 
                                         <td className="px-4 py-5 font-mono text-gray-400 text-xs">{p.code}</td>
                                         <td className="px-4 py-5">
-                                            <div className="font-bold text-gray-800">{p.name}</div>
-                                            <div className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">{p.brand}</div>
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center overflow-hidden border border-gray-100 flex-shrink-0">
+                                                    {p.image_url ? (
+                                                        <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        <span className="text-[10px] font-black text-gray-400 capitalize">{getAcronym(p.name)}</span>
+                                                    )}
+                                                </div>
+                                                <div>
+                                                    <div className="font-bold text-gray-800">{p.name}</div>
+                                                    <div className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">{p.brand}</div>
+                                                </div>
+                                            </div>
                                         </td>
                                         <td className="px-4 py-5">
                                             <span className="px-2.5 py-1 bg-primary/5 text-primary rounded-lg text-[10px] font-black uppercase tracking-widest ring-1 ring-primary/10">
@@ -349,6 +397,41 @@ export function ProductsView({
                                 {activeTab === 'products' ? (
                                     <div className="space-y-10">
                                         {/* Image Section */}
+                                        <div className="flex flex-col items-center gap-6">
+                                            <div className="relative group">
+                                                <div className="w-40 h-40 rounded-[32px] bg-gray-50 border-2 border-dashed border-gray-100 flex items-center justify-center overflow-hidden shadow-inner group-hover:border-primary/30 transition-all">
+                                                    {uploadingImage ? (
+                                                        <div className="absolute inset-0 bg-white/60 backdrop-blur-sm flex items-center justify-center z-10">
+                                                            <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+                                                        </div>
+                                                    ) : null}
+
+                                                    {formData.image_url ? (
+                                                        <img src={formData.image_url} alt="Profile" className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        <div className="text-center p-4">
+                                                            <div className="w-10 h-10 bg-white rounded-2xl shadow-sm flex items-center justify-center mx-auto mb-2 text-gray-300">
+                                                                <Edit className="w-5 h-5" />
+                                                            </div>
+                                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Wajib Gambar</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <label className="absolute -bottom-2 -right-2 w-12 h-12 bg-white rounded-2xl shadow-xl flex items-center justify-center cursor-pointer hover:scale-110 active:scale-95 transition-all text-primary border border-gray-50">
+                                                    <Plus className="w-6 h-6" />
+                                                    <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} disabled={uploadingImage} />
+                                                </label>
+                                            </div>
+                                            {formData.image_url && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setFormData({ ...formData, image_url: null })}
+                                                    className="text-[10px] font-black text-red-500 uppercase tracking-widest hover:text-red-600 transition-colors"
+                                                >
+                                                    Hapus Gambar
+                                                </button>
+                                            )}
+                                        </div>
 
 
                                         {/* Informasi Utama Section */}
@@ -509,7 +592,13 @@ export function ProductsView({
 
                                 <div className="flex justify-end gap-3 pt-6 border-t border-gray-50">
                                     <Button type="button" variant="outline" className="h-14 px-8 rounded-2xl font-bold" onClick={() => setIsFormOpen(false)}>Batal</Button>
-                                    <Button type="submit" className="h-14 px-10 rounded-2xl font-black shadow-xl shadow-primary/20">Simpan Data</Button>
+                                    <Button
+                                        type="submit"
+                                        disabled={uploadingImage}
+                                        className="h-14 px-10 rounded-2xl font-black shadow-xl shadow-primary/20 bg-primary text-white disabled:opacity-50"
+                                    >
+                                        {uploadingImage ? 'Mengunggah...' : 'Simpan Data'}
+                                    </Button>
                                 </div>
                             </form>
                         </div>

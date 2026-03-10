@@ -1,7 +1,8 @@
 import * as React from 'react';
 import { View, Text, TouchableOpacity, ScrollView, SafeAreaView, StyleSheet, useWindowDimensions, TextInput, ActivityIndicator, Alert, Modal } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function HomeScreen() {
     const navigation = useNavigation();
@@ -13,10 +14,27 @@ export default function HomeScreen() {
     const [tables, setTables] = React.useState<any[]>([]);
     const [loading, setLoading] = React.useState(true);
     const [showOccupiedModal, setShowOccupiedModal] = React.useState(false);
+    const [posFlow, setPosFlow] = React.useState<'table' | 'direct'>('table');
 
-    React.useEffect(() => {
-        fetchTables();
-    }, []);
+    useFocusEffect(
+        React.useCallback(() => {
+            fetchTables();
+            loadSettings();
+        }, [])
+    );
+
+    const loadSettings = async () => {
+        try {
+            const savedFlow = await AsyncStorage.getItem('pos_flow');
+            if (savedFlow) {
+                setPosFlow(savedFlow as 'table' | 'direct');
+            } else {
+                setPosFlow('table');
+            }
+        } catch (e) {
+            console.error('Error loading settings:', e);
+        }
+    };
 
     const fetchTables = async () => {
         try {
@@ -76,6 +94,15 @@ export default function HomeScreen() {
         });
     };
 
+    const handleDirectMenu = () => {
+        // @ts-ignore
+        navigation.navigate('POS', {
+            tableId: null,
+            tableNumber: 'Tanpa Meja',
+            waiterName: ''
+        });
+    };
+
     const handleMenuPress = (route: string) => {
         // @ts-ignore
         navigation.navigate(route);
@@ -98,13 +125,31 @@ export default function HomeScreen() {
                                 <Text style={[styles.greeting, isTablet && styles.tabletGreeting]}>Selamat Datang di</Text>
                                 <Text style={[styles.username, isTablet && styles.tabletUsername]}>Winny PNK</Text>
                             </View>
-                            <TouchableOpacity
-                                style={styles.logoutButton}
-                                onPress={handleLogout}
-                            >
-                                <Text style={styles.logoutButtonIcon}>🔌</Text>
-                            </TouchableOpacity>
+                            <View style={{ flexDirection: 'row', gap: 12 }}>
+                                <TouchableOpacity
+                                    style={[styles.logoutButton, { backgroundColor: '#f3f4f6' }]}
+                                    onPress={() => navigation.navigate('Settings' as any)}
+                                >
+                                    <Text style={styles.logoutButtonIcon}>⚙️</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={styles.logoutButton}
+                                    onPress={handleLogout}
+                                >
+                                    <Text style={styles.logoutButtonIcon}>🔌</Text>
+                                </TouchableOpacity>
+                            </View>
                         </View>
+
+                        {posFlow === 'direct' && (
+                            <TouchableOpacity
+                                style={styles.directMenuButton}
+                                onPress={handleDirectMenu}
+                            >
+                                <Text style={styles.directMenuIcon}>🛒</Text>
+                                <Text style={styles.directMenuText}>Langsung ke Daftar Menu</Text>
+                            </TouchableOpacity>
+                        )}
                     </View>
 
                     {/* Table Selection Grid */}
@@ -667,6 +712,29 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     modalCloseButtonText: {
+        color: 'white',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    directMenuButton: {
+        backgroundColor: '#ea580c',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+        borderRadius: 20,
+        marginTop: 20,
+        shadowColor: '#ea580c',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 10,
+        elevation: 5,
+    },
+    directMenuIcon: {
+        fontSize: 24,
+        marginRight: 12,
+    },
+    directMenuText: {
         color: 'white',
         fontSize: 16,
         fontWeight: 'bold',

@@ -322,7 +322,7 @@ function Home() {
     const [productsRes, schedulesRes, tablesRes, ingredientsRes, movementsRes] = results;
 
     if (productsRes.data) {
-      setProducts(productsRes.data.map((p: any) => ({ ...p, image_url: undefined })));
+      setProducts(productsRes.data);
     }
 
     // Filter schedules for employees in this branch (done in employees fetch usually, or here if we have employees list?)
@@ -2060,7 +2060,7 @@ function Home() {
                 const { recipe, addons, id, ...rest } = data;
 
                 // Whitelist only valid columns to avoid schema errors and strip undefined values
-                const validColumns = ['code', 'name', 'category', 'brand', 'unit', 'price', 'cost', 'stock'];
+                const validColumns = ['code', 'name', 'category', 'brand', 'unit', 'price', 'cost', 'stock', 'image_url'];
                 const productData: any = {};
                 validColumns.forEach(col => {
                   if (rest[col] !== undefined) productData[col] = rest[col];

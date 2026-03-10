@@ -34,6 +34,7 @@ export default function POSScreen() {
     const [tables, setTables] = useState<any[]>([]);
     const [customers, setCustomers] = useState<any[]>([]);
     const [waiters, setWaiters] = useState<any[]>([]);
+    const [refreshingTables, setRefreshingTables] = useState(false);
 
     // UI State
     const [showTableModal, setShowTableModal] = useState(false);
@@ -151,19 +152,32 @@ export default function POSScreen() {
             }
 
             // 4. Fetch Tables
-            const { data: tableData } = await supabase
-                .from('tables')
-                .select('*')
-                .order('number');
-
-            if (tableData) {
-                setTables(tableData);
-            }
+            await fetchTables();
 
             // 5. Waiters skipped (feature hidden)
 
         } catch (error) {
             console.error('Error fetching master data:', error);
+        }
+    };
+
+    const fetchTables = async () => {
+        try {
+            setRefreshingTables(true);
+            const { data: tableData, error } = await supabase
+                .from('tables')
+                .select('*')
+                .order('number');
+
+            if (error) throw error;
+            if (tableData) {
+                setTables(tableData);
+            }
+        } catch (error) {
+            console.error('Error fetching tables:', error);
+            Alert.alert('Error', 'Gagal memuat data meja');
+        } finally {
+            setRefreshingTables(false);
         }
     };
 
@@ -375,10 +389,12 @@ export default function POSScreen() {
             if (itemsError) throw itemsError;
 
             // 3. Mark Table as Occupied (Optional but consistent with system)
-            await supabase
-                .from('tables')
-                .update({ status: 'Occupied' })
-                .eq('number', selectedTable);
+            if (selectedTable && selectedTable !== 'Tanpa Meja') {
+                await supabase
+                    .from('tables')
+                    .update({ status: 'Occupied' })
+                    .eq('number', selectedTable);
+            }
 
             setLastOrderNo(orderNo);
             setCurrentSaleId(sale.id);
@@ -506,11 +522,15 @@ export default function POSScreen() {
                                     onPress={() => addToCart(item)}
                                 >
                                     <View
-                                        style={[styles.productImageContainer, { backgroundColor: '#fff7ed' }]}
+                                        style={[styles.productImageContainer, { backgroundColor: '#fff7ed', overflow: 'hidden' }]}
                                     >
-                                        <Text style={styles.productAcronym}>
-                                            {getAcronym(item.name)}
-                                        </Text>
+                                        {item.image_url ? (
+                                            <Image source={{ uri: item.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                                        ) : (
+                                            <Text style={styles.productAcronym}>
+                                                {getAcronym(item.name)}
+                                            </Text>
+                                        )}
                                     </View>
                                     <View style={styles.productInfo}>
                                         <Text style={styles.productNameText} numberOfLines={2}>{item.name}</Text>
@@ -681,7 +701,20 @@ export default function POSScreen() {
                             style={styles.modalContent}
                             onPress={(e) => e.stopPropagation()}
                         >
-                            <Text style={styles.modalTitle}>Pilih Meja</Text>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                                <Text style={[styles.modalTitle, { marginBottom: 0 }]}>Pilih Meja</Text>
+                                <TouchableOpacity
+                                    onPress={fetchTables}
+                                    disabled={refreshingTables}
+                                    style={{ padding: 8 }}
+                                >
+                                    {refreshingTables ? (
+                                        <ActivityIndicator size="small" color="#ea580c" />
+                                    ) : (
+                                        <Text style={{ fontSize: 20 }}>🔄</Text>
+                                    )}
+                                </TouchableOpacity>
+                            </View>
                             <ScrollView style={{ maxHeight: 300 }}>
                                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                                     {tables.map((table) => (

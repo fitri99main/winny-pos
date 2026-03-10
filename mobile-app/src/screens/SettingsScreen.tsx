@@ -1,9 +1,39 @@
 import * as React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Switch, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function SettingsScreen() {
     const navigation = useNavigation();
+    const [posFlow, setPosFlow] = React.useState<'table' | 'direct'>('table');
+    const [loading, setLoading] = React.useState(true);
+
+    React.useEffect(() => {
+        loadSettings();
+    }, []);
+
+    const loadSettings = async () => {
+        try {
+            const savedFlow = await AsyncStorage.getItem('pos_flow');
+            if (savedFlow) {
+                setPosFlow(savedFlow as 'table' | 'direct');
+            }
+        } catch (e) {
+            console.error('Error loading settings:', e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const togglePosFlow = async (value: boolean) => {
+        const newFlow = value ? 'direct' : 'table';
+        setPosFlow(newFlow);
+        try {
+            await AsyncStorage.setItem('pos_flow', newFlow);
+        } catch (e) {
+            console.error('Error saving pos_flow:', e);
+        }
+    };
 
     const handleLogout = () => {
         // In a real app, you would clear auth state here
@@ -12,6 +42,14 @@ export default function SettingsScreen() {
             routes: [{ name: 'Login' } as any],
         });
     };
+
+    if (loading) {
+        return (
+            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+                <ActivityIndicator size="large" color="#ea580c" />
+            </View>
+        );
+    }
 
     return (
         <SafeAreaView style={styles.container}>
@@ -23,6 +61,7 @@ export default function SettingsScreen() {
                     <Text style={styles.headerTitle}>Pengaturan</Text>
                 </View>
 
+                <Text style={styles.sectionLabel}>Umum</Text>
                 <View style={styles.card}>
                     <TouchableOpacity
                         style={styles.item}
@@ -35,6 +74,26 @@ export default function SettingsScreen() {
                         <Text style={styles.itemText}>Profil Pengguna</Text>
                         <Text style={styles.chevron}>›</Text>
                     </TouchableOpacity>
+                </View>
+
+                <Text style={styles.sectionLabel}>Alur Penjualan</Text>
+                <View style={[styles.card, { padding: 16 }]}>
+                    <View style={styles.settingRow}>
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.settingTitle}>Langsung ke Menu</Text>
+                            <Text style={styles.settingSubtitle}>Lewati pemilihan meja saat masuk kasir</Text>
+                        </View>
+                        <Switch
+                            value={posFlow === 'direct'}
+                            onValueChange={togglePosFlow}
+                            trackColor={{ false: '#d1d5db', true: '#fde68a' }}
+                            thumbColor={posFlow === 'direct' ? '#ea580c' : '#f3f4f6'}
+                        />
+                    </View>
+                </View>
+
+                <Text style={styles.sectionLabel}>Lainnya</Text>
+                <View style={styles.card}>
                     <TouchableOpacity style={styles.item}>
                         <Text style={styles.itemText}>Notifikasi</Text>
                         <Text style={styles.chevron}>›</Text>
@@ -82,6 +141,15 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: '#1f2937',
     },
+    sectionLabel: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: '#6b7280',
+        textTransform: 'uppercase',
+        marginBottom: 8,
+        marginTop: 16,
+        letterSpacing: 1,
+    },
     card: {
         backgroundColor: 'white',
         borderRadius: 12,
@@ -114,8 +182,23 @@ const styles = StyleSheet.create({
         color: '#9ca3af',
         fontSize: 20,
     },
+    settingRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    settingTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#1f2937',
+    },
+    settingSubtitle: {
+        fontSize: 12,
+        color: '#6b7280',
+        marginTop: 2,
+    },
     logoutButton: {
-        marginTop: 24,
+        marginTop: 32,
         backgroundColor: '#fef2f2',
         padding: 16,
         borderRadius: 12,
