@@ -17,6 +17,7 @@ export interface Product {
   recipe?: { ingredientId: number; amount: number }[];
   addons?: Addon[];
   is_sellable?: boolean;
+  is_taxed?: boolean;
   image_url?: string;
 }
 

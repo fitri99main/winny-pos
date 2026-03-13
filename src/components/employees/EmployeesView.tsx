@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Search, Edit, Trash2, Mail, Phone, Briefcase, CreditCard, Printer, X, Settings2, Zap, AlertCircle, ExternalLink, RefreshCw } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, Mail, Phone, Briefcase, CreditCard, Printer, X, Settings2, Zap, AlertCircle, ExternalLink, RefreshCw, Shuffle } from 'lucide-react';
 import { Button } from '../ui/button';
 import { QRCard } from '../ui/QRCard';
 import { toast } from 'sonner';
@@ -118,6 +118,31 @@ export function EmployeesView({
         }
     };
 
+    const handleRandomizeAllOffDays = async () => {
+        if (!confirm('Peringatan: Ini akan mengacak jadwal libur mingguan untuk SEMUA karyawan. Lanjutkan?')) return;
+
+        try {
+            toast.promise(
+                Promise.all(employees.map(emp => {
+                    // Pick 1 or 2 random unique days
+                    const numDays = Math.floor(Math.random() * 2) + 1; // 1 to 2
+                    const days = [0, 1, 2, 3, 4, 5, 6];
+                    const shuffled = days.sort(() => 0.5 - Math.random());
+                    const newOffDays = shuffled.slice(0, numDays);
+                    
+                    return onEmployeeCRUD('update', { ...emp, offDays: newOffDays });
+                })),
+                {
+                    loading: 'Mengacak jadwal libur...',
+                    success: 'Semua jadwal libur karyawan berhasil diacak!',
+                    error: 'Gagal mengacak jadwal libur.'
+                }
+            );
+        } catch (error) {
+            console.error('Error randomizing off days:', error);
+        }
+    };
+
     const handleFingerprintEnroll = async (useMock: boolean = false) => {
         console.log(`Memulai Enrollment Fingerprint... (${useMock ? 'SIMULASI' : 'REAL'})`);
         setIsScanning(true);
@@ -172,6 +197,9 @@ export function EmployeesView({
                 <div className="flex gap-2">
                     <Button variant="outline" onClick={() => setIsDeptModalOpen(true)} className="gap-2 border-dashed">
                         <Settings2 className="w-4 h-4" /> Kelola Departemen
+                    </Button>
+                    <Button variant="outline" onClick={handleRandomizeAllOffDays} className="gap-2 text-orange-600 border-orange-200 hover:bg-orange-50">
+                        <Shuffle className="w-4 h-4" /> Acak Libur
                     </Button>
                     <Button onClick={() => { setFormData({ offDays: [] }); setIsFormOpen(true); }} className="gap-2 shadow-lg shadow-primary/20">
                         <Plus className="w-4 h-4" /> Tambah Karyawan
@@ -406,7 +434,21 @@ export function EmployeesView({
                                 </div>
 
                                 <div className="bg-gray-100/50 p-4 md:p-6 rounded-[24px] md:rounded-[32px] border border-gray-100/50">
-                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-4 ml-1">Jadwal Libur Tetap (Weekly Off Day)</label>
+                                    <div className="flex justify-between items-center mb-4 ml-1">
+                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">Jadwal Libur Tetap (Weekly Off Day)</label>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const numDays = Math.floor(Math.random() * 2) + 1;
+                                                const days = [0, 1, 2, 3, 4, 5, 6];
+                                                const shuffled = days.sort(() => 0.5 - Math.random());
+                                                setFormData({ ...formData, offDays: shuffled.slice(0, numDays) });
+                                            }}
+                                            className="text-[10px] font-black text-orange-600 uppercase flex items-center gap-1 hover:text-orange-700 transition-colors"
+                                        >
+                                            <Shuffle className="w-3 h-3" /> Acak
+                                        </button>
+                                    </div>
                                     <div className="flex flex-wrap gap-2">
                                         {DAYS_NAME.map((day, idx) => (
                                             <button

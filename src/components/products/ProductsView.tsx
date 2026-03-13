@@ -21,6 +21,7 @@ export interface Product {
     recipe?: RecipeItem[];
     addons?: Addon[];
     is_sellable?: boolean;
+    is_taxed?: boolean;
     image_url?: string;
     branch_id?: number | string;
     target?: 'Kitchen' | 'Bar';
@@ -520,6 +521,24 @@ export function ProductsView({
                                                     className={`w-14 h-8 rounded-full transition-all cursor-pointer relative p-1 ${formData.is_sellable !== false ? 'bg-primary' : 'bg-gray-200'}`}
                                                 >
                                                     <div className={`w-6 h-6 bg-white rounded-full shadow-md transition-all transform ${formData.is_sellable !== false ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                                                </div>
+                                            </div>
+
+                                            <div className="p-6 bg-blue-50/50 rounded-[32px] border border-blue-100 flex items-center justify-between group transition-all hover:bg-blue-100/50">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="p-3 bg-white rounded-2xl shadow-sm text-blue-600 group-hover:scale-110 transition-transform">
+                                                        <Calculator className="w-5 h-5" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-sm font-black text-gray-800">Pajak Produk</p>
+                                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Kenakan Pajak & Service Charge</p>
+                                                    </div>
+                                                </div>
+                                                <div
+                                                    onClick={() => setFormData({ ...formData, is_taxed: formData.is_taxed === false ? true : false })}
+                                                    className={`w-14 h-8 rounded-full transition-all cursor-pointer relative p-1 ${formData.is_taxed !== false ? 'bg-blue-600' : 'bg-gray-200'}`}
+                                                >
+                                                    <div className={`w-6 h-6 bg-white rounded-full shadow-md transition-all transform ${formData.is_taxed !== false ? 'translate-x-6' : 'translate-x-0'}`}></div>
                                                 </div>
                                             </div>
 

@@ -217,14 +217,23 @@ export function CashierInterface({
     }, 0);
   }, [orderItems]);
 
-  const taxableAmount = Math.max(0, subtotal - orderDiscount);
+  const taxableSubtotal = useMemo(() => {
+    return orderItems.reduce((sum, item) => {
+      if (item.product.is_taxed === false) return sum;
+      const addonsPrice = item.selectedAddons?.reduce((aSum, a) => aSum + a.price, 0) || 0;
+      return sum + (item.product.price + addonsPrice) * item.quantity;
+    }, 0);
+  }, [orderItems]);
+
+  const discountRatio = subtotal > 0 ? (subtotal - orderDiscount) / subtotal : 0;
+  const taxableAmount = taxableSubtotal * discountRatio;
   const taxRate = settings?.tax_rate || 0;
   const serviceRate = settings?.service_rate || 0;
 
   const taxAmount = (taxableAmount * taxRate) / 100;
   const serviceAmount = (taxableAmount * serviceRate) / 100;
 
-  const total = taxableAmount + taxAmount + serviceAmount;
+  const total = (subtotal - orderDiscount) + taxAmount + serviceAmount;
 
   // Hydrate order when table is selected
   useEffect(() => {

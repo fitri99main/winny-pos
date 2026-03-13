@@ -2,8 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import {
   LayoutDashboard, Users, ShoppingCart, Settings, Coffee, FileText,
   LogOut, Bell, Search, Menu, Calculator, ChefHat, MonitorCheck,
-  Contact, Archive, MapPin, CalendarCheck, History as ClockHistory, Wallet, Award,
-  Store, ChevronLeft, ChevronRight, CheckCircle, Package, RefreshCw, ShieldCheck, Clock, History
+  Contact, Archive, MapPin, CalendarCheck, History as ClockHistory, Wallet, Award, Target,
+  Store, ChevronLeft, ChevronRight, CheckCircle, Package, RefreshCw, ShieldCheck, Clock, History, Percent
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { supabase } from '../lib/supabase';
@@ -20,7 +20,7 @@ import { SettingsView } from './settings/SettingsView';
 import { EmployeesView } from './employees/EmployeesView';
 import { AttendanceView } from './attendance/AttendanceView';
 import { PayrollView } from './payroll/PayrollView';
-import { PerformanceView } from './employees/PerformanceView';
+import { PerformanceIndicatorMasterView } from './employees/PerformanceIndicatorMasterView';
 import { SalesView, SalesOrder, SalesReturn, INITIAL_SALES } from './pos/SalesView';
 import { CashierInterface } from './pos/CashierInterface';
 import { BranchesView } from './branches/BranchesView';
@@ -35,13 +35,13 @@ import { mockProducts } from '@/data/products';
 import { toast } from 'sonner';
 import { printerService } from '../lib/PrinterService';
 
-type ModuleType = 'dashboard' | 'users' | 'contacts' | 'products' | 'purchases' | 'pos' | 'kds' | 'reports' | 'accounting' | 'settings' | 'employees' | 'attendance' | 'payroll' | 'branches' | 'shifts' | 'performance' | 'inventory' | 'session_history';
+type ModuleType = 'dashboard' | 'users' | 'contacts' | 'products' | 'purchases' | 'pos' | 'kds' | 'reports' | 'accounting' | 'settings' | 'employees' | 'attendance' | 'payroll' | 'branches' | 'shifts' | 'performance_indicators' | 'inventory' | 'session_history';
 
 
 
 function Home() {
   // [DEBUG] Log URL on component load
-  console.log('[Home] Component loaded, URL:', window.location.href);
+  console.log('[Home] Component loaded V2.1, URL:', window.location.href);
   console.log('[Home] URL Search Params:', window.location.search);
   const urlParams = new URLSearchParams(window.location.search);
   console.log('[Home] Table param:', urlParams.get('table'));
@@ -99,14 +99,10 @@ function Home() {
   const [purchaseReturns, setPurchaseReturns] = useState<any[]>([]);
 
   // Centralized State for Integration
-  // Centralized State for Integration
   const [attendanceLogs, setAttendanceLogs] = useState<any[]>([]);
-  const [performanceRules, setPerformanceRules] = useState({
-    commissionPercent: 1.5,
-    attendanceBonus: 10000,
-    latePenalty: 25000,
-    complaintPenalty: 50000
-  });
+  const [performanceIndicators, setPerformanceIndicators] = useState<any[]>([]);
+  const [performanceEvaluations, setPerformanceEvaluations] = useState<any[]>([]);
+
 
   // Inventory Handlers
   const handleIngredientCRUD = async (action: 'create' | 'update' | 'delete', data: any) => {
@@ -208,7 +204,6 @@ function Home() {
     }
   };
 
-  const [complaintsData, setComplaintsData] = useState<Record<string, number>>({}); // employeeName -> count
 
   const [payrollData, setPayrollData] = useState<any[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
@@ -330,8 +325,21 @@ function Home() {
     if (schedulesRes.data) setShiftSchedules(schedulesRes.data);
 
     if (tablesRes.data) setTables(tablesRes.data);
-    if (ingredientsRes.data) setInventoryIngredients(ingredientsRes.data);
     if (movementsRes.data) setInventoryHistory(movementsRes.data);
+
+    // Fetch Performance Indicators
+    const { data: indicatorsData } = await supabase.from('performance_indicators').select('*').or(`branch_id.eq.${branchId},branch_id.is.null`).order('created_at', { ascending: true });
+    if (indicatorsData) setPerformanceIndicators(indicatorsData);
+
+    // Fetch Performance Evaluations
+    const { data: evaluationsData } = await supabase.from('performance_evaluations').select('*').eq('branch_id', branchId).order('evaluation_date', { ascending: false });
+    if (evaluationsData) setPerformanceEvaluations(evaluationsData);
+
+
+
+
+
+
   };
 
   useEffect(() => {
@@ -367,6 +375,9 @@ function Home() {
       supabase.channel('ingredients_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'ingredients' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
       supabase.channel('movements_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'stock_movements' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
       supabase.channel('tables_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'tables' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
+      supabase.channel('employee_assessments').on('postgres_changes', { event: '*', schema: 'public', table: 'employee_assessments' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
+      supabase.channel('assessment_criteria').on('postgres_changes', { event: '*', schema: 'public', table: 'assessment_criteria' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
+
     ];
 
     return () => {
@@ -1640,7 +1651,6 @@ function Home() {
         { id: 'attendance', label: 'Absensi', icon: CalendarCheck, color: 'text-violet-600', bgColor: 'bg-violet-50' },
         { id: 'shifts', label: 'Jadwal Shift', icon: ClockHistory, color: 'text-indigo-700', bgColor: 'bg-indigo-50' },
         { id: 'payroll', label: 'Payroll', icon: Wallet, color: 'text-emerald-600', bgColor: 'bg-emerald-50' },
-        { id: 'performance', label: 'Performa', icon: Award, color: 'text-yellow-600', bgColor: 'bg-yellow-50' },
       ]
     },
     {
@@ -1648,7 +1658,8 @@ function Home() {
       modules: [
         { id: 'reports', label: 'Laporan', icon: FileText, color: 'text-teal-600', bgColor: 'bg-teal-50' },
         { id: 'accounting', label: 'Akuntansi', icon: Calculator, color: 'text-cyan-600', bgColor: 'bg-cyan-50' },
-        { id: 'session_history', label: 'Riwayat Session', icon: History, color: 'text-purple-600', bgColor: 'bg-purple-50' },
+        { id: 'session_history', label: 'Riwayat Sesi', icon: ClockHistory, color: 'text-gray-600', bgColor: 'bg-gray-50' },
+        { id: 'performance_indicators', label: 'Indikator Kinerja', icon: Target, color: 'text-indigo-600', bgColor: 'bg-indigo-50' },
       ]
     },
     {
@@ -2196,36 +2207,76 @@ function Home() {
           onDepartmentCRUD={handleDepartmentCRUD}
         />
       );
-      case 'performance': return (
-        <PerformanceView
-          sales={sales}
-          attendanceLogs={attendanceLogs}
-          rules={performanceRules}
-          setRules={setPerformanceRules}
-          complaints={complaintsData}
-          setComplaints={setComplaintsData}
+
+
+
+      case 'performance_indicators': return (
+        <PerformanceIndicatorMasterView 
+          indicators={performanceIndicators}
+          evaluations={performanceEvaluations}
           employees={employees}
-          onSendToPayroll={(data) => {
-            // Logic to update payrollData
-            setPayrollData(prev => {
-              const existing = prev.find(p => p.employeeName === data.employeeName && p.period === 'Januari 2026');
-              if (existing) {
-                return prev.map(p => p.id === existing.id ? { ...p, allowance: data.totalReward } : p);
+          user={user}
+          onCRUD={async (action, data) => {
+            try {
+              if (action === 'create') {
+                const { error } = await supabase.from('performance_indicators').insert([{
+                  ...data,
+                  branch_id: currentBranchId ? Number(currentBranchId) : null
+                }]);
+                if (error) throw error;
+                toast.success('Indikator berhasil ditambahkan');
+              } else if (action === 'update') {
+                const { id, ...rest } = data;
+                const { error } = await supabase.from('performance_indicators').update(rest).eq('id', id);
+                if (error) throw error;
+                toast.success('Indikator berhasil diperbarui');
+              } else if (action === 'delete') {
+                const { error } = await supabase.from('performance_indicators').delete().eq('id', data.id);
+                if (error) throw error;
+                toast.success('Indikator berhasil dihapus');
               }
-              return [...prev, {
-                id: Date.now(),
-                employeeName: data.employeeName,
-                position: data.position,
-                basicSalary: 3000000, // Default or fetch
-                allowance: data.totalReward,
-                deduction: 0,
-                status: 'Pending',
-                period: 'Januari 2026'
-              }];
-            });
+              // Refresh data
+              const { data: fresh } = await supabase.from('performance_indicators').select('*').or(`branch_id.eq.${currentBranchId},branch_id.is.null`).order('created_at', { ascending: true });
+              if (fresh) setPerformanceIndicators(fresh);
+            } catch (err: any) {
+              toast.error('Gagal memproses indikator: ' + err.message);
+            }
+          }}
+          onEvaluationCRUD={async (action, data) => {
+            try {
+              if (action === 'create') {
+                const { details, employeeId, ...rest } = data;
+                const { data: evalData, error: evalError } = await supabase.from('performance_evaluations').insert([{
+                  ...rest,
+                  employee_id: Number(employeeId),
+                  branch_id: currentBranchId ? Number(currentBranchId) : null
+                }]).select().single();
+                if (evalError) throw evalError;
+
+                if (details && details.length > 0) {
+                  const detailsPayload = details.map((d: any) => ({
+                    ...d,
+                    evaluation_id: evalData.id
+                  }));
+                  const { error: detailsError } = await supabase.from('performance_evaluation_details').insert(detailsPayload);
+                  if (detailsError) throw detailsError;
+                }
+                toast.success('Perhitungan nilai berhasil disimpan');
+              } else if (action === 'delete') {
+                const { error } = await supabase.from('performance_evaluations').delete().eq('id', data.id);
+                if (error) throw error;
+                toast.success('Riwayat perhitungan dihapus');
+              }
+              // Refresh evaluations
+              const { data: fresh } = await supabase.from('performance_evaluations').select('*').eq('branch_id', currentBranchId).order('evaluation_date', { ascending: false });
+              if (fresh) setPerformanceEvaluations(fresh);
+            } catch (err: any) {
+              toast.error('Gagal memproses perhitungan: ' + err.message);
+            }
           }}
         />
       );
+
       case 'attendance':
         // Filter logs to match employees in current branch
         const filteredLogs = attendanceLogs.filter(log => employees.some(e => e.id === log.employee_id || e.name === log.employeeName));

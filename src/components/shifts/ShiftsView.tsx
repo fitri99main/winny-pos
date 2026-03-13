@@ -9,6 +9,7 @@ interface Shift {
     start_time: string;
     end_time: string;
     color: string;
+    date?: string;
 }
 
 interface Schedule {
@@ -45,7 +46,7 @@ export function ShiftsView({
     const [isEditScheduleModalOpen, setIsEditScheduleModalOpen] = useState(false);
 
     // Form States
-    const [newShift, setNewShift] = useState({ name: '', startTime: '', endTime: '' });
+    const [newShift, setNewShift] = useState({ name: '', startTime: '', endTime: '', date: '' });
     const [editingShift, setEditingShift] = useState<any>(null); // Use any to be safe during transition or Shift
     const [editingSchedule, setEditingSchedule] = useState<any>(null);
 
@@ -57,10 +58,11 @@ export function ShiftsView({
             name: newShift.name,
             start_time: newShift.startTime,
             end_time: newShift.endTime,
+            date: newShift.date || null,
             color: 'bg-blue-100 text-blue-700' // Default color for now or let user pick
         });
         setIsAddShiftModalOpen(false);
-        setNewShift({ name: '', startTime: '', endTime: '' });
+        setNewShift({ name: '', startTime: '', endTime: '', date: '' });
     };
 
     const handleUpdateShift = (e: React.FormEvent) => {
@@ -70,7 +72,8 @@ export function ShiftsView({
             id: editingShift.id,
             name: editingShift.name,
             start_time: editingShift.start_time || editingShift.startTime,
-            end_time: editingShift.end_time || editingShift.endTime
+            end_time: editingShift.end_time || editingShift.endTime,
+            date: editingShift.date || null
         });
         setIsEditShiftModalOpen(false);
         setEditingShift(null);
@@ -240,8 +243,12 @@ export function ShiftsView({
                                         </div>
                                     </div>
                                     <h4 className="font-bold text-gray-800 text-lg mb-1">{shift.name}</h4>
-                                    <h4 className="font-bold text-gray-800 text-lg mb-1">{shift.name}</h4>
-                                    <p className="text-gray-500 text-sm mb-4">Jam Kerja: <span className="font-mono font-bold text-primary">{shift.start_time || shift.startTime} - {shift.end_time || shift.endTime}</span></p>
+                                    <p className="text-gray-500 text-sm mb-1">Jam Kerja: <span className="font-mono font-bold text-primary">{shift.start_time || shift.startTime} - {shift.end_time || shift.endTime}</span></p>
+                                    {shift.date && (
+                                        <div className="flex items-center gap-2 text-[10px] font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-lg w-fit mb-4">
+                                            <Calendar className="w-3 h-3" /> {shift.date}
+                                        </div>
+                                    )}
                                     <div className="flex items-center gap-2 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg w-fit">
                                         <CheckCircle2 className="w-3 h-3" /> MASTER SHIFT
                                     </div>
@@ -328,6 +335,15 @@ export function ShiftsView({
                                         placeholder="contoh: Shift Malam"
                                     />
                                 </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-bold text-gray-700">Tanggal (Opsional)</label>
+                                    <input
+                                        type="date"
+                                        value={newShift.date}
+                                        onChange={e => setNewShift({ ...newShift, date: e.target.value })}
+                                        className="w-full px-4 py-3 border border-gray-200 rounded-xl"
+                                    />
+                                </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
                                         <label className="text-sm font-bold text-gray-700">Jam Mulai</label>
@@ -379,6 +395,15 @@ export function ShiftsView({
                                         required
                                         value={editingShift.name}
                                         onChange={e => setEditingShift({ ...editingShift, name: e.target.value })}
+                                        className="w-full px-4 py-3 border border-gray-200 rounded-xl"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-bold text-gray-700">Tanggal (Opsional)</label>
+                                    <input
+                                        type="date"
+                                        value={editingShift.date || ''}
+                                        onChange={e => setEditingShift({ ...editingShift, date: e.target.value })}
                                         className="w-full px-4 py-3 border border-gray-200 rounded-xl"
                                     />
                                 </div>
