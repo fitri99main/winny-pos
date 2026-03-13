@@ -135,6 +135,8 @@ function Home() {
         if (error) throw error;
         toast.success('Bahan baku berhasil dihapus');
       }
+      // Proactive re-fetch for immediate feedback
+      if (currentBranchId) fetchBranchData(currentBranchId);
     } catch (err: any) {
       toast.error('Error Ingredient: ' + err.message);
     }
@@ -325,6 +327,7 @@ function Home() {
     if (schedulesRes.data) setShiftSchedules(schedulesRes.data);
 
     if (tablesRes.data) setTables(tablesRes.data);
+    if (ingredientsRes.data) setInventoryIngredients(ingredientsRes.data);
     if (movementsRes.data) setInventoryHistory(movementsRes.data);
 
     // Fetch Performance Indicators
