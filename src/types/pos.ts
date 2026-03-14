@@ -18,6 +18,7 @@ export interface Product {
   addons?: Addon[];
   is_sellable?: boolean;
   is_taxed?: boolean;
+  is_stock_ready?: boolean;
   image_url?: string;
 }
 

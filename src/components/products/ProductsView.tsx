@@ -22,6 +22,7 @@ export interface Product {
     addons?: Addon[];
     is_sellable?: boolean;
     is_taxed?: boolean;
+    is_stock_ready?: boolean;
     image_url?: string;
     branch_id?: number | string;
     target?: 'Kitchen' | 'Bar';
@@ -66,10 +67,10 @@ interface ProductsViewProps {
     setUnits: React.Dispatch<React.SetStateAction<Unit[]>>;
     brands: Brand[];
     setBrands: React.Dispatch<React.SetStateAction<Brand[]>>;
-    onProductCRUD: (action: 'create' | 'update' | 'delete', data: any) => void;
-    onCategoryCRUD: (action: 'create' | 'update' | 'delete', data: any) => void;
-    onUnitCRUD: (action: 'create' | 'update' | 'delete', data: any) => void;
-    onBrandCRUD: (action: 'create' | 'update' | 'delete', data: any) => void;
+    onProductCRUD: (action: 'create' | 'update' | 'delete', data: any) => Promise<void>;
+    onCategoryCRUD: (action: 'create' | 'update' | 'delete', data: any) => Promise<void>;
+    onUnitCRUD: (action: 'create' | 'update' | 'delete', data: any) => Promise<void>;
+    onBrandCRUD: (action: 'create' | 'update' | 'delete', data: any) => Promise<void>;
     currentBranchId?: string;
 }
 
@@ -99,14 +100,65 @@ export function ProductsView({
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
     const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
     const [printQty, setPrintQty] = useState(1);
+    const [isSaving, setIsSaving] = useState(false);
     const [uploadingImage, setUploadingImage] = useState(false);
+    const [formTab, setFormTab] = useState<'info' | 'pricing'>('info');
+    const [isAutoSKU, setIsAutoSKU] = useState(true);
+    const [isStockReady, setIsStockReady] = useState(true);
+    const [editingRecipeIdx, setEditingRecipeIdx] = useState<number | null>(null);
 
 
     // --- Generic Handlers ---
 
+    // --- Helper Functions ---
+    const generateNextSKU = (prefix = 'P') => {
+        const existingCodes = products.map(p => p.code).filter(c => c && c.startsWith(prefix));
+        if (existingCodes.length === 0) return `${prefix}001`;
+
+        const maxNum = existingCodes.reduce((max, code) => {
+            const num = parseInt(code.replace(prefix, ''));
+            return isNaN(num) ? max : Math.max(max, num);
+        }, 0);
+
+        return `${prefix}${String(maxNum + 1).padStart(3, '0')}`;
+    };
+
     const handleOpenForm = (data: any = {}) => {
-        setFormData(data);
+        const isNew = !data.id;
+        
+        // Reset states for the form
+        setFormTab('info');
         setIsFormOpen(true);
+        
+        if (activeTab === 'products') {
+            // Determine stock status for editing
+            const isStockReadySaved = data.is_stock_ready !== false; // Default true
+            setIsStockReady(isStockReadySaved);
+            setIsAutoSKU(isNew); 
+
+            // Set form data for products
+            if (isNew) {
+                const nextCode = generateNextSKU();
+                setFormData({
+                    code: generateNextSKU(),
+                    name: '',
+                    is_sellable: true,
+                    is_taxed: true,
+                    is_stock_ready: true,
+                    target: 'Kitchen',
+                    stock: 0,
+                    category: '',
+                    unit: '',
+                    brand: '',
+                    price: 0
+                });
+            } else {
+                setFormData(data);
+            }
+        } else {
+            // Master data (Category, Unit, Brand) only needs minimal fields
+            setFormData(isNew ? { name: '', description: '', abbreviation: '' } : data);
+        }
     };
 
     const handleDelete = (id: number, type: 'product' | 'category' | 'unit' | 'brand') => {
@@ -122,7 +174,7 @@ export function ProductsView({
         if (!recipe || !Array.isArray(recipe) || recipe.length === 0) return 0;
         return recipe.reduce((total, item) => {
             const ingredient = ingredients.find(i => i.id === item.ingredientId);
-            const cost = (ingredient?.costPerUnit || 0) * (item.amount || 0);
+            const cost = (ingredient?.cost_per_unit || 0) * (item.amount || 0);
             return total + cost;
         }, 0);
     };
@@ -164,45 +216,58 @@ export function ProductsView({
             setUploadingImage(false);
         }
     };
-
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        console.log('Submitting Product Form:', { activeTab, formData });
+        setIsSaving(true);
 
-        if (activeTab === 'products') {
-            const product = formData as Product;
-            if (!product.name || !product.code) return toast.error('Nama dan Kode Produk wajib diisi');
+        try {
+            if (activeTab === 'products') {
+                const product = formData as Product;
+                if (!product.name || !product.code) {
+                    console.warn('Validation failed: Name or Code is missing');
+                    setIsSaving(false);
+                    return toast.error('Nama dan Kode Produk wajib diisi');
+                }
 
-            const hpp = calculateHPP(product.recipe);
-            const productWithHPP = { ...product, cost: hpp };
+                const hpp = calculateHPP(product.recipe);
+                const productWithHPP = { ...product, cost: hpp };
+                console.log('Calling onProductCRUD with:', productWithHPP);
 
-            if (product.id) {
-                onProductCRUD('update', productWithHPP);
+                const action = product.id ? 'update' : 'create';
+                await onProductCRUD(action, productWithHPP);
+                console.log('onProductCRUD success');
+                setIsFormOpen(false);
             } else {
-                // Ensure new product doesn't have an ID that causes conflict if not generated by DB
-                onProductCRUD('create', productWithHPP);
-            }
-        } else {
-            if (!formData.name) return toast.error('Nama wajib diisi');
+                if (!formData.name) {
+                    console.warn('Validation failed: Name is missing');
+                    setIsSaving(false);
+                    return toast.error('Nama wajib diisi');
+                }
 
-            const crudMap = {
-                'categories': onCategoryCRUD,
-                'units': onUnitCRUD,
-                'brands': onBrandCRUD,
-                'ingredients': () => { } // Shouldn't happen here
-            };
+                const crudMap = {
+                    'categories': onCategoryCRUD,
+                    'units': onUnitCRUD,
+                    'brands': onBrandCRUD,
+                    'ingredients': () => Promise.resolve()
+                };
 
-            const handler = (crudMap as any)[activeTab];
-            if (activeTab !== 'ingredients' && handler) {
-                if (formData.id) {
-                    handler('update', formData);
-                } else {
-                    handler('create', formData);
+                const handler = (crudMap as any)[activeTab];
+                if (activeTab !== 'ingredients' && handler) {
+                    const action = formData.id ? 'update' : 'create';
+                    console.log(`Calling ${activeTab} handler with:`, formData);
+                    await handler(action, formData);
+                    console.log(`${activeTab} handler success`);
+                    setIsFormOpen(false);
+                    setFormData({});
                 }
             }
+        } catch (error: any) {
+            console.error('Submit error:', error);
+            toast.error('Gagal menyimpan data: ' + (error.message || 'Error tidak dikenal'));
+        } finally {
+            setIsSaving(false);
         }
-
-        setIsFormOpen(false);
-        setFormData({});
     };
 
     const handlePrintBarcode = async () => {
@@ -237,14 +302,14 @@ export function ProductsView({
                     <thead className="bg-gray-50/50 text-gray-400 text-left border-b border-gray-100">
                         <tr>
 
-                            <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px]">Kode</th>
-                            <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px]">Nama Produk</th>
-                            <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px]">Kategori</th>
-                            <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px] text-right">Modal</th>
-                            <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px] text-right">Harga</th>
-                            <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px] text-right">Stok</th>
-                            <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px] text-center">Status</th>
-                            <th className="px-4 py-5 font-black uppercase tracking-widest text-[10px] text-center">Aksi</th>
+                            <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px]">Kode</th>
+                            <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px]">Nama Produk</th>
+                            <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px]">Kategori</th>
+                            <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px] text-right">Modal</th>
+                            <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px] text-right">Harga</th>
+                            <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px] text-right">Stok</th>
+                            <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px] text-center">Status</th>
+                            <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px] text-center">Aksi</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -320,9 +385,9 @@ export function ProductsView({
             <table className="w-full text-sm text-left">
                 <thead className="bg-gray-50 text-gray-400 border-b border-gray-50">
                     <tr>
-                        <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px]">Nama {label}</th>
-                        <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px]">{type === 'unit' ? 'Singkatan' : 'Deskripsi'}</th>
-                        <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px] text-center">Aksi</th>
+                        <th className="px-8 py-5 font-bold uppercase tracking-normal text-[10px]">Nama {label}</th>
+                        <th className="px-8 py-5 font-bold uppercase tracking-normal text-[10px]">{type === 'unit' ? 'Singkatan' : 'Deskripsi'}</th>
+                        <th className="px-8 py-5 font-bold uppercase tracking-normal text-[10px] text-center">Aksi</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
@@ -383,240 +448,266 @@ export function ProductsView({
             {/* Modal Form */}
             {isFormOpen && (() => {
                 const currentLabel = activeTab === 'products' ? 'Produk' : activeTab === 'categories' ? 'Kategori' : activeTab === 'units' ? 'Satuan' : 'Merek';
+                const isProduct = activeTab === 'products';
+
                 return (
                     <div onClick={() => setIsFormOpen(false)} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-                        <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-[48px] shadow-[0_32px_120px_-20px_rgba(0,0,0,0.3)] w-full max-w-2xl animate-in zoom-in-95 fade-in duration-300 overflow-hidden border border-white/20">
-                            <div className="px-10 py-8 border-b bg-gray-50/50 flex justify-between items-center">
-                                <div>
-                                    <h3 className="font-black text-2xl text-gray-800 tracking-tight">
-                                        {formData.id ? 'Edit Data' : 'Tambah'} {currentLabel}
-                                    </h3>
-                                    <p className="text-sm text-gray-500 font-medium">Lengkapi rincian informasi di bawah ini.</p>
+                        <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-3xl shadow-[0_32px_120px_-20px_rgba(0,0,0,0.3)] w-full max-w-2xl animate-in zoom-in-95 fade-in duration-300 overflow-hidden border border-white/20 flex flex-col max-h-[90vh]">
+                            {/* Modal Header */}
+                            <div className="px-6 py-5 border-b bg-gray-50/50 flex-shrink-0">
+                                <div className="flex justify-between items-center">
+                                    <div>
+                                        <h3 className="font-bold text-xl text-gray-800">
+                                            {formData.id ? 'Edit' : 'Tambah'} {currentLabel}
+                                        </h3>
+                                        <p className="text-xs text-gray-500 font-medium tracking-tight">Lengkapi rincian informasi di bawah ini.</p>
+                                    </div>
+                                    <button onClick={() => setIsFormOpen(false)} className="p-2 hover:bg-gray-200 rounded-lg transition-colors"><X className="w-5 h-5 text-gray-400" /></button>
                                 </div>
                             </div>
-                            <form onSubmit={handleSubmit} className="p-10 space-y-8 max-h-[75vh] overflow-y-auto custom-scrollbar">
-                                {activeTab === 'products' ? (
-                                    <div className="space-y-10">
-                                        {/* Image Section */}
-                                        <div className="flex flex-col items-center gap-6">
-                                            <div className="relative group">
-                                                <div className="w-40 h-40 rounded-[32px] bg-gray-50 border-2 border-dashed border-gray-100 flex items-center justify-center overflow-hidden shadow-inner group-hover:border-primary/30 transition-all">
-                                                    {uploadingImage ? (
-                                                        <div className="absolute inset-0 bg-white/60 backdrop-blur-sm flex items-center justify-center z-10">
-                                                            <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
-                                                        </div>
-                                                    ) : null}
 
-                                                    {formData.image_url ? (
-                                                        <img src={formData.image_url} alt="Profile" className="w-full h-full object-cover" />
-                                                    ) : (
-                                                        <div className="text-center p-4">
-                                                            <div className="w-10 h-10 bg-white rounded-2xl shadow-sm flex items-center justify-center mx-auto mb-2 text-gray-300">
-                                                                <Edit className="w-5 h-5" />
+                            <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+                                {/* Scrollable Form Content */}
+                                <div className="p-6 space-y-5 overflow-y-auto custom-scrollbar flex-1">
+                                    {isProduct ? (
+                                        <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                            {/* Row 1: Image & Basic Info (Combined) */}
+                                            <div className="flex gap-5">
+                                                {/* Image Section (left) */}
+                                                <div className="relative group shrink-0">
+                                                    <div className="w-32 h-32 rounded-2xl bg-gray-50 border-2 border-dashed border-gray-100 flex items-center justify-center overflow-hidden shadow-inner group-hover:border-primary/30 transition-all">
+                                                        {uploadingImage && (
+                                                            <div className="absolute inset-0 bg-white/60 backdrop-blur-sm flex items-center justify-center z-10">
+                                                                <div className="w-6 h-6 border-3 border-primary/20 border-t-primary rounded-full animate-spin"></div>
                                                             </div>
-                                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Wajib Gambar</p>
+                                                        )}
+
+                                                        {formData.image_url ? (
+                                                            <img src={formData.image_url} alt="Product" className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            <div className="text-center p-2">
+                                                                <Package className="w-8 h-8 text-gray-200 mx-auto mb-1" />
+                                                                <p className="text-[9px] font-bold text-gray-400 uppercase">GAMBAR</p>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <label className="absolute -bottom-1 -right-1 w-8 h-8 bg-primary rounded-xl shadow-lg flex items-center justify-center cursor-pointer hover:scale-110 active:scale-95 transition-all text-white border-2 border-white">
+                                                        <Plus className="w-5 h-5" />
+                                                        <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} disabled={uploadingImage} />
+                                                    </label>
+                                                </div>
+
+                                                {/* Core Info (right) */}
+                                                <div className="flex-1 space-y-4">
+                                                    <div className="space-y-1.5">
+                                                        <div className="flex justify-between items-center px-1">
+                                                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">SKU / Kode</label>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-[9px] font-bold text-gray-400 uppercase">Auto</span>
+                                                                <div
+                                                                    onClick={() => {
+                                                                        setIsAutoSKU(prev => {
+                                                                            const nextAuto = !prev;
+                                                                            if (nextAuto) setFormData(curr => ({ ...curr, code: generateNextSKU() }));
+                                                                            return nextAuto;
+                                                                        });
+                                                                    }}
+                                                                    className={`w-7 h-4 rounded-full transition-all cursor-pointer relative p-0.5 ${isAutoSKU ? 'bg-primary' : 'bg-gray-200'}`}
+                                                                >
+                                                                    <div className={`w-3 h-3 bg-white rounded-full shadow-sm transition-all transform ${isAutoSKU ? 'translate-x-3' : 'translate-x-0'}`}></div>
+                                                                </div>
+                                                            </div>
                                                         </div>
-                                                    )}
+                                                        <input 
+                                                            className={`w-full px-4 py-2.5 border rounded-xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-mono font-bold text-xs ${isAutoSKU ? 'bg-gray-100 border-gray-100 text-gray-400 cursor-not-allowed' : 'bg-gray-50 border-gray-100 text-gray-800'}`} 
+                                                            value={formData.code || ''} 
+                                                            onChange={e => setFormData(prev => ({ ...prev, code: e.target.value }))}
+                                                            placeholder="P001" 
+                                                            required 
+                                                            readOnly={isAutoSKU}
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Nama Produk</label>
+                                                        <input 
+                                                            className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-bold text-gray-800 text-xs" 
+                                                            value={formData.name || ''} 
+                                                            onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                                                            placeholder="Exp: Kopi Gula Aren" 
+                                                            required 
+                                                        />
+                                                    </div>
                                                 </div>
-                                                <label className="absolute -bottom-2 -right-2 w-12 h-12 bg-white rounded-2xl shadow-xl flex items-center justify-center cursor-pointer hover:scale-110 active:scale-95 transition-all text-primary border border-gray-50">
-                                                    <Plus className="w-6 h-6" />
-                                                    <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} disabled={uploadingImage} />
-                                                </label>
                                             </div>
-                                            {formData.image_url && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setFormData({ ...formData, image_url: null })}
-                                                    className="text-[10px] font-black text-red-500 uppercase tracking-widest hover:text-red-600 transition-colors"
-                                                >
-                                                    Hapus Gambar
-                                                </button>
-                                            )}
-                                        </div>
 
-
-                                        {/* Informasi Utama Section */}
-                                        <div className="space-y-6">
-                                            <div className="flex items-center gap-3 mb-2">
-                                                <div className="h-px flex-1 bg-gray-100"></div>
-                                                <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Informasi Utama</span>
-                                                <div className="h-px flex-1 bg-gray-100"></div>
-                                            </div>
-                                            <div className="grid grid-cols-2 gap-6">
-                                                <div className="space-y-2.5">
-                                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2 pl-1">
-                                                        <div className="w-1 h-1 rounded-full bg-primary ring-2 ring-primary/20"></div>
-                                                        Kode Produk (SKU)
-                                                    </label>
-                                                    <input className="w-full p-5 bg-gray-50/50 border border-gray-100 rounded-[24px] outline-none focus:ring-4 focus:ring-primary/5 focus:bg-white focus:border-primary/20 transition-all font-mono font-bold text-gray-800 placeholder:text-gray-300 shadow-sm" value={formData.code || ''} onChange={e => setFormData({ ...formData, code: e.target.value })} placeholder="Ex: P001" required />
-                                                </div>
-                                                <div className="space-y-2.5">
-                                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2 pl-1">
-                                                        <div className="w-1 h-1 rounded-full bg-primary ring-2 ring-primary/20"></div>
-                                                        Nama Produk
-                                                    </label>
-                                                    <input className="w-full p-5 bg-gray-50/50 border border-gray-100 rounded-[24px] outline-none focus:ring-4 focus:ring-primary/5 focus:bg-white focus:border-primary/20 transition-all font-black text-gray-800 placeholder:text-gray-300 shadow-sm" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="Exp: Es Kopi Gula Aren" required />
-                                                </div>
-                                            </div>
-                                            <div className="grid grid-cols-2 gap-6">
-                                                <div className="space-y-2.5">
-                                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-1">Kategori Produk</label>
-                                                    <select className="w-full p-5 bg-gray-50/50 border border-gray-100 rounded-[24px] outline-none focus:ring-4 focus:ring-primary/5 focus:bg-white focus:border-primary/20 transition-all text-sm font-black text-gray-800 shadow-sm" value={formData.category || ''} onChange={e => setFormData({ ...formData, category: e.target.value })}>
-                                                        <option value="">Pilih Kategori...</option>
+                                            {/* Row 2: Master Data Links */}
+                                            <div className="grid grid-cols-3 gap-4">
+                                                <div className="space-y-1.5">
+                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Kategori</label>
+                                                    <select className="w-full px-3 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-xs font-bold text-gray-800" value={formData.category || ''} onChange={e => setFormData(prev => ({ ...prev, category: e.target.value }))}>
+                                                        <option value="">Pilih...</option>
                                                         {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                                                     </select>
                                                 </div>
-                                                <div className="space-y-2.5">
-                                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-1">Satuan Dasar</label>
-                                                    <select className="w-full p-5 bg-gray-50/50 border border-gray-100 rounded-[24px] outline-none focus:ring-4 focus:ring-primary/5 focus:bg-white focus:border-primary/20 transition-all text-sm font-black text-gray-800 shadow-sm" value={formData.unit || ''} onChange={e => setFormData({ ...formData, unit: e.target.value })}>
-                                                        <option value="">Pilih Satuan...</option>
+                                                <div className="space-y-1.5">
+                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Merek</label>
+                                                    <select className="w-full px-3 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-xs font-bold text-gray-800" value={formData.brand || ''} onChange={e => setFormData(prev => ({ ...prev, brand: e.target.value }))}>
+                                                        <option value="">Pilih...</option>
+                                                        {brands.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Satuan</label>
+                                                    <select className="w-full px-3 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-xs font-bold text-gray-800" value={formData.unit || ''} onChange={e => setFormData(prev => ({ ...prev, unit: e.target.value }))}>
+                                                        <option value="">Pilih...</option>
                                                         {units.map(u => <option key={u.id} value={u.abbreviation}>{u.name} ({u.abbreviation})</option>)}
                                                     </select>
                                                 </div>
                                             </div>
-                                            <div className="grid grid-cols-2 gap-6">
-                                                <div className="space-y-2.5">
-                                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-1">Merek</label>
-                                                    <select className="w-full p-5 bg-gray-50/50 border border-gray-100 rounded-[24px] outline-none focus:ring-4 focus:ring-primary/5 focus:bg-white focus:border-primary/20 transition-all text-sm font-black text-gray-800 shadow-sm" value={formData.brand || ''} onChange={e => setFormData({ ...formData, brand: e.target.value })}>
-                                                        <option value="">Pilih Merek...</option>
-                                                        {brands.map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
-                                                    </select>
-                                                </div>
-                                            </div>
-                                        </div>
 
-                                        {/* Harga & Inventaris Section */}
-                                        <div className="space-y-6">
-                                            <div className="flex items-center gap-3 mb-2">
-                                                <div className="h-px flex-1 bg-gray-100"></div>
-                                                <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Harga & Inventaris</span>
-                                                <div className="h-px flex-1 bg-gray-100"></div>
-                                            </div>
-                                            <div className="grid grid-cols-2 gap-6">
-                                                <div className="space-y-2.5">
-                                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-1">Harga Jual (IDR)</label>
-                                                    <div className="relative">
-                                                        <span className="absolute left-5 top-1/2 -translate-y-1/2 text-xs font-black text-blue-400">Rp</span>
-                                                        <input type="number" className="w-full p-5 pl-12 bg-blue-50/30 border border-blue-100 rounded-[24px] outline-none focus:ring-4 focus:ring-blue-500/5 focus:bg-white focus:border-blue-500/20 transition-all font-black text-blue-600 shadow-sm" value={formData.price || ''} onChange={e => setFormData({ ...formData, price: parseInt(e.target.value) })} placeholder="0" />
-                                                    </div>
+                                            {/* Row 3: Pricing & Stock Readiness */}
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="space-y-1.5">
+                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Harga Jual (Rp)</label>
+                                                    <input type="number" className="w-full px-4 py-2.5 bg-blue-50/30 border border-blue-100 rounded-xl outline-none focus:ring-4 focus:ring-blue-500/5 transition-all font-bold text-blue-600 text-xs" value={formData.price || ''} onChange={e => setFormData(prev => ({ ...prev, price: parseInt(e.target.value) || 0 }))} placeholder="0" />
                                                 </div>
-                                                <div className="space-y-2.5">
-                                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-1">Stok Awal</label>
-                                                    <input type="number" className="w-full p-5 bg-gray-50/50 border border-gray-100 rounded-[24px] outline-none focus:ring-4 focus:ring-primary/5 focus:bg-white focus:border-primary/20 transition-all font-black text-gray-800 shadow-sm" value={formData.stock || ''} onChange={e => setFormData({ ...formData, stock: parseInt(e.target.value) })} placeholder="0" />
-                                                </div>
-                                            </div>
-
-                                            <div className="p-6 bg-primary/5 rounded-[32px] border border-primary/10 flex items-center justify-between group transition-all hover:bg-primary/10">
-                                                <div className="flex items-center gap-4">
-                                                    <div className="p-3 bg-white rounded-2xl shadow-sm text-primary group-hover:scale-110 transition-transform">
-                                                        <Package className="w-5 h-5" />
+                                                <div className="space-y-1.5">
+                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Stok Awal</label>
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setIsStockReady(false);
+                                                                setFormData(prev => ({ ...prev, stock: 0, is_stock_ready: false }));
+                                                            }}
+                                                            className={`flex-1 py-2 rounded-xl border-2 transition-all font-bold text-[10px] ${!isStockReady ? 'bg-red-50 border-red-200 text-red-600' : 'bg-gray-50 border-gray-100 text-gray-400'}`}
+                                                        >
+                                                            KOSONG
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setIsStockReady(true);
+                                                                setFormData(prev => ({ ...prev, is_stock_ready: true }));
+                                                            }}
+                                                            className={`flex-1 py-2 rounded-xl border-2 transition-all font-bold text-[10px] ${isStockReady ? 'bg-primary/5 border-primary/20 text-primary' : 'bg-gray-50 border-gray-100 text-gray-400'}`}
+                                                        >
+                                                            READY
+                                                        </button>
                                                     </div>
-                                                    <div>
-                                                        <p className="text-sm font-black text-gray-800">Status Penjualan</p>
-                                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Tampilkan Menu di Layar Kasir</p>
-                                                    </div>
-                                                </div>
-                                                <div
-                                                    onClick={() => setFormData({ ...formData, is_sellable: formData.is_sellable === false ? true : false })}
-                                                    className={`w-14 h-8 rounded-full transition-all cursor-pointer relative p-1 ${formData.is_sellable !== false ? 'bg-primary' : 'bg-gray-200'}`}
-                                                >
-                                                    <div className={`w-6 h-6 bg-white rounded-full shadow-md transition-all transform ${formData.is_sellable !== false ? 'translate-x-6' : 'translate-x-0'}`}></div>
                                                 </div>
                                             </div>
 
-                                            <div className="p-6 bg-blue-50/50 rounded-[32px] border border-blue-100 flex items-center justify-between group transition-all hover:bg-blue-100/50">
-                                                <div className="flex items-center gap-4">
-                                                    <div className="p-3 bg-white rounded-2xl shadow-sm text-blue-600 group-hover:scale-110 transition-transform">
-                                                        <Calculator className="w-5 h-5" />
-                                                    </div>
-                                                    <div>
-                                                        <p className="text-sm font-black text-gray-800">Pajak Produk</p>
-                                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Kenakan Pajak & Service Charge</p>
-                                                    </div>
+                                            {/* Row 4: Stock Quantity (Conditional) & Toggles */}
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="space-y-1.5">
+                                                    {isStockReady ? (
+                                                        <div className="animate-in fade-in slide-in-from-top-1 duration-200 space-y-1.5">
+                                                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Jumlah Stok</label>
+                                                            <input 
+                                                                type="number" 
+                                                                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-bold text-gray-800 text-xs" 
+                                                                value={formData.stock === 0 ? '0' : (formData.stock || '')} 
+                                                                onChange={e => setFormData(prev => ({ ...prev, stock: parseInt(e.target.value) || 0 }))} 
+                                                                placeholder="0" 
+                                                            />
+                                                        </div>
+                                                    ) : (
+                                                        <div className="p-3.5 bg-gray-50/50 rounded-xl border border-gray-100 border-dashed flex items-center justify-center opacity-40 h-full">
+                                                            <span className="text-[10px] font-bold text-gray-300">STOK TIDAK AKTIF</span>
+                                                        </div>
+                                                    )}
                                                 </div>
-                                                <div
-                                                    onClick={() => setFormData({ ...formData, is_taxed: formData.is_taxed === false ? true : false })}
-                                                    className={`w-14 h-8 rounded-full transition-all cursor-pointer relative p-1 ${formData.is_taxed !== false ? 'bg-blue-600' : 'bg-gray-200'}`}
-                                                >
-                                                    <div className={`w-6 h-6 bg-white rounded-full shadow-md transition-all transform ${formData.is_taxed !== false ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                                                <div className="grid grid-cols-1 gap-2">
+                                                    <div className="px-4 py-2 bg-gray-50 rounded-xl border border-gray-100 flex items-center justify-between">
+                                                        <span className="text-[10px] font-bold text-gray-600 uppercase">Jual</span>
+                                                        <div
+                                                            onClick={() => setFormData(prev => ({ ...prev, is_sellable: !(prev.is_sellable !== false) }))}
+                                                            className={`w-10 h-5.5 rounded-full transition-all cursor-pointer relative p-1 ${formData.is_sellable !== false ? 'bg-primary' : 'bg-gray-200'}`}
+                                                        >
+                                                            <div className={`w-3.5 h-3.5 bg-white rounded-full shadow-sm transition-all transform ${formData.is_sellable !== false ? 'translate-x-4.5' : 'translate-x-0'}`}></div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="px-4 py-2 bg-gray-50 rounded-xl border border-gray-100 flex items-center justify-between">
+                                                        <span className="text-[10px] font-bold text-gray-600 uppercase">Pajak</span>
+                                                        <div
+                                                            onClick={() => setFormData(prev => ({ ...prev, is_taxed: !(prev.is_taxed !== false) }))}
+                                                            className={`w-10 h-5.5 rounded-full transition-all cursor-pointer relative p-1 ${formData.is_taxed !== false ? 'bg-blue-600' : 'bg-gray-200'}`}
+                                                        >
+                                                            <div className={`w-3.5 h-3.5 bg-white rounded-full shadow-sm transition-all transform ${formData.is_taxed !== false ? 'translate-x-4.5' : 'translate-x-0'}`}></div>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
 
-                                            {/* KDS Target Configuration */}
-                                            <div className="space-y-3 pt-6 border-t border-gray-100">
-                                                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-1">Posisi KDS (Checklist)</label>
-                                                <div className="flex gap-4">
-                                                    <div
-                                                        onClick={() => setFormData({ ...formData, target: 'Kitchen' })}
-                                                        className={`flex-1 p-4 rounded-2xl border-2 cursor-pointer transition-all flex items-center justify-between group ${(!formData.target || formData.target === 'Kitchen')
-                                                            ? 'bg-orange-50 border-orange-200 shadow-sm'
-                                                            : 'bg-white border-gray-100 hover:border-orange-200'
-                                                            }`}
+                                            {/* Row 5: KDS Target */}
+                                            <div className="space-y-2 pt-2">
+                                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Target Pesanan (KDS)</label>
+                                                <div className="flex gap-3">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setFormData(prev => ({ ...prev, target: 'Kitchen' }))}
+                                                        className={`flex-1 py-3 rounded-xl border-2 flex items-center justify-center gap-2 transition-all ${(!formData.target || formData.target === 'Kitchen') ? 'bg-orange-50 border-orange-200 text-orange-700' : 'bg-white border-gray-100 text-gray-400'}`}
                                                     >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className={`p-2 rounded-xl ${(!formData.target || formData.target === 'Kitchen') ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-400'}`}>
-                                                                <ChefHat className="w-5 h-5" />
-                                                            </div>
-                                                            <div>
-                                                                <p className={`text-sm font-black ${(!formData.target || formData.target === 'Kitchen') ? 'text-gray-800' : 'text-gray-400'}`}>Dapur</p>
-                                                            </div>
-                                                        </div>
-                                                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${(!formData.target || formData.target === 'Kitchen') ? 'border-orange-500 bg-orange-500 text-white' : 'border-gray-200'}`}>
-                                                            {(!formData.target || formData.target === 'Kitchen') && <Check className="w-4 h-4" />}
-                                                        </div>
-                                                    </div>
-
-                                                    <div
-                                                        onClick={() => setFormData({ ...formData, target: 'Bar' })}
-                                                        className={`flex-1 p-4 rounded-2xl border-2 cursor-pointer transition-all flex items-center justify-between group ${formData.target === 'Bar'
-                                                            ? 'bg-blue-50 border-blue-200 shadow-sm'
-                                                            : 'bg-white border-gray-100 hover:border-blue-200'
-                                                            }`}
+                                                        <ChefHat className="w-4 h-4" />
+                                                        <span className="text-[11px] font-bold">DAPUR</span>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setFormData(prev => ({ ...prev, target: 'Bar' }))}
+                                                        className={`flex-1 py-3 rounded-xl border-2 flex items-center justify-center gap-2 transition-all ${formData.target === 'Bar' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-gray-100 text-gray-400'}`}
                                                     >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className={`p-2 rounded-xl ${formData.target === 'Bar' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-400'}`}>
-                                                                <Coffee className="w-5 h-5" />
-                                                            </div>
-                                                            <div>
-                                                                <p className={`text-sm font-black ${formData.target === 'Bar' ? 'text-gray-800' : 'text-gray-400'}`}>Bar</p>
-                                                            </div>
-                                                        </div>
-                                                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${formData.target === 'Bar' ? 'border-blue-500 bg-blue-500 text-white' : 'border-gray-200'}`}>
-                                                            {formData.target === 'Bar' && <Check className="w-4 h-4" />}
-                                                        </div>
-                                                    </div>
+                                                        <Coffee className="w-4 h-4" />
+                                                        <span className="text-[11px] font-bold">BAR</span>
+                                                    </button>
                                                 </div>
                                             </div>
                                         </div>
-                                    </div>
-                                ) : (
-                                    <div className="space-y-8">
-                                        <div className="space-y-3">
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Nama {currentLabel}</label>
-                                            <input className="w-full p-5 bg-gray-50/50 border border-gray-100 rounded-[24px] outline-none focus:ring-4 focus:ring-primary/5 transition-all font-black text-gray-800 shadow-sm" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} required />
+                                    ) : (
+                                        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                            <div className="space-y-1.5">
+                                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Nama {currentLabel}</label>
+                                                <input
+                                                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-bold text-gray-800 text-sm"
+                                                    value={formData.name || ''}
+                                                    onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                                                    required
+                                                />
+                                            </div>
+                                            {activeTab === 'units' ? (
+                                                <div className="space-y-1.5">
+                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Singkatan</label>
+                                                    <input
+                                                        className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-mono font-bold text-gray-800 text-sm"
+                                                        value={formData.abbreviation || ''}
+                                                        onChange={e => setFormData(prev => ({ ...prev, abbreviation: e.target.value }))}
+                                                        placeholder="cth: kg, pcs"
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-1.5">
+                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Deskripsi</label>
+                                                    <textarea
+                                                        className="w-full p-4 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-semibold text-gray-800 min-h-[100px] resize-none"
+                                                        value={formData.description || ''}
+                                                        onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                                                        placeholder="Keterangan opsional..."
+                                                    />
+                                                </div>
+                                            )}
                                         </div>
-                                        {activeTab === 'units' ? (
-                                            <div className="space-y-3">
-                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Singkatan Satuan</label>
-                                                <input className="w-full p-5 bg-gray-50/50 border border-gray-100 rounded-[24px] outline-none focus:ring-4 focus:ring-primary/5 transition-all font-mono font-bold text-gray-800 shadow-sm" value={formData.abbreviation || ''} onChange={e => setFormData({ ...formData, abbreviation: e.target.value })} placeholder="cth: kg, L, pcs" />
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-3">
-                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Deskripsi Tambahan</label>
-                                                <textarea className="w-full p-5 bg-gray-50/50 border border-gray-100 rounded-[32px] outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold text-gray-800 shadow-sm min-h-[160px]" value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} placeholder="Opsional..." />
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
+                                    )}
+                                </div>
 
-                                <div className="flex justify-end gap-3 pt-6 border-t border-gray-50">
-                                    <Button type="button" variant="outline" className="h-14 px-8 rounded-2xl font-bold" onClick={() => setIsFormOpen(false)}>Batal</Button>
+                                {/* Modal Footer (Sticky) */}
+                                <div className="px-6 py-5 border-t border-gray-50 bg-white flex justify-end gap-3 flex-shrink-0">
+                                    <Button type="button" variant="outline" className="h-11 px-6 rounded-xl font-bold text-xs" onClick={() => setIsFormOpen(false)}>Batal</Button>
                                     <Button
                                         type="submit"
-                                        disabled={uploadingImage}
-                                        className="h-14 px-10 rounded-2xl font-black shadow-xl shadow-primary/20 bg-primary text-white disabled:opacity-50"
+                                        disabled={isSaving || uploadingImage}
+                                        className="h-11 px-8 rounded-xl font-bold text-xs shadow-lg shadow-primary/10"
                                     >
-                                        {uploadingImage ? 'Mengunggah...' : 'Simpan Data'}
+                                        {isSaving ? 'Menyimpan...' : uploadingImage ? 'Mengunggah...' : 'Simpan Data'}
                                     </Button>
                                 </div>
                             </form>
@@ -648,25 +739,45 @@ export function ProductsView({
                                     <div className="space-y-2 max-h-72 overflow-y-auto pr-3 -mr-3">
                                         {selectedProduct.recipe?.map((item, idx) => {
                                             const ing = ingredients.find(i => i.id === item.ingredientId);
+                                            const isEditing = editingRecipeIdx === idx;
                                             return (
-                                                <div key={idx} className="flex items-center justify-between p-4 bg-gray-50 rounded-[24px] border border-gray-100/50 group">
+                                                <div key={idx} className={`flex items-center justify-between p-4 rounded-[24px] border transition-all group ${isEditing ? 'bg-primary/5 border-primary/30 ring-2 ring-primary/10' : 'bg-gray-50 border-gray-100/50'}`}>
                                                     <div className="flex flex-col">
-                                                        <span className="text-sm font-black text-gray-800">{ing?.name}</span>
-                                                        <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wide">{item.amount} {ing?.unit} @ Rp {ing?.costPerUnit.toLocaleString()}</span>
+                                                        <span className="text-sm font-black text-gray-800">{ing?.name || 'Bahan tidak ditemukan'}</span>
+                                                        <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wide">{item.amount} {ing?.unit} @ Rp {(ing?.cost_per_unit ?? 0).toLocaleString()}</span>
                                                     </div>
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="text-sm font-black text-primary">Rp {(item.amount * (ing?.costPerUnit || 0)).toLocaleString()}</span>
-                                                        <button
-                                                            onClick={() => {
-                                                                const newRecipe = selectedProduct.recipe?.filter((_, i) => i !== idx);
-                                                                const updated = { ...selectedProduct, recipe: newRecipe };
-                                                                setProducts(products.map(p => p.id === updated.id ? updated : p));
-                                                                setSelectedProduct(updated);
-                                                            }}
-                                                            className="p-1.5 hover:bg-red-50 text-gray-300 hover:text-red-500 rounded-lg transition-colors"
-                                                        >
-                                                            <Trash2 className="w-3.5 h-3.5" />
-                                                        </button>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="text-right mr-2">
+                                                            <div className="text-sm font-black text-primary">Rp {(item.amount * (ing?.cost_per_unit || 0)).toLocaleString()}</div>
+                                                        </div>
+                                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                            <button
+                                                                onClick={() => {
+                                                                    setEditingRecipeIdx(idx);
+                                                                    const select = document.getElementById('ing-select') as HTMLSelectElement;
+                                                                    const input = document.getElementById('ing-amount') as HTMLInputElement;
+                                                                    if (select) select.value = String(item.ingredientId);
+                                                                    if (input) input.value = String(item.amount);
+                                                                }}
+                                                                className="p-2 hover:bg-primary/10 text-primary rounded-xl transition-colors"
+                                                                title="Edit Jumlah"
+                                                            >
+                                                                <Edit className="w-4 h-4" />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => {
+                                                                    const newRecipe = selectedProduct.recipe?.filter((_, i) => i !== idx);
+                                                                    const updated = { ...selectedProduct, recipe: newRecipe };
+                                                                    setProducts(products.map(p => p.id === updated.id ? updated : p));
+                                                                    setSelectedProduct(updated);
+                                                                    if (editingRecipeIdx === idx) setEditingRecipeIdx(null);
+                                                                }}
+                                                                className="p-2 hover:bg-red-50 text-red-400 hover:text-red-500 rounded-xl transition-colors"
+                                                                title="Hapus"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             );
@@ -680,33 +791,69 @@ export function ProductsView({
                                     </div>
 
                                     <div className="pt-6 border-t border-gray-50">
-                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Tambahkan Komposisi</p>
+                                        <div className="flex items-center justify-between mb-3">
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{editingRecipeIdx !== null ? 'Update Komposisi' : 'Tambahkan Komposisi'}</p>
+                                            {editingRecipeIdx !== null && (
+                                                <button 
+                                                    onClick={() => {
+                                                        setEditingRecipeIdx(null);
+                                                        (document.getElementById('ing-select') as HTMLSelectElement).value = '';
+                                                        (document.getElementById('ing-amount') as HTMLInputElement).value = '';
+                                                    }}
+                                                    className="text-[10px] font-bold text-red-500 hover:underline uppercase tracking-widest"
+                                                >
+                                                    Batal Edit
+                                                </button>
+                                            )}
+                                        </div>
                                         <div className="space-y-3">
-                                            <select id="ing-select" className="w-full p-4 text-sm font-bold border-none bg-gray-50 rounded-2xl outline-none ring-1 ring-gray-100 focus:ring-2 focus:ring-primary/20 transition-all">
+                                            <select 
+                                                id="ing-select" 
+                                                disabled={editingRecipeIdx !== null}
+                                                className="w-full p-4 text-sm font-bold border-none bg-gray-50 rounded-2xl outline-none ring-1 ring-gray-100 focus:ring-2 focus:ring-primary/20 transition-all disabled:opacity-50"
+                                            >
                                                 <option value="">Pilih bahan...</option>
                                                 {ingredients.map(i => (
                                                     <option key={i.id} value={i.id}>{i.name} ({i.unit})</option>
                                                 ))}
                                             </select>
                                             <div className="flex gap-2">
-                                                <input id="ing-amount" type="number" placeholder="Jumlah / Qty" className="flex-1 p-4 text-sm font-bold border-none bg-gray-50 rounded-2xl outline-none ring-1 ring-gray-100 focus:ring-2 focus:ring-primary/20 transition-all" />
+                                                <input id="ing-amount" type="number" step="0.01" placeholder="Jumlah / Qty" className="flex-1 p-4 text-sm font-bold border-none bg-gray-50 rounded-2xl outline-none ring-1 ring-gray-100 focus:ring-2 focus:ring-primary/20 transition-all" />
                                                 <Button
-                                                    className="h-14 px-6 rounded-2xl"
+                                                    className={`h-14 px-6 rounded-2xl ${editingRecipeIdx !== null ? 'bg-orange-500 hover:bg-orange-600' : ''}`}
                                                     onClick={() => {
                                                         const id = parseInt((document.getElementById('ing-select') as HTMLSelectElement).value);
                                                         const amt = parseFloat((document.getElementById('ing-amount') as HTMLInputElement).value);
-                                                        if (!id || !amt) return toast.error('Lengkapi data bahan');
+                                                        if (!id || isNaN(amt)) return toast.error('Lengkapi data bahan');
 
-                                                        const newRecipe = [...(selectedProduct.recipe || []), { ingredientId: id, amount: amt }];
+                                                        let newRecipe = [...(selectedProduct.recipe || [])];
+                                                        
+                                                        if (editingRecipeIdx !== null) {
+                                                            // Update existing
+                                                            newRecipe[editingRecipeIdx] = { ingredientId: id, amount: amt };
+                                                            setEditingRecipeIdx(null);
+                                                            toast.success('Bahan diperbarui');
+                                                        } else {
+                                                            // Add new or update duplicate
+                                                            const existingIdx = newRecipe.findIndex(r => r.ingredientId === id);
+                                                            if (existingIdx !== -1) {
+                                                                newRecipe[existingIdx].amount += amt;
+                                                                toast.success('Jumlah bahan ditambahkan');
+                                                            } else {
+                                                                newRecipe.push({ ingredientId: id, amount: amt });
+                                                                toast.success('Bahan ditambahkan');
+                                                            }
+                                                        }
+
                                                         const updated = { ...selectedProduct, recipe: newRecipe };
                                                         setProducts(products.map(p => p.id === updated.id ? updated : p));
                                                         setSelectedProduct(updated);
 
+                                                        (document.getElementById('ing-select') as HTMLSelectElement).value = '';
                                                         (document.getElementById('ing-amount') as HTMLInputElement).value = '';
-                                                        toast.success('Bahan ditambahkan');
                                                     }}
                                                 >
-                                                    <Plus className="w-5 h-5" />
+                                                    {editingRecipeIdx !== null ? <Check className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
                                                 </Button>
                                             </div>
                                         </div>

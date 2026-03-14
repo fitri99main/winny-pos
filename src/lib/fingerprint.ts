@@ -55,12 +55,16 @@ class FingerprintService {
 
     private onDeviceDisconnected = (event: any) => {
         console.warn('DigitalPersona: Device Disconnected', event);
-        if (this.isCapturing && this.scanCallback) {
+        this.cachedDevice = null;
+        
+        // Notify UI immediately if we are in middle of anything
+        if (this.scanCallback) {
             this.scanCallback('ERROR', {
                 success: false,
                 message: 'Alat fingerprint terputus. Pastikan kabel USB terpasang dengan kuat.',
                 errorType: 'NO_DEVICE'
             });
+            // stopCapture will clean up reader state and reset isBusy/isCapturing
             this.stopCapture();
         }
     };
@@ -85,8 +89,33 @@ class FingerprintService {
         if (!this.scanCallback) return;
         try {
             if (event.samples && event.samples.length > 0) {
-                const sampleBase64 = event.samples[0].Data || event.samples[0];
-                const template = typeof sampleBase64 === 'string' ? sampleBase64 : JSON.stringify(sampleBase64);
+                // DigitalPersona samples can be a raw string or an object with a Data property
+                let rawData = event.samples[0].Data || event.samples[0];
+                
+                // If it's an object, try to extract the base64 string
+                let template = '';
+                if (typeof rawData === 'string') {
+                    template = rawData;
+                } else {
+                    try {
+                        // Sometimes it's wrapped in a way that JSON.stringify is needed, 
+                        // but we want the rawest possible data for matching.
+                        template = JSON.stringify(rawData);
+                    } catch (e) {
+                        template = String(rawData);
+                    }
+                }
+
+                // If the template looks like a JSON object containing Data, unwrap it
+                if (template.startsWith('{"Data":')) {
+                    try {
+                        const parsed = JSON.parse(template);
+                        if (parsed.Data) template = parsed.Data;
+                    } catch (e) {}
+                }
+
+                console.log(`DigitalPersona: Captured template length: ${template.length}`);
+
                 this.scanCallback('SUCCESS', {
                     success: true,
                     template,
@@ -198,7 +227,7 @@ class FingerprintService {
                     errorType: 'SERVICE_NOT_RUNNING'
                 });
             }
-        }, 20000);
+        }, 10000); // Reduced to 10s
 
         try {
             this.isBusy = true;
@@ -261,16 +290,15 @@ class FingerprintService {
     }
 
     async stopCapture() {
-        if (this.isCapturing) {
+        if (this.isCapturing && this.reader) {
             try {
                 await this.withTimeout(this.reader.stopAcquisition(), 3000, 'Stop acquisition timed out');
             } catch (err) {
                 console.warn('Error stopping acquisition', err);
-            } finally {
-                this.isBusy = false;
             }
         }
         this.isCapturing = false;
+        this.isBusy = false;
         this.scanCallback = null;
     }
 
@@ -291,6 +319,58 @@ class FingerprintService {
                 });
             }
         }, 2500);
+    }
+
+    /**
+     * Centralized Similarity Algorithm for Fingerprint Templates (FMD/Base64)
+     * Uses Sørensen–Dice coefficient with character Bigrams.
+     * Bigrams (size 2) are more forgiving than Trigrams for noisy biometric data.
+     */
+    calculateSimilarity(str1: string, str2: string): number {
+        if (!str1 || !str2) return 0;
+        if (str1 === str2) return 100;
+
+        // Strip headers (approx 40-50 chars for DigitalPersona FMD in Base64) 
+        // to avoid comparing fixed metadata like SDK version/type.
+        const clean = (s: string) => {
+            if (s.length < 100) return s;
+            // conservative strip for better compatibility
+            return s.substring(40, s.length - 10);
+        };
+
+        const s1 = clean(str1);
+        const s2 = clean(str2);
+
+        if (s1.length < 10 || s2.length < 10) return 0;
+
+        // Generate Bigrams (2-char sequences)
+        const getBigrams = (str: string) => {
+            const bigrams = new Set<string>();
+            for (let i = 0; i < str.length - 1; i++) {
+                bigrams.add(str.substring(i, i + 2));
+            }
+            return bigrams;
+        };
+
+        const b1 = getBigrams(s1);
+        const b2 = getBigrams(s2);
+
+        if (b1.size === 0 || b2.size === 0) return 0;
+
+        let intersection = 0;
+        b1.forEach(bigram => {
+            if (b2.has(bigram)) intersection++;
+        });
+
+        // Dice Coefficient formula: (2 * intersection) / (total size)
+        const score = (2 * intersection) / (b1.size + b2.size) * 100;
+        
+        // Log detailed diagnostic for the "0% issue"
+        console.log(`[Fp Match] Diagnostic: S1 Len=${str1.length} -> ${s1.length}, S2 Len=${str2.length} -> ${s2.length}`);
+        console.log(`[Fp Match] Diagnostic: H1=${s1.substring(0, 15)}... H2=${s2.substring(0, 15)}...`);
+        console.log(`[Fp Match] Diagnostic: Intersection=${intersection}, Total Bigrams=${b1.size + b2.size}, Final Score=${score.toFixed(2)}%`);
+
+        return score;
     }
 }
 

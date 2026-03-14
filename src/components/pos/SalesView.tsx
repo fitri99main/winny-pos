@@ -14,7 +14,7 @@ export interface SalesOrder {
     order_no?: string;
     date: string;
     items: number;
-    productDetails: { name: string; quantity: number; price: number; isManual?: boolean }[];
+    productDetails: { name: string; quantity: number; price: number; isManual?: boolean; target?: 'Kitchen' | 'Bar' | 'Waitress' }[];
     subtotal?: number;
     discount?: number;
     tax?: number;

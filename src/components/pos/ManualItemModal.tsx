@@ -54,7 +54,7 @@ export function ManualItemModal({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-md z-[1000]">
+            <DialogContent className="sm:max-w-md">
                 <DialogHeader>
                     <DialogTitle className="text-2xl font-bold flex items-center gap-2">
                         <PackagePlus className="w-6 h-6 text-pos-coral" />

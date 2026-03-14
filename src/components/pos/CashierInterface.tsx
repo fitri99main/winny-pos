@@ -94,8 +94,17 @@ export function CashierInterface({
 }: CashierInterfaceProps) {
   // console.log('CashierInterface Props:', { productsLength: products?.length, categoriesLength: categories?.length }); 
   // Removed verbose log to prevent crash on undefined properties
-  const [viewMode, setViewMode] = useState<'tables' | 'pos'>('tables');
+  const [viewMode, setViewMode] = useState<'tables' | 'pos'>(
+    (settings?.enable_table_management === false && !initialTable) ? 'pos' : 'tables'
+  );
   const [selectedTable, setSelectedTable] = useState<string>(initialTable || '');
+
+  // Handle setting updates for viewMode
+  useEffect(() => {
+    if (settings?.enable_table_management === false && viewMode === 'tables') {
+      setViewMode('pos');
+    }
+  }, [settings?.enable_table_management]);
 
   // Auto-switch to POS mode if table is provided initially
   useEffect(() => {
@@ -118,6 +127,7 @@ export function CashierInterface({
   const [isSplitPayment, setIsSplitPayment] = useState(false);
   const [itemsToSplit, setItemsToSplit] = useState<OrderItem[]>([]);
   const [lastPaymentChange, setLastPaymentChange] = useState<number | undefined>();
+  const [lastPaymentTotal, setLastPaymentTotal] = useState<number>(0);
   // const [selectedTable, setSelectedTable] = useState<string>(''); // Removed duplicate
   const [customerName, setCustomerName] = useState<string>('');
   const [waiterName, setWaiterName] = useState('');
@@ -327,7 +337,7 @@ export function CashierInterface({
 
   // Add to cart
   const handleAddToCart = (product: Product) => {
-    if (product.stock === 0) {
+    if (product.stock === 0 && product.is_stock_ready === false) {
       toast.error('Produk kehabisan stok');
       return;
     }
@@ -440,6 +450,8 @@ export function CashierInterface({
 
   // Handle payment completion
   const handlePaymentComplete = (payment: any) => {
+    const transactionTotal = total; // Capture current total before clearing
+    setLastPaymentTotal(transactionTotal);
     setLastPaymentChange(payment.change);
     setPaymentModalOpen(false);
 
@@ -468,6 +480,10 @@ export function CashierInterface({
       setIsSplitPayment(false);
       setItemsToSplit([]);
     } else {
+      // Regular payment complete - Clear Cart
+      setOrderItems([]);
+      setOrderDiscount(0);
+
       if (onPaymentSuccess) {
         onPaymentSuccess();
       } else {
@@ -546,7 +562,8 @@ export function CashierInterface({
         productDetails: orderItems.map(item => ({
           name: item.product.name,
           quantity: item.quantity,
-          price: item.product.price
+          price: item.product.price,
+          target: item.product.target // Pass the target attribute
         }))
       });
     }
@@ -604,7 +621,13 @@ export function CashierInterface({
           <div className="flex items-center gap-3 mb-4">
             {onBack && (
               <button
-                onClick={() => setViewMode('tables')}
+                onClick={() => {
+                  if (settings?.enable_table_management === false) {
+                    onBack();
+                  } else {
+                    setViewMode('tables');
+                  }
+                }}
                 className="p-2 hover:bg-white/50 rounded-lg transition-colors"
               >
                 <ArrowLeft className="w-5 h-5" />
@@ -633,27 +656,29 @@ export function CashierInterface({
             <div className="flex-1 flex items-center gap-2 ml-6 pl-6 border-l border-gray-200 overflow-x-auto">
 
               {/* Table Selector */}
-              <div className="flex items-center gap-2 bg-white/60 px-2 py-1.5 rounded-xl border border-white/50 shadow-sm shrink-0">
-                <div className="w-6 h-6 rounded-md bg-orange-100 flex items-center justify-center text-orange-600 shrink-0">
-                  <Store className="w-3.5 h-3.5" />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-[9px] font-bold text-gray-400 uppercase leading-none">Meja</span>
-                  <div className="relative">
-                    <select
-                      value={selectedTable}
-                      onChange={(e) => setSelectedTable(e.target.value)}
-                      className="bg-transparent font-bold text-pos-charcoal text-xs appearance-none pr-4 focus:outline-none cursor-pointer min-w-[60px]"
-                    >
-                      <option value="">Pilih</option>
-                      {(tables || []).map(t => (
-                        <option key={t.id} value={t.number}>{t.number} ({t.capacity})</option>
-                      ))}
-                    </select>
-                    <ChevronDown className="w-3 h-3 text-gray-400 pointer-events-none absolute right-0 top-0.5" />
+              {settings?.enable_table_management !== false && (
+                <div className="flex items-center gap-2 bg-white/60 px-2 py-1.5 rounded-xl border border-white/50 shadow-sm shrink-0">
+                  <div className="w-6 h-6 rounded-md bg-orange-100 flex items-center justify-center text-orange-600 shrink-0">
+                    <Store className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[9px] font-bold text-gray-400 uppercase leading-none">Meja</span>
+                    <div className="relative">
+                      <select
+                        value={selectedTable}
+                        onChange={(e) => setSelectedTable(e.target.value)}
+                        className="bg-transparent font-bold text-pos-charcoal text-xs appearance-none pr-4 focus:outline-none cursor-pointer min-w-[60px]"
+                      >
+                        <option value="">Pilih</option>
+                        {(tables || []).map(t => (
+                          <option key={t.id} value={t.number}>{t.number} ({t.capacity})</option>
+                        ))}
+                      </select>
+                      <ChevronDown className="w-3 h-3 text-gray-400 pointer-events-none absolute right-0 top-0.5" />
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* Customer Selector */}
               <div className="flex items-center gap-2 bg-white/60 px-2 py-1.5 rounded-xl border border-white/50 shadow-sm shrink-0">
@@ -901,7 +926,7 @@ export function CashierInterface({
       <SuccessModal
         open={successModalOpen}
         onOpenChange={setSuccessModalOpen}
-        total={total}
+        total={lastPaymentTotal}
         change={lastPaymentChange}
         onNewTransaction={handleNewTransaction}
         onViewHistory={onBack}

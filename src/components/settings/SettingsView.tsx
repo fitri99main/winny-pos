@@ -835,6 +835,17 @@ export function SettingsView({
                                     onCheckedChange={c => handleLocalChange({ ...localSettings, require_mandatory_session: c })}
                                 />
                             </div>
+
+                            <div className="flex items-center justify-between p-4 bg-primary/5 rounded-xl border border-primary/10">
+                                <div>
+                                    <h4 className="font-bold text-gray-800">Manajemen Meja</h4>
+                                    <p className="text-xs text-gray-500">Aktifkan untuk menggunakan sistem pemesanan per meja. Jika dimatikan, transaksi akan langsung ke produk.</p>
+                                </div>
+                                <Switch
+                                    checked={localSettings.enable_table_management ?? true}
+                                    onCheckedChange={c => handleLocalChange({ ...localSettings, enable_table_management: c })}
+                                />
+                            </div>
                         </div>
 
                         <div className="space-y-4 pt-4 border-t border-gray-100">
@@ -918,6 +929,14 @@ export function SettingsView({
                                     >
                                         Test Print
                                     </Button>
+                                    <div className="flex items-center gap-3 ml-auto px-3 py-2 bg-white rounded-xl border border-gray-100 shadow-sm">
+                                        <Label htmlFor="auto-print-kitchen" className="text-[10px] font-bold text-gray-400 uppercase cursor-pointer">Auto Cetak</Label>
+                                        <Switch
+                                            id="auto-print-kitchen"
+                                            checked={localSettings.auto_print_kitchen || false}
+                                            onCheckedChange={c => handleLocalChange({ ...localSettings, auto_print_kitchen: c })}
+                                        />
+                                    </div>
                                 </div>
                             </div>
 
@@ -971,6 +990,14 @@ export function SettingsView({
                                     >
                                         Test Print
                                     </Button>
+                                    <div className="flex items-center gap-3 ml-auto px-3 py-2 bg-white rounded-xl border border-gray-100 shadow-sm">
+                                        <Label htmlFor="auto-print-bar" className="text-[10px] font-bold text-gray-400 uppercase cursor-pointer">Auto Cetak</Label>
+                                        <Switch
+                                            id="auto-print-bar"
+                                            checked={localSettings.auto_print_bar || false}
+                                            onCheckedChange={c => handleLocalChange({ ...localSettings, auto_print_bar: c })}
+                                        />
+                                    </div>
                                 </div>
                             </div>
 

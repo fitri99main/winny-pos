@@ -54,7 +54,7 @@ export function ProductTile({ product, onAddToCart }: ProductTileProps) {
           </p>
         )}
       </div>
-      {product.stock === 0 && (
+      {(product.stock === 0 && !product.is_stock_ready) && (
         <div className="absolute inset-0 bg-gray-900/60 flex items-center justify-center">
           <span className="text-white font-bold text-sm px-4 py-2 bg-red-500 rounded-lg">
             Out of Stock

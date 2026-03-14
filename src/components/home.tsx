@@ -120,13 +120,7 @@ function Home() {
         if (error) throw error;
         toast.success('Bahan baku berhasil ditambahkan');
       } else if (action === 'update') {
-        const { id, ...rest } = data;
-        const payload = {
-          ...rest,
-          current_stock: Number(rest.current_stock || 0),
-          min_stock: Number(rest.min_stock || 0),
-          cost_per_unit: Number(rest.cost_per_unit || 0)
-        };
+        const { id, ...payload } = data;
         const { error } = await supabase.from('ingredients').update(payload).eq('id', id);
         if (error) throw error;
         toast.success('Bahan baku berhasil diupdate');
@@ -240,7 +234,8 @@ function Home() {
     show_customer_status: true,
     show_logo: true,
     receipt_logo_url: '',
-    address: ''
+    address: '',
+    enable_table_management: true
   });
 
   // --- Master Data Integration ---
@@ -519,7 +514,8 @@ function Home() {
         productDetails: (s.items || []).map((i: any) => ({
           name: i.product_name,
           quantity: i.quantity,
-          price: i.price
+          price: i.price,
+          target: i.target // Include target from DB
         })),
         printCount: s.print_count || 0,
         lastPrintedAt: s.last_printed_at
@@ -540,7 +536,7 @@ function Home() {
             return {
               name: i.product_name,
               quantity: i.quantity,
-              target: product?.target || 'Kitchen',
+              target: i.target || product?.target || 'Kitchen', // Prefer DB value, fallback to product data
               status: 'Pending'
             };
           })
@@ -1265,7 +1261,8 @@ function Home() {
           product_name: item.name,
           quantity: item.quantity,
           price: item.price,
-          cost: product?.cost || 0
+          cost: product?.cost || 0,
+          target: item.target || product?.target || 'Waitress' // Persist target to DB
         };
       });
 
@@ -1386,7 +1383,11 @@ function Home() {
       time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
       items: orderData.productDetails.map((item: any) => {
         const product = products.find(p => p.name === item.name);
-        return { ...item, target: product?.target || 'Waitress', status: 'Pending' };
+        return {
+          ...item,
+          target: item.target || product?.target || 'Waitress', // Use incoming target or fallback
+          status: 'Pending'
+        };
       })
     };
     setPendingOrders(prev => [kdsOrder, ...prev]);
@@ -1395,7 +1396,7 @@ function Home() {
     const kitchenItems = kdsOrder.items.filter(i => i.target === 'Kitchen');
     const barItems = kdsOrder.items.filter(i => i.target === 'Bar');
 
-    if (kitchenItems.length > 0) {
+    if (kitchenItems.length > 0 && storeSettings?.auto_print_kitchen) {
       printerService.printTicket('Kitchen', {
         orderNo: kdsOrder.orderNo,
         tableNo: kdsOrder.tableNo,
@@ -1405,7 +1406,7 @@ function Home() {
       });
     }
 
-    if (barItems.length > 0) {
+    if (barItems.length > 0 && storeSettings?.auto_print_bar) {
       printerService.printTicket('Bar', {
         orderNo: kdsOrder.orderNo,
         tableNo: kdsOrder.tableNo,
@@ -2069,28 +2070,21 @@ function Home() {
           setBrands={setBrands}
           onProductCRUD={async (action, data) => {
             try {
+              console.log('onProductCRUD triggered:', { action, data });
               if (action === 'create' || action === 'update') {
-                // Separate relation data from product data
                 const { recipe, addons, id, ...rest } = data;
-
-                // Whitelist only valid columns to avoid schema errors and strip undefined values
-                const validColumns = ['code', 'name', 'category', 'brand', 'unit', 'price', 'cost', 'stock', 'image_url'];
+                const validColumns = ['code', 'name', 'category', 'brand', 'unit', 'price', 'cost', 'stock', 'image_url', 'is_sellable', 'is_taxed', 'is_stock_ready', 'target', 'branch_id'];
                 const productData: any = {};
                 validColumns.forEach(col => {
                   if (rest[col] !== undefined) productData[col] = rest[col];
                 });
 
-                // Ensure numeric values are numbers
-                if (productData.price) productData.price = Number(productData.price);
-                if (productData.cost) productData.cost = Number(productData.cost);
-                if (productData.stock) productData.stock = Number(productData.stock);
+                if (productData.price !== undefined) productData.price = Number(productData.price) || 0;
+                if (productData.cost !== undefined) productData.cost = Number(productData.cost) || 0;
+                if (productData.stock !== undefined) productData.stock = Number(productData.stock) || 0;
 
-                console.log('Saving product data:', productData);
-
-                // 1. Save Product
                 let productId = id;
                 if (action === 'create') {
-                  // Auto-assign branch_id for new products
                   productData.branch_id = currentBranchId;
                   const { data: newProd, error } = await supabase.from('products').insert([productData]).select().single();
                   if (error) throw error;
@@ -2100,48 +2094,35 @@ function Home() {
                   if (error) throw error;
                 }
 
-                // 2. Handle Recipe
-                if (recipe && Array.isArray(recipe)) {
-                  // Delete existing
+                if (recipe && Array.isArray(recipe) && recipe.length > 0) {
                   await supabase.from('product_recipes').delete().eq('product_id', productId);
-                  // Insert new
-                  if (recipe.length > 0) {
-                    const recipeItems = recipe.map((r: any) => ({
-                      product_id: productId,
-                      ingredient_id: r.ingredientId,
-                      amount: r.amount
-                    }));
-                    const { error: recipeError } = await supabase.from('product_recipes').insert(recipeItems);
-                    if (recipeError) console.error('Error saving recipe:', recipeError);
-                  }
+                  const recipeItems = recipe.map((r: any) => ({
+                    product_id: productId,
+                    ingredient_id: r.ingredientId,
+                    amount: r.amount
+                  }));
+                  const { error: recipeError } = await supabase.from('product_recipes').insert(recipeItems);
+                  if (recipeError) console.error('Error saving recipe:', recipeError);
                 }
 
-                if (addons && Array.isArray(addons)) {
+                if (addons && Array.isArray(addons) && addons.length > 0) {
                   await supabase.from('product_addons').delete().eq('product_id', productId);
-                  if (addons.length > 0) {
-                    const addonItems = addons.map((a: any) => ({
-                      product_id: productId,
-                      name: a.name,
-                      price: a.price
-                    }));
-                    const { error: addonError } = await supabase.from('product_addons').insert(addonItems);
-                    if (addonError) console.error('Error saving addons:', addonError);
-                  }
+                  const addonItems = addons.map((a: any) => ({
+                    product_id: productId,
+                    name: a.name,
+                    price: a.price
+                  }));
+                  const { error: addonError } = await supabase.from('product_addons').insert(addonItems);
+                  if (addonError) console.error('Error saving addons:', addonError);
                 }
 
                 toast.success(`Produk berhasil ${action === 'create' ? 'dibuat' : 'diupdate'}`);
-                // fetchMasterData(); // Removed - handled by subscription
               } else if (action === 'delete') {
                 await handleMasterDataCRUD('products', action, data);
               }
-              // Refresh is handled by fetchBranchData via subscription
             } catch (err: any) {
               console.error('Error saving product:', err);
-              // Show more detailed error
-              const errorMessage = err.message || JSON.stringify(err);
-              const errorDetails = err.details ? ` (${err.details})` : '';
-              const errorHint = err.hint ? ` Hint: ${err.hint}` : '';
-              toast.error(`Gagal menyimpan: ${errorMessage}${errorDetails}${errorHint}`);
+              toast.error(`Gagal menyimpan: ${err.message || 'Error'}`);
             }
           }}
           onCategoryCRUD={(action, data) => handleMasterDataCRUD('categories', action, data)}
@@ -2157,6 +2138,8 @@ function Home() {
           onCRUD={(table, action, data) => handleMasterDataCRUD(table, action, data)}
           currentBranchId={currentBranchId}
           contacts={contacts}
+          products={products}
+          ingredients={inventoryIngredients}
         />
       );
 
@@ -2638,6 +2621,8 @@ function Home() {
             onPaymentSuccess={() => {
               setIsCashierOpen(false);
               setAutoSelectedTable(''); // Clear the selected table to prevent re-opening on same order
+              setOrderItems([]); // Clear cart
+              setOrderDiscount(0); // Clear discount
               setActiveModule('kds');
               toast.success('Pembayaran Selesai. Dialihkan ke Dapur.');
             }}

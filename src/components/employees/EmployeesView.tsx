@@ -51,6 +51,7 @@ export function EmployeesView({
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCard, setSelectedCard] = useState<Employee | null>(null);
     const [newDeptName, setNewDeptName] = useState('');
+    const [formTab, setFormTab] = useState<'basic' | 'access'>('basic');
     const [isScanning, setIsScanning] = useState(false);
     const [fpStatus, setFpStatus] = useState('');
     const [fpError, setFpError] = useState<string | null>(null);
@@ -62,30 +63,35 @@ export function EmployeesView({
         setIsScanning(false);
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.name || !formData.position) {
             toast.error('Nama dan Jabatan wajib diisi');
             return;
         }
 
-        if (formData.id) {
-            // Update
-            onEmployeeCRUD('update', formData);
-        } else {
-            // Create
-            const newEmp = {
-                ...formData,
-                // id: Date.now(), // Handled by DB or stripped in Home
-                status: 'Active',
-                joinDate: new Date().toISOString().split('T')[0],
-                offDays: formData.offDays || [],
-                pin: formData.pin || '123456' // Default PIN if not set
-            };
-            onEmployeeCRUD('create', newEmp);
+        try {
+            if (formData.id) {
+                // Update
+                await onEmployeeCRUD('update', formData);
+            } else {
+                // Create
+                const newEmp = {
+                    ...formData,
+                    // id: Date.now(), // Handled by DB or stripped in Home
+                    status: formData.status || 'Active',
+                    joinDate: formData.joinDate || new Date().toISOString().split('T')[0],
+                    offDays: formData.offDays || [],
+                    pin: formData.pin || '123456' // Default PIN if not set
+                };
+                await onEmployeeCRUD('create', newEmp);
+            }
+            setIsFormOpen(false);
+            setFormData({});
+        } catch (error) {
+            console.error('Error in handleSubmit:', error);
+            // toast.error is usually handled by onEmployeeCRUD in home.tsx
         }
-        setIsFormOpen(false);
-        setFormData({});
     };
 
     const handleAddDept = (e: React.FormEvent) => {
@@ -228,6 +234,7 @@ export function EmployeesView({
                                 <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px]">Nama Karyawan</th>
                                 <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px]">Jabatan & Departemen</th>
                                 <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px]">Kontak</th>
+                                <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px]">Biometrik</th>
                                 <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px]">Jadwal Libur (Off)</th>
                                 <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px] text-center">Aksi</th>
                             </tr>
@@ -246,6 +253,19 @@ export function EmployeesView({
                                     <td className="px-8 py-5 space-y-1">
                                         <div className="flex items-center gap-2 text-gray-500 text-[11px] font-medium"><Mail className="w-3 h-3 opacity-50" /> {emp.email}</div>
                                         <div className="flex items-center gap-2 text-gray-500 text-[11px] font-medium"><Phone className="w-3 h-3 opacity-50" /> {emp.phone}</div>
+                                    </td>
+                                    <td className="px-8 py-5">
+                                        {emp.fingerprint_template ? (
+                                            <div className="flex items-center gap-1.5 text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg w-fit border border-emerald-100">
+                                                <Zap className="w-3 h-3 fill-emerald-600" />
+                                                <span className="text-[10px] font-black uppercase">Aktif</span>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center gap-1.5 text-gray-400 bg-gray-50 px-2 py-1 rounded-lg w-fit border border-gray-100">
+                                                <Zap className="w-3 h-3" />
+                                                <span className="text-[10px] font-black uppercase">Belum</span>
+                                            </div>
+                                        )}
                                     </td>
                                     <td className="px-8 py-5">
                                         <div className="flex flex-wrap gap-1">
@@ -286,53 +306,118 @@ export function EmployeesView({
 
             {/* Form Modal */}
             {isFormOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-[32px] md:rounded-[40px] shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto custom-scrollbar animate-in zoom-in-95 duration-200 flex flex-col">
-                        <div className="p-6 md:p-10 pb-0 shrink-0">
-                            <h3 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight">{formData.id ? 'Edit Data Karyawan' : 'Tambah Karyawan Baru'}</h3>
+                <div 
+                    className="fixed inset-0 z-[9999] w-screen h-screen flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 md:p-20 overflow-y-auto cursor-pointer"
+                    onMouseDown={(e) => {
+                        if (e.target === e.currentTarget) {
+                            console.log('[EmployeesView] Form Backdrop MouseDown');
+                            setIsFormOpen(false);
+                        }
+                    }}
+                >
+                    <div 
+                        className="bg-white rounded-[32px] md:rounded-[40px] shadow-2xl w-full max-w-xl max-h-fit overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col cursor-default"
+                        onMouseDown={e => e.stopPropagation()}
+                    >
+                        <div className="px-6 md:p-10 pb-0 shrink-0">
+                            <h3 className="text-xl md:text-2xl font-bold text-gray-800">{formData.id ? 'Edit Data Karyawan' : 'Tambah Karyawan Baru'}</h3>
                             <p className="text-gray-500 text-xs md:text-sm font-medium mt-1">Lengkapi biodata dan tentukan departemen kerja.</p>
+
+                            {/* Tab Switcher */}
+                            <div className="flex gap-2 mt-6 p-1.5 bg-gray-100/80 rounded-2xl w-fit">
+                                <button
+                                    type="button"
+                                    onClick={() => setFormTab('basic')}
+                                    className={`px-6 py-2.5 rounded-xl text-xs font-semibold transition-all ${formTab === 'basic' ? 'bg-white text-primary shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                                >
+                                    BIODATA
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setFormTab('access')}
+                                    className={`px-6 py-2.5 rounded-xl text-xs font-semibold transition-all ${formTab === 'access' ? 'bg-white text-primary shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                                >
+                                    AKSES & SISTEM
+                                </button>
+                            </div>
                         </div>
-                        <form onSubmit={handleSubmit} className="p-6 md:p-10 space-y-6">
-                            <div className="space-y-4">
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Nama Lengkap Karyawan</label>
-                                    <input className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-bold text-gray-800 text-sm md:text-base" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} required placeholder="Nama Lengkap" />
+
+                        <form onSubmit={handleSubmit} className="p-6 md:p-10 space-y-6 flex-1">
+                            {formTab === 'basic' ? (
+                                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                    <div className="space-y-2">
+                                        <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-normal pl-1">Nama Lengkap Karyawan</label>
+                                        <input className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-semibold text-gray-800 text-sm md:text-base" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} required placeholder="Nama Lengkap" />
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-normal pl-1">Jabatan / Role</label>
+                                            <input className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-semibold" value={formData.position || ''} onChange={e => setFormData({ ...formData, position: e.target.value })} placeholder="misal: Senior Barista" required />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-normal pl-1">Struktur Departemen</label>
+                                            <select className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-semibold text-gray-700" value={formData.department || ''} onChange={e => setFormData({ ...formData, department: e.target.value })}>
+                                                <option value="">Pilih Departemen...</option>
+                                                {(departments || []).map(dept => (
+                                                    <option key={dept.id} value={dept.name}>{dept.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-normal pl-1">Email (Login ID)</label>
+                                            <input type="email" className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-semibold" value={formData.email || ''} onChange={e => setFormData({ ...formData, email: e.target.value })} placeholder="email@karyawan.com" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-normal pl-1">Nomor WhatsApp</label>
+                                            <input className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-medium" value={formData.phone || ''} onChange={e => setFormData({ ...formData, phone: e.target.value })} placeholder="08xx-xxxx-xxxx" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-normal pl-1">Tanggal Bergabung</label>
+                                            <input type="date" className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-semibold" value={formData.joinDate || ''} onChange={e => setFormData({ ...formData, joinDate: e.target.value })} />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-normal pl-1">Status Kepegawaian</label>
+                                            <select className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-semibold text-gray-700" value={formData.status || 'Active'} onChange={e => setFormData({ ...formData, status: e.target.value as any })}>
+                                                <option value="Active">Aktif (Working)</option>
+                                                <option value="On Leave">Cuti (On Leave)</option>
+                                                <option value="Terminated">Berhenti (Terminated)</option>
+                                            </select>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Jabatan / Role</label>
-                                        <input className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold" value={formData.position || ''} onChange={e => setFormData({ ...formData, position: e.target.value })} placeholder="misal: Senior Barista" required />
+                            ) : (
+                                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="space-y-2">
+                                            <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-normal pl-1">PIN Akses Kiosk</label>
+                                            <input
+                                                type="text"
+                                                pattern="[0-9]*"
+                                                inputMode="numeric"
+                                                maxLength={6}
+                                                className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold tracking-widest"
+                                                value={formData.pin || ''}
+                                                onChange={e => setFormData({ ...formData, pin: e.target.value })}
+                                                placeholder="123456"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-normal pl-1">Barcode ID</label>
+                                            <input
+                                                className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-semibold"
+                                                value={formData.barcode || ''}
+                                                onChange={e => setFormData({ ...formData, barcode: e.target.value })}
+                                                placeholder="ID-12345"
+                                            />
+                                        </div>
                                     </div>
+
                                     <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Struktur Departemen</label>
-                                        <select className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold text-gray-700" value={formData.department || ''} onChange={e => setFormData({ ...formData, department: e.target.value })}>
-                                            <option value="">Pilih Departemen...</option>
-                                            {(departments || []).map(dept => (
-                                                <option key={dept.id} value={dept.name}>{dept.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">PIN Akses Kiosk</label>
-                                        <input
-                                            type="text"
-                                            pattern="[0-9]*"
-                                            inputMode="numeric"
-                                            maxLength={6}
-                                            className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-black tracking-widest"
-                                            value={formData.pin || ''}
-                                            onChange={e => setFormData({ ...formData, pin: e.target.value })}
-                                            placeholder="123456"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-blue-500 uppercase tracking-widest pl-1">Akses Biometrik (Fingerprint)</label>
+                                        <label className="text-[11px] font-semibold text-blue-500 uppercase tracking-normal pl-1">Akses Biometrik (Fingerprint)</label>
                                         <div className="flex gap-2">
                                             <div className="relative flex-1">
                                                 <input
-                                                    className="w-full pl-12 p-3 md:p-4 bg-blue-50/30 border border-blue-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all text-[10px] font-mono tracking-wider font-bold truncate"
+                                                    className="w-full pl-12 p-3 md:p-4 bg-blue-50/30 border border-blue-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all text-[10px] font-mono tracking-wider font-semibold truncate"
                                                     value={formData.fingerprint_template ? 'TEMPLATE_REGISTERED' : ''}
                                                     readOnly
                                                     placeholder="Belum terdaftar..."
@@ -359,117 +444,60 @@ export function EmployeesView({
                                                 {isScanning ? 'Scanning...' : 'Daftar'}
                                             </button>
                                         </div>
-                                        {isScanning && <p className="text-[9px] text-blue-600 font-bold animate-pulse pl-1 italic">{fpStatus}</p>}
-                                        {!isScanning && !fpError && <p className="text-[9px] text-gray-400 pl-1">Daftarkan sidik jari untuk login ESS tanpa PIN.</p>}
-
-                                        {/* Diagnostic UI when error occurs */}
-                                        {fpError && (
-                                            <div className="mt-4 p-4 bg-red-50/50 border border-red-100 rounded-2xl animate-in fade-in zoom-in-95">
-                                                <div className="flex items-center gap-2 text-red-600 mb-2">
-                                                    <AlertCircle className="w-3.5 h-3.5" />
-                                                    <span className="font-bold text-[9px] uppercase">Diagnosa Masalah</span>
-                                                </div>
-                                                <p className="text-[9px] text-gray-500 mb-3 leading-relaxed">
-                                                    Jika loading terus atau error, browser mungkin memblokir akses ke hardware. Klik link di bawah untuk memberikan izin:
-                                                </p>
-                                                <div className="space-y-2">
-                                                    {fingerprint.getServiceUrls().map((svc) => (
-                                                        <a
-                                                            key={svc.port}
-                                                            href={svc.url}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="flex items-center justify-between px-3 py-1.5 bg-white border border-gray-100 rounded-xl hover:bg-gray-50 transition-all group"
-                                                        >
-                                                            <span className="text-[9px] font-bold text-gray-600">Port {svc.port} ({svc.protocol})</span>
-                                                            <ExternalLink className="w-3 h-3 text-red-400 group-hover:text-red-600" />
-                                                        </a>
-                                                    ))}
-                                                </div>
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    type="button"
-                                                    onClick={handleFpRetry}
-                                                    className="w-full mt-3 h-9 rounded-xl border-red-200 text-red-600 hover:bg-red-50 font-bold text-[10px]"
-                                                >
-                                                    <RefreshCw className="w-3 h-3 mr-2" /> Reset & Coba Lagi
-                                                </Button>
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1 text-right">Barcode ID</label>
-                                        <input
-                                            className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-mono tracking-wider font-bold"
-                                            value={formData.barcode || ''}
-                                            onChange={e => setFormData({ ...formData, barcode: e.target.value })}
-                                            placeholder="Scan barcode kartu..."
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Nomor WhatsApp</label>
-                                        <input className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-medium" value={formData.phone || ''} onChange={e => setFormData({ ...formData, phone: e.target.value })} placeholder="08xx-xxxx-xxxx" />
                                     </div>
 
-                                    <div className="space-y-2 pt-4 border-t border-gray-100 col-span-1 md:col-span-2">
-                                        <label className="text-[10px] font-black text-blue-500 uppercase tracking-widest pl-1 flex items-center gap-2">
-                                            <Settings2 className="w-4 h-4" />
-                                            Akses Sistem (Backoffice)
-                                        </label>
+                                    <div className="space-y-2">
+                                        <label className="text-[11px] font-semibold text-blue-400 uppercase tracking-normal pl-1">Level Akses Sistem</label>
                                         <select
                                             value={formData.system_role || ''}
                                             onChange={(e) => setFormData({ ...formData, system_role: e.target.value || undefined })}
-                                            className="w-full p-3 md:p-4 bg-blue-50/50 border border-blue-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-bold text-gray-700"
+                                            className="w-full p-3 md:p-4 bg-blue-50/50 border border-blue-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-semibold text-gray-700"
                                         >
                                             <option value="">Tidak Ada (Hanya Lapangan)</option>
                                             <option value="Cashier">Kasir (Cashier)</option>
                                             <option value="Manager">Manager</option>
                                             <option value="Administrator">Administrator</option>
                                         </select>
-                                        <p className="text-[10px] text-blue-600/60 pl-1 leading-relaxed">
-                                            Role ini memungkinkan karyawan Login/Sign Up ke Panel Admin dengan email mereka.
-                                        </p>
                                     </div>
-                                </div>
 
-                                <div className="bg-gray-100/50 p-4 md:p-6 rounded-[24px] md:rounded-[32px] border border-gray-100/50">
-                                    <div className="flex justify-between items-center mb-4 ml-1">
-                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">Jadwal Libur Tetap (Weekly Off Day)</label>
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                const numDays = Math.floor(Math.random() * 2) + 1;
-                                                const days = [0, 1, 2, 3, 4, 5, 6];
-                                                const shuffled = days.sort(() => 0.5 - Math.random());
-                                                setFormData({ ...formData, offDays: shuffled.slice(0, numDays) });
-                                            }}
-                                            className="text-[10px] font-black text-orange-600 uppercase flex items-center gap-1 hover:text-orange-700 transition-colors"
-                                        >
-                                            <Shuffle className="w-3 h-3" /> Acak
-                                        </button>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2">
-                                        {DAYS_NAME.map((day, idx) => (
+                                    <div className="bg-gray-100/50 p-4 md:p-6 rounded-[24px] border border-gray-100/50">
+                                        <div className="flex justify-between items-center mb-4 ml-1">
+                                            <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-normal block">Libur Tetap (Weekly Off)</label>
                                             <button
-                                                key={idx}
                                                 type="button"
-                                                onClick={() => toggleOffDay(idx)}
-                                                className={`px-3 md:px-4 py-2 md:py-2.5 rounded-xl text-[10px] md:text-[11px] font-black transition-all border ${Array.isArray(formData.offDays) && formData.offDays.includes(idx)
-                                                    ? 'bg-red-600 text-white border-red-600 shadow-lg shadow-red-200'
-                                                    : 'bg-white text-gray-400 border-gray-200 hover:border-red-200 hover:text-red-500'
-                                                    }`}
+                                                onClick={() => {
+                                                    const numDays = Math.floor(Math.random() * 2) + 1;
+                                                    const days = [0, 1, 2, 3, 4, 5, 6];
+                                                    const shuffled = days.sort(() => 0.5 - Math.random());
+                                                    setFormData({ ...formData, offDays: shuffled.slice(0, numDays) });
+                                                }}
+                                                className="text-[10px] font-bold text-orange-600 uppercase flex items-center gap-1 hover:text-orange-700 transition-colors"
                                             >
-                                                {day.toUpperCase()}
+                                                <Shuffle className="w-3 h-3" /> Acak
                                             </button>
-                                        ))}
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                            {DAYS_NAME.map((day, idx) => (
+                                                <button
+                                                    key={idx}
+                                                    type="button"
+                                                    onClick={() => toggleOffDay(idx)}
+                                                    className={`px-3 py-2 rounded-xl text-[10px] font-bold transition-all border ${Array.isArray(formData.offDays) && formData.offDays.includes(idx)
+                                                        ? 'bg-red-600 text-white border-red-600 shadow-lg shadow-red-200'
+                                                        : 'bg-white text-gray-400 border-gray-200 hover:border-red-200 hover:text-red-500'
+                                                        }`}
+                                                >
+                                                    {day.toUpperCase()}
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
+                            )}
 
                             <div className="flex flex-col-reverse md:flex-row justify-end gap-3 pt-6 border-t border-gray-50">
                                 <Button type="button" variant="outline" className="h-12 md:h-14 rounded-2xl px-8 font-bold w-full md:w-auto" onClick={() => setIsFormOpen(false)}>Batal</Button>
-                                <Button type="submit" className="h-12 md:h-14 rounded-2xl px-10 shadow-xl shadow-primary/20 font-black w-full md:w-auto">Simpan Data</Button>
+                                <Button type="submit" className="h-12 md:h-14 rounded-2xl px-10 shadow-xl shadow-primary/20 font-bold w-full md:w-auto">Simpan Data</Button>
                             </div>
                         </form>
                     </div>
@@ -478,8 +506,19 @@ export function EmployeesView({
 
             {/* Department Management Modal */}
             {isDeptModalOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md p-4">
-                    <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+                <div 
+                    className="fixed inset-0 z-[9999] w-screen h-screen flex items-center justify-center bg-black/60 backdrop-blur-md p-4 md:p-20 overflow-y-auto cursor-pointer"
+                    onMouseDown={(e) => {
+                        if (e.target === e.currentTarget) {
+                            console.log('[EmployeesView] Dept Backdrop MouseDown');
+                            setIsDeptModalOpen(false);
+                        }
+                    }}
+                >
+                    <div 
+                        className="bg-white rounded-[40px] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 cursor-default"
+                        onMouseDown={e => e.stopPropagation()}
+                    >
                         <div className="p-8 border-b border-gray-50 flex justify-between items-center bg-gray-50/50">
                             <div>
                                 <h3 className="text-xl font-black text-gray-800 tracking-tight">Kelola Departemen</h3>
@@ -517,8 +556,19 @@ export function EmployeesView({
 
             {/* ID Card Preview Modal */}
             {selectedCard && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-[44px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                <div 
+                    className="fixed inset-0 z-[9999] w-screen h-screen flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 md:p-20 overflow-y-auto cursor-pointer"
+                    onMouseDown={(e) => {
+                        if (e.target === e.currentTarget) {
+                            console.log('[EmployeesView] Card Backdrop MouseDown');
+                            setSelectedCard(null);
+                        }
+                    }}
+                >
+                    <div 
+                        className="bg-white rounded-[44px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 cursor-default"
+                        onMouseDown={e => e.stopPropagation()}
+                    >
                         <div className="px-10 py-6 border-b flex items-center justify-between bg-gray-50/50">
                             <h3 className="font-black text-gray-800 tracking-tight">ID Card Digital Karyawan</h3>
                             <button onClick={() => setSelectedCard(null)} className="p-2.5 hover:bg-gray-200 rounded-full transition-colors"><X className="w-5.5 h-5.5 text-gray-400" /></button>

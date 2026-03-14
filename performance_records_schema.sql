@@ -30,9 +30,11 @@ ALTER TABLE public.performance_evaluations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.performance_evaluation_details ENABLE ROW LEVEL SECURITY;
 
 -- Policies
+DROP POLICY IF EXISTS "Enable all access for authenticated users" ON public.performance_evaluations;
 CREATE POLICY "Enable all access for authenticated users" ON public.performance_evaluations
     FOR ALL USING (auth.role() = 'authenticated');
 
+DROP POLICY IF EXISTS "Enable all access for authenticated users" ON public.performance_evaluation_details;
 CREATE POLICY "Enable all access for authenticated users" ON public.performance_evaluation_details
     FOR ALL USING (auth.role() = 'authenticated');
 

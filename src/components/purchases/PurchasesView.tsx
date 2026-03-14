@@ -202,15 +202,20 @@ export function PurchasesView({
     const renderHistory = () => (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="p-4 border-b border-gray-100 bg-gray-50/30">
-                <div className="relative max-w-md">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input
-                        type="text"
-                        placeholder="Cari No. PO atau Supplier..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2.5 text-sm border rounded-xl"
-                    />
+                <div className="flex justify-between items-center">
+                    <div className="relative max-w-md w-full">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input
+                            type="text"
+                            placeholder="Cari No. PO atau Supplier..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2.5 text-sm border rounded-xl"
+                        />
+                    </div>
+                    <Button onClick={() => setActiveTab('input')} className="gap-2">
+                        <Plus className="w-4 h-4" /> Tambah Pembelian
+                    </Button>
                 </div>
             </div>
             <table className="w-full text-sm item-center">

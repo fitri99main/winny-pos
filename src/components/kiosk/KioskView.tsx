@@ -16,6 +16,7 @@ interface Product {
     image_url?: string;
     stock: number;
     cost?: number;
+    target?: 'Kitchen' | 'Bar' | 'Waitress';
 }
 
 interface Member {
@@ -346,7 +347,8 @@ export function KioskView() {
             product_name: item.name,
             quantity: item.quantity,
             price: item.price,
-            cost: item.cost || 0
+            cost: item.cost || 0,
+            target: item.target || 'Waitress' // Persist target
         }));
 
         const saveOffline = () => {

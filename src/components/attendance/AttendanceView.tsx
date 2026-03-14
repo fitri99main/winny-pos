@@ -207,29 +207,8 @@ export function AttendanceView({ logs, setLogs, employees, onLogAttendance, sett
         setFpError(null);
         setFpStatus('Mencari Perangkat...');
 
-        // Moderate calibration: Strip 15% from ends, windowSize=40, step=1 alignment
         const calculateSimilarity = (str1: string, str2: string): number => {
-            if (!str1 || !str2) return 0;
-            if (str1 === str2) return 100;
-
-            const s1 = str1.substring(Math.floor(str1.length * 0.15), Math.floor(str1.length * 0.85));
-            const s2 = str2.substring(Math.floor(str2.length * 0.15), Math.floor(str2.length * 0.85));
-            if (s1.length < 50 || s2.length < 50) return 0;
-
-            const shorter = s1.length < s2.length ? s1 : s2;
-            const longer = s1.length < s2.length ? s2 : s1;
-            const windowSize = Math.min(80, shorter.length);
-            let maxMatches = 0;
-
-            for (let i = 0; i <= longer.length - windowSize; i++) {
-                let currentMatches = 0;
-                for (let j = 0; j < windowSize; j++) {
-                    if (longer[i + j] === shorter[j]) currentMatches++;
-                }
-                if (currentMatches > maxMatches) maxMatches = currentMatches;
-                if (maxMatches === windowSize) break;
-            }
-            return (maxMatches / windowSize) * 100;
+            return fingerprint.calculateSimilarity(str1, str2);
         };
 
         const callback = (status: string, result?: FingerprintResult) => {
@@ -250,7 +229,7 @@ export function AttendanceView({ logs, setLogs, employees, onLogAttendance, sett
 
                 const bestMatch = matches[0];
                 const secondBest = matches[1];
-                const THRESHOLD = 15; // Set above the noise floor
+                const THRESHOLD = 10; // Slightly lower to accommodate noise
 
                 console.log('Fp Match Profile:', matches.slice(0, 3).map(m => `${m.emp.name}: ${m.score.toFixed(1)}%`));
 

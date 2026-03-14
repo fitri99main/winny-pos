@@ -379,7 +379,8 @@ export default function POSScreen() {
                 product_name: item.name,
                 quantity: item.quantity,
                 price: item.price,
-                cost: 0 // Snapshot cost could be fetched if needed
+                cost: 0, // Snapshot cost could be fetched if needed
+                target: item.target || 'Waitress' // Persist target
             }));
 
             const { error: itemsError } = await supabase

@@ -220,9 +220,18 @@ function IdleScreen({ onLogin }: { onLogin: (emp: Employee) => void }) {
             if (status === 'SUCCESS' && result?.success && result.template) {
                 setFpStatus('Mencocokkan Sidik Jari...');
 
-                const matchedEmp = employees.find(e => e.fingerprint_template === result.template);
+                const matches = employees
+                    .filter(e => e.fingerprint_template)
+                    .map(e => ({
+                        emp: e,
+                        score: fingerprint.calculateSimilarity(e.fingerprint_template!, result.template!)
+                    }))
+                    .sort((a, b) => b.score - a.score);
 
-                if (matchedEmp) {
+                const bestMatch = matches[0];
+
+                if (bestMatch && bestMatch.score >= 10) {
+                    const matchedEmp = bestMatch.emp;
                     setFpStatus(`Selamat Datang, ${matchedEmp.name}!`);
                     setTimeout(() => {
                         onLogin(matchedEmp);
@@ -230,8 +239,8 @@ function IdleScreen({ onLogin }: { onLogin: (emp: Employee) => void }) {
                         setFpStatus('');
                     }, 1000);
                 } else {
-                    setFpStatus('Sidik jari tidak terdaftar.');
-                    toast.error('Sidik jari tidak terdaftar. Hubungi Admin.');
+                    setFpStatus('Sidik jari tidak dikenali.');
+                    toast.error('Sidik jari tidak dikenali. Coba bersihkan jari atau hubungi Admin.');
                     setIsScanning(false);
                 }
             } else if (status === 'ERROR') {

@@ -21,10 +21,10 @@ export interface Ingredient {
     name: string;
     unit: string;
     category: string;
-    currentStock: number;
-    minStock: number;
-    lastUpdated: string;
-    costPerUnit: number;
+    current_stock: number;
+    min_stock: number;
+    last_updated: string;
+    cost_per_unit: number;
     branch_id?: number | string;
 }
 
@@ -43,10 +43,10 @@ export interface StockMovement {
 // --- Initial Mock Data ---
 
 const INITIAL_INGREDIENTS: Ingredient[] = [
-    { id: 1, name: 'Kopi Arabika (Beans)', unit: 'kg', category: 'Coffee', currentStock: 25.5, minStock: 5, lastUpdated: '2026-01-24', costPerUnit: 120000 },
-    { id: 2, name: 'Susu Fresh Milk', unit: 'Liter', category: 'Dairy', currentStock: 12, minStock: 10, lastUpdated: '2026-01-25', costPerUnit: 18000 },
-    { id: 3, name: 'Gula Aren Cair', unit: 'Liter', category: 'Sweetener', currentStock: 3.5, minStock: 5, lastUpdated: '2026-01-23', costPerUnit: 25000 },
-    { id: 4, name: 'Bubuk Cokelat Premium', unit: 'kg', category: 'Other', currentStock: 8, minStock: 2, lastUpdated: '2026-01-20', costPerUnit: 85000 },
+    { id: 1, name: 'Kopi Arabika (Beans)', unit: 'kg', category: 'Coffee', current_stock: 25.5, min_stock: 5, last_updated: '2026-01-24', cost_per_unit: 120000 },
+    { id: 2, name: 'Susu Fresh Milk', unit: 'Liter', category: 'Dairy', current_stock: 12, min_stock: 10, last_updated: '2026-01-25', cost_per_unit: 18000 },
+    { id: 3, name: 'Gula Aren Cair', unit: 'Liter', category: 'Sweetener', current_stock: 3.5, min_stock: 5, last_updated: '2026-01-23', cost_per_unit: 25000 },
+    { id: 4, name: 'Bubuk Cokelat Premium', unit: 'kg', category: 'Other', current_stock: 8, min_stock: 2, last_updated: '2026-01-20', cost_per_unit: 85000 },
 ];
 
 const INITIAL_MOVEMENTS: StockMovement[] = [
@@ -86,7 +86,7 @@ export function InventoryView({
 
     // Form states
     const [newIngredient, setNewIngredient] = useState<Partial<Ingredient>>({
-        name: '', unit: 'kg', category: 'Coffee', minStock: 1, costPerUnit: 0 // Added costPerUnit
+        name: '', unit: 'kg', category: 'Coffee', min_stock: 1, cost_per_unit: 0
     });
     const [editFormData, setEditFormData] = useState<Partial<Ingredient>>({}); // NEW
 
@@ -101,13 +101,13 @@ export function InventoryView({
             name: newIngredient.name,
             unit: newIngredient.unit,
             category: newIngredient.category,
-            min_stock: newIngredient.minStock,
+            min_stock: newIngredient.min_stock,
             current_stock: 0,
-            cost_per_unit: newIngredient.costPerUnit, // Send cost
+            cost_per_unit: newIngredient.cost_per_unit,
             branch_id: currentBranchId
         });
         setIsAddModalOpen(false);
-        setNewIngredient({ name: '', unit: 'kg', category: 'Coffee', minStock: 1, costPerUnit: 0 });
+        setNewIngredient({ name: '', unit: 'kg', category: 'Coffee', min_stock: 1, cost_per_unit: 0 });
     };
 
     const handleEditIngredient = async (e: React.FormEvent) => {
@@ -119,9 +119,9 @@ export function InventoryView({
             name: editFormData.name,
             unit: editFormData.unit,
             category: editFormData.category,
-            min_stock: editFormData.minStock,
-            cost_per_unit: editFormData.costPerUnit,
-            current_stock: editFormData.currentStock // Must preserve current stock
+            min_stock: editFormData.min_stock,
+            cost_per_unit: editFormData.cost_per_unit,
+            current_stock: editFormData.current_stock
         });
         setIsEditModalOpen(false);
         setEditFormData({});
@@ -194,7 +194,7 @@ export function InventoryView({
                     <div className="flex items-center gap-4">
                         <div className="flex items-center gap-2 px-4 py-2 bg-yellow-50 text-yellow-700 rounded-xl border border-yellow-100/50 text-xs font-bold">
                             <AlertTriangle className="w-3.5 h-3.5" />
-                            {ingredients.filter(i => i.currentStock <= i.minStock).length} Bahan Stok Rendah
+                            {ingredients.filter(i => i.current_stock <= i.min_stock).length} Bahan Stok Rendah
                         </div>
                     </div>
                 </div>
@@ -219,21 +219,21 @@ export function InventoryView({
                                     <tr key={ing.id} className="group hover:bg-gray-50/50 transition-colors">
                                         <td className="px-8 py-5">
                                             <div className="font-bold text-gray-800">{ing.name}</div>
-                                            <div className="text-[10px] text-gray-400 font-medium">Update: {ing.lastUpdated}</div>
+                                            <div className="text-[10px] text-gray-400 font-medium">Update: {ing.last_updated}</div>
                                         </td>
                                         <td className="px-8 py-5">
                                             <span className="px-3 py-1 bg-gray-100 text-gray-600 rounded-lg text-[11px] font-bold uppercase">{ing.category}</span>
                                         </td>
                                         <td className="px-8 py-5 text-center text-gray-500 font-medium">{ing.unit}</td>
                                         <td className="px-8 py-5 text-right font-black text-gray-600">
-                                            Rp {(ing.costPerUnit || 0).toLocaleString()} <span className="text-[10px] text-gray-400 font-normal">/{ing.unit}</span>
+                                            Rp {(ing.cost_per_unit || 0).toLocaleString()} <span className="text-[10px] text-gray-400 font-normal">/{ing.unit}</span>
                                         </td>
-                                        <td className="px-8 py-5 text-right text-gray-400 font-bold">{ing.minStock}</td>
-                                        <td className={`px-8 py-5 text-right font-black text-lg ${ing.currentStock <= ing.minStock ? 'text-red-500' : 'text-gray-800'}`}>
-                                            {ing.currentStock}
+                                        <td className="px-8 py-5 text-right text-gray-400 font-bold">{ing.min_stock}</td>
+                                        <td className={`px-8 py-5 text-right font-black text-lg ${ing.current_stock <= ing.min_stock ? 'text-red-500' : 'text-gray-800'}`}>
+                                            {ing.current_stock}
                                         </td>
                                         <td className="px-8 py-5 text-center">
-                                            {ing.currentStock <= ing.minStock ? (
+                                            {ing.current_stock <= ing.min_stock ? (
                                                 <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-50 text-red-600 rounded-full text-[10px] font-black uppercase ring-1 ring-red-100">
                                                     <AlertTriangle className="w-3 h-3" /> Re-stock
                                                 </span>
@@ -323,8 +323,8 @@ export function InventoryView({
 
             {/* Add Ingredient Modal */}
             {isAddModalOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+                <div onClick={() => setIsAddModalOpen(false)} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                    <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-[40px] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="p-10 space-y-8">
                             <div>
                                 <h3 className="text-2xl font-black text-gray-800">Tambah Bahan Baku</h3>
@@ -373,8 +373,8 @@ export function InventoryView({
                                         <input
                                             type="number"
                                             className="w-full p-4 bg-gray-50 border border-gray-100 rounded-[20px] outline-none"
-                                            value={newIngredient.minStock}
-                                            onChange={e => setNewIngredient({ ...newIngredient, minStock: Number(e.target.value) })}
+                                            value={newIngredient.min_stock}
+                                            onChange={e => setNewIngredient({ ...newIngredient, min_stock: Number(e.target.value) })}
                                             required
                                         />
                                     </div>
@@ -384,8 +384,8 @@ export function InventoryView({
                                             type="number"
                                             className="w-full p-4 bg-gray-50 border border-gray-100 rounded-[20px] outline-none font-bold text-gray-700"
                                             placeholder="Rp 0"
-                                            value={newIngredient.costPerUnit || ''}
-                                            onChange={e => setNewIngredient({ ...newIngredient, costPerUnit: Number(e.target.value) })}
+                                            value={newIngredient.cost_per_unit || ''}
+                                            onChange={e => setNewIngredient({ ...newIngredient, cost_per_unit: Number(e.target.value) })}
                                         />
                                     </div>
                                 </div>
@@ -401,8 +401,8 @@ export function InventoryView({
 
             {/* Edit Ingredient Modal */}
             {isEditModalOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+                <div onClick={() => setIsEditModalOpen(false)} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                    <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-[40px] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="p-10 space-y-8">
                             <div>
                                 <h3 className="text-2xl font-black text-gray-800">Edit Bahan Baku</h3>
@@ -450,8 +450,8 @@ export function InventoryView({
                                         <input
                                             type="number"
                                             className="w-full p-4 bg-gray-50 border border-gray-100 rounded-[20px] outline-none"
-                                            value={editFormData.minStock || 0}
-                                            onChange={e => setEditFormData({ ...editFormData, minStock: Number(e.target.value) })}
+                                            value={editFormData.min_stock || 0}
+                                            onChange={e => setEditFormData({ ...editFormData, min_stock: Number(e.target.value) })}
                                             required
                                         />
                                     </div>
@@ -461,8 +461,8 @@ export function InventoryView({
                                             type="number"
                                             className="w-full p-4 bg-gray-50 border border-gray-100 rounded-[20px] outline-none font-bold text-gray-700"
                                             placeholder="Rp 0"
-                                            value={editFormData.costPerUnit || 0}
-                                            onChange={e => setEditFormData({ ...editFormData, costPerUnit: Number(e.target.value) })}
+                                            value={editFormData.cost_per_unit || 0}
+                                            onChange={e => setEditFormData({ ...editFormData, cost_per_unit: Number(e.target.value) })}
                                         />
                                     </div>
                                 </div>
@@ -478,8 +478,8 @@ export function InventoryView({
 
             {/* Update Stock Modal (IN/OUT) */}
             {isStockModalOpen && selectedIngredient && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 text-left">
-                    <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+                <div onClick={() => setIsStockModalOpen(false)} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 text-left">
+                    <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-[40px] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className={`p-10 space-y-8 ${stockAction === 'IN' ? 'bg-emerald-50/30' : 'bg-red-50/30'}`}>
                             <div className="flex justify-between items-start">
                                 <div>
@@ -492,7 +492,7 @@ export function InventoryView({
                                 </div>
                                 <div className="text-right">
                                     <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Stok Saat Ini</div>
-                                    <div className="text-2xl font-black text-gray-800">{selectedIngredient.currentStock} <span className="text-sm font-medium text-gray-400">{selectedIngredient.unit}</span></div>
+                                    <div className="text-2xl font-black text-gray-800">{selectedIngredient.current_stock} <span className="text-sm font-medium text-gray-400">{selectedIngredient.unit}</span></div>
                                 </div>
                             </div>
 

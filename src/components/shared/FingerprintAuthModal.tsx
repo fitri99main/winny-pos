@@ -50,12 +50,19 @@ export function FingerprintAuthModal({
                 setFpStatus('Mencocokkan Sidik Jari...');
 
                 // Validate against Manager/Admin templates
-                const manager = employees.find(e =>
-                    e.fingerprint_template === result.template &&
-                    (e.system_role === 'Administrator' || e.position?.toLowerCase().includes('manager'))
-                );
+                const matches = employees
+                    .filter(e => e.fingerprint_template &&
+                        (e.system_role === 'Administrator' || e.position?.toLowerCase().includes('manager')))
+                    .map(e => ({
+                        emp: e,
+                        score: fingerprint.calculateSimilarity(e.fingerprint_template!, result.template!)
+                    }))
+                    .sort((a, b) => b.score - a.score);
 
-                if (manager) {
+                const bestMatch = matches[0];
+
+                if (bestMatch && bestMatch.score >= 10) {
+                    const manager = bestMatch.emp;
                     setFpStatus('Otorisasi Berhasil!');
                     setTimeout(() => {
                         onSuccess(manager);

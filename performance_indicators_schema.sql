@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS public.performance_indicators (
 ALTER TABLE public.performance_indicators ENABLE ROW LEVEL SECURITY;
 
 -- Policies
+DROP POLICY IF EXISTS "Enable all access for authenticated users" ON public.performance_indicators;
 CREATE POLICY "Enable all access for authenticated users" ON public.performance_indicators
     FOR ALL USING (auth.role() = 'authenticated');
 
