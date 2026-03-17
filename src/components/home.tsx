@@ -67,13 +67,15 @@ function Home() {
     return localStorage.getItem('force_offline') === 'true' ? false : navigator.onLine;
   });
   const [isSyncing, setIsSyncing] = useState(false);
-  const [currentBranchId, setCurrentBranchId] = useState(localStorage.getItem('winpos_current_branch') || '');
+  const [currentBranchId, setCurrentBranchId] = useState(localStorage.getItem('winpos_current_branch') || '7');
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [orderDiscount, setOrderDiscount] = useState(0);
   const [isCashierOpen, setIsCashierOpen] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [autoSelectedTable, setAutoSelectedTable] = useState<string>('');
   const [urlParamProcessed, setUrlParamProcessed] = useState(false); // Track if URL param was processed
+  const [autoOpenPayment, setAutoOpenPayment] = useState(false);
+  const [autoOpenSaleId, setAutoOpenSaleId] = useState<number | null>(null);
   const [pendingCount, setPendingCount] = useState(0); // New state for badge
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [contacts, setContacts] = useState<ContactData[]>([]);
@@ -432,44 +434,65 @@ function Home() {
         // 2. Check for NEW order to notify
         const { data } = await supabase
           .from('sales')
-          .select('*')
+          .select('*, items:sale_items(id)')
           .eq('branch_id', currentBranchId)
           .eq('status', 'Pending')
-          .gt('id', lastProcessedOrderIdRef.current || 0) // [FIX] Default to 0 to avoid 'gt.null' error
+          .gt('id', lastProcessedOrderIdRef.current || 0)
           .order('id', { ascending: false })
           .limit(1);
 
         if (isMounted && data && data.length > 0) {
           const latestOrder = data[0];
-          console.log('Found Latest Order:', latestOrder.id, 'Last Processed:', lastProcessedOrderIdRef.current);
-
-          // Only notify if we haven't processed this ID yet
-          if (latestOrder.id > (lastProcessedOrderIdRef.current || 0)) {
-            lastProcessedOrderIdRef.current = latestOrder.id; // <--- CRITICAL: Update state to prevent loop
+          const itemCount = (latestOrder.items || []).length;
+          
+          if (latestOrder.id > (lastProcessedOrderIdRef.current || 0) && itemCount > 0) {
+            lastProcessedOrderIdRef.current = latestOrder.id;
 
             const targetTable = latestOrder.table_no || latestOrder.tableNo || latestOrder.table_number;
 
-            // [FIX] Auto-open only for non-admin
-            const lowerRole = role?.toLowerCase() || '';
-            const isManager = lowerRole === 'admin' || lowerRole === 'administrator' || lowerRole === 'owner';
-            if (!isManager) {
-              console.log('[Polling] Triggering Auto-Open for Order #' + latestOrder.id);
-              setIsCashierOpen(true);
+            // [NEW] Respect disable_web_kiosk_notifications for Web App
+            // Suppress auto-open for ALL incoming orders if enabled on web.
+            const shouldSuppress = storeSettings?.disable_web_kiosk_notifications;
 
-              if (targetTable) {
-                setAutoSelectedTable(String(targetTable));
-              } else {
-                setAutoSelectedTable(''); // Show Table Grid (All Orders)
-              }
+            if (shouldSuppress) {
+              console.log('[Polling] Suppression active. Skipping auto-open for web cashier.');
+              return;
             }
-            toast.success(`Order Baru Masuk #${latestOrder.order_no}`);
+
+            console.log('[Polling] Auto-opening order:', latestOrder.id);
+            
+            const prepareAndOpen = async () => {
+              await fetchTransactions();
+              setTimeout(() => {
+                if (targetTable) setAutoSelectedTable(String(targetTable));
+                else setAutoSelectedTable('');
+                
+                setAutoOpenSaleId(latestOrder.id);
+                setAutoOpenPayment(false); 
+                setIsCashierOpen(true);
+              }, 100);
+            };
+
+            prepareAndOpen();
+
+            toast.success(`Order Baru Masuk #${latestOrder.order_no}`, {
+              action: {
+                label: 'Buka',
+                onClick: () => {
+                  setIsCashierOpen(true);
+                  setAutoOpenSaleId(latestOrder.id);
+                  if (targetTable) setAutoSelectedTable(String(targetTable));
+                  setAutoOpenPayment(false);
+                }
+              }
+            });
           }
         }
       } catch (err) {
         if (isMounted) console.error('Polling Error:', err);
       } finally {
         if (isMounted) {
-          timeoutId = setTimeout(checkNewOrders, 3000); // 3 seconds delay after previous finishes
+          timeoutId = setTimeout(checkNewOrders, 3000);
         }
       }
     };
@@ -479,7 +502,8 @@ function Home() {
       isMounted = false;
       clearTimeout(timeoutId);
     };
-  }, [currentBranchId, role, loading]);
+  }, [currentBranchId, role, loading, storeSettings]);
+
 
   const fetchTransactions = async () => {
     if (!currentBranchId) return;
@@ -504,7 +528,22 @@ function Home() {
         totalAmount: Number(s.total_amount || 0),
         paymentMethod: s.payment_method,
         status: s.status,
-        waitingTime: s.waiting_time, // optional if exists
+        waitingTime: (() => {
+          if (s.waiting_time) return s.waiting_time;
+          // Calculate from created_at → date (payment time) if available
+          if (s.created_at && s.date && (s.status === 'Paid' || s.status === 'Completed')) {
+            const diffMs = new Date(s.date).getTime() - new Date(s.created_at).getTime();
+            if (diffMs > 0) {
+              const mins = Math.floor(diffMs / 60000);
+              const secs = Math.floor((diffMs % 60000) / 1000);
+              if (mins === 0) return `${secs}d`;
+              if (mins < 60) return `${mins}m ${secs}d`;
+              const hours = Math.floor(mins / 60);
+              return `${hours}j ${mins % 60}m`;
+            }
+          }
+          return null;
+        })(),
         customerName: s.customer_name,
         discount: Number(s.discount || 0),
         notes: s.notes,
@@ -691,28 +730,37 @@ function Home() {
             if (prev.some(s => s.id === formattedSale.id)) return prev;
             return [formattedSale, ...prev];
           });
-          toast.info(`Pesanan Masuk: ${formattedSale.orderNo}`);
 
           // 4. Special Handling for Kiosk OR Cashier Role (Auto-Open Cashier)
           // ONLY for Pending/Unpaid orders. Paid orders go straight to KDS and shouldn't interrupt Cashier.
           const isPaidCompleted = newOrder.status === 'Paid' || newOrder.status === 'Completed';
           const isMyOwnOrder = newOrder.id === lastProcessedOrderIdRef.current;
+          
+          // [REFINED] Robust Kiosk Detection
+          const isKioskOrder = (newOrder.status === 'Unpaid' || newOrder.status === 'Pending') && 
+                              (!newOrder.waiter_name || newOrder.waiter_name === 'Kiosk' || newOrder.waiter_name === 'User Display');
+          // Show notification for all incoming orders (regardless of suppression)
+          toast.info(`Pesanan Masuk: ${formattedSale.orderNo}`);
 
-          // [FIX] Auto-open for Mobile Orders, but NOT for Admin
+          // [FIX] Auto-open for External Orders (Waitress/Display/Admin)
+          // Web app should NOT auto-open cashier if the setting is enabled.
           if (!isPaidCompleted && !isMyOwnOrder && (newOrder.status === 'Pending' || newOrder.status === 'Unpaid')) {
+            if (storeSettings?.disable_web_kiosk_notifications) {
+              console.log('[Auto-Open] Suppression active. Skipping auto-open for web cashier.');
+              return;
+            }
+
             const targetTable = newOrder.table_no || newOrder.tableNo;
 
-            const lowerRole = role?.toLowerCase() || '';
-            const isManager = lowerRole === 'admin' || lowerRole === 'administrator' || lowerRole === 'owner';
-            if (!isManager) {
-              console.log('[Auto-Open] Opening cashier for table:', targetTable);
-              setIsCashierOpen(true);
+            console.log('[Auto-Open] Opening cashier for table:', targetTable);
+            setIsCashierOpen(true);
+            setAutoOpenSaleId(newOrder.id);
+            setAutoOpenPayment(false); 
 
-              if (targetTable) {
-                setAutoSelectedTable(String(targetTable));
-              } else {
-                setAutoSelectedTable('');
-              }
+            if (targetTable) {
+              setAutoSelectedTable(String(targetTable));
+            } else {
+              setAutoSelectedTable('');
             }
 
             toast.success(`Order Masuk Meja ${targetTable || 'Baru'}`);
@@ -1198,14 +1246,27 @@ function Home() {
     return () => clearInterval(timer);
   }, []);
 
-  const handleAddSale = async (saleData: Omit<SalesOrder, 'id' | 'orderNo' | 'date' | 'status'> & { id?: number }) => {
+  const handleAddSale = async (saleData: Omit<SalesOrder, 'id' | 'orderNo' | 'date' | 'status'> & { id?: number, order_no?: string }) => {
     try {
       let sale;
-      let orderNo;
+      let targetId = saleData.id;
 
-      if (saleData.id) {
+      // [SAFETY] If ID is missing, try to find by Order No to prevent duplicates
+      if (!targetId && saleData.order_no) {
+        const { data: existing } = await supabase
+          .from('sales')
+          .select('id')
+          .eq('order_no', saleData.order_no)
+          .maybeSingle();
+        if (existing) {
+          console.log('Found existing sale by Order No, switching to update mode:', existing.id);
+          targetId = existing.id;
+        }
+      }
+
+      if (targetId) {
         // [UPDATE EXISTING]
-        console.log('Updating existing sale:', saleData.id);
+        console.log('Updating sale:', targetId);
         const { data, error } = await supabase
           .from('sales')
           .update({
@@ -1215,26 +1276,19 @@ function Home() {
             waiter_name: saleData.waiterName,
             customer_name: saleData.customerName,
             discount: saleData.discount || 0,
-            date: new Date().toISOString() // [FIX] Store Real UTC (05:xx) so Display (12:xx) is correct
+            date: new Date().toISOString()
           })
-          .eq('id', saleData.id)
+          .eq('id', targetId)
           .select()
           .single();
 
         if (error) throw error;
         sale = data;
-        orderNo = sale.order_no;
-
-        // Optionally update items if needed (delete and recreate or strict sync)
-        // For simplicity, we assume items are final or we just append.
-        // A full sync would require deleting old items first.
-        const { error: deleteError } = await supabase.from('sale_items').delete().eq('sale_id', sale.id);
-        if (deleteError) throw deleteError;
       } else {
         // [CREATE NEW]
-        orderNo = `INV-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+        const finalOrderNo = saleData.order_no || `INV-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
         const { data, error: saleError } = await supabase.from('sales').insert([{
-          order_no: orderNo,
+          order_no: finalOrderNo,
           date: new Date().toISOString(),
           total_amount: saleData.totalAmount,
           payment_method: saleData.paymentMethod,
@@ -1249,6 +1303,8 @@ function Home() {
         if (saleError) throw saleError;
         sale = data;
       }
+
+      const orderNo = sale.order_no;
 
       if (!sale) throw new Error('Failed to save sale');
 
@@ -2618,9 +2674,14 @@ function Home() {
             onClearTableStatus={handleClearTableStatus}
             settings={storeSettings}
             initialTable={autoSelectedTable} // Pass the auto-selected table
+            autoOpenPayment={autoOpenPayment}
+            autoOpenSaleId={autoOpenSaleId}
+            onAutoPaymentProcessed={() => { setAutoOpenPayment(false); setAutoOpenSaleId(null); }}
             onPaymentSuccess={() => {
               setIsCashierOpen(false);
               setAutoSelectedTable(''); // Clear the selected table to prevent re-opening on same order
+              setAutoOpenPayment(false); // Clear auto-open
+              setAutoOpenSaleId(null); // Clear auto-open ID
               setOrderItems([]); // Clear cart
               setOrderDiscount(0); // Clear discount
               setActiveModule('kds');

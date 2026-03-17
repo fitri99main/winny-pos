@@ -1,0 +1,67 @@
+﻿Checking store_settings...
+Settings: {
+  "id": 1,
+  "store_name": "winny cafe natakusuma ",
+  "receipt_header": "Winny Cafe ",
+  "updated_at": "2026-03-15T07:44:37.02+00:00",
+  "opening_time": "08:00",
+  "closing_time": "22:00",
+  "working_days": [
+    "Senin",
+    "Selasa",
+    "Rabu",
+    "Kamis",
+    "Jumat",
+    "Sabtu"
+  ],
+  "late_tolerance": 5,
+  "enable_email_notif": true,
+  "enable_push_notif": true,
+  "low_stock_alert": true,
+  "theme_mode": "light",
+  "address": "jl pangeran natakusuma no. 25",
+  "phone": "0812",
+  "receipt_footer": "Terima Kasih Atas Kunjunganya....",
+  "receipt_paper_width": "58mm",
+  "show_date": true,
+  "show_waiter": true,
+  "show_table": true,
+  "show_customer_name": true,
+  "show_customer_status": true,
+  "show_logo": true,
+  "receipt_logo_url": null,
+  "tax_rate": 10,
+  "service_rate": 0,
+  "require_starting_cash": true,
+  "require_blind_close": true,
+  "auto_open_drawer": false,
+  "quick_cash_amounts": [
+    10000,
+    20000,
+    50000,
+    100000
+  ],
+  "require_mandatory_session": true,
+  "enable_wifi_vouchers": false,
+  "wifi_voucher_notice": "Gunakan kode di bawah ini untuk akses WiFi",
+  "force_offline": false,
+  "enable_fingerprint": true,
+  "hide_camera_scanner": true,
+  "enable_manager_auth": true,
+  "enforce_single_device": true,
+  "branch_id": null,
+  "enable_table_management": false,
+  "preparation_duration_minutes": 1,
+  "disable_web_kiosk_notifications": false
+}
+
+Checking recent sales from Kiosk...
+Recent Pending Sales: [
+  {
+    id: 420,
+    order_no: 'INV-2026-714674',
+    waiter_name: '',
+    status: 'Pending',
+    created_at: '2026-03-16T10:25:14.903093+00:00'
+  }
+]

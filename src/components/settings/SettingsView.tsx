@@ -1324,6 +1324,21 @@ export function SettingsView({
                                     onCheckedChange={c => handleLocalChange({ ...localSettings, low_stock_alert: c })}
                                 />
                             </div>
+                            <div className="flex items-center justify-between p-4 rounded-xl bg-orange-50 border border-orange-100">
+                                <div className="flex gap-3">
+                                    <div className="bg-white p-2 rounded-lg border border-orange-200 shadow-sm">
+                                        <Monitor className="w-4 h-4 text-orange-600" />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-bold text-orange-800">Matikan Auto-Open Kasir di Web</p>
+                                        <p className="text-xs text-orange-600">Jangan buka drawer kasir otomatis saat ada pesanan masuk dari perangkat lain</p>
+                                    </div>
+                                </div>
+                                <Switch
+                                    checked={localSettings.disable_web_kiosk_notifications || false}
+                                    onCheckedChange={c => handleLocalChange({ ...localSettings, disable_web_kiosk_notifications: c })}
+                                />
+                            </div>
                         </div>
                     </div>
                 )}

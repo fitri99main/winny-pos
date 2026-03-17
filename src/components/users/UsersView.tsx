@@ -18,6 +18,8 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
         // Utama
         { id: 'dashboard', label: 'Dashboard & Statistik', description: 'Melihat ringkasan penjualan' },
         { id: 'pos', label: 'Kasir / POS', description: 'Akses menu penjualan' },
+        { id: 'pos_order_only', label: 'Hanya Kirim Pesanan (Display)', description: 'Hanya bisa input pesanan tanpa pembayaran' },
+        { id: 'mandatory_session', label: 'Wajib Buka/Tutup Kasir', description: 'Harus buka shift sebelum transaksi' },
         { id: 'kds', label: 'Dapur & Bar (KDS)', description: 'Layar pesanan dapur' },
 
         // Inventori & Produk
@@ -196,8 +198,9 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
     const applyPreset = (type: 'admin' | 'manager' | 'cashier') => {
         let perms: string[] = [];
         if (type === 'admin') perms = AVAILABLE_PERMISSIONS.map(p => p.id); // All
-        if (type === 'manager') perms = ['dashboard', 'products', 'inventory', 'reports', 'employees', 'purchases', 'attendance', 'performance'];
-        if (type === 'cashier') perms = ['pos', 'products', 'attendance'];
+        if (type === 'manager') perms = ['dashboard', 'products', 'inventory', 'reports', 'employees', 'purchases', 'attendance', 'performance', 'mandatory_session'];
+        if (type === 'cashier') perms = ['pos', 'products', 'attendance', 'mandatory_session'];
+        if (type === 'display' as any) perms = ['pos', 'pos_order_only', 'products'];
 
         setNewRole(prev => ({ ...prev, permissions: perms }));
         toast.info(`Preset ${type.toUpperCase()} diterapkan`);
@@ -215,12 +218,17 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
             {
                 name: 'Manajer',
                 description: 'Manajemen operasional & laporan',
-                permissions: ['dashboard', 'products', 'inventory', 'reports', 'employees', 'purchases', 'attendance', 'performance', 'shifts']
+                permissions: ['dashboard', 'products', 'inventory', 'reports', 'employees', 'purchases', 'attendance', 'performance', 'shifts', 'mandatory_session']
             },
             {
                 name: 'Kasir',
                 description: 'Transaksi penjualan',
-                permissions: ['pos', 'products', 'attendance']
+                permissions: ['pos', 'products', 'attendance', 'mandatory_session']
+            },
+            {
+                name: 'Display',
+                description: 'Hanya input pesanan',
+                permissions: ['pos', 'pos_order_only', 'products']
             }
         ];
 

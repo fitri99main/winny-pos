@@ -11,7 +11,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 interface CashierSessionModalProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    mode: 'open' | 'close';
+    mode: 'open' | 'close' | 'force_close';
     session?: any;
     onSessionComplete: (session: any) => void;
     settings?: any;
@@ -42,7 +42,7 @@ export function CashierSessionModal({
             if (mode === 'open') {
                 setStartingCash('');
                 setNotes('');
-            } else if (mode === 'close' && session) {
+            } else if ((mode === 'close' || mode === 'force_close') && session) {
                 calculateClosingData();
             }
         }
@@ -198,11 +198,13 @@ export function CashierSessionModal({
         }}>
             <DialogContent className="sm:max-w-md">
                 <DialogHeader>
-                    <DialogTitle>{mode === 'open' ? 'Buka Shift Kasir' : 'Tutup Shift'}</DialogTitle>
+                    <DialogTitle>
+                        {mode === 'open' ? 'Buka Shift Kasir' : (mode === 'force_close' ? 'Tutup Paksa Shift' : 'Tutup Shift')}
+                    </DialogTitle>
                     <DialogDescription>
                         {mode === 'open'
                             ? 'Masukkan modal awal untuk memulai sesi kasir.'
-                            : 'Rekonsiliasi uang tunai dan tutup sesi.'}
+                            : (mode === 'force_close' ? 'Tutup paksa sesi kasir yang masih terbuka.' : 'Rekonsiliasi uang tunai dan tutup sesi.')}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -308,7 +310,7 @@ export function CashierSessionModal({
                         disabled={loading}
                         className="bg-primary text-white"
                     >
-                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : (mode === 'open' ? 'Buka Shift' : 'Tutup Shift & Laporan')}
+                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : (mode === 'open' ? 'Buka Shift' : (mode === 'force_close' ? 'Tutup Paksa' : 'Tutup Shift & Laporan'))}
                     </Button>
                 </DialogFooter>
             </DialogContent>

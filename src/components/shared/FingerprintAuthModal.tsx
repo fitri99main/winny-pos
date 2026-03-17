@@ -130,9 +130,35 @@ export function FingerprintAuthModal({
                     </div>
 
                     {error ? (
-                        <div className="flex items-center gap-2 px-5 py-3 bg-red-50 text-red-700 rounded-2xl border border-red-100 animate-in shake duration-300">
-                            <AlertCircle className="w-4 h-4" />
-                            <span className="text-[11px] font-bold uppercase tracking-wide">{error}</span>
+                        <div className="space-y-4 w-full">
+                            <div className="flex items-center gap-2 px-5 py-3 bg-red-50 text-red-700 rounded-2xl border border-red-100 animate-in shake duration-300">
+                                <AlertCircle className="w-4 h-4" />
+                                <span className="text-[11px] font-bold uppercase tracking-wide">{error}</span>
+                            </div>
+
+                            {window.location.protocol === 'https:' && (
+                                <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 text-left space-y-3">
+                                    <div className="flex items-center gap-2 text-blue-800 font-bold">
+                                        <Shield className="w-4 h-4" />
+                                        <span className="text-xs uppercase tracking-tight">Koneksi HTTPS Terdeteksi</span>
+                                    </div>
+                                    <p className="text-[10px] text-blue-600 leading-relaxed">
+                                        Browser memblokir koneksi ke scanner lokal karena alasan keamanan. 
+                                        Silakan klik tombol di bawah untuk mengizinkan instruksi SSL:
+                                    </p>
+                                    <Button 
+                                        variant="default" 
+                                        size="sm"
+                                        className="w-full bg-blue-600 hover:bg-blue-700 h-10 rounded-xl text-[10px] font-bold"
+                                        onClick={() => window.open('https://127.0.0.1:52182', '_blank')}
+                                    >
+                                        Klik & Pilih "Lanjutkan/Proceed"
+                                    </Button>
+                                    <p className="text-[9px] text-gray-400 italic">
+                                        Setelah halaman baru terbuka, pilih "Advanced" lalu "Proceed to 127.0.0.1". Kemudian tutup tab tersebut dan coba lagi di sini.
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <div className="flex items-center gap-3 px-6 py-3 bg-gray-50 text-gray-500 rounded-full border border-gray-100">

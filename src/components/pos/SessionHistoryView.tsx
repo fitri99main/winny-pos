@@ -3,6 +3,8 @@ import { History, Calendar, User, Search, Download, Eye, TrendingUp, DollarSign,
 import { supabase } from '../../lib/supabase';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
+import { useAuth } from '../auth/AuthProvider';
+import { CashierSessionModal } from './CashierSessionModal';
 
 interface SessionHistory {
     id: string;
@@ -30,6 +32,9 @@ export function SessionHistoryView() {
     const [detailModalOpen, setDetailModalOpen] = useState(false);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [sessionToDelete, setSessionToDelete] = useState<SessionHistory | null>(null);
+    const [forceCloseOpen, setForceCloseOpen] = useState(false);
+    const { role } = useAuth();
+    const isAdmin = ['admin', 'owner', 'administrator', 'superadmin'].includes(role?.toLowerCase() || '');
 
     useEffect(() => {
         fetchSessions();
@@ -327,11 +332,11 @@ export function SessionHistoryView() {
                                             {formatCurrency(session.variance)}
                                         </td>
                                         <td className="px-6 py-4 text-center">
-                                            <span className={`inline-flex px-3 py-1 rounded-full text-xs font-bold ${session.status === 'Open'
+                                            <span className={`inline-flex px-3 py-1 rounded-full text-xs font-bold ${session.status?.toLowerCase() === 'open'
                                                 ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
                                                 : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
                                                 }`}>
-                                                {session.status === 'Open' ? 'Buka' : 'Tutup'}
+                                                {session.status?.toLowerCase() === 'open' ? 'Buka' : 'Tutup'}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 text-center">
@@ -348,6 +353,20 @@ export function SessionHistoryView() {
                                                     <Eye className="w-4 h-4 mr-1" />
                                                     Detail
                                                 </Button>
+                                                {session.status?.toLowerCase() === 'open' && isAdmin && (
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() => {
+                                                            setSelectedSession(session);
+                                                            setForceCloseOpen(true);
+                                                        }}
+                                                        className="text-orange-600 hover:bg-orange-50 border-orange-200"
+                                                    >
+                                                        <Clock className="w-4 h-4 mr-1" />
+                                                        Tutup Paksa
+                                                    </Button>
+                                                )}
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
@@ -476,6 +495,17 @@ export function SessionHistoryView() {
                     </div>
                 </div>
             )}
+
+            <CashierSessionModal
+                open={forceCloseOpen}
+                onOpenChange={setForceCloseOpen}
+                mode="force_close"
+                session={selectedSession}
+                onSessionComplete={(newSession) => {
+                    setForceCloseOpen(false);
+                    fetchSessions();
+                }}
+            />
         </div>
     );
 }

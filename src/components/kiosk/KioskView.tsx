@@ -58,6 +58,8 @@ export function KioskView() {
         return localStorage.getItem('force_offline') === 'true' ? false : navigator.onLine;
     });
     const [isSyncing, setIsSyncing] = useState(false);
+    const syncingRef = useRef(false);
+    const submittingRef = useRef(false);
     const [pendingOrders, setPendingOrders] = useState<any[]>(() => {
         const saved = localStorage.getItem('kiosk_pending_orders');
         return saved ? JSON.parse(saved) : [];
@@ -100,33 +102,67 @@ export function KioskView() {
 
     // Process Sync
     const processOfflineOrders = async () => {
-        if (!navigator.onLine || isSyncing || pendingOrders.length === 0) return;
+        if (!navigator.onLine || syncingRef.current || pendingOrders.length === 0) return;
 
+        syncingRef.current = true;
         setIsSyncing(true);
         const toastId = toast.loading('Mensinkronisasi pesanan offline...');
 
-        // Take a snapshot of orders to process
-        const ordersToSync = [...pendingOrders];
-        const successfulOrderIds = new Set<number>(); // track by timestamp or temporary ID
+        // Take a snapshot of orders to process and de-duplicate by order_no to be safe
+        const ordersToSync: any[] = [];
+        const seenOrderNos = new Set<string>();
+        for (const o of pendingOrders) {
+            if (o?.sale?.order_no && !seenOrderNos.has(o.sale.order_no)) {
+                ordersToSync.push(o);
+                seenOrderNos.add(o.sale.order_no);
+            }
+        }
+        const successfulOrderIds = new Set<number>(); 
 
         let successCount = 0;
         let failCount = 0;
 
         for (const order of ordersToSync) {
             try {
-                // 1. Create Sale Record
-                const { data: saleData, error: saleError } = await supabase
+                // 1. Check if Order No already exists (Idempotency)
+                const { data: existingSale } = await supabase
                     .from('sales')
-                    .insert([order.sale])
-                    .select()
-                    .single();
+                    .select('id')
+                    .eq('order_no', order.sale.order_no)
+                    .maybeSingle();
 
-                if (saleError) throw saleError;
+                let saleId;
+                if (existingSale) {
+                    // Check if items already exist to avoid duplicating items on existing sale
+                    const { count } = await supabase
+                        .from('sale_items')
+                        .select('id', { count: 'exact', head: true })
+                        .eq('sale_id', existingSale.id);
+                    
+                    if (count && count > 0) {
+                        console.log("[KioskView] Order and items already exist, skipping entirely:", order.sale.order_no);
+                        successfulOrderIds.add(order.timestamp);
+                        successCount++;
+                        continue; 
+                    }
+                    console.log("[KioskView] Sale exists but no items, proceeding to insert items for:", order.sale.order_no);
+                    saleId = existingSale.id;
+                } else {
+                    // 2. Create Sale Record
+                    const { data, error: saleError } = await supabase
+                        .from('sales')
+                        .insert([order.sale])
+                        .select()
+                        .single();
 
-                // 2. Create Sale Items
+                    if (saleError) throw saleError;
+                    saleId = data.id;
+                }
+
+                // 3. Create Sale Items
                 const saleItems = order.items.map((item: any) => ({
                     ...item,
-                    sale_id: saleData.id
+                    sale_id: saleId
                 }));
 
                 const { error: itemsError } = await supabase.from('sale_items').insert(saleItems);
@@ -155,6 +191,7 @@ export function KioskView() {
         }
 
         setIsSyncing(false);
+        syncingRef.current = false;
     };
 
     // Auto-sync when pending orders change (and we are online)
@@ -310,7 +347,7 @@ export function KioskView() {
     };
 
     const handleCheckout = async () => {
-        if (!selectedTable || cart.length === 0) return;
+        if (submittingRef.current || !selectedTable || cart.length === 0) return;
 
         if (!selectedBranchId) {
             toast.error('Data Cabang belum dimuat. Mohon tunggu sebentar atau muat ulang halaman.');
@@ -318,6 +355,7 @@ export function KioskView() {
             return;
         }
 
+        submittingRef.current = true;
         setLoading(true);
 
         // Prepare Data
@@ -357,7 +395,11 @@ export function KioskView() {
                 items: saleItemsPayload,
                 timestamp: Date.now()
             };
-            setPendingOrders(prev => [...prev, offlineOrder]);
+            setPendingOrders(prev => {
+                const exists = prev.some(o => o.sale.order_no === salePayload.order_no);
+                if (exists) return prev;
+                return [...prev, offlineOrder];
+            });
         };
 
         // 1. Check Explicit Offline Mode
@@ -400,6 +442,8 @@ export function KioskView() {
             const detail = error.details || error.hint || '';
             toast.error('Gagal membuat pesanan: ' + error.message + (detail ? ` (${detail})` : ''));
             setLoading(false);
+        } finally {
+            submittingRef.current = false;
         }
     };
 

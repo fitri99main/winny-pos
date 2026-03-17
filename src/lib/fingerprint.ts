@@ -171,20 +171,28 @@ class FingerprintService {
         try {
             if (!this.initialized) {
                 const isHttps = window.location.protocol === 'https:';
+                // Try HTTPS port first if we are on HTTPS, but fall back to HTTP
                 const portsToTry = isHttps ? [52182, 52181] : [52181, 52182];
                 let success = false;
                 let lastError = '';
+                
+                console.log(`[Fp Service] Checking availability (HTTPS: ${isHttps})`);
+
                 for (const port of portsToTry) {
                     try {
+                        console.log(`[Fp Service] Probing port ${port}...`);
                         await this.initReader(port);
-                        await this.withTimeout(this.reader.enumerateDevices() as Promise<any[]>, 2000, 'Timeout');
+                        // Enumerate devices to verify service is actually responding
+                        const devices = await this.withTimeout(this.reader.enumerateDevices() as Promise<any[]>, 2000, 'Timeout');
+                        console.log(`[Fp Service] Port ${port} is responding. Devices count: ${devices.length}`);
                         success = true;
                         break;
                     } catch (e: any) {
                         lastError = e?.message || 'Unknown error';
+                        console.warn(`[Fp Service] Port ${port} failed: ${lastError}`);
                     }
                 }
-                if (!success) throw new Error(`Layanan tidak merespon: ${lastError}`);
+                if (!success) throw new Error(`Layanan tidak merespon.`);
                 this.initialized = true;
             }
             return { available: true };
@@ -235,22 +243,30 @@ class FingerprintService {
 
             if (!this.initialized) {
                 const modules = await this.loadDevicesModule();
-                const { SampleFormat } = modules;
                 const isHttps = window.location.protocol === 'https:';
                 const portsToTry = isHttps ? [52182, 52181] : [52181, 52182];
                 let success = false;
+                
+                console.log(`[Fp Service] Initializing on ${isHttps ? 'HTTPS' : 'HTTP'}`);
+
                 for (const port of portsToTry) {
                     try {
-                        onStatusUpdate(`Mengecek Port ${port}...`);
+                        onStatusUpdate(`Menghubungkan ke Layanan (Port ${port})...`);
                         await this.initReader(port);
-                        await this.withTimeout(this.reader.enumerateDevices() as Promise<any[]>, 4000, `Timeout di Port ${port}`);
+                        await this.withTimeout(this.reader.enumerateDevices() as Promise<any[]>, 3000, `Timeout di Port ${port}`);
                         success = true;
+                        console.log(`[Fp Service] Successfully connected to port ${port}`);
                         break;
                     } catch (e: any) {
-                        console.warn(`DigitalPersona: Port ${port} failed: ${e.message}`);
+                        console.warn(`[Fp Service] Port ${port} connect failed: ${e.message}`);
                     }
                 }
-                if (!success) throw new Error('Layanan biometrik tidak merespon.');
+                if (!success) {
+                    const helpMsg = isHttps ? 
+                        'Gagal terhubung. Jika menggunakan HTTPS, pastikan Anda telah mengizinkan sertifikat SSL di https://127.0.0.1:52182 atau gunakan localhost.' :
+                        'Layanan biometrik tidak merespon. Pastikan DigitalPersona service berjalan.';
+                    throw new Error(helpMsg);
+                }
                 this.initialized = true;
             }
 

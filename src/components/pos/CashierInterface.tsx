@@ -12,6 +12,7 @@ import { SuccessModal } from './SuccessModal';
 import { ManualItemModal } from './ManualItemModal';
 import { HeldOrdersModal } from './HeldOrdersModal';
 import { SplitBillModal } from './SplitBillModal';
+import { NewOrderModal } from './NewOrderModal'; // [NEW] Import NewOrderModal
 import { TableSelectionGrid, Table } from './TableSelectionGrid';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -30,6 +31,7 @@ interface CashierInterfaceProps {
   onBack?: () => void;
   onAddSale?: (sale: {
     id?: number; // Optional ID for updating existing sales
+    order_no?: string; // Optional order_no for safety checks
     items: number;
     totalAmount: number;
     paymentMethod: string;
@@ -61,6 +63,9 @@ interface CashierInterfaceProps {
   settings?: any;
   initialTable?: string;
   onPaymentSuccess?: () => void;
+  autoOpenPayment?: boolean;
+  autoOpenSaleId?: number | null;
+  onAutoPaymentProcessed?: () => void;
 }
 
 interface HeldOrder {
@@ -90,7 +95,10 @@ export function CashierInterface({
   onClearTableStatus,
   settings = {},
   initialTable = '',
-  onPaymentSuccess
+  onPaymentSuccess,
+  autoOpenPayment,
+  autoOpenSaleId,
+  onAutoPaymentProcessed
 }: CashierInterfaceProps) {
   // console.log('CashierInterface Props:', { productsLength: products?.length, categoriesLength: categories?.length }); 
   // Removed verbose log to prevent crash on undefined properties
@@ -132,11 +140,13 @@ export function CashierInterface({
   const [customerName, setCustomerName] = useState<string>('');
   const [waiterName, setWaiterName] = useState('');
   const [currentSaleId, setCurrentSaleId] = useState<number | undefined>(undefined); // Track ID of hydrated order
+  const [currentOrderNo, setCurrentOrderNo] = useState<string | undefined>(undefined); // Track Order No
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
   const [isCustomerSearchOpen, setIsCustomerSearchOpen] = useState(false);
   const [isAddonModalOpen, setIsAddonModalOpen] = useState(false);
   const [addonPendingProduct, setAddonPendingProduct] = useState<Product | null>(null);
   const [tempSelectedAddons, setTempSelectedAddons] = useState<Addon[]>([]);
+  const [newOrderModalOpen, setNewOrderModalOpen] = useState(false); // [NEW] State for incoming order modal
 
   // Shift Session State (Managed by Context)
   const { role, loading } = useAuth();
@@ -144,10 +154,40 @@ export function CashierInterface({
   const [sessionModalOpen, setSessionModalOpen] = useState(false);
   const [sessionMode, setSessionMode] = useState<'open' | 'close'>('open');
 
-  // Initial Check
   useEffect(() => {
     checkSession();
   }, []);
+  
+  // [NEW] Handle Auto-Open Payment for in-app orders
+  useEffect(() => {
+    if (orderItems.length > 0) {
+      if (autoOpenPayment && !paymentModalOpen) {
+        console.log('[Cashier] Items detected for auto-payment. Triggering modal in 500ms...');
+        const timer = setTimeout(() => {
+          // Double check status before opening
+          if (autoOpenPayment && orderItems.length > 0) {
+            console.log('[Cashier] Auto-opening payment modal now');
+            setPaymentModalOpen(true);
+            if (onAutoPaymentProcessed) onAutoPaymentProcessed();
+          }
+        }, 500); // 500ms stabilization delay
+        return () => clearTimeout(timer);
+      } else if (autoOpenSaleId && !autoOpenPayment && !newOrderModalOpen && !paymentModalOpen) {
+        // [NEW] Auto-open the review modal instead
+        console.log('[Cashier] Items detected for auto-review. Triggering confirmation modal in 500ms...');
+        const timer = setTimeout(() => {
+          if (autoOpenSaleId && !autoOpenPayment && orderItems.length > 0) {
+            console.log('[Cashier] Auto-opening new order review modal now');
+            setNewOrderModalOpen(true);
+            if (onAutoPaymentProcessed) onAutoPaymentProcessed(); // Clear the flag so it only pops once
+          }
+        }, 500);
+        return () => clearTimeout(timer);
+      }
+    } else if ((autoOpenPayment || autoOpenSaleId) && orderItems.length === 0) {
+      console.log('[Cashier] Auto-action pending... waiting for items to hydrate');
+    }
+  }, [autoOpenPayment, autoOpenSaleId, orderItems.length, paymentModalOpen, newOrderModalOpen, onAutoPaymentProcessed]);
 
   // Enforce Mandatory Session
   useEffect(() => {
@@ -168,7 +208,7 @@ export function CashierInterface({
     if (activeSales) {
       activeSales.forEach(sale => {
         if (sale && ['Unpaid', 'Pending'].includes(sale.status) && sale.tableNo) {
-          occupied.add(sale.tableNo);
+          occupied.add(String(sale.tableNo).trim().toUpperCase());
         }
       });
     }
@@ -245,12 +285,15 @@ export function CashierInterface({
 
   const total = (subtotal - orderDiscount) + taxAmount + serviceAmount;
 
-  // Hydrate order when table is selected
+  // Hydrate order when table or specific sale ID is selected
   useEffect(() => {
-    if (selectedTable && activeSales) {
-      const existingSale = activeSales.find(
-        s => s && (s.status === 'Pending' || s.status === 'Unpaid') && s.tableNo === selectedTable
-      );
+    if ((selectedTable || autoOpenSaleId) && activeSales) {
+      const existingSale = autoOpenSaleId 
+        ? activeSales.find(s => s && s.id === autoOpenSaleId)
+        : activeSales.find(
+          s => s && (s.status === 'Pending' || s.status === 'Unpaid') && 
+              String(s.tableNo || '').trim().toUpperCase() === String(selectedTable || '').trim().toUpperCase()
+        );
 
       if (existingSale) {
         // Reconstruct order items from sale
@@ -277,6 +320,7 @@ export function CashierInterface({
         // If there's a discount, we might need to recalculate or restore it
         setOrderDiscount(existingSale.discount || 0);
         setCurrentSaleId(existingSale.id); // [NEW] Track the ID
+        setCurrentOrderNo(existingSale.orderNo || (existingSale as any).order_no); // Track Order No
       } else {
         // New order for this table
         setOrderItems([]);
@@ -284,9 +328,10 @@ export function CashierInterface({
         setWaiterName('');
         setOrderDiscount(0);
         setCurrentSaleId(undefined); // Reset ID
+        setCurrentOrderNo(undefined);
       }
     }
-  }, [selectedTable, activeSales, products]);
+  }, [selectedTable, autoOpenSaleId, activeSales, products]);
 
   const handleClearTable = (tableNo: string) => {
     const saleToClear = activeSales?.find(
@@ -500,6 +545,7 @@ export function CashierInterface({
 
       onAddSale({
         id: currentSaleId, // Pass the existing ID if available
+        order_no: currentOrderNo, // Pass the existing Order No
         items: itemsToReport.reduce((sum, item) => sum + item.quantity, 0),
         totalAmount: amountToReport,
         paymentMethod: payment.method,
@@ -895,6 +941,19 @@ export function CashierInterface({
           </div>
         </div>
       )}
+
+      {/* [NEW] New Order Review Modal */}
+      <NewOrderModal
+        open={newOrderModalOpen}
+        onOpenChange={setNewOrderModalOpen}
+        orderId={autoOpenSaleId || undefined}
+        tableNo={selectedTable}
+        itemsCount={orderItems.length}
+        onConfirm={() => {
+          setNewOrderModalOpen(false);
+          setPaymentModalOpen(true);
+        }}
+      />
 
       <SplitBillModal
         open={splitBillModalOpen}

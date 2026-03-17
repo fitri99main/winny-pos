@@ -13,7 +13,7 @@ interface SessionGuardContextType {
 const SessionGuardContext = createContext<SessionGuardContextType | undefined>(undefined);
 
 export function SessionGuardProvider({ children }: { children: ReactNode }) {
-    const { user } = useAuth();
+    const { user, permissions } = useAuth();
     const [currentSession, setCurrentSession] = useState<any | null>(null);
     const [requireMandatorySession, setRequireMandatorySession] = useState(true);
 
@@ -24,16 +24,20 @@ export function SessionGuardProvider({ children }: { children: ReactNode }) {
         }
 
         try {
-            // Check if mandatory session is required from settings
+            // 1. Check if mandatory session is required for the ROLE (New feature)
+            const hasRolePermission = permissions.includes('mandatory_session');
+
+            // 2. Check if mandatory session is required globally from settings
             const { data: settings } = await supabase
                 .from('store_settings')
                 .select('require_mandatory_session')
                 .eq('id', 1)
                 .maybeSingle();
 
-            if (settings) {
-                setRequireMandatorySession(settings.require_mandatory_session ?? true);
-            }
+            const globalRequired = settings?.require_mandatory_session ?? true;
+
+            // Enforce if EITHER global is on OR role has specific permission
+            setRequireMandatorySession(globalRequired || hasRolePermission);
 
             // Check for active session
             const { data } = await supabase
