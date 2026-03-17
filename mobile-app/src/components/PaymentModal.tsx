@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Modal, TouchableOpacity, TextInput, ScrollView, StyleSheet, Alert } from 'react-native';
+import { View, Text, Modal, TouchableOpacity, TextInput, ScrollView, StyleSheet, Alert, useWindowDimensions } from 'react-native';
 
 interface PaymentModalProps {
     visible: boolean;
@@ -10,6 +10,10 @@ interface PaymentModalProps {
         amount: number;
         change: number;
     }) => void;
+    onManualItem?: () => void;
+    onDiscount?: () => void;
+    onSplitBill?: () => void;
+    onHold?: () => void;
 }
 
 const PAYMENT_METHODS = [
@@ -18,18 +22,32 @@ const PAYMENT_METHODS = [
     { id: 'credit', name: 'Kredit', icon: '💳', color: '#8b5cf6' },
     { id: 'qris', name: 'QRIS', icon: '📱', color: '#f59e0b' },
     { id: 'transfer', name: 'Transfer', icon: '🏦', color: '#06b6d4' },
+    { id: 'cek', name: 'Cek', icon: '📝', color: '#6366f1' },
 ];
 
-export default function PaymentModal({ visible, onClose, total, onConfirm }: PaymentModalProps) {
+export default function PaymentModal({
+    visible,
+    onClose,
+    total,
+    onConfirm,
+    onManualItem,
+    onDiscount,
+    onSplitBill,
+    onHold
+}: PaymentModalProps) {
+    const { width } = useWindowDimensions();
+    const isSmallDevice = width < 380;
     const [selectedMethod, setSelectedMethod] = useState('cash');
     const [paidAmount, setPaidAmount] = useState('');
     const [change, setChange] = useState(0);
+    const [error, setError] = useState<string | null>(null);
 
     // Calculate change whenever paid amount changes
     useEffect(() => {
         const paid = parseFloat(paidAmount.replace(/,/g, '')) || 0;
         const changeAmount = paid - total;
         setChange(changeAmount >= 0 ? changeAmount : 0);
+        if (error) setError(null); // Clear error when amount changes
     }, [paidAmount, total]);
 
     // Reset when modal opens
@@ -38,6 +56,7 @@ export default function PaymentModal({ visible, onClose, total, onConfirm }: Pay
             setSelectedMethod('cash');
             setPaidAmount('');
             setChange(0);
+            setError(null);
         }
     }, [visible]);
 
@@ -59,7 +78,7 @@ export default function PaymentModal({ visible, onClose, total, onConfirm }: Pay
         const paid = parseFloat(paidAmount.replace(/,/g, '')) || 0;
 
         if (selectedMethod === 'cash' && paid < total) {
-            Alert.alert('Error', 'Jumlah pembayaran kurang dari total');
+            setError('Jumlah pembayaran kurang dari total');
             return;
         }
 
@@ -97,21 +116,57 @@ export default function PaymentModal({ visible, onClose, total, onConfirm }: Pay
                     </View>
 
                     <ScrollView showsVerticalScrollIndicator={false}>
-                        {/* Total */}
-                        <View style={styles.totalSection}>
-                            <Text style={styles.totalLabel}>Total Pembayaran</Text>
-                            <Text style={styles.totalAmount}>{formatCurrency(total)}</Text>
+                    {/* Total */}
+                    <View style={[
+                        styles.totalSection,
+                        isSmallDevice && { padding: 12, margin: 12, marginBottom: 4 }
+                    ]}>
+                        <Text style={styles.totalLabel}>Total Pembayaran</Text>
+                        <Text style={[
+                            styles.totalAmount,
+                            isSmallDevice && { fontSize: 22 }
+                        ]}>{formatCurrency(total)}</Text>
+                    </View>
+
+                        {/* Payment Quick Actions */}
+                        <View style={[
+                            styles.paymentActionsRow,
+                            isSmallDevice && { paddingHorizontal: 12, paddingBottom: 8, gap: 6 }
+                        ]}>
+                            <TouchableOpacity style={styles.payActionBtn} onPress={onManualItem}>
+                                <Text style={[styles.payActionIcon, isSmallDevice && { fontSize: 14 }]}>➕</Text>
+                                <Text style={styles.payActionText}>Manual</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.payActionBtn} onPress={onDiscount}>
+                                <Text style={[styles.payActionIcon, isSmallDevice && { fontSize: 14 }]}>🏷️</Text>
+                                <Text style={styles.payActionText}>Diskon</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.payActionBtn} onPress={onSplitBill}>
+                                <Text style={[styles.payActionIcon, isSmallDevice && { fontSize: 14 }]}>✂️</Text>
+                                <Text style={styles.payActionText}>Split</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.payActionBtn} onPress={onHold}>
+                                <Text style={[styles.payActionIcon, isSmallDevice && { fontSize: 14 }]}>⏸️</Text>
+                                <Text style={styles.payActionText}>Hold</Text>
+                            </TouchableOpacity>
                         </View>
 
                         {/* Payment Methods */}
-                        <View style={styles.section}>
+                        <View style={[
+                            styles.section,
+                            isSmallDevice && { paddingHorizontal: 12 }
+                        ]}>
                             <Text style={styles.sectionTitle}>Metode Pembayaran</Text>
-                            <View style={styles.methodsGrid}>
+                            <View style={[
+                                styles.methodsGrid,
+                                isSmallDevice && { gap: 6 }
+                            ]}>
                                 {PAYMENT_METHODS.map(method => (
                                     <TouchableOpacity
                                         key={method.id}
                                         style={[
                                             styles.methodButton,
+                                            isSmallDevice && { minWidth: '48%', paddingVertical: 8 },
                                             selectedMethod === method.id && {
                                                 backgroundColor: method.color,
                                                 borderColor: method.color
@@ -119,13 +174,15 @@ export default function PaymentModal({ visible, onClose, total, onConfirm }: Pay
                                         ]}
                                         onPress={() => setSelectedMethod(method.id)}
                                     >
-                                        <Text style={styles.methodIcon}>{method.icon}</Text>
-                                        <Text style={[
-                                            styles.methodName,
-                                            selectedMethod === method.id && styles.methodNameActive
-                                        ]}>
-                                            {method.name}
-                                        </Text>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                            <Text style={[styles.methodIcon, isSmallDevice && { fontSize: 18, marginBottom: 0 }]}>{method.icon}</Text>
+                                            <Text style={[
+                                                styles.methodName,
+                                                selectedMethod === method.id && styles.methodNameActive
+                                            ]}>
+                                                {method.name}
+                                            </Text>
+                                        </View>
                                     </TouchableOpacity>
                                 ))}
                             </View>
@@ -159,6 +216,12 @@ export default function PaymentModal({ visible, onClose, total, onConfirm }: Pay
                                     ))}
                                 </View>
 
+                                {error && (
+                                    <View style={styles.errorBanner}>
+                                        <Text style={styles.errorText}>⚠️ {error}</Text>
+                                    </View>
+                                )}
+
                                 {/* Change Display */}
                                 {change > 0 && (
                                     <View style={styles.changeSection}>
@@ -171,14 +234,23 @@ export default function PaymentModal({ visible, onClose, total, onConfirm }: Pay
 
                         {/* Number Pad */}
                         {selectedMethod === 'cash' && (
-                            <View style={styles.numberPad}>
+                            <View style={[
+                                styles.numberPad,
+                                isSmallDevice && { padding: 12, gap: 6 }
+                            ]}>
                                 {['1', '2', '3', '4', '5', '6', '7', '8', '9', '000', '0', '⌫'].map(num => (
                                     <TouchableOpacity
                                         key={num}
-                                        style={styles.numberButton}
+                                        style={[
+                                            styles.numberButton,
+                                            isSmallDevice && { height: 42, borderRadius: 10 }
+                                        ]}
                                         onPress={() => handleNumberPad(num)}
                                     >
-                                        <Text style={styles.numberText}>{num}</Text>
+                                        <Text style={[
+                                            styles.numberText,
+                                            isSmallDevice && { fontSize: 16 }
+                                        ]}>{num}</Text>
                                     </TouchableOpacity>
                                 ))}
                             </View>
@@ -207,25 +279,55 @@ const styles = StyleSheet.create({
     overlay: {
         flex: 1,
         backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        justifyContent: 'flex-end',
+        justifyContent: 'center',
+        padding: 20,
     },
     container: {
         backgroundColor: '#fff',
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
+        borderRadius: 24,
         maxHeight: '90%',
-        paddingBottom: 20,
+        maxWidth: 500,
+        width: '100%',
+        alignSelf: 'center',
+        overflow: 'hidden',
+        paddingBottom: 10,
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: 20,
+        padding: 16,
         borderBottomWidth: 1,
         borderBottomColor: '#f3f4f6',
     },
+    paymentActionsRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        paddingTop: 8,
+        paddingBottom: 12,
+        gap: 8,
+    },
+    payActionBtn: {
+        flex: 1,
+        backgroundColor: '#f8fafc',
+        paddingVertical: 10,
+        borderRadius: 12,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    payActionIcon: {
+        fontSize: 16,
+        marginBottom: 2,
+    },
+    payActionText: {
+        fontSize: 10,
+        fontWeight: 'bold',
+        color: '#64748b',
+    },
     title: {
-        fontSize: 24,
+        fontSize: 20,
         fontWeight: 'bold',
         color: '#111827',
     },
@@ -242,53 +344,55 @@ const styles = StyleSheet.create({
         color: '#6b7280',
     },
     totalSection: {
-        padding: 20,
+        padding: 16,
         backgroundColor: '#f9fafb',
         borderRadius: 16,
-        margin: 20,
-        marginBottom: 10,
+        margin: 16,
+        marginBottom: 8,
+        alignItems: 'center',
     },
     totalLabel: {
-        fontSize: 14,
+        fontSize: 12,
         color: '#6b7280',
-        marginBottom: 4,
+        marginBottom: 2,
     },
     totalAmount: {
-        fontSize: 32,
+        fontSize: 28,
         fontWeight: 'bold',
         color: '#111827',
     },
     section: {
-        padding: 20,
-        paddingTop: 10,
+        paddingHorizontal: 16,
+        paddingBottom: 12,
     },
     sectionTitle: {
-        fontSize: 16,
+        fontSize: 14,
         fontWeight: '600',
         color: '#374151',
-        marginBottom: 12,
+        marginBottom: 8,
     },
     methodsGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        gap: 10,
+        gap: 8,
     },
     methodButton: {
         flex: 1,
         minWidth: '30%',
-        padding: 16,
+        paddingVertical: 10,
+        paddingHorizontal: 8,
         borderRadius: 12,
-        borderWidth: 2,
+        borderWidth: 1.5,
         borderColor: '#e5e7eb',
         backgroundColor: '#fff',
         alignItems: 'center',
     },
     methodIcon: {
-        fontSize: 32,
-        marginBottom: 8,
+        fontSize: 24,
+        marginBottom: 4,
     },
     methodName: {
-        fontSize: 14,
+        fontSize: 12,
         fontWeight: '600',
         color: '#6b7280',
     },
@@ -296,13 +400,13 @@ const styles = StyleSheet.create({
         color: '#fff',
     },
     amountInput: {
-        fontSize: 28,
+        fontSize: 24,
         fontWeight: 'bold',
         color: '#111827',
-        padding: 16,
+        padding: 12,
         borderRadius: 12,
         backgroundColor: '#f9fafb',
-        borderWidth: 2,
+        borderWidth: 1.5,
         borderColor: '#e5e7eb',
         textAlign: 'center',
     },
@@ -347,33 +451,47 @@ const styles = StyleSheet.create({
     numberPad: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        padding: 20,
+        padding: 16,
         paddingTop: 0,
-        gap: 10,
+        gap: 8,
     },
     numberButton: {
-        width: '30%',
-        aspectRatio: 1.5,
+        width: '31%',
+        height: 50,
         borderRadius: 12,
         backgroundColor: '#f3f4f6',
         alignItems: 'center',
         justifyContent: 'center',
     },
     numberText: {
-        fontSize: 24,
+        fontSize: 20,
         fontWeight: '600',
         color: '#374151',
     },
     confirmButton: {
-        margin: 20,
-        marginTop: 0,
-        padding: 18,
+        margin: 16,
+        marginTop: 4,
+        padding: 14,
         borderRadius: 12,
         alignItems: 'center',
     },
     confirmText: {
-        fontSize: 18,
+        fontSize: 16,
         fontWeight: 'bold',
         color: '#fff',
+    },
+    errorBanner: {
+        marginTop: 12,
+        padding: 10,
+        borderRadius: 8,
+        backgroundColor: '#fef2f2',
+        borderWidth: 1,
+        borderColor: '#fee2e2',
+        alignItems: 'center',
+    },
+    errorText: {
+        fontSize: 13,
+        color: '#dc2626',
+        fontWeight: '600',
     },
 });

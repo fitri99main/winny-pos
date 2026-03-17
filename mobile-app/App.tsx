@@ -1,11 +1,13 @@
 import React from 'react';
 import AppNavigator from './src/navigation/AppNavigator';
-
-// Required for NativeWind
-import { withExpoSnack } from 'nativewind';
+import { SessionProvider } from './src/context/SessionContext';
 
 function App() {
-    return <AppNavigator />;
+    return (
+        <SessionProvider>
+            <AppNavigator />
+        </SessionProvider>
+    );
 }
 
-export default App; // withExpoSnack(App) might be needed for Expo Snack, but standard export is fine for CLI
+export default App;

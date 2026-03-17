@@ -1,100 +1,214 @@
 import * as React from 'react';
-import { View, Text, TouchableOpacity, ScrollView, SafeAreaView, StyleSheet, useWindowDimensions, TextInput, ActivityIndicator, Alert, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, SafeAreaView, StyleSheet, useWindowDimensions, TextInput, ActivityIndicator, Alert, Modal, Image, BackHandler } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSession } from '../context/SessionContext';
+import CashierSessionModal from '../components/CashierSessionModal';
+import ConfirmExitModal from '../components/ConfirmExitModal';
+import { Settings, LogOut, Wifi, WifiOff } from 'lucide-react-native';
+import { OfflineService } from '../lib/OfflineService';
 
 export default function HomeScreen() {
     const navigation = useNavigation();
     const { width, height } = useWindowDimensions();
     const isLandscape = width > height;
-    const isTablet = width >= 768 || height >= 768;
-    const isLargeTablet = width >= 1000 || height >= 1000;
+    const isSmallDevice = width < 380;
+    const isTablet = Math.min(width, height) >= 600;
+    const isLargeTablet = Math.min(width, height) >= 800;
 
-    const [tables, setTables] = React.useState<any[]>([]);
     const [loading, setLoading] = React.useState(true);
     const [showOccupiedModal, setShowOccupiedModal] = React.useState(false);
-    const [posFlow, setPosFlow] = React.useState<'table' | 'direct'>('table');
+    const [posFlow, setPosFlow] = React.useState<'direct'>('direct');
+    const { currentSession, isSessionActive, requireMandatorySession, checkSession, isDisplayOnly, loading: sessionLoading, branchName, userName, currentBranchId } = useSession();
+    const [showSessionModal, setShowSessionModal] = React.useState(false);
+    const [showExitModal, setShowExitModal] = React.useState(false);
+    const [showLogoutModal, setShowLogoutModal] = React.useState(false);
+    const [showShiftWarningModal, setShowShiftWarningModal] = React.useState({ visible: false, message: '' });
+    // New Order Notification State (for mobile cashier)
+    const [newOrderNotif, setNewOrderNotif] = React.useState<{ visible: boolean; orderId: number | null; tableNo: string; orderNo: string; itemCount: number }>({ visible: false, orderId: null, tableNo: '', orderNo: '', itemCount: 0 });
+    const lastKnownOrderIdRef = React.useRef<number>(0);
+    const [pendingOrders, setPendingOrders] = React.useState<any[]>([]);
+    const [fetchingPending, setFetchingPending] = React.useState(false);
+    const [isOnline, setIsOnline] = React.useState(true);
+    const [isManualOffline, setIsManualOffline] = React.useState(false);
 
     useFocusEffect(
         React.useCallback(() => {
-            fetchTables();
-            loadSettings();
-        }, [])
+            const onBackPress = () => {
+                if (isSessionActive && requireMandatorySession) {
+                    setShowShiftWarningModal({ visible: true, message: 'Anda harus menutup shift kasir terlebih dahulu sebelum keluar aplikasi.' });
+                    return true;
+                }
+                setShowExitModal(true);
+                return true;
+            };
+
+            const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+            // checkSession(); // Removed redundant call to prevent constant "Memuat Sesi" screens
+
+            return () => subscription.remove();
+        }, [isSessionActive, requireMandatorySession])
     );
 
-    const loadSettings = async () => {
-        try {
-            const savedFlow = await AsyncStorage.getItem('pos_flow');
-            if (savedFlow) {
-                setPosFlow(savedFlow as 'table' | 'direct');
-            } else {
-                setPosFlow('table');
+    React.useEffect(() => {
+        if (!sessionLoading) {
+            console.log('[HomeScreen] Session State Check:', {
+                isSessionActive,
+                requireMandatorySession,
+                isDisplayOnly,
+                showSessionModal
+            });
+
+            // Only show modal if session is not active AND it's required AND it's NOT a display-only role
+            if (!isSessionActive && requireMandatorySession && !isDisplayOnly) {
+                setShowSessionModal(true);
             }
-        } catch (e) {
-            console.error('Error loading settings:', e);
+            if (!isDisplayOnly && currentBranchId) {
+                fetchPendingOrders();
+            }
+        }
+    }, [isSessionActive, requireMandatorySession, isDisplayOnly, sessionLoading, currentBranchId]);
+
+    const fetchPendingOrders = async () => {
+        if (!currentBranchId) return;
+        try {
+            setFetchingPending(true);
+            const { data, error } = await supabase
+                .from('sales')
+                .select('*')
+                .eq('branch_id', parseInt(currentBranchId))
+                .in('status', ['Pending', 'Unpaid'])
+                .order('date', { ascending: false });
+
+            if (error) throw error;
+            setPendingOrders(data || []);
+
+            // Update lastKnownOrderId to avoid duplicate notifications for existing items
+            if (data && data.length > 0) {
+                const maxId = Math.max(...data.map((o: any) => o.id));
+                if (maxId > lastKnownOrderIdRef.current) {
+                    lastKnownOrderIdRef.current = maxId;
+                }
+            }
+        } catch (err) {
+            console.error('[HomeScreen] Fetch Pending Error:', err);
+        } finally {
+            setFetchingPending(false);
         }
     };
 
-    const fetchTables = async () => {
-        try {
-            setLoading(true);
-            // Pangeran Natakusuma Branch ID = 7
-            const PANGERAN_NATAKUSUMA_ID = 7;
 
-            const { data, error } = await supabase
-                .from('tables')
-                .select('*')
-                .eq('branch_id', PANGERAN_NATAKUSUMA_ID)
-                .order('number', { ascending: true });
+    React.useEffect(() => {
+        const checkConn = async () => {
+            const forced = await OfflineService.getForcedOfflineMode();
+            setIsManualOffline(forced);
 
-            if (error) throw error;
+            if (forced) {
+                setIsOnline(false);
+            } else {
+                const online = await OfflineService.checkConnectivity();
+                setIsOnline(online);
+            }
+        };
+        checkConn();
+        const interval = setInterval(checkConn, 15000); // Check every 15s
+        return () => clearInterval(interval);
+    }, []);
 
-            console.log('Tables fetched:', data);
-            setTables(data || []);
-        } catch (error) {
-            console.error('Error fetching tables:', error);
-        } finally {
-            setLoading(false);
-        }
+    // Real-time Monitor + New Order Notification for Cashier
+    React.useEffect(() => {
+        if (!currentBranchId) return;
+
+        const branchIdInt = parseInt(currentBranchId);
+
+        // ─── 1. New Pending INSERT → Popup notification (cashier only) ────────
+        const newOrderChannel = supabase
+            .channel(`new_orders_notify_${currentBranchId}`)
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'sales' },
+                async (payload: any) => {
+                    if (isDisplayOnly) return; // Only for cashier
+                    const newRow = payload.new as any;
+                    if (!newRow || Number(newRow.branch_id) !== branchIdInt) return;
+                    if (newRow.status !== 'Pending' && newRow.status !== 'Unpaid') return;
+                    if (newRow.id <= lastKnownOrderIdRef.current) return;
+
+                    console.log('[HomeScreen] New Pending/Unpaid order detected, AUTO-NAVIGATING:', newRow.id);
+                    lastKnownOrderIdRef.current = newRow.id;
+
+                    // Show popup with option to open
+                    setNewOrderNotif({
+                        visible: true,
+                        orderId: newRow.id,
+                        tableNo: newRow.table_no || 'Tanpa Meja',
+                        orderNo: newRow.order_no || String(newRow.id),
+                        itemCount: 0,
+                    });
+                }
+            )
+            .subscribe();
+
+        // ─── 2. Full Sync channel (KDS style) ──────────────────────────────────
+        const syncChannel = supabase
+            .channel(`pending_sync_${currentBranchId}`)
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'sales', filter: `branch_id=eq.${branchIdInt}` },
+                () => {
+                    fetchPendingOrders();
+                }
+            )
+            .subscribe();
+
+        // ─── 3. Settings channel ───────────────────────────────────────────────
+        const settingsChannel = supabase
+            .channel('silent_sync_settings')
+            .on(
+                'postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'store_settings', filter: 'id=eq.1' },
+                () => {
+                    console.log('[HomeScreen] Settings changed, refreshing...');
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(newOrderChannel);
+            supabase.removeChannel(syncChannel);
+            supabase.removeChannel(settingsChannel);
+        };
+    }, [currentBranchId, isDisplayOnly]);
+
+    const openNewOrder = (orderId: number) => {
+        setNewOrderNotif(prev => ({ ...prev, visible: false }));
+        // @ts-ignore
+        navigation.navigate('POS', { orderId, tableNumber: 'Tanpa Meja' });
     };
 
     const handleLogout = () => {
-        Alert.alert(
-            "Konfirmasi Keluar",
-            "Apakah Anda yakin ingin kembali ke halaman login?",
-            [
-                { text: "Batal", style: "cancel" },
-                {
-                    text: "Keluar",
-                    style: "destructive",
-                    onPress: () => {
-                        // @ts-ignore
-                        navigation.reset({
-                            index: 0,
-                            routes: [{ name: 'Login' }],
-                        });
-                    }
-                }
-            ]
-        );
-    };
-
-    const handleTablePress = (table: any) => {
-        if (table.status === 'Occupied') {
-            setShowOccupiedModal(true);
+        if (isSessionActive && requireMandatorySession) {
+            setShowShiftWarningModal({ visible: true, message: 'Anda harus menutup shift kasir terlebih dahulu sebelum keluar akun.' });
             return;
         }
+        setShowLogoutModal(true);
+    };
 
+    const confirmLogout = () => {
+        setShowLogoutModal(false);
         // @ts-ignore
-        navigation.navigate('POS', {
-            tableId: table.id,
-            tableNumber: table.number,
-            waiterName: ''
+        navigation.reset({
+            index: 0,
+            routes: [{ name: 'Login' } as never],
         });
     };
 
     const handleDirectMenu = () => {
+        if (!isSessionActive && requireMandatorySession && !isDisplayOnly) {
+            setShowSessionModal(true);
+            return;
+        }
         // @ts-ignore
         navigation.navigate('POS', {
             tableId: null,
@@ -102,14 +216,172 @@ export default function HomeScreen() {
             waiterName: ''
         });
     };
+    const renderHeader = () => (
+        <View style={[
+            styles.header,
+            isTablet && styles.tabletHeader,
+            isSmallDevice && { padding: 12, paddingBottom: 16 },
+            { backgroundColor: 'transparent', elevation: 0, shadowOpacity: 0 }
+        ]}>
+            <View style={[
+                styles.headerRow,
+                isSmallDevice && { flexDirection: 'column', alignItems: 'flex-start' }
+            ]}>
+                <View style={[
+                    isSmallDevice && { width: '100%', marginBottom: 16 }
+                ]}>
+                    <Text style={[
+                        styles.greeting,
+                        isTablet && styles.tabletGreeting,
+                        isSmallDevice && { fontSize: 11 },
+                        { color: '#e5e7eb', marginBottom: 4 }
+                    ]}>Selamat Datang di</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: isSmallDevice ? '100%' : 'auto' }}>
+                        <View style={[
+                            styles.branchContainer,
+                            isSmallDevice && { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, marginBottom: 0 }
+                        ]}>
+                            <Text style={[
+                                styles.username,
+                                isTablet && styles.tabletUsername,
+                                isSmallDevice && { fontSize: 14 },
+                                styles.premiumText
+                            ]}>{branchName}</Text>
+                        </View>
 
-    const handleMenuPress = (route: string) => {
-        // @ts-ignore
-        navigation.navigate(route);
-    };
+                        {/* Connection Indicator */}
+                        <View style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            marginLeft: 8,
+                            backgroundColor: isOnline ? '#22c55e15' : '#ef444415',
+                            paddingHorizontal: 6,
+                            paddingVertical: 1,
+                            borderRadius: 6,
+                            borderWidth: 0.5,
+                            borderColor: isOnline ? '#22c55e40' : '#ef444440'
+                        }}>
+                            <View style={{
+                                width: 4,
+                                height: 4,
+                                borderRadius: 2,
+                                backgroundColor: isOnline ? '#22c55e' : '#ef4444',
+                                marginRight: 4
+                            }} />
+                            <Text style={{
+                                fontSize: 8,
+                                fontWeight: '700',
+                                color: isOnline ? '#16a34a' : '#dc2626',
+                                letterSpacing: 0.5
+                            }}>
+                                {isManualOffline ? 'OFF_M' : (isOnline ? 'ONLINE' : 'OFFLINE')}
+                            </Text>
+                        </View>
+                    </View>
+
+                    {/* Session Status Banner */}
+                    <View style={[styles.sessionBanner, isSmallDevice && { marginTop: 8 }]}>
+                        <View style={[styles.statusDot, { backgroundColor: isSessionActive ? '#22c55e' : '#ef4444' }]} />
+                        <Text style={styles.sessionStatusText}>
+                            {isSessionActive ? `Shift Aktif: ${userName}` : 'Shift Tutup'}
+                            {isSmallDevice ? '' : (requireMandatorySession ? ' (Wajib)' : ' (Opsional)')}
+                        </Text>
+                    </View>
+                </View>
+
+                {/* Utility Buttons Row */}
+                <View style={[
+                    { flexDirection: 'row', gap: isSmallDevice ? 8 : 12 },
+                    isSmallDevice && { width: '100%', justifyContent: 'space-between' }
+                ]}>
+                    {!isDisplayOnly && (
+                        <>
+                            <TouchableOpacity
+                                style={[
+                                    styles.logoutButton,
+                                    { backgroundColor: 'rgba(255,255,255,0.2)' },
+                                    isSmallDevice && { width: 42, height: 42, borderRadius: 12 }
+                                ]}
+                                onPress={() => navigation.navigate('History' as never)}
+                            >
+                                <Text style={[styles.logoutButtonIcon, isSmallDevice && { fontSize: 18 }]}>🕒</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[
+                                    styles.logoutButton, 
+                                    { backgroundColor: 'rgba(255,255,255,0.2)' },
+                                    isSmallDevice && { width: 42, height: 42, borderRadius: 12 }
+                                ]}
+                                onPress={() => navigation.navigate('CashierSessionHistory' as never)}
+                            >
+                                <Text style={[styles.logoutButtonIcon, isSmallDevice && { fontSize: 18 }]}>🏪</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[
+                                    styles.logoutButton, 
+                                    { backgroundColor: 'rgba(255,255,255,0.2)' },
+                                    isSmallDevice && { width: 42, height: 42, borderRadius: 12 }
+                                ]}
+                                onPress={() => navigation.navigate('Accounting' as never)}
+                            >
+                                <Text style={[styles.logoutButtonIcon, isSmallDevice && { fontSize: 18 }]}>📊</Text>
+                            </TouchableOpacity>
+                        </>
+                    )}
+                    <TouchableOpacity
+                        style={[
+                            styles.logoutButton,
+                            { backgroundColor: 'rgba(255,255,255,0.2)' },
+                            isSmallDevice && { width: 42, height: 42, borderRadius: 12 }
+                        ]}
+                        onPress={() => navigation.navigate('Settings' as never)}
+                    >
+                        <Text style={[styles.logoutButtonIcon, isSmallDevice && { fontSize: 18 }]}>⚙️</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[
+                            styles.logoutButton,
+                            { backgroundColor: 'rgba(239, 68, 68, 0.4)' },
+                            isSmallDevice && { width: 42, height: 42, borderRadius: 12 }
+                        ]}
+                        onPress={handleLogout}
+                    >
+                        <Text style={[styles.logoutButtonIcon, isSmallDevice && { fontSize: 18 }]}>🔌</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+
+            <TouchableOpacity
+                style={[
+                    styles.directMenuButton,
+                    isSmallDevice && { padding: 12, borderRadius: 16, marginTop: 12 }
+                ]}
+                onPress={handleDirectMenu}
+            >
+                <Text style={[styles.directMenuIcon, isSmallDevice && { fontSize: 20 }]}>🛒</Text>
+                <Text style={[styles.directMenuText, isSmallDevice && { fontSize: 13, marginLeft: 8 }]}>Buka POS / Order Baru</Text>
+            </TouchableOpacity>
+        </View>
+    );
+
+    if (sessionLoading) {
+        return (
+            <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+                <ActivityIndicator size="large" color="#ea580c" />
+                <Text style={{ marginTop: 12, color: '#64748b', fontWeight: 'bold' }}>Memuat Sesi...</Text>
+            </SafeAreaView>
+        );
+    }
 
     return (
         <SafeAreaView style={styles.container}>
+            {/* Background Watermark */}
+            <Image
+                source={require('../../assets/cafe-bg.jpg')}
+                style={styles.watermarkBg}
+                resizeMode="cover"
+            />
+
             <View style={styles.flex1}>
                 <ScrollView
                     style={styles.flex1}
@@ -118,130 +390,216 @@ export default function HomeScreen() {
                         isLandscape && { paddingHorizontal: isLargeTablet ? 80 : 40 }
                     ]}
                 >
-                    {/* Header */}
-                    <View style={[styles.header, isTablet && styles.tabletHeader]}>
-                        <View style={styles.headerRow}>
-                            <View>
-                                <Text style={[styles.greeting, isTablet && styles.tabletGreeting]}>Selamat Datang di</Text>
-                                <Text style={[styles.username, isTablet && styles.tabletUsername]}>Winny PNK</Text>
+                    {renderHeader()}
+
+                    {/* Pending Orders Section (Restored) */}
+                    {!isDisplayOnly && pendingOrders.length > 0 && (
+                        <View style={[styles.menuSection, isSmallDevice ? { marginTop: -10, paddingHorizontal: 12 } : { marginTop: -15 }]}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                <Text style={[styles.sectionTitle, { color: 'white', marginBottom: 0 }]}>Pesanan Menunggu ({pendingOrders.length})</Text>
+                                {fetchingPending && <ActivityIndicator size="small" color="white" />}
                             </View>
-                            <View style={{ flexDirection: 'row', gap: 12 }}>
-                                <TouchableOpacity
-                                    style={[styles.logoutButton, { backgroundColor: '#f3f4f6' }]}
-                                    onPress={() => navigation.navigate('Settings' as any)}
-                                >
-                                    <Text style={styles.logoutButtonIcon}>⚙️</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={styles.logoutButton}
-                                    onPress={handleLogout}
-                                >
-                                    <Text style={styles.logoutButtonIcon}>🔌</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-
-                        {posFlow === 'direct' && (
-                            <TouchableOpacity
-                                style={styles.directMenuButton}
-                                onPress={handleDirectMenu}
-                            >
-                                <Text style={styles.directMenuIcon}>🛒</Text>
-                                <Text style={styles.directMenuText}>Langsung ke Daftar Menu</Text>
-                            </TouchableOpacity>
-                        )}
-                    </View>
-
-                    {/* Table Selection Grid */}
-                    <View style={[styles.menuSection, isTablet && styles.tabletMenuSection]}>
-                        <View style={styles.sectionHeader}>
-                            <Text style={[styles.sectionTitle, isTablet && styles.tabletSectionTitle]}>Pilih Meja</Text>
-                            {loading && <ActivityIndicator color="#2563eb" />}
-                        </View>
-
-                        <View style={styles.menuGrid}>
-                            {tables.map((table) => {
-                                // Dynamic width: 3 columns for portrait, ~4-5 for mobile landscape, ~6-7 for tablet landscape
-                                const cardWidth = isLandscape
-                                    ? (isLargeTablet ? '15%' : (isTablet ? '23%' : '23%'))
-                                    : '31.3%';
-
-                                return (
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 20 }}>
+                                {pendingOrders.map((order) => (
                                     <TouchableOpacity
-                                        key={table.id}
-                                        style={[
-                                            styles.tableCard,
-                                            isTablet && styles.tabletTableCard,
-                                            { width: cardWidth },
-                                            table.status === 'Occupied' && styles.tableCardOccupied
-                                        ]}
-                                        activeOpacity={0.8}
-                                        onPress={() => handleTablePress(table)}
+                                        key={order.id}
+                                        style={{
+                                            backgroundColor: 'white',
+                                            padding: 16,
+                                            borderRadius: 20,
+                                            marginRight: 12,
+                                            width: 180,
+                                            borderLeftWidth: 6,
+                                            borderLeftColor: '#ea580c',
+                                            shadowColor: '#000',
+                                            shadowOffset: { width: 0, height: 4 },
+                                            shadowOpacity: 0.1,
+                                            shadowRadius: 6,
+                                            elevation: 3
+                                        }}
+                                        onPress={() => openNewOrder(order.id)}
                                     >
-                                        <View style={styles.cardHeaderRow}>
-                                            <Text style={[styles.tableNumber, isTablet && styles.tabletTableNumber]}>
-                                                {table.number}
+                                        <Text style={{ fontWeight: '900', fontSize: 16, color: '#1e293b', marginBottom: 2 }}>
+                                            #{order.order_no.split('-').pop()}
+                                        </Text>
+                                        <Text style={{ fontSize: 13, color: '#64748b', marginBottom: 4 }}>
+                                            {order.table_no && order.table_no !== 'Tanpa Meja' ? `🪑 Meja ${order.table_no}` : '🛍️ Take Away'}
+                                        </Text>
+                                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <Text style={{ fontSize: 11, color: '#94a3b8' }}>
+                                                {new Date(order.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                             </Text>
-                                            <View style={[
-                                                styles.statusBadge,
-                                                { backgroundColor: table.status === 'Occupied' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(34, 197, 94, 0.1)' }
-                                            ]}>
-                                                <Text style={[styles.statusIcon, { color: table.status === 'Occupied' ? '#ef4444' : '#22c55e' }]}>
-                                                    {table.status === 'Occupied' ? '🔴' : '🟢'}
-                                                </Text>
-                                            </View>
-                                        </View>
-
-                                        <View style={styles.cardInfoRow}>
-                                            <Text style={styles.capacityText}>👤 {table.capacity || 4} Kursi</Text>
-                                        </View>
-
-                                        <View style={styles.cardFooterRow}>
-                                            <View style={[
-                                                styles.pillBadge,
-                                                { backgroundColor: table.status === 'Occupied' ? '#ef4444' : '#22c55e' }
-                                            ]}>
-                                                <Text style={styles.pillBadgeText}>
-                                                    {table.status === 'Occupied' ? 'TERISI' : 'TERSEDIA'}
-                                                </Text>
-                                            </View>
-                                            {table.status === 'Occupied' && (
-                                                <Text style={styles.tableTime}>⌛ 1j 20m</Text>
-                                            )}
+                                            <Text style={{ fontSize: 11, color: '#ea580c', fontWeight: 'bold' }}>Lihat →</Text>
                                         </View>
                                     </TouchableOpacity>
-                                );
-                            })}
+                                ))}
+                            </ScrollView>
                         </View>
-                    </View>
+                    )}
+
+                    {/* Summary Status Section */}
+
+
+                    {/* Table Selection Grid */}
+
+                    {/* Monitor Produksi (KDS) - Hidden for User Display */}
+                    {!isDisplayOnly && (
+                        <View style={[
+                            styles.menuSection,
+                            isTablet && styles.tabletMenuSection,
+                            isSmallDevice && { padding: 12 }
+                        ]}>
+                            <Text style={[
+                                styles.sectionTitle,
+                                isTablet && styles.tabletSectionTitle,
+                                isSmallDevice && { fontSize: 12 },
+                                { color: 'white' }
+                            ]}>Monitor Produksi</Text>
+                            <View style={[
+                                styles.menuGrid,
+                                isSmallDevice && { gap: 8 }
+                            ]}>
+                                <TouchableOpacity
+                                    style={[
+                                        styles.kdsButton,
+                                        { backgroundColor: '#ea580c' },
+                                        isSmallDevice && { padding: 12, borderRadius: 16 }
+                                    ]}
+                                    onPress={() => navigation.navigate('KDS' as never)}
+                                >
+                                    <Text style={[
+                                        styles.kdsIcon,
+                                        isSmallDevice && { fontSize: 20 }
+                                    ]}>👨‍🍳</Text>
+                                    <View>
+                                        <Text style={[
+                                            styles.kdsTitle,
+                                            isSmallDevice && { fontSize: 13 }
+                                        ]}>Dapur</Text>
+                                        <Text style={[
+                                            styles.kdsSub,
+                                            isSmallDevice && { fontSize: 9 }
+                                        ]}>Makanan</Text>
+                                    </View>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={[
+                                        styles.kdsButton,
+                                        { backgroundColor: '#2563eb' },
+                                        isSmallDevice && { padding: 12, borderRadius: 16 }
+                                    ]}
+                                    onPress={() => navigation.navigate('KDS' as never)}
+                                >
+                                    <Text style={[
+                                        styles.kdsIcon,
+                                        isSmallDevice && { fontSize: 20 }
+                                    ]}>☕</Text>
+                                    <View>
+                                        <Text style={[
+                                            styles.kdsTitle,
+                                            isSmallDevice && { fontSize: 13 }
+                                        ]}>Bar</Text>
+                                        <Text style={[
+                                            styles.kdsSub,
+                                            isSmallDevice && { fontSize: 9 }
+                                        ]}>Minuman</Text>
+                                    </View>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    )}
                 </ScrollView>
             </View>
 
-            {/* Modern Occupied Table Modal */}
+
+            {/* Shift Warning Modal */}
+            <ConfirmExitModal
+                visible={showShiftWarningModal.visible}
+                onClose={() => setShowShiftWarningModal({ visible: false, message: '' })}
+                onConfirm={() => setShowShiftWarningModal({ visible: false, message: '' })}
+                title="Gagal Keluar"
+                message={showShiftWarningModal.message}
+                confirmText="Mengerti"
+                iconType="alert"
+                showCancel={false}
+            />
+
+            <ConfirmExitModal
+                visible={showExitModal}
+                onClose={() => setShowExitModal(false)}
+                onConfirm={() => BackHandler.exitApp()}
+                title="Konfirmasi Keluar"
+                message="Apakah Anda yakin ingin keluar dari aplikasi?"
+                confirmText="Keluar"
+                iconType="alert"
+            />
+
+            {/* Logout Modal */}
+            <ConfirmExitModal
+                visible={showLogoutModal}
+                onClose={() => setShowLogoutModal(false)}
+                onConfirm={confirmLogout}
+                title="Keluar Sesi Kasir"
+                message="Apakah Anda yakin ingin kembali ke halaman login?"
+                confirmText="Keluar"
+                iconType="logout"
+            />
+
+            <CashierSessionModal
+                visible={showSessionModal}
+                onClose={() => setShowSessionModal(false)}
+                mode="open"
+                onComplete={checkSession}
+            />
+
+            {/* New Order Notification Modal — auto-navigates to POS */}
             <Modal
-                visible={showOccupiedModal}
+                visible={newOrderNotif.visible}
                 transparent={true}
-                animationType="fade"
-                onRequestClose={() => setShowOccupiedModal(false)}
+                animationType="slide"
+                onRequestClose={() => setNewOrderNotif(prev => ({ ...prev, visible: false }))}
             >
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modernModalContent}>
-                        <View style={styles.modalIconContainer}>
-                            <Text style={styles.modalIcon}>🚫</Text>
-                        </View>
-                        <Text style={styles.modalTitle}>Meja Sedang Terisi</Text>
-                        <Text style={styles.modalDescription}>
-                            Maaf, meja ini sedang digunakan oleh pelanggan lain. Silakan pilih meja lain yang masih tersedia (berwarna hijau).
+                <View style={[styles.modalOverlay]}>
+                    <View style={{
+                        backgroundColor: 'white',
+                        borderRadius: 24,
+                        padding: 24,
+                        borderTopWidth: 5,
+                        borderTopColor: '#ea580c',
+                        alignItems: 'center',
+                        width: '90%',
+                        maxWidth: 400,
+                    }}>
+                        <Text style={{ fontSize: 32, marginBottom: 8 }}>🔔</Text>
+                        <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#1e293b', marginBottom: 4 }}>
+                            Pesanan Baru Masuk!
                         </Text>
+                        <Text style={{ color: '#64748b', fontSize: 13, marginBottom: 16, textAlign: 'center' }}>
+                            {newOrderNotif.tableNo && newOrderNotif.tableNo !== 'Tanpa Meja'
+                                ? `🪑 Meja ${newOrderNotif.tableNo}`
+                                : '🛍️ Take Away'
+                            } — #{newOrderNotif.orderNo}
+                        </Text>
+
+
                         <TouchableOpacity
-                            style={styles.modalCloseButton}
-                            onPress={() => setShowOccupiedModal(false)}
+                            style={{ backgroundColor: '#ea580c', paddingVertical: 14, paddingHorizontal: 40, borderRadius: 14, width: '100%', alignItems: 'center', marginBottom: 10 }}
+                            onPress={() => openNewOrder(newOrderNotif.orderId!)}
                         >
-                            <Text style={styles.modalCloseButtonText}>Saya Mengerti</Text>
+                            <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>Buka Sekarang 🚀</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={{ padding: 12 }}
+                            onPress={() => setNewOrderNotif(prev => ({ ...prev, visible: false }))}
+                        >
+                            <Text style={{ color: '#9ca3af', fontWeight: 'bold' }}>Abaikan</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
             </Modal>
+
         </SafeAreaView>
     );
 }
@@ -254,17 +612,20 @@ const styles = StyleSheet.create({
     flex1: {
         flex: 1,
     },
+    watermarkBg: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        opacity: 0.05,
+        width: '100%',
+        height: '100%',
+    },
     header: {
-        backgroundColor: '#d9c3a3',
+        backgroundColor: 'transparent',
         padding: 20,
-        paddingBottom: 24,
-        borderBottomLeftRadius: 30,
-        borderBottomRightRadius: 30,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.08,
-        shadowRadius: 15,
-        elevation: 5,
+        paddingBottom: 20,
     },
     headerRow: {
         flexDirection: 'row',
@@ -278,21 +639,64 @@ const styles = StyleSheet.create({
         fontWeight: '500',
     },
     username: {
-        fontSize: 18,
+        fontSize: 20,
+        fontWeight: '900',
+        color: 'white',
+        letterSpacing: 0.5,
+    },
+    branchContainer: {
+        backgroundColor: 'rgba(255, 255, 255, 0.15)',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.3)',
+        alignSelf: 'flex-start',
+        marginBottom: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
+    },
+    premiumText: {
+        textShadowColor: 'rgba(0, 0, 0, 0.3)',
+        textShadowOffset: { width: 0, height: 2 },
+        textShadowRadius: 4,
+    },
+    sessionBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 4,
+        gap: 6,
+        backgroundColor: 'rgba(0,0,0,0.2)',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 20,
+        alignSelf: 'flex-start',
+    },
+    statusDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+    },
+    sessionStatusText: {
+        color: '#f3f4f6',
+        fontSize: 10,
         fontWeight: 'bold',
-        color: '#1f2937',
+        letterSpacing: 0.3,
     },
     logoutButton: {
-        backgroundColor: '#8b4513', // SaddleBrown color
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         alignItems: 'center',
         justifyContent: 'center',
-        opacity: 0.6, // Low opacity to blend in
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.2)',
     },
     logoutButtonIcon: {
-        fontSize: 18,
+        fontSize: 20,
     },
     locationContainer: {
         flexDirection: 'row',
@@ -364,7 +768,7 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: 'bold',
         color: '#1f2937',
-        marginBottom: 12,
+        marginBottom: 8,
         textTransform: 'uppercase',
         letterSpacing: 1,
     },
@@ -393,7 +797,7 @@ const styles = StyleSheet.create({
     tableCardOccupied: {
         borderColor: '#fecaca',
         backgroundColor: '#fef2f2',
-        opacity: 0.7, // Dimmed to show it's unavailable/disabled
+        opacity: 0.7,
     },
     cardHeaderRow: {
         flexDirection: 'row',
@@ -626,6 +1030,7 @@ const styles = StyleSheet.create({
     },
     tabletMenuTitle: {
         fontSize: 18,
+        textAlign: 'center',
     },
     tabletActivitySection: {
         paddingHorizontal: 40,
@@ -735,6 +1140,75 @@ const styles = StyleSheet.create({
         marginRight: 12,
     },
     directMenuText: {
+        color: 'white',
+        fontSize: 16,
+        fontWeight: 'bold',
+        marginLeft: 12,
+    },
+    kdsButton: {
+        width: '48.5%',
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 16,
+        borderRadius: 20,
+        marginBottom: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
+        elevation: 4,
+    },
+    kdsIcon: {
+        fontSize: 24,
+        marginRight: 12,
+    },
+    kdsTitle: {
+        color: 'white',
+        fontSize: 14,
+        fontWeight: 'bold',
+    },
+    kdsSub: {
+        color: 'rgba(255,255,255,0.7)',
+        fontSize: 10,
+    },
+    modalContent: {
+        backgroundColor: 'white',
+        borderRadius: 24,
+        padding: 20,
+        width: '90%',
+        maxWidth: 400,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.1,
+        shadowRadius: 20,
+        elevation: 10,
+    },
+    successIconCircle: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: '#f0fdf4',
+        borderWidth: 2,
+        borderColor: '#22c55e',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 16,
+    },
+    successTitleText: {
+        fontSize: 22,
+        fontWeight: 'bold',
+        color: '#1f2937',
+        textAlign: 'center',
+    },
+    modalButton: {
+        width: '100%',
+        paddingVertical: 14,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#22c55e',
+    },
+    confirmButtonText: {
         color: 'white',
         fontSize: 16,
         fontWeight: 'bold',
