@@ -27,16 +27,21 @@
         "BLUETOOTH_ADMIN",
         "BLUETOOTH_SCAN",
         "BLUETOOTH_CONNECT",
-        "ACCESS_FINE_LOCATION"
+        "ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT"
       ]
     },
     "plugins": [
-      "./plugins/withKotlinBypass",
       [
         "expo-build-properties",
         {
           "android": {
-            "jvmToolchain": 17
+            "jvmToolchain": 17,
+            "kotlinVersion": "2.0.21"
           }
         }
       ],
@@ -65,8 +70,9 @@
     },
     "extra": {
       "eas": {
-        "projectId": "db8cdbb8-6add-43fa-9eb3-e3bc6be68831"
+        "projectId": "4f9fa82d-0d4d-468a-969c-b0ac2e64de8c"
       }
-    }
+    },
+    "owner": "sauqi99"
   }
 }

@@ -1,0 +1,81 @@
+﻿env: load .env
+env: export EXPO_PUBLIC_SUPABASE_ANON_KEY EXPO_PUBLIC_SUPABASE_URL
+Running 17 checks on your project...
+15/17 checks passed. 2 checks failed. Possible issues detected:
+Use the --verbose flag to see more details about passed checks.
+
+Γ£û Check that no duplicate dependencies are installed
+Your project contains duplicate native module dependencies, which should be de-duplicated.
+Native builds may only contain one version of any given native module, and having multiple versions of a single Native module installed may lead to unexpected build errors.
+Found duplicates for expo-asset:
+  Γö£ΓöÇ expo-asset@55.0.8 (at: node_modules\expo-asset)
+  ΓööΓöÇ expo-asset@12.0.12 (at: node_modules\expo\node_modules\expo-asset)
+Found duplicates for expo-constants:
+  Γö£ΓöÇ expo-constants@55.0.7 (at: node_modules\expo-constants)
+  ΓööΓöÇ expo-constants@18.0.13 (at: node_modules\expo\node_modules\expo-constants)
+Advice:
+Resolve your dependency issues and deduplicate your dependencies. Learn more: https://expo.fyi/resolving-dependency-issues
+
+Γ£û Check that packages match versions required by installed Expo SDK
+
+Γ¥ù Major version mismatches
+package                expected  found    
+@expo/metro-runtime    ~6.1.2    55.0.6   
+babel-preset-expo      ~54.0.10  55.0.11  
+expo-asset             ~12.0.12  55.0.8   
+node.exe : 2 checks 
+failed, indicating 
+possible issues with 
+the project.
+At line:1 char:1
++ & "C:\Program Files\
+nodejs/node.exe" 
+"C:\Program 
+Files\nodejs/node_mo 
+...
++ ~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~
+    + CategoryInfo    
+          : NotSpeci  
+  fied: (2 checks f   
+ ailed...th the pr    
+oject.:String) []    
+, RemoteException
+    + FullyQualifiedE 
+   rrorId : NativeCo  
+  mmandError
+ 
+expo-build-properties  ~1.0.10   55.0.9   
+expo-camera            ~17.0.10  55.0.9   
+expo-constants         ~18.0.13  55.0.7   
+expo-dev-client        ~6.0.20   55.0.16  
+expo-image-picker      ~17.0.10  55.0.12  
+expo-location          ~19.0.8   55.1.2   
+expo-status-bar        ~3.0.9    55.0.4   
+
+ΓÜá∩╕Å Minor version mismatches
+package                expected  found    
+@types/react           ~19.1.10  19.2.14  
+react                  19.1.0    19.2.0   
+react-dom              19.1.0    19.2.0   
+react-native           0.81.5    0.83.2   
+react-native-screens   ~4.16.0   4.23.0   
+react-native-svg       15.12.1   15.15.3  
+
+Changelogs:
+- expo-asset ΓåÆ https://github.com/expo/expo/blob/sdk-54/packages/expo-asset/CHANGELOG.md
+- expo-build-properties ΓåÆ https://github.com/expo/expo/blob/sdk-54/packages/expo-build-properties/CHANGELOG.md
+- expo-camera ΓåÆ https://github.com/expo/expo/blob/sdk-54/packages/expo-camera/CHANGELOG.md
+- expo-constants ΓåÆ https://github.com/expo/expo/blob/sdk-54/packages/expo-constants/CHANGELOG.md
+- expo-dev-client ΓåÆ https://github.com/expo/expo/blob/sdk-54/packages/expo-dev-client/CHANGELOG.md
+- expo-image-picker ΓåÆ https://github.com/expo/expo/blob/sdk-54/packages/expo-image-picker/CHANGELOG.md
+- expo-location ΓåÆ https://github.com/expo/expo/blob/sdk-54/packages/expo-location/CHANGELOG.md
+- expo-status-bar ΓåÆ https://github.com/expo/expo/blob/sdk-54/packages/expo-status-bar/CHANGELOG.md
+
+16 packages out of date.
+Advice:
+Use 'npx expo install --check' to review and upgrade your dependencies.
+To ignore specific packages, add them to "expo.install.exclude" in package.json. Learn more: https://expo.fyi/dependency-validation
+
