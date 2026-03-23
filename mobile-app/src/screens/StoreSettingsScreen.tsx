@@ -2,7 +2,7 @@ import * as React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, ScrollView, TextInput, ActivityIndicator, Alert, Switch } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
-import { ChevronLeft, Store, MapPin, Phone, Save, Shield, Layout, CheckCircle2, Clock, Calendar, Lock, Monitor, Percent } from 'lucide-react-native';
+import { ChevronLeft, Store, MapPin, Phone, Save, Shield, Layout, CheckCircle2, Clock, Calendar, Lock, Monitor, Percent, Printer } from 'lucide-react-native';
 import { Modal } from 'react-native';
 import { useSession } from '../context/SessionContext';
 
@@ -33,7 +33,7 @@ export default function StoreSettingsScreen() {
             setLoading(true);
             
             // 1. Fetch Current Branch
-            const bId = parseInt(currentBranchId);
+            const bId = currentBranchId;
             if (!bId) {
                 setLoading(false);
                 return;
@@ -88,7 +88,7 @@ export default function StoreSettingsScreen() {
                     address: branchData.address.trim(),
                     phone: branchData.phone.trim()
                 })
-                .eq('id', parseInt(currentBranchId));
+                .eq('id', currentBranchId);
 
             if (error) throw error;
             setSuccessMsg('Data cabang berhasil diperbarui');
@@ -359,6 +359,23 @@ export default function StoreSettingsScreen() {
                                 placeholder="Terima Kasih"
                             />
                         </View>
+                        <View style={styles.inputGroup}>
+                            <View style={styles.inputLabelRow}>
+                                <Printer size={16} color="#64748b" />
+                                <Text style={styles.inputLabel}>Baris Kosong Akhir Struk</Text>
+                            </View>
+                            <TextInput
+                                style={styles.input}
+                                value={storeSettings?.receipt_footer_feed !== undefined ? String(storeSettings.receipt_footer_feed) : '4'}
+                                onChangeText={(text) => setStoreSettings({ ...storeSettings, receipt_footer_feed: parseInt(text) || 0 })}
+                                onBlur={() => toggleSetting('receipt_footer_feed', storeSettings.receipt_footer_feed)}
+                                placeholder="4"
+                                keyboardType="numeric"
+                            />
+                            <Text style={{ fontSize: 10, color: '#94a3b8', marginTop: 4, fontStyle: 'italic' }}>
+                                * Jumlah baris kosong sebelum kertas dipotong.
+                            </Text>
+                        </View>
 
                         <View style={styles.divider} />
                         <Text style={[styles.inputLabel, { marginBottom: 12, marginTop: 4 }]}>Opsi Tampilan Struk</Text>
@@ -388,6 +405,17 @@ export default function StoreSettingsScreen() {
                         <View style={styles.switchItem}>
                             <View style={styles.switchContent}>
                                 <Text style={styles.switchLabel}>Tampilkan Kasir</Text>
+                            </View>
+                            <Switch
+                                value={storeSettings?.show_cashier_name ?? true}
+                                onValueChange={(val) => toggleSetting('show_cashier_name', val)}
+                                trackColor={{ false: '#e2e8f0', true: '#f97316' }}
+                            />
+                        </View>
+
+                        <View style={styles.switchItem}>
+                            <View style={styles.switchContent}>
+                                <Text style={styles.switchLabel}>Tampilkan Pelayan</Text>
                             </View>
                             <Switch
                                 value={storeSettings?.show_waiter ?? true}

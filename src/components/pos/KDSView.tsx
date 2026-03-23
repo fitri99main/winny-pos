@@ -56,10 +56,24 @@ export function KDSView({ orders = [], onUpdateStatus }: KDSViewProps) {
     }
 
     function determineTarget(item: any) {
-        // Simple heuristic: Drinks -> Bar, Food -> Kitchen
-        const name = (item.product_name || item.name || '').toLowerCase();
-        if (['kopi', 'teh', 'jus', 'ice', 'panas', 'dingin', 'drink', 'minum'].some(k => name.includes(k))) return 'Bar';
-        return 'Kitchen';
+        // Robust Heuristic v3: Drinks -> Bar, Food -> Kitchen
+        const nameLow = (item.product_name || item.name || '').toLowerCase();
+        const categoryLow = (item.category || '').toLowerCase();
+
+        const isDrink = [
+            'minum', 'drink', 'beverage', 'juice', 'jus', 'tea', 'teh', 'coffee', 'kopi', 
+            'susu', 'milk', 'water', 'air', 'mineral', 'soda', 'cola', 'coke', 'sprite', 'fanta',
+            'beer', 'bir', 'wine', 'cocktail', 'mocktail', 'smoothie', 'shake', 'milo', 
+            'boba', 'thai tea', 'green tea', 'lemongrass', 'jeruk', 'lemon', 'alpukat', 'mangga', 
+            'strawberry', 'jahe', 'madu', 'sirup', 'cendol', 'dawet', 'wedang', 'gembira', 'arak',
+            'espresso', 'latte', 'cappuccino', 'frappe'
+        ].some(k => categoryLow.includes(k) || nameLow.includes(k)) || 
+        nameLow.startsWith('es ') || nameLow.startsWith('ice ') || 
+        nameLow.includes(' es ') || nameLow.includes(' ice ') ||
+        nameLow.includes(' panas') || nameLow.includes(' hot') || 
+        nameLow.includes(' dingin') || nameLow.includes(' cold');
+
+        return isDrink ? 'Bar' : 'Kitchen';
     }
 
 

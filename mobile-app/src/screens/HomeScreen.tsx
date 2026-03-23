@@ -28,6 +28,7 @@ export default function HomeScreen() {
     // New Order Notification State (for mobile cashier)
     const [newOrderNotif, setNewOrderNotif] = React.useState<{ visible: boolean; orderId: number | null; tableNo: string; orderNo: string; itemCount: number }>({ visible: false, orderId: null, tableNo: '', orderNo: '', itemCount: 0 });
     const lastKnownOrderIdRef = React.useRef<number>(0);
+    const fetchPendingDebounceRef = React.useRef<NodeJS.Timeout | null>(null);
     const [pendingOrders, setPendingOrders] = React.useState<any[]>([]);
     const [fetchingPending, setFetchingPending] = React.useState(false);
     const [isOnline, setIsOnline] = React.useState(true);
@@ -77,7 +78,7 @@ export default function HomeScreen() {
             const { data, error } = await supabase
                 .from('sales')
                 .select('*')
-                .eq('branch_id', parseInt(currentBranchId))
+                .eq('branch_id', currentBranchId)
                 .in('status', ['Pending', 'Unpaid'])
                 .order('date', { ascending: false });
 
@@ -96,6 +97,13 @@ export default function HomeScreen() {
         } finally {
             setFetchingPending(false);
         }
+    };
+
+    const debouncedFetchPending = () => {
+        if (fetchPendingDebounceRef.current) clearTimeout(fetchPendingDebounceRef.current);
+        fetchPendingDebounceRef.current = setTimeout(() => {
+            fetchPendingOrders();
+        }, 1000);
     };
 
 
@@ -120,64 +128,59 @@ export default function HomeScreen() {
     React.useEffect(() => {
         if (!currentBranchId) return;
 
-        const branchIdInt = parseInt(currentBranchId);
+        const branchIdInt = currentBranchId;
 
-        // ─── 1. New Pending INSERT → Popup notification (cashier only) ────────
-        const newOrderChannel = supabase
-            .channel(`new_orders_notify_${currentBranchId}`)
-            .on(
-                'postgres_changes',
-                { event: 'INSERT', schema: 'public', table: 'sales' },
-                async (payload: any) => {
-                    if (isDisplayOnly) return; // Only for cashier
-                    const newRow = payload.new as any;
-                    if (!newRow || Number(newRow.branch_id) !== branchIdInt) return;
-                    if (newRow.status !== 'Pending' && newRow.status !== 'Unpaid') return;
-                    if (newRow.id <= lastKnownOrderIdRef.current) return;
-
-                    console.log('[HomeScreen] New Pending/Unpaid order detected, AUTO-NAVIGATING:', newRow.id);
-                    lastKnownOrderIdRef.current = newRow.id;
-
-                    // Show popup with option to open
-                    setNewOrderNotif({
-                        visible: true,
-                        orderId: newRow.id,
-                        tableNo: newRow.table_no || 'Tanpa Meja',
-                        orderNo: newRow.order_no || String(newRow.id),
-                        itemCount: 0,
-                    });
-                }
-            )
-            .subscribe();
-
-        // ─── 2. Full Sync channel (KDS style) ──────────────────────────────────
-        const syncChannel = supabase
-            .channel(`pending_sync_${currentBranchId}`)
+        // ─── 1. Consolidated Sales Channel ─────────────────────────────────────
+        const salesChannel = supabase
+            .channel(`sales_sync_${currentBranchId}`)
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'sales', filter: `branch_id=eq.${branchIdInt}` },
-                () => {
-                    fetchPendingOrders();
+                async (payload: any) => {
+                    console.log('[HomeScreen] Sales change detected:', payload.eventType);
+                    
+                    // Always trigger a debounced fetch for any change
+                    debouncedFetchPending();
+
+                    // Specific handling for NEW orders (Notifications)
+                    if (payload.eventType === 'INSERT') {
+                        if (isDisplayOnly) return; // Only for cashier
+                        const newRow = payload.new as any;
+                        if (!newRow) return;
+                        if (newRow.status !== 'Pending' && newRow.status !== 'Unpaid') return;
+                        if (newRow.id <= lastKnownOrderIdRef.current) return;
+
+                        console.log('[HomeScreen] New Pending/Unpaid order detected, showing notification:', newRow.id);
+                        lastKnownOrderIdRef.current = newRow.id;
+
+                        setNewOrderNotif({
+                            visible: true,
+                            orderId: newRow.id,
+                            tableNo: newRow.table_no || 'Tanpa Meja',
+                            orderNo: newRow.order_no || String(newRow.id),
+                            itemCount: 0,
+                        });
+                    }
                 }
             )
             .subscribe();
 
-        // ─── 3. Settings channel ───────────────────────────────────────────────
+        // ─── 2. Settings channel remains separate for purity ─────────────────
         const settingsChannel = supabase
             .channel('silent_sync_settings')
             .on(
                 'postgres_changes',
                 { event: 'UPDATE', schema: 'public', table: 'store_settings', filter: 'id=eq.1' },
                 () => {
-                    console.log('[HomeScreen] Settings changed, refreshing...');
+                    console.log('[HomeScreen] Settings changed');
                 }
             )
             .subscribe();
 
         return () => {
-            supabase.removeChannel(newOrderChannel);
-            supabase.removeChannel(syncChannel);
+            supabase.removeChannel(salesChannel);
             supabase.removeChannel(settingsChannel);
+            if (fetchPendingDebounceRef.current) clearTimeout(fetchPendingDebounceRef.current);
         };
     }, [currentBranchId, isDisplayOnly]);
 
@@ -551,6 +554,7 @@ export default function HomeScreen() {
                 onClose={() => setShowSessionModal(false)}
                 mode="open"
                 onComplete={checkSession}
+                currentBranchId={currentBranchId}
             />
 
             {/* New Order Notification Modal — auto-navigates to POS */}

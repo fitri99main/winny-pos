@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, memo } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, FlatList, Image, Modal, Alert, StyleSheet, useWindowDimensions, ActivityIndicator, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -13,9 +13,65 @@ import SplitBillModal from '../components/SplitBillModal';
 import HeldOrdersModal from '../components/HeldOrdersModal';
 import { useSession } from '../context/SessionContext';
 import { OfflineService } from '../lib/OfflineService';
+import { WifiVoucherService } from '../lib/WifiVoucherService';
 import { Wifi, WifiOff } from 'lucide-react-native';
 import ReceiptPreviewModal from '../components/ReceiptPreviewModal';
+import ManagerAuthModal from '../components/ManagerAuthModal';
+import HoldNoteModal from '../components/HoldNoteModal';
+import ModernToast from '../components/ModernToast';const getAcronym = (name: string) => {
+    return name?.substring(0, 2).toUpperCase() || '??';
+};
 
+const ProductCard = memo(({ item, isTablet, onAdd, formatCurrency }: any) => {
+    return (
+        <TouchableOpacity
+            style={[
+                styles.productCard,
+                { width: '100%', padding: 0, borderRadius: isTablet ? 12 : 8, overflow: 'hidden', flex: 1, backgroundColor: '#f3f4f6' }
+            ]}
+            onPress={() => onAdd(item)}
+        >
+            <View style={{ width: '100%', height: '100%', position: 'absolute' }}>
+                {item.image_url ? (
+                    <Image source={{ uri: item.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                ) : (
+                    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff7ed' }}>
+                        <Text style={[styles.productAcronym, { fontSize: isTablet ? 24 : 13 }]}>
+                            {getAcronym(item.name)}
+                        </Text>
+                    </View>
+                )}
+            </View>
+
+            <View style={{ 
+                position: 'absolute', 
+                bottom: 0, 
+                width: '100%', 
+                backgroundColor: 'rgba(0, 0, 0, 0.55)', 
+                paddingVertical: isTablet ? 6 : 4,
+                paddingHorizontal: 4,
+                alignItems: 'center'
+            }}>
+                <Text style={{ 
+                    fontSize: isTablet ? 12 : 8.5, 
+                    color: 'white', 
+                    textAlign: 'center', 
+                    fontWeight: '600' 
+                }} numberOfLines={1}>
+                    {item.name}
+                </Text>
+                <Text style={{ 
+                    fontSize: isTablet ? 11 : 8, 
+                    color: '#fdba74', 
+                    fontWeight: 'bold',
+                    marginTop: 1
+                }}>
+                    {formatCurrency(item.price)}
+                </Text>
+            </View>
+        </TouchableOpacity>
+    );
+});
 
 
 export default function POSScreen() {
@@ -29,9 +85,6 @@ export default function POSScreen() {
     const isLargeTablet = Math.min(width, height) >= 800;
     const isSmallDevice = width < 380;
 
-    const getAcronym = (name: string) => {
-        return name?.substring(0, 2).toUpperCase() || '??';
-    };
 
     const [searchQuery, setSearchQuery] = useState('');
     const [products, setProducts] = useState<any[]>([]);
@@ -57,6 +110,11 @@ export default function POSScreen() {
     const [countdown, setCountdown] = useState(5);
 
     const [memberPhone, setMemberPhone] = useState('');
+    const [paymentMethods, setPaymentMethods] = useState<any[]>([
+        { id: 'cash', name: 'Tunai', type: 'cash' },
+        { id: 'qris', name: 'QRIS', type: 'digital' },
+        { id: 'debit', name: 'Debit', type: 'card' }
+    ]);
 
     // Transaction Data
     const [cart, setCart] = useState<any[]>([]);
@@ -75,12 +133,39 @@ export default function POSScreen() {
     const [showSplitBillModal, setShowSplitBillModal] = useState(false);
     const [showHeldOrdersModal, setShowHeldOrdersModal] = useState(false);
     const [orderDiscount, setOrderDiscount] = useState(0);
+    const [discountReason, setDiscountReason] = useState('');
     const [heldOrders, setHeldOrders] = useState<any[]>([]);
+    const [showHoldNoteModal, setShowHoldNoteModal] = useState(false);
     const [isSplitPayment, setIsSplitPayment] = useState(false);
     const [splitItemsToPay, setSplitItemsToPay] = useState<any[]>([]);
     const [showReceiptPreview, setShowReceiptPreview] = useState(false);
     const [previewOrderData, setPreviewOrderData] = useState<any>(null);
+    const [remoteOrders, setRemoteOrders] = useState<any[]>([]);
+    const [isFetchingRemote, setIsFetchingRemote] = useState(false);
     const isFirstRender = React.useRef(true);
+
+    // Manager Auth state
+    const [showManagerAuth, setShowManagerAuth] = useState(false);
+    const [managerAuthTitle, setManagerAuthTitle] = useState('Otorisasi Manager');
+    const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+
+    // Toast State
+    const [toastVisible, setToastVisible] = useState(false);
+    const [toastMessage, setToastMessage] = useState('');
+    const [toastType, setToastType] = useState<'success' | 'info' | 'error'>('success');
+
+    const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
+        setToastMessage(message);
+        setToastType(type);
+        setToastVisible(true);
+    };
+
+    const handleManagerAuthSuccess = () => {
+        if (pendingAction) {
+            pendingAction();
+            setPendingAction(null);
+        }
+    };
 
     // Update cashier mode from storage but default to true if not set
 
@@ -158,12 +243,31 @@ export default function POSScreen() {
             const orderData = await fetchOrderDataForReceipt(lastOrderNo);
             if (!orderData) throw new Error('Order not found');
 
+            // 1. Print Main Receipt
             const success = await PrinterManager.printOrderReceipt(orderData);
+            
+            // 2. [NEW] Print Kitchen and Bar Tickets
+            console.log(`[POSScreen] Starting kitchen/bar prints for items: ${orderData.items.length}`);
+            
+            await new Promise(resolve => setTimeout(resolve, 1500)); // Delay after main receipt
+            const kitchenSuccess = await PrinterManager.printToTarget(orderData.items, 'kitchen', orderData);
+            
+            await new Promise(resolve => setTimeout(resolve, 800)); // Delay between targets
+            const barSuccess = await PrinterManager.printToTarget(orderData.items, 'bar', orderData);
+
             if (success) {
-                Alert.alert('Sukses', 'Struk sedang dicetak');
+                showToast('Struk sedang dicetak', 'success');
             } else {
-                Alert.alert('Gagal', 'Gagal mencetak struk. Pastikan printer terhubung di Pengaturan.');
+                Alert.alert('Gagal', 'Gagal mencetak struk kasir. Pastikan printer terhubung.');
             }
+            
+            if (!kitchenSuccess) {
+                showToast('Printer Dapur/Kitchen belum diatur atau tidak terhubung', 'error');
+            }
+            if (!barSuccess) {
+                showToast('Printer Bar belum diatur atau tidak terhubung', 'error');
+            }
+
         } catch (e) {
             console.error('Print Error:', e);
             Alert.alert('Error', 'Terjadi kesalahan saat mencetak');
@@ -193,7 +297,7 @@ export default function POSScreen() {
                 *,
                 sale_items (
                     *,
-                    product:product_id (name)
+                    product:product_id (name, category)
                 )
             `)
             .eq('order_no', orderNo)
@@ -214,12 +318,30 @@ export default function POSScreen() {
             }
         }
 
+        // WiFi Voucher Fetching
+        let wifiVoucher = null;
+        const minAmount = storeSettings?.wifi_voucher_min_amount || 0;
+        
+        if (storeSettings?.enable_wifi_vouchers && sale.total_amount >= minAmount) {
+            try {
+                wifiVoucher = await WifiVoucherService.getVoucherForSale(sale.id, currentBranchId || '1');
+                if (wifiVoucher) {
+                    console.log('[POSScreen] WiFi Voucher fetched successfully:', wifiVoucher);
+                } else {
+                    console.warn('[POSScreen] WiFi Voucher pool is EMPTY or fetch failed.');
+                }
+            } catch (e) {
+                console.error('[POSScreen] Failed to fetch WiFi voucher:', e);
+            }
+        }
+
         return {
-            orderNo: sale.order_no,
-            tableNo: sale.table_no,
-            customerName: sale.customer_name,
+            order_no: sale.order_no,
+            table_no: sale.table_no,
+            customer_name: sale.customer_name,
             customer_level: customerTier,
-            waiterName: (!isDisplayOnly && userName && userName !== 'User') ? userName : (sale.waiter_name || '-'),
+            cashier_name: (!isDisplayOnly && userName && userName !== 'User') ? userName : '-',
+            waiter_name: sale.waiter_name || '-',
             total: sale.total_amount,
             discount: sale.discount || 0,
             tax: sale.tax || 0,
@@ -228,21 +350,29 @@ export default function POSScreen() {
             service_rate: storeSettings?.service_rate || 0,
             receipt_header: storeSettings?.receipt_header,
             receipt_footer: storeSettings?.receipt_footer,
-            address: storeSettings?.address,
+            receipt_paper_width: storeSettings?.receipt_paper_width,
+            receipt_logo_url: storeSettings?.receipt_logo_url,
+            shop_address: storeSettings?.address,
             show_logo: storeSettings?.show_logo,
             show_date: storeSettings?.show_date,
+            show_cashier_name: storeSettings?.show_cashier_name ?? true,
             show_waiter: storeSettings?.show_waiter,
             show_table: storeSettings?.show_table,
             show_customer_name: storeSettings?.show_customer_name,
+            enable_wifi_vouchers: storeSettings?.enable_wifi_vouchers,
+            wifi_voucher_min_amount: storeSettings?.wifi_voucher_min_amount,
+            wifi_voucher: wifiVoucher,
+            wifi_voucher_notice: storeSettings?.wifi_voucher_notice,
             payment_method: sale.payment_method,
-            date: sale.date,
-            shopName: branchName,
-            shopAddress: branchAddress,
-            shopPhone: branchPhone,
+            created_at: sale.date,
+            shop_name: branchName,
+            shop_phone: branchPhone,
             items: sale.sale_items.map((si: any) => ({
                 name: si.product ? si.product.name : si.product_name,
                 price: si.price,
-                quantity: si.quantity
+                quantity: si.quantity,
+                target: si.target || 'Kitchen',
+                category: si.product?.category || ''
             }))
         };
     };
@@ -254,17 +384,24 @@ export default function POSScreen() {
             console.log('[POSScreen] Loading initial data...');
             try {
                 // 1. Load from Cache for Instant Display
-                const cachedProducts = await AsyncStorage.getItem(`cached_products_${currentBranchId}`);
-                const cachedCategories = await AsyncStorage.getItem(`cached_categories_${currentBranchId}`);
+                const [cachedProducts, cachedCategories, cachedPMs] = await Promise.all([
+                    AsyncStorage.getItem(`cached_products_${currentBranchId}`),
+                    AsyncStorage.getItem(`cached_categories_${currentBranchId}`),
+                    AsyncStorage.getItem('cached_payment_methods')
+                ]);
                 
-                if (cachedProducts && isMounted) {
-                    console.log('[POSScreen] Using cached products');
-                    setProducts(JSON.parse(cachedProducts));
-                    setLoadingProducts(false);
-                }
-                if (cachedCategories && isMounted) {
-                    console.log('[POSScreen] Using cached categories');
-                    setCategories(JSON.parse(cachedCategories));
+                if (isMounted) {
+                    if (cachedProducts) {
+                        console.log('[POSScreen] Using cached products for instant display');
+                        setProducts(JSON.parse(cachedProducts));
+                        setLoadingProducts(false); // Hide loader early if cache exists
+                    }
+                    if (cachedCategories) {
+                        setCategories(JSON.parse(cachedCategories));
+                    }
+                    if (cachedPMs) {
+                        setPaymentMethods(JSON.parse(cachedPMs));
+                    }
                 }
 
                 // 2. Fetch Fresh Data from Supabase
@@ -274,47 +411,49 @@ export default function POSScreen() {
                     fetchMasterData()
                 ]);
 
-                // Load Cached Customers fallback
-                const cachedCustomers = await AsyncStorage.getItem(`cached_customers`);
-                if (cachedCustomers && isMounted && customers.length === 0) {
-                    setCustomers(JSON.parse(cachedCustomers));
-                }
+                // 4. Load Drafts and Held Orders in Parallel
+                const [savedHeldStr, savedCart, savedCustName, savedCustId, savedTable, savedDiscount, savedWaiter, savedExistingId, savedCustomers] = await Promise.all([
+                    AsyncStorage.getItem('pos_held_orders'),
+                    AsyncStorage.getItem('pos_cart_draft'),
+                    AsyncStorage.getItem('pos_customer_draft_name'),
+                    AsyncStorage.getItem('pos_customer_draft_id'),
+                    AsyncStorage.getItem('pos_table_draft'),
+                    AsyncStorage.getItem('pos_discount_draft'),
+                    AsyncStorage.getItem('pos_waiter_draft'),
+                    AsyncStorage.getItem('pos_existing_sale_id_draft'),
+                    AsyncStorage.getItem('cached_customers')
+                ]);
 
-                // Load Held Orders (Always load from storage)
-                const savedHeldStr = await AsyncStorage.getItem('pos_held_orders');
-                if (savedHeldStr && isMounted) {
-                    try {
-                        const parsedHeld = JSON.parse(savedHeldStr);
-                        setHeldOrders(parsedHeld.map((h: any) => ({ 
-                            ...h, 
-                            createdAt: h.createdAt ? new Date(h.createdAt) : new Date() 
-                        })));
-                    } catch (e) {
-                        console.error('Error parsing held orders:', e);
+                if (isMounted) {
+                    // Process Held Orders
+                    if (savedHeldStr) {
+                        try {
+                            const parsedHeld = JSON.parse(savedHeldStr);
+                            setHeldOrders(parsedHeld.map((h: any) => ({ 
+                                ...h, 
+                                createdAt: h.createdAt ? new Date(h.createdAt) : new Date() 
+                            })));
+                        } catch (e) { console.error('Error parsing held orders:', e); }
                     }
-                }
 
-                if (route.params?.orderId) {
-                    await loadOrderById(route.params.orderId);
-                } else {
-                    // Load Drafts
-                    const [savedCart, savedCustName, savedCustId, savedTable, savedDiscount, savedWaiter, savedExistingId] = await Promise.all([
-                        AsyncStorage.getItem('pos_cart_draft'),
-                        AsyncStorage.getItem('pos_customer_draft_name'),
-                        AsyncStorage.getItem('pos_customer_draft_id'),
-                        AsyncStorage.getItem('pos_table_draft'),
-                        AsyncStorage.getItem('pos_discount_draft'),
-                        AsyncStorage.getItem('pos_waiter_draft'),
-                        AsyncStorage.getItem('pos_existing_sale_id_draft')
-                    ]);
+                    // Process Customers Fallback
+                    if (savedCustomers && customers.length === 0) {
+                        setCustomers(JSON.parse(savedCustomers));
+                    }
 
-                    if (savedCart && isMounted) setCart(JSON.parse(savedCart));
-                    if (savedCustName && isMounted) setCustomerName(savedCustName);
-                    if (savedCustId && isMounted) setSelectedCustomerId(savedCustId === 'null' ? null : parseInt(savedCustId));
-                    if (savedTable && isMounted) setSelectedTable(savedTable);
-                    if (savedDiscount && isMounted) setOrderDiscount(parseFloat(savedDiscount) || 0);
-                    if (savedWaiter && isMounted) setSelectedWaiter(savedWaiter || '');
-                    if (savedExistingId && isMounted) setExistingSaleId(savedExistingId === 'null' ? null : parseInt(savedExistingId));
+                    // Process Order-specific Loading
+                    if (route.params?.orderId) {
+                        await loadOrderById(route.params.orderId);
+                    } else {
+                        // Apply Drafts
+                        if (savedCart) setCart(JSON.parse(savedCart));
+                        if (savedCustName) setCustomerName(savedCustName);
+                        if (savedCustId) setSelectedCustomerId(savedCustId === 'null' ? null : parseInt(savedCustId));
+                        if (savedTable) setSelectedTable(savedTable);
+                        if (savedDiscount) setOrderDiscount(parseFloat(savedDiscount) || 0);
+                        if (savedWaiter) setSelectedWaiter(savedWaiter || '');
+                        if (savedExistingId) setExistingSaleId(savedExistingId === 'null' ? null : parseInt(savedExistingId));
+                    }
                 }
             } catch (err) {
                 console.error('[POSScreen] Load Error:', err);
@@ -340,10 +479,10 @@ export default function POSScreen() {
         checkConn();
         const connInterval = setInterval(checkConn, 15000);
 
-        // Safety timeout...
+        // Safety timeout (reduced to 5s for faster fallback)
         const timer = setTimeout(() => {
             if (isMounted) setLoadingProducts(false);
-        }, 10000);
+        }, 5000);
 
         return () => {
             isMounted = false;
@@ -351,6 +490,78 @@ export default function POSScreen() {
             clearInterval(connInterval);
         };
     }, [currentBranchId, route.params?.orderId]);
+
+    const fetchRemotePendingOrders = async () => {
+        if (!currentBranchId || isDisplayOnly) return;
+        try {
+            setIsFetchingRemote(true);
+            console.log('[POSScreen] Fetching remote pending orders...');
+            const { data, error } = await supabase
+                .from('sales')
+                .select('*')
+                .eq('branch_id', currentBranchId)
+                .in('status', ['Pending', 'Unpaid'])
+                .order('date', { ascending: false });
+
+            if (error) throw error;
+            
+            // Map Supabase sales to HeldOrder format for the modal
+            const mappedOrders = (data || []).map((sale: any) => ({
+                id: String(sale.id),
+                orderNo: sale.order_no,
+                items: [], // Items will be fetched on-demand when 'Restore' is clicked
+                discount: sale.discount || 0,
+                total: sale.total_amount || 0,
+                createdAt: new Date(sale.date),
+                tableNo: sale.table_no || 'Tanpa Meja',
+                note: sale.notes || '',
+                isRemote: true
+            }));
+            
+            setRemoteOrders(mappedOrders);
+        } catch (err) {
+            console.error('[POSScreen] Fetch Remote Orders Error:', err);
+        } finally {
+            setIsFetchingRemote(false);
+        }
+    };
+
+    // ─── Real-time Order Listener ──────────────────────────────────────────
+    useEffect(() => {
+        if (!currentBranchId || isDisplayOnly) return;
+
+        const branchIdInt = currentBranchId;
+        
+        // Initial fetch
+        fetchRemotePendingOrders();
+
+        console.log('[POSScreen] Subscribing to real-time orders for branch:', branchIdInt);
+        const salesChannel = supabase
+            .channel(`pos_realtime_${currentBranchId}`)
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'sales', filter: `branch_id=eq.${branchIdInt}` },
+                (payload) => {
+                    console.log('[POSScreen] Real-time sales change detected:', payload.eventType);
+                    
+                    // Refresh the list for any change
+                    fetchRemotePendingOrders();
+
+                    if (payload.eventType === 'INSERT') {
+                        const newOrder = payload.new as any;
+                        if (newOrder.status === 'Pending' || newOrder.status === 'Unpaid') {
+                            showToast(`Pesanan Baru: ${newOrder.order_no || newOrder.id} (Meja: ${newOrder.table_no || '-'})`, 'info');
+                        }
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            console.log('[POSScreen] Unsubscribing from real-time orders');
+            supabase.removeChannel(salesChannel);
+        };
+    }, [currentBranchId, isDisplayOnly]);
  
 
     // DEBUG LOG
@@ -410,21 +621,22 @@ export default function POSScreen() {
 
     const fetchMasterData = async () => {
         try {
-            // 1. Fetch Active Session (Redundant: removed, using context instead)
-
-
-
-            // 3. Fetch Customers (Try fallback if table fails)
-            const { data: customerData, error: custError } = await supabase
-                .from('customers')
-                .select('id, name, phone')
-                .limit(50);
-
-            if (!custError && customerData) {
-                setCustomers(customerData);
-                AsyncStorage.setItem('cached_customers', JSON.stringify(customerData));
-            } else {
-                // Fallback Mock Customers if table doesn't exist
+            const authorizedRoles = ['Manager', 'Manajer', 'Owner', 'Administrator', 'Admin', 'Supervisor'];
+            
+            // Parallelize all master data fetches
+            const [custRes, pmRes, managerRes] = await Promise.all([
+                supabase.from('customers').select('id, name, phone').limit(50),
+                supabase.from('payment_methods').select('*').eq('is_active', true),
+                supabase.from('employees')
+                    .select('name, pin, position, system_role')
+                    .not('pin', 'is', null)
+                    .or(`position.in.(${authorizedRoles.join(',')}),system_role.in.(${authorizedRoles.join(',')})`)
+            ]);
+            // Handle Customers
+            if (!custRes.error && custRes.data) {
+                setCustomers(custRes.data);
+                AsyncStorage.setItem('cached_customers', JSON.stringify(custRes.data));
+            } else if (customers.length === 0) {
                 setCustomers([
                     { id: '1', name: 'Guest', phone: '-' },
                     { id: '2', name: 'Member A', phone: '08123' },
@@ -432,7 +644,16 @@ export default function POSScreen() {
             }
 
 
-            // 5. Waiters skipped (feature hidden)
+            // Handle Payment Methods
+            if (!pmRes.error && pmRes.data) {
+                setPaymentMethods(pmRes.data);
+                AsyncStorage.setItem('cached_payment_methods', JSON.stringify(pmRes.data));
+            }
+
+            // Handle Manager PINs
+            if (!managerRes.error && managerRes.data) {
+                AsyncStorage.setItem('cached_manager_pins', JSON.stringify(managerRes.data));
+            }
 
         } catch (error) {
             console.error('Error fetching master data:', error);
@@ -469,6 +690,13 @@ export default function POSScreen() {
         }
     }, [heldOrders]);
 
+    // Refresh remote orders when modal opens
+    useEffect(() => {
+        if (showHeldOrdersModal) {
+            fetchRemotePendingOrders();
+        }
+    }, [showHeldOrdersModal]);
+
 
     const fetchCategories = async () => {
         try {
@@ -502,10 +730,11 @@ export default function POSScreen() {
 
     const fetchProducts = async () => {
         try {
+            // Speed optimization: Select only required columns instead of '*'
             const { data, error } = await supabase
                 .from('products')
-                .select('*')
-                .eq('branch_id', parseInt(currentBranchId));
+                .select('id, name, price, image_url, category, target, stock, is_taxed, branch_id')
+                .eq('branch_id', currentBranchId);
 
             if (error) throw error;
 
@@ -538,6 +767,13 @@ export default function POSScreen() {
         }
         return result;
     }, [products, searchQuery, selectedCategory]);
+
+    const chunkedProducts = useMemo(() => {
+        const rows = 5;
+        return Array.from({ length: Math.ceil(filteredProducts.length / rows) }, (v, i) =>
+            filteredProducts.slice(i * rows, i * rows + rows)
+        );
+    }, [filteredProducts]);
 
     // Cart Total used in Apply Discount
 
@@ -593,10 +829,14 @@ export default function POSScreen() {
     };
 
     const addToCart = useCallback((product: any) => {
-        const category = (product.category_name || product.category || '').toLowerCase();
-        let target = 'Waitress';
-        if (category.includes('makan') || category.includes('food')) target = 'Kitchen';
-        else if (category.includes('minum') || category.includes('drink') || category.includes('bar') || category.includes('coffee')) target = 'Bar';
+        let target = product.target || 'Kitchen';
+        
+        // Fallback heuristic if target is not defined or is 'Waitress'
+        if (target === 'Waitress' || !product.target) {
+            const categoryLow = (product.category_name || product.category || '').toLowerCase();
+            if (categoryLow.includes('makan') || categoryLow.includes('food')) target = 'Kitchen';
+            else if (categoryLow.includes('minum') || categoryLow.includes('drink') || categoryLow.includes('bar') || categoryLow.includes('coffee')) target = 'Bar';
+        }
 
         setCart(prevCart => {
             const existingItem = prevCart.find(item => item.id === product.id);
@@ -675,19 +915,21 @@ export default function POSScreen() {
     };
 
     // New POS Action Handlers
-    const handleAddManualItem = (item: { name: string; price: number }) => {
+    const handleAddManualItem = (item: { name: string; price: number; notes?: string }) => {
         const manualItem = {
             id: `manual-${Date.now()}`,
-            name: item.name,
+            name: item.name + (item.notes ? ` (${item.notes})` : ''),
             price: item.price,
             quantity: 1,
             isManual: true,
-            category: 'Manual'
+            category: 'Manual',
+            notes: item.notes
         };
         setCart(prev => [...prev, manualItem]);
+        setShowManualItemModal(false);
     };
 
-    const handleApplyDiscount = (discount: { type: 'percentage' | 'fixed'; value: number }) => {
+    const handleApplyDiscount = (discount: { type: 'percentage' | 'fixed'; value: number; reason?: string }) => {
         let amount = 0;
         if (discount.type === 'percentage') {
             amount = (calculateSubtotal() * discount.value) / 100;
@@ -695,36 +937,47 @@ export default function POSScreen() {
             amount = discount.value;
         }
         setOrderDiscount(amount);
+        setDiscountReason(discount.reason || '');
     };
 
-    const handleHoldOrder = async () => {
+    const handleHoldOrder = async (note: string = '') => {
         if (cart.length === 0) return;
         
         const newHeldOrder = {
             id: `held-${Date.now()}`,
             items: [...cart],
             discount: orderDiscount,
+            discountReason: discountReason,
             total: calculateTotal(),
             createdAt: new Date(),
             tableNo: selectedTable,
             existingSaleId: existingSaleId,
             customerName: customerName,
             selectedCustomerId: selectedCustomerId,
-            selectedWaiter: selectedWaiter
+            selectedWaiter: selectedWaiter,
+            note: note
         };
 
         setHeldOrders(prev => [newHeldOrder, ...prev]);
         clearCart();
         setOrderDiscount(0);
+        setDiscountReason('');
         setShowCartModal(false);
-        Alert.alert('Sukses', 'Pesanan ditangguhkan');
+        showToast('Pesanan ditangguhkan', 'success');
     };
 
-    const handleRestoreHeldOrder = (order: any) => {
+    const handleRestoreHeldOrder = async (order: any) => {
         if (cart.length > 0) {
             Alert.alert('Info', 'Kosongkan keranjang sebelum mengembalikan pesanan');
             return;
         }
+
+        if (order.isRemote) {
+            setShowHeldOrdersModal(false);
+            await loadOrderById(parseInt(order.id));
+            return;
+        }
+
         setCart(order.items);
         setOrderDiscount(order.discount || 0);
         setSelectedTable(order.tableNo || 'Tanpa Meja');
@@ -841,7 +1094,7 @@ export default function POSScreen() {
                     .from('sales')
                     .insert([{
                         order_no: orderNo,
-                        branch_id: parseInt(currentBranchId),
+                        branch_id: currentBranchId,
                         customer_name: customerName,
                         customer_id: selectedCustomerId,
                         table_no: selectedTable,
@@ -898,7 +1151,7 @@ export default function POSScreen() {
                 
                 const saleData = {
                     order_no: orderNo,
-                    branch_id: parseInt(currentBranchId),
+                    branch_id: currentBranchId,
                     customer_name: customerName,
                     customer_id: selectedCustomerId,
                     table_no: selectedTable,
@@ -976,7 +1229,7 @@ export default function POSScreen() {
                     .from('sales')
                     .insert([{
                         order_no: orderNoText,
-                        branch_id: parseInt(currentBranchId),
+                        branch_id: currentBranchId,
                         customer_name: customerName,
                         customer_id: selectedCustomerId,
                         table_no: selectedTable || 'Tanpa Meja',
@@ -1068,7 +1321,7 @@ export default function POSScreen() {
                 
                 const saleData = {
                     order_no: orderNoText,
-                    branch_id: parseInt(currentBranchId),
+                    branch_id: currentBranchId,
                     customer_name: customerName,
                     customer_id: selectedCustomerId,
                     table_no: selectedTable || 'Tanpa Meja',
@@ -1140,10 +1393,29 @@ export default function POSScreen() {
                         </View>
                     </View>
                     <TouchableOpacity 
-                        style={[styles.headerBackButton, { width: 32, height: 32, backgroundColor: heldOrders.length > 0 ? '#ffedd5' : 'transparent', borderRadius: 8 }]} 
+                        style={[styles.headerBackButton, { 
+                            width: 32, 
+                            height: 32, 
+                            backgroundColor: (heldOrders.length + remoteOrders.length) > 0 ? '#ffedd5' : 'transparent', 
+                            borderRadius: 8,
+                            position: 'relative'
+                        }]} 
                         onPress={() => setShowHeldOrdersModal(true)}
                     >
                         <Text style={{ fontSize: 16 }}>📂</Text>
+                        {remoteOrders.length > 0 && (
+                            <View style={{
+                                position: 'absolute',
+                                top: -2,
+                                right: -2,
+                                backgroundColor: '#ef4444',
+                                width: 10,
+                                height: 10,
+                                borderRadius: 5,
+                                borderWidth: 1.5,
+                                borderColor: 'white'
+                            }} />
+                        )}
                     </TouchableOpacity>
                 </View>
 
@@ -1216,73 +1488,29 @@ export default function POSScreen() {
                         </View>
                     ) : (
                         <FlatList
-                            data={Array.from({ length: Math.ceil(filteredProducts.length / 5) }, (v, i) =>
-                                filteredProducts.slice(i * 5, i * 5 + 5)
-                            )}
+                            data={chunkedProducts}
                             key={isTablet ? "tablet-horizontal" : "mobile-horizontal"}
                             horizontal={true}
                             showsHorizontalScrollIndicator={false}
                             windowSize={3}
-                            initialNumToRender={10}
-                            maxToRenderPerBatch={10}
+                            initialNumToRender={8}
+                            maxToRenderPerBatch={5}
                             removeClippedSubviews={true}
                             contentContainerStyle={[
                                 styles.productListContent, 
                                 { padding: 4, paddingBottom: 16 },
                                 isTablet && { paddingHorizontal: 16 }
                             ]}
-                            renderItem={({ item: chunk }) => (
-                                <View style={{ width: isTablet ? 140 : 80, gap: isTablet ? 12 : 6, marginHorizontal: isTablet ? 8 : 3 }}>
+                            renderItem={({ item: chunk, index }) => (
+                                <View key={`chunk-${index}`} style={{ width: isTablet ? 140 : 80, gap: isTablet ? 12 : 6, marginHorizontal: isTablet ? 8 : 3 }}>
                                     {chunk.map((item: any) => (
-                                        <TouchableOpacity
+                                        <ProductCard 
                                             key={item.id}
-                                            style={[
-                                                styles.productCard,
-                                                { width: '100%', padding: 0, borderRadius: isTablet ? 12 : 8, overflow: 'hidden', flex: 1, backgroundColor: '#f3f4f6' }
-                                            ]}
-                                            onPress={() => addToCart(item)}
-                                        >
-                                            {/* Full Frame Background Image */}
-                                            <View style={{ width: '100%', height: '100%', position: 'absolute' }}>
-                                                {item.image_url ? (
-                                                    <Image source={{ uri: item.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-                                                ) : (
-                                                    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff7ed' }}>
-                                                        <Text style={[styles.productAcronym, { fontSize: isTablet ? 24 : 13 }]}>
-                                                            {getAcronym(item.name)}
-                                                        </Text>
-                                                    </View>
-                                                )}
-                                            </View>
-
-                                            {/* Modern Text Overlay */}
-                                            <View style={{ 
-                                                position: 'absolute', 
-                                                bottom: 0, 
-                                                width: '100%', 
-                                                backgroundColor: 'rgba(0, 0, 0, 0.55)', 
-                                                paddingVertical: isTablet ? 6 : 4,
-                                                paddingHorizontal: 4,
-                                                alignItems: 'center'
-                                            }}>
-                                                <Text style={{ 
-                                                    fontSize: isTablet ? 12 : 8.5, 
-                                                    color: 'white', 
-                                                    textAlign: 'center', 
-                                                    fontWeight: '600' 
-                                                }} numberOfLines={1}>
-                                                    {item.name}
-                                                </Text>
-                                                <Text style={{ 
-                                                    fontSize: isTablet ? 11 : 8, 
-                                                    color: '#fdba74', 
-                                                    fontWeight: 'bold',
-                                                    marginTop: 1
-                                                }}>
-                                                    {formatCurrency(item.price)}
-                                                </Text>
-                                            </View>
-                                        </TouchableOpacity>
+                                            item={item} 
+                                            isTablet={isTablet} 
+                                            onAdd={addToCart} 
+                                            formatCurrency={formatCurrency}
+                                        />
                                     ))}
                                     {chunk.length < 5 && Array.from({ length: 5 - chunk.length }).map((_, i) => (
                                         <View key={`empty-${i}`} style={{ flex: 1 }} />
@@ -1302,12 +1530,63 @@ export default function POSScreen() {
                 <PaymentModal
                     visible={showPaymentModal && !isDisplayOnly}
                     total={calculateTotal()}
+                    paymentMethods={paymentMethods}
                     onClose={() => setShowPaymentModal(false)}
                     onConfirm={handlePaymentConfirm}
-                    onManualItem={() => { setShowPaymentModal(false); setShowManualItemModal(true); }}
-                    onDiscount={() => { setShowPaymentModal(false); setShowDiscountModal(true); }}
+                    onManualItem={() => {
+                        if (storeSettings?.enable_manager_auth) {
+                            setManagerAuthTitle('Otorisasi Item Manual');
+                            setPendingAction(() => () => { setShowPaymentModal(false); setShowManualItemModal(true); });
+                            setShowManagerAuth(true);
+                        } else {
+                            setShowPaymentModal(false);
+                            setShowManualItemModal(true);
+                        }
+                    }}
+                    onDiscount={() => {
+                        if (storeSettings?.enable_manager_auth) {
+                            setManagerAuthTitle('Otorisasi Diskon');
+                            setPendingAction(() => () => { setShowPaymentModal(false); setShowDiscountModal(true); });
+                            setShowManagerAuth(true);
+                        } else {
+                            setShowPaymentModal(false);
+                            setShowDiscountModal(true);
+                        }
+                    }}
                     onSplitBill={() => { setShowPaymentModal(false); setShowSplitBillModal(true); }}
-                    onHold={() => { setShowPaymentModal(false); handleHoldOrder(); }}
+                        onHold={() => {
+                            if (storeSettings?.enable_manager_auth) {
+                                setManagerAuthTitle('Otorisasi Hold Order');
+                                setPendingAction(() => () => { 
+                                    setShowPaymentModal(false); 
+                                    setShowHoldNoteModal(true);
+                                });
+                                setShowManagerAuth(true);
+                            } else {
+                                setShowPaymentModal(false);
+                                setShowHoldNoteModal(true);
+                            }
+                        }}
+                />
+
+                <ManagerAuthModal
+                    visible={showManagerAuth}
+                    title={managerAuthTitle}
+                    onClose={() => setShowManagerAuth(false)}
+                    onSuccess={handleManagerAuthSuccess}
+                />
+
+                <HoldNoteModal
+                    visible={showHoldNoteModal}
+                    onClose={() => setShowHoldNoteModal(false)}
+                    onConfirm={(note) => handleHoldOrder(note)}
+                />
+
+                <ModernToast 
+                    visible={toastVisible}
+                    message={toastMessage}
+                    type={toastType}
+                    onHide={() => setToastVisible(false)}
                 />
 
                 {/* Modern Success Modal (Full Screen Overlay) */}
@@ -1649,7 +1928,18 @@ export default function POSScreen() {
                             {/* Quick Actions Row */}
                             <View style={styles.quickActionsRow}>
                                 {!isDisplayOnly && (!storeSettings?.restrict_manual_item || isAdmin) && (
-                                    <TouchableOpacity style={styles.quickActionBtn} onPress={() => setShowManualItemModal(true)}>
+                                    <TouchableOpacity 
+                                        style={styles.quickActionBtn} 
+                                        onPress={() => {
+                                            if (storeSettings?.enable_manager_auth) {
+                                                setManagerAuthTitle('Otorisasi Item Manual');
+                                                setPendingAction(() => () => setShowManualItemModal(true));
+                                                setShowManagerAuth(true);
+                                            } else {
+                                                setShowManualItemModal(true);
+                                            }
+                                        }}
+                                    >
                                         <Text style={styles.quickActionIcon}>➕</Text>
                                         <Text style={styles.quickActionText}>Manual</Text>
                                     </TouchableOpacity>
@@ -1657,7 +1947,18 @@ export default function POSScreen() {
                                 {!isDisplayOnly && (
                                     <>
                                         {(!storeSettings?.restrict_discount || isAdmin) && (
-                                            <TouchableOpacity style={styles.quickActionBtn} onPress={() => setShowDiscountModal(true)}>
+                                            <TouchableOpacity 
+                                                style={styles.quickActionBtn} 
+                                                onPress={() => {
+                                                    if (storeSettings?.enable_manager_auth) {
+                                                        setManagerAuthTitle('Otorisasi Diskon');
+                                                        setPendingAction(() => () => setShowDiscountModal(true));
+                                                        setShowManagerAuth(true);
+                                                    } else {
+                                                        setShowDiscountModal(true);
+                                                    }
+                                                }}
+                                            >
                                                 <Text style={styles.quickActionIcon}>🏷️</Text>
                                                 <Text style={styles.quickActionText}>Diskon</Text>
                                             </TouchableOpacity>
@@ -1671,7 +1972,20 @@ export default function POSScreen() {
                                     </>
                                 )}
                                 {!isDisplayOnly && (!storeSettings?.restrict_hold_order || isAdmin) && (
-                                    <TouchableOpacity style={styles.quickActionBtn} onPress={handleHoldOrder}>
+                                    <TouchableOpacity 
+                                        style={styles.quickActionBtn} 
+                                        onPress={() => {
+                                            if (storeSettings?.enable_manager_auth) {
+                                                setManagerAuthTitle('Otorisasi Hold Order');
+                                                setPendingAction(() => () => {
+                                                    setShowHoldNoteModal(true);
+                                                });
+                                                setShowManagerAuth(true);
+                                            } else {
+                                                setShowHoldNoteModal(true);
+                                            }
+                                        }}
+                                    >
                                         <Text style={styles.quickActionIcon}>⏸️</Text>
                                         <Text style={styles.quickActionText}>Hold</Text>
                                     </TouchableOpacity>
@@ -1694,6 +2008,9 @@ export default function POSScreen() {
                                     <View key={item.id} style={styles.cartItem}>
                                         <View style={{ flex: 1 }}>
                                             <Text style={styles.cartItemName}>{item.name}</Text>
+                                            {item.notes ? (
+                                                <Text style={{ fontSize: 10, color: '#6b7280', fontStyle: 'italic', marginTop: 1 }}>• {item.notes}</Text>
+                                            ) : null}
                                             <Text style={styles.cartItemPrice}>{formatCurrency(item.price)}</Text>
                                         </View>
                                         <View style={styles.quantityControls}>
@@ -1715,10 +2032,16 @@ export default function POSScreen() {
                                     <Text style={styles.cartTotalValueLarge}>{formatCurrency(calculateSubtotal())}</Text>
                                 </View>
                                 {orderDiscount > 0 && (
-                                    <View style={[styles.cartTotalRow, { marginTop: 4 }]}>
-                                        <Text style={[styles.cartTotalLabelLarge, { color: '#ef4444' }]}>Diskon</Text>
-                                        <Text style={[styles.cartTotalValueLarge, { color: '#ef4444' }]}>-{formatCurrency(orderDiscount)}</Text>
-                                    </View>
+                                    <>
+                                        <View style={[styles.cartTotalRow, { marginTop: 4 }]}>
+                                            <Text style={[styles.cartTotalLabelLarge, { color: '#ef4444' }]}>Diskon</Text>
+                                            <Text style={[styles.cartTotalValueLarge, { color: '#ef4444' }]}>-{formatCurrency(orderDiscount)}</Text>
+                                        </View>
+                                        <View style={[styles.cartTotalRow, { marginTop: 4 }]}>
+                                            <Text style={[styles.cartTotalLabelLarge, { fontWeight: '600' }]}>Total Setelah Diskon</Text>
+                                            <Text style={[styles.cartTotalValueLarge, { fontWeight: '600' }]}>{formatCurrency(calculateSubtotal() - orderDiscount)}</Text>
+                                        </View>
+                                    </>
                                 )}
                                 {calculateServiceAmount() > 0 && (
                                     <View style={[styles.cartTotalRow, { marginTop: 4 }]}>
@@ -1755,9 +2078,11 @@ export default function POSScreen() {
                 <HeldOrdersModal
                     visible={showHeldOrdersModal}
                     onClose={() => setShowHeldOrdersModal(false)}
-                    orders={heldOrders}
+                    orders={[...heldOrders, ...remoteOrders].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())}
                     onRestore={handleRestoreHeldOrder}
                     onDelete={handleDeleteHeldOrder}
+                    onRefresh={fetchRemotePendingOrders}
+                    isRefreshing={isFetchingRemote}
                 />
 
                 {/* Manual Item Modal */}
@@ -1783,14 +2108,14 @@ export default function POSScreen() {
                     onSplit={onSplitCommit}
                 />
 
-                <ReceiptPreviewModal
-                    visible={showReceiptPreview}
-                    onClose={() => setShowReceiptPreview(false)}
-                    orderData={previewOrderData}
-                    onPrint={() => {
-                        handlePrintReceipt();
-                    }}
-                />
+            <ReceiptPreviewModal
+                visible={showReceiptPreview}
+                onClose={() => setShowReceiptPreview(false)}
+                orderData={previewOrderData}
+                onPrint={() => {
+                    handlePrintReceipt();
+                }}
+            />
 
             </View>
             {/* Debug Role Banner (Sangat berguna untuk pemecahan masalah) */}

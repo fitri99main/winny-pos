@@ -84,7 +84,7 @@ export default function CashierSessionModal({ visible, onClose, mode, session, o
 
             const newSession = {
                 user_id: user.id,
-                branch_id: parseInt(currentBranchId), 
+                branch_id: currentBranchId, 
                 employee_name: user.email?.split('@')[0] || 'Kasir',
                 opened_at: new Date().toISOString(),
                 starting_cash: cashValue,

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Modal, TouchableOpacity, ScrollView, StyleSheet, SafeAreaView, Dimensions } from 'react-native';
+import { View, Text, Modal, TouchableOpacity, ScrollView, StyleSheet, SafeAreaView, Dimensions, Image } from 'react-native';
 import { PrinterManager } from '../lib/PrinterManager';
 
 interface ReceiptPreviewModalProps {
@@ -12,10 +12,30 @@ interface ReceiptPreviewModalProps {
 export default function ReceiptPreviewModal({ visible, onClose, orderData, onPrint }: ReceiptPreviewModalProps) {
     if (!orderData) return null;
 
-    const rawText = PrinterManager.formatReceipt(orderData);
+    const { receipt_logo_url, show_logo, receipt_paper_width } = orderData;
+    const is80mm = receipt_paper_width === '80mm';
+    const paperWidth = is80mm ? 380 : 280;
+
+    const rawText = PrinterManager.formatReceipt(orderData, true);
     
-    // Simple parser for [C], [L], [R] tags to render in preview
+    // Simple parser for [C], [L], [R], [LOGO] tags to render in preview
     const renderLine = (line: string, index: number) => {
+        if (line.trim() === '[LOGO]') {
+            return (
+                <View key={index} style={styles.logoContainer}>
+                    {receipt_logo_url ? (
+                        <Image 
+                            source={{ uri: receipt_logo_url }} 
+                            style={styles.receiptLogo} 
+                            resizeMode="contain" 
+                        />
+                    ) : (
+                        <View style={styles.logoPlaceholder} />
+                    )}
+                </View>
+            );
+        }
+
         if (!line.trim() && line === '') return <View key={index} style={{ height: 10 }} />;
         
         let alignment: 'center' | 'left' | 'right' = 'left';
@@ -73,9 +93,9 @@ export default function ReceiptPreviewModal({ visible, onClose, orderData, onPri
         >
             <View style={styles.overlay}>
                 <SafeAreaView style={styles.safeArea}>
-                    <View style={styles.card}>
+                    <View style={[styles.card, { maxWidth: is80mm ? 420 : 320 }]}>
                         <View style={styles.header}>
-                            <Text style={styles.headerTitle}>Pratinjau Struk</Text>
+                            <Text style={styles.headerTitle}>Pratinjau Struk ({receipt_paper_width || '58mm'})</Text>
                             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
                                 <Text style={styles.closeBtnText}>✕</Text>
                             </TouchableOpacity>
@@ -87,13 +107,13 @@ export default function ReceiptPreviewModal({ visible, onClose, orderData, onPri
                                 showsVerticalScrollIndicator={false}
                                 contentContainerStyle={styles.receiptContainer}
                             >
-                                <View style={styles.receiptPaper}>
+                                <View style={[styles.receiptPaper, { width: paperWidth }]}>
                                     {lines.map((line, idx) => renderLine(line, idx))}
                                 </View>
                             </ScrollView>
                             
                             {/* Decorative Jagged Edges (Bottom) */}
-                            <View style={styles.jaggedEdge} />
+                            <View style={[styles.jaggedEdge, { width: paperWidth }]} />
                         </View>
 
                         <View style={styles.footer}>
@@ -193,12 +213,26 @@ const styles = StyleSheet.create({
         color: '#0f172a',
     },
     jaggedEdge: {
-        width: '100%',
         height: 10,
         backgroundColor: 'white',
         marginTop: -1,
         // In a real app we'd use a background image or a svg for jagged edges
         // Here we just use a white strip to simulate the bottom of paper
+    },
+    logoContainer: {
+        alignItems: 'center',
+        paddingVertical: 10,
+        width: '100%',
+    },
+    receiptLogo: {
+        width: 80,
+        height: 80,
+    },
+    logoPlaceholder: {
+        width: 80,
+        height: 80,
+        backgroundColor: '#f1f5f9',
+        borderRadius: 10,
     },
     footer: {
         flexDirection: 'row',

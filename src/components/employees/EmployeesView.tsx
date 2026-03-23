@@ -319,92 +319,92 @@ export function EmployeesView({
                         className="bg-white rounded-[32px] md:rounded-[40px] shadow-2xl w-full max-w-xl max-h-fit overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col cursor-default"
                         onMouseDown={e => e.stopPropagation()}
                     >
-                        <div className="px-6 md:p-10 pb-0 shrink-0">
-                            <h3 className="text-xl md:text-2xl font-bold text-gray-800">{formData.id ? 'Edit Data Karyawan' : 'Tambah Karyawan Baru'}</h3>
-                            <p className="text-gray-500 text-xs md:text-sm font-medium mt-1">Lengkapi biodata dan tentukan departemen kerja.</p>
+                        <div className="px-6 md:px-8 pt-6 md:pt-8 shrink-0">
+                            <h3 className="text-xl font-bold text-gray-800">{formData.id ? 'Edit Data Karyawan' : 'Tambah Karyawan Baru'}</h3>
+                            <p className="text-gray-500 text-xs font-medium mt-1">Lengkapi biodata dan tentukan departemen kerja.</p>
 
                             {/* Tab Switcher */}
-                            <div className="flex gap-2 mt-6 p-1.5 bg-gray-100/80 rounded-2xl w-fit">
+                            <div className="flex gap-1.5 mt-5 p-1 bg-gray-100/80 rounded-xl w-fit">
                                 <button
                                     type="button"
                                     onClick={() => setFormTab('basic')}
-                                    className={`px-6 py-2.5 rounded-xl text-xs font-semibold transition-all ${formTab === 'basic' ? 'bg-white text-primary shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                                    className={`px-5 py-2 rounded-lg text-[10px] font-bold transition-all ${formTab === 'basic' ? 'bg-white text-primary shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
                                 >
                                     BIODATA
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => setFormTab('access')}
-                                    className={`px-6 py-2.5 rounded-xl text-xs font-semibold transition-all ${formTab === 'access' ? 'bg-white text-primary shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                                    className={`px-5 py-2 rounded-lg text-[10px] font-bold transition-all ${formTab === 'access' ? 'bg-white text-primary shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
                                 >
                                     AKSES & SISTEM
                                 </button>
                             </div>
                         </div>
 
-                        <form onSubmit={handleSubmit} className="p-6 md:p-10 space-y-6 flex-1">
+                        <form onSubmit={handleSubmit} className="px-6 md:px-8 py-6 space-y-4 flex-1">
                             {formTab === 'basic' ? (
-                                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                    <div className="space-y-2">
-                                        <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-normal pl-1">Nama Lengkap Karyawan</label>
-                                        <input className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-semibold text-gray-800 text-sm md:text-base" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} required placeholder="Nama Lengkap" />
+                                <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-tight pl-1">Nama Lengkap Karyawan</label>
+                                        <input className="w-full p-2.5 md:p-3 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-semibold text-gray-800 text-sm md:text-base shadow-sm" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} required placeholder="Nama Lengkap" />
                                     </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div className="space-y-2">
-                                            <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-normal pl-1">Jabatan / Role</label>
-                                            <input className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-semibold" value={formData.position || ''} onChange={e => setFormData({ ...formData, position: e.target.value })} placeholder="misal: Senior Barista" required />
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-tight pl-1">Jabatan / Role</label>
+                                            <input className="w-full p-2.5 md:p-3 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-semibold" value={formData.position || ''} onChange={e => setFormData({ ...formData, position: e.target.value })} placeholder="misal: Barista" required />
                                         </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-normal pl-1">Struktur Departemen</label>
-                                            <select className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-semibold text-gray-700" value={formData.department || ''} onChange={e => setFormData({ ...formData, department: e.target.value })}>
-                                                <option value="">Pilih Departemen...</option>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-tight pl-1">Departemen</label>
+                                            <select className="w-full p-2.5 md:p-3 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-semibold text-gray-700" value={formData.department || ''} onChange={e => setFormData({ ...formData, department: e.target.value })}>
+                                                <option value="">Pilih...</option>
                                                 {(departments || []).map(dept => (
                                                     <option key={dept.id} value={dept.name}>{dept.name}</option>
                                                 ))}
                                             </select>
                                         </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-normal pl-1">Email (Login ID)</label>
-                                            <input type="email" className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-semibold" value={formData.email || ''} onChange={e => setFormData({ ...formData, email: e.target.value })} placeholder="email@karyawan.com" />
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-tight pl-1">Email (Login ID)</label>
+                                            <input type="email" className="w-full p-2.5 md:p-3 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-semibold" value={formData.email || ''} onChange={e => setFormData({ ...formData, email: e.target.value })} placeholder="email@karyawan.com" />
                                         </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-normal pl-1">Nomor WhatsApp</label>
-                                            <input className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-medium" value={formData.phone || ''} onChange={e => setFormData({ ...formData, phone: e.target.value })} placeholder="08xx-xxxx-xxxx" />
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-tight pl-1">Nomor WhatsApp</label>
+                                            <input className="w-full p-2.5 md:p-3 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-medium" value={formData.phone || ''} onChange={e => setFormData({ ...formData, phone: e.target.value })} placeholder="08xx-xxxx-xxxx" />
                                         </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-normal pl-1">Tanggal Bergabung</label>
-                                            <input type="date" className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-semibold" value={formData.joinDate || ''} onChange={e => setFormData({ ...formData, joinDate: e.target.value })} />
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-tight pl-1">Tanggal Bergabung</label>
+                                            <input type="date" className="w-full p-2.5 md:p-3 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-semibold" value={formData.joinDate || ''} onChange={e => setFormData({ ...formData, joinDate: e.target.value })} />
                                         </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-normal pl-1">Status Kepegawaian</label>
-                                            <select className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-semibold text-gray-700" value={formData.status || 'Active'} onChange={e => setFormData({ ...formData, status: e.target.value as any })}>
-                                                <option value="Active">Aktif (Working)</option>
-                                                <option value="On Leave">Cuti (On Leave)</option>
-                                                <option value="Terminated">Berhenti (Terminated)</option>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-tight pl-1">Status Kepegawaian</label>
+                                            <select className="w-full p-2.5 md:p-3 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-semibold text-gray-700" value={formData.status || 'Active'} onChange={e => setFormData({ ...formData, status: e.target.value as any })}>
+                                                <option value="Active">Aktif</option>
+                                                <option value="On Leave">Cuti</option>
+                                                <option value="Terminated">Berhenti</option>
                                             </select>
                                         </div>
                                     </div>
                                 </div>
                             ) : (
-                                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        <div className="space-y-2">
-                                            <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-normal pl-1">PIN Akses Kiosk</label>
+                                <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-tight pl-1">PIN Akses Kiosk</label>
                                             <input
                                                 type="text"
                                                 pattern="[0-9]*"
                                                 inputMode="numeric"
                                                 maxLength={6}
-                                                className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold tracking-widest"
+                                                className="w-full p-2.5 md:p-3 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold tracking-widest"
                                                 value={formData.pin || ''}
                                                 onChange={e => setFormData({ ...formData, pin: e.target.value })}
                                                 placeholder="123456"
                                             />
                                         </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-normal pl-1">Barcode ID</label>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-tight pl-1">Barcode ID</label>
                                             <input
-                                                className="w-full p-3 md:p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-semibold"
+                                                className="w-full p-2.5 md:p-3 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-semibold"
                                                 value={formData.barcode || ''}
                                                 onChange={e => setFormData({ ...formData, barcode: e.target.value })}
                                                 placeholder="ID-12345"
@@ -412,57 +412,64 @@ export function EmployeesView({
                                         </div>
                                     </div>
 
-                                    <div className="space-y-2">
-                                        <label className="text-[11px] font-semibold text-blue-500 uppercase tracking-normal pl-1">Akses Biometrik (Fingerprint)</label>
-                                        <div className="flex gap-2">
-                                            <div className="relative flex-1">
-                                                <input
-                                                    className="w-full pl-12 p-3 md:p-4 bg-blue-50/30 border border-blue-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all text-[10px] font-mono tracking-wider font-semibold truncate"
-                                                    value={formData.fingerprint_template ? 'TEMPLATE_REGISTERED' : ''}
-                                                    readOnly
-                                                    placeholder="Belum terdaftar..."
-                                                />
-                                                <div className="absolute left-4 top-1/2 -translate-y-1/2">
-                                                    <Zap className={`w-5 h-5 ${formData.fingerprint_template ? 'text-emerald-500' : 'text-blue-400'}`} />
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-blue-500 uppercase tracking-tight pl-1">Sidik Jari (Fingerprint)</label>
+                                            <div className="flex gap-2">
+                                                <div className="relative flex-1">
+                                                    <input
+                                                        className="w-full pl-10 p-2.5 bg-blue-50/30 border border-blue-100 rounded-xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all text-[9px] font-mono tracking-tight font-semibold truncate"
+                                                        value={formData.fingerprint_template ? 'REGISTERED' : ''}
+                                                        readOnly
+                                                        placeholder="Belum ada..."
+                                                    />
+                                                    <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                                                        <Zap className={`w-4 h-4 ${formData.fingerprint_template ? 'text-emerald-500' : 'text-blue-400'}`} />
+                                                    </div>
                                                 </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setFpError(null);
+                                                        handleFingerprintEnroll(false);
+                                                    }}
+                                                    disabled={isScanning}
+                                                    className={`px-3 rounded-xl font-bold text-[9px] uppercase transition-all flex items-center gap-1.5 ${isScanning
+                                                        ? 'bg-blue-100 text-blue-400'
+                                                        : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95'
+                                                        }`}
+                                                >
+                                                    {isScanning ? (
+                                                        <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                                                    ) : <Plus className="w-3 h-3" />}
+                                                    {isScanning ? 'Scan' : 'Daftar'}
+                                                </button>
                                             </div>
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setFpError(null);
-                                                    handleFingerprintEnroll(false);
-                                                }}
-                                                disabled={isScanning}
-                                                className={`px-4 rounded-2xl font-bold text-[10px] uppercase transition-all flex items-center gap-2 ${isScanning
-                                                    ? 'bg-blue-100 text-blue-400 cursor-not-allowed'
-                                                    : 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-200 active:scale-95'
-                                                    }`}
+                                        </div>
+
+                                        <div className="space-y-1.5">
+                                            <div className="flex items-center justify-between pl-1">
+                                                <label className="text-[10px] font-bold text-blue-400 uppercase tracking-tight">Level Akses Sistem</label>
+                                                <span className="text-[8px] font-bold text-emerald-500 bg-emerald-50 px-1.5 py-0.5 rounded uppercase">Bisa Otorisasi POS</span>
+                                            </div>
+                                            <select
+                                                value={formData.system_role || ''}
+                                                onChange={(e) => setFormData({ ...formData, system_role: e.target.value || undefined })}
+                                                className="w-full p-2.5 md:p-3 bg-blue-50/50 border border-blue-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-semibold text-gray-700"
                                             >
-                                                {isScanning ? (
-                                                    <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-                                                ) : <Plus className="w-4 h-4" />}
-                                                {isScanning ? 'Scanning...' : 'Daftar'}
-                                            </button>
+                                                <option value="">Hanya Lapangan (Staff)</option>
+                                                <option value="Cashier">Kasir (Cashier)</option>
+                                                <option value="Supervisor">Supervisor (Auth)</option>
+                                                <option value="Manager">Manager (Auth)</option>
+                                                <option value="Owner">Owner (Auth)</option>
+                                                <option value="Administrator">Administrator (Full)</option>
+                                            </select>
                                         </div>
                                     </div>
 
-                                    <div className="space-y-2">
-                                        <label className="text-[11px] font-semibold text-blue-400 uppercase tracking-normal pl-1">Level Akses Sistem</label>
-                                        <select
-                                            value={formData.system_role || ''}
-                                            onChange={(e) => setFormData({ ...formData, system_role: e.target.value || undefined })}
-                                            className="w-full p-3 md:p-4 bg-blue-50/50 border border-blue-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm font-semibold text-gray-700"
-                                        >
-                                            <option value="">Tidak Ada (Hanya Lapangan)</option>
-                                            <option value="Cashier">Kasir (Cashier)</option>
-                                            <option value="Manager">Manager</option>
-                                            <option value="Administrator">Administrator</option>
-                                        </select>
-                                    </div>
-
-                                    <div className="bg-gray-100/50 p-4 md:p-6 rounded-[24px] border border-gray-100/50">
-                                        <div className="flex justify-between items-center mb-4 ml-1">
-                                            <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-normal block">Libur Tetap (Weekly Off)</label>
+                                    <div className="bg-gray-100/50 p-4 rounded-2xl border border-gray-100/50">
+                                        <div className="flex justify-between items-center mb-3 ml-1">
+                                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-tight block">Libur mingguan (Weekly Off)</label>
                                             <button
                                                 type="button"
                                                 onClick={() => {
@@ -471,20 +478,20 @@ export function EmployeesView({
                                                     const shuffled = days.sort(() => 0.5 - Math.random());
                                                     setFormData({ ...formData, offDays: shuffled.slice(0, numDays) });
                                                 }}
-                                                className="text-[10px] font-bold text-orange-600 uppercase flex items-center gap-1 hover:text-orange-700 transition-colors"
+                                                className="text-[9px] font-bold text-orange-600 uppercase flex items-center gap-1 hover:text-orange-700 transition-colors"
                                             >
-                                                <Shuffle className="w-3 h-3" /> Acak
+                                                <Shuffle className="w-2.5 h-2.5" /> Acak
                                             </button>
                                         </div>
-                                        <div className="flex flex-wrap gap-2">
+                                        <div className="flex flex-wrap gap-1.5">
                                             {DAYS_NAME.map((day, idx) => (
                                                 <button
                                                     key={idx}
                                                     type="button"
                                                     onClick={() => toggleOffDay(idx)}
-                                                    className={`px-3 py-2 rounded-xl text-[10px] font-bold transition-all border ${Array.isArray(formData.offDays) && formData.offDays.includes(idx)
-                                                        ? 'bg-red-600 text-white border-red-600 shadow-lg shadow-red-200'
-                                                        : 'bg-white text-gray-400 border-gray-200 hover:border-red-200 hover:text-red-500'
+                                                    className={`px-2.5 py-1.5 rounded-lg text-[9px] font-bold transition-all border ${Array.isArray(formData.offDays) && formData.offDays.includes(idx)
+                                                        ? 'bg-red-600 text-white border-red-600 shadow-md shadow-red-100'
+                                                        : 'bg-white text-gray-400 border-gray-200 hover:border-red-200'
                                                         }`}
                                                 >
                                                     {day.toUpperCase()}
@@ -495,9 +502,9 @@ export function EmployeesView({
                                 </div>
                             )}
 
-                            <div className="flex flex-col-reverse md:flex-row justify-end gap-3 pt-6 border-t border-gray-50">
-                                <Button type="button" variant="outline" className="h-12 md:h-14 rounded-2xl px-8 font-bold w-full md:w-auto" onClick={() => setIsFormOpen(false)}>Batal</Button>
-                                <Button type="submit" className="h-12 md:h-14 rounded-2xl px-10 shadow-xl shadow-primary/20 font-bold w-full md:w-auto">Simpan Data</Button>
+                            <div className="flex flex-col-reverse md:flex-row justify-end gap-2.5 pt-4 border-t border-gray-50">
+                                <Button type="button" variant="outline" className="h-11 md:h-12 rounded-xl px-6 font-bold w-full md:w-auto text-sm" onClick={() => setIsFormOpen(false)}>Batal</Button>
+                                <Button type="submit" className="h-11 md:h-12 rounded-xl px-8 shadow-lg shadow-primary/10 font-bold w-full md:w-auto text-sm">Simpan Data</Button>
                             </div>
                         </form>
                     </div>

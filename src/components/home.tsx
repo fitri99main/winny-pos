@@ -79,6 +79,16 @@ function Home() {
   const [pendingCount, setPendingCount] = useState(0); // New state for badge
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [contacts, setContacts] = useState<ContactData[]>([]);
+  const fetchTransactionsDebounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  const debouncedFetchTransactions = () => {
+    if (fetchTransactionsDebounceRef.current) {
+      clearTimeout(fetchTransactionsDebounceRef.current);
+    }
+    fetchTransactionsDebounceRef.current = setTimeout(() => {
+      fetchTransactions();
+    }, 1000); // 1s debounce
+  };
   // Persist Branch Selection
   useEffect(() => {
     if (currentBranchId) {
@@ -549,6 +559,7 @@ function Home() {
         notes: s.notes,
         branchId: s.branch_id,
         waiterName: s.waiter_name,
+        cashierName: s.cashier_name,
         tableNo: s.table_no,
         productDetails: (s.items || []).map((i: any) => ({
           name: i.product_name,
@@ -606,12 +617,13 @@ function Home() {
   useEffect(() => {
     fetchTransactions();
     const transactionChannels = [
-      supabase.channel('sales_changes').on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, fetchTransactions).subscribe(),
-      supabase.channel('sale_items_changes').on('postgres_changes', { event: '*', schema: 'public', table: 'sale_items' }, fetchTransactions).subscribe(),
-      supabase.channel('returns_changes').on('postgres_changes', { event: '*', schema: 'public', table: 'sales_returns' }, fetchTransactions).subscribe(),
+      supabase.channel('sales_changes').on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, debouncedFetchTransactions).subscribe(),
+      supabase.channel('sale_items_changes').on('postgres_changes', { event: '*', schema: 'public', table: 'sale_items' }, debouncedFetchTransactions).subscribe(),
+      supabase.channel('returns_changes').on('postgres_changes', { event: '*', schema: 'public', table: 'sales_returns' }, debouncedFetchTransactions).subscribe(),
     ];
     return () => {
       transactionChannels.forEach(ch => ch.unsubscribe());
+      if (fetchTransactionsDebounceRef.current) clearTimeout(fetchTransactionsDebounceRef.current);
     };
   }, [currentBranchId]);
 
@@ -1144,8 +1156,23 @@ function Home() {
         showTable: storeSettings.show_table,
         showCustomerName: storeSettings.show_customer_name,
         showCustomerStatus: storeSettings.show_customer_status,
+        showCashierName: storeSettings.show_cashier_name ?? true,
         showLogo: storeSettings.show_logo,
         logoUrl: storeSettings.receipt_logo_url,
+        // Kitchen Specifics
+        kitchenHeader: storeSettings.kitchen_header,
+        kitchenFooter: storeSettings.kitchen_footer,
+        kitchenShowTable: storeSettings.kitchen_show_table,
+        kitchenShowWaiter: storeSettings.kitchen_show_waiter,
+        kitchenShowDate: storeSettings.kitchen_show_date,
+        kitchenShowCashier: storeSettings.kitchen_show_cashier,
+        // Bar Specifics
+        barHeader: storeSettings.bar_header,
+        barFooter: storeSettings.bar_footer,
+        barShowTable: storeSettings.bar_show_table,
+        barShowWaiter: storeSettings.bar_show_waiter,
+        barShowDate: storeSettings.bar_show_date,
+        barShowCashier: storeSettings.bar_show_cashier,
       });
     }
   }, [storeSettings]);
@@ -1274,6 +1301,7 @@ function Home() {
             payment_method: saleData.paymentMethod,
             status: 'Paid',
             waiter_name: saleData.waiterName,
+            cashier_name: user?.user_metadata?.name || user?.email || role || 'Admin',
             customer_name: saleData.customerName,
             discount: saleData.discount || 0,
             date: new Date().toISOString()
@@ -1295,6 +1323,7 @@ function Home() {
           status: 'Paid',
           branch_id: currentBranchId,
           waiter_name: saleData.waiterName,
+          cashier_name: user?.user_metadata?.name || user?.email || role || 'Admin',
           table_no: saleData.tableNo,
           customer_name: saleData.customerName,
           discount: saleData.discount || 0
@@ -1318,7 +1347,8 @@ function Home() {
           quantity: item.quantity,
           price: item.price,
           cost: product?.cost || 0,
-          target: item.target || product?.target || 'Waitress' // Persist target to DB
+          target: item.target || product?.target || 'Waitress', // Persist target to DB
+          category: (item as any).category || product?.category || 'General'
         };
       });
 
@@ -1358,7 +1388,7 @@ function Home() {
       printerService.printReceipt({
         orderNo: orderNo,
         tableNo: saleData.tableNo,
-        waiterName: saleData.waiterName || '-',
+        waiterName: saleData.waiterName || '',
         time: new Date().toLocaleString(),
         items: saleData.productDetails.map(item => ({
           name: item.name,
@@ -1373,9 +1403,85 @@ function Home() {
         amountPaid: saleData.paidAmount || saleData.totalAmount,
         change: saleData.change || 0,
         customerName: saleData.customerName,
+        cashierName: user?.user_metadata?.name || user?.email || role || 'Admin',
         wifiVoucher: wifiVoucher,
         wifiNotice: storeSettings?.wifi_voucher_notice
       });
+
+      // Kitchen / Bar Printing for Web (Robust v3 Heuristic)
+      const kitchenItems = saleItems.filter(item => {
+        const target = (item.target || '').toLowerCase().trim();
+        const nameLow = (item.product_name || '').toLowerCase();
+        const categoryLow = (item.category || '').toLowerCase();
+
+        const isDrink = [
+            'minum', 'drink', 'beverage', 'juice', 'jus', 'tea', 'teh', 'coffee', 'kopi', 
+            'susu', 'milk', 'water', 'air', 'mineral', 'soda', 'cola', 'coke', 'sprite', 'fanta',
+            'beer', 'bir', 'wine', 'cocktail', 'mocktail', 'smoothie', 'shake', 'milo', 
+            'boba', 'thai tea', 'green tea', 'lemongrass', 'jeruk', 'lemon', 'alpukat', 'mangga', 
+            'strawberry', 'jahe', 'madu', 'sirup', 'cendol', 'dawet', 'wedang', 'gembira', 'arak',
+            'espresso', 'latte', 'cappuccino', 'frappe'
+        ].some(k => categoryLow.includes(k) || nameLow.includes(k)) || 
+        nameLow.startsWith('es ') || nameLow.startsWith('ice ') || 
+        nameLow.includes(' es ') || nameLow.includes(' ice ') ||
+        nameLow.includes(' panas') || nameLow.includes(' hot') || 
+        nameLow.includes(' dingin') || nameLow.includes(' cold');
+
+        // Explicit targets take precedence
+        if (target === 'bar') return false; 
+        if (target === 'kitchen' || target === 'dapur' || target === 'kds') return true;
+
+        // Default routing for Waitress/Empty/Manual items
+        return !isDrink;
+      });
+
+      const barItems = saleItems.filter(item => {
+        const target = (item.target || '').toLowerCase().trim();
+        const nameLow = (item.product_name || '').toLowerCase();
+        const categoryLow = (item.category || '').toLowerCase();
+
+        const isDrink = [
+            'minum', 'drink', 'beverage', 'juice', 'jus', 'tea', 'teh', 'coffee', 'kopi', 
+            'susu', 'milk', 'water', 'air', 'mineral', 'soda', 'cola', 'coke', 'sprite', 'fanta',
+            'beer', 'bir', 'wine', 'cocktail', 'mocktail', 'smoothie', 'shake', 'milo', 
+            'boba', 'thai tea', 'green tea', 'lemongrass', 'jeruk', 'lemon', 'alpukat', 'mangga', 
+            'strawberry', 'jahe', 'madu', 'sirup', 'cendol', 'dawet', 'wedang', 'gembira', 'arak',
+            'espresso', 'latte', 'cappuccino', 'frappe'
+        ].some(k => categoryLow.includes(k) || nameLow.includes(k)) || 
+        nameLow.startsWith('es ') || nameLow.startsWith('ice ') || 
+        nameLow.includes(' es ') || nameLow.includes(' ice ') ||
+        nameLow.includes(' panas') || nameLow.includes(' hot') || 
+        nameLow.includes(' dingin') || nameLow.includes(' cold');
+
+        if (target === 'bar') return true;
+        if (target === 'kitchen' || target === 'dapur' || target === 'kds') return false;
+
+        return isDrink;
+      });
+
+      const cashierDisplayName = user?.user_metadata?.name || user?.email || role || 'Admin';
+
+      if (kitchenItems.length > 0 && storeSettings?.auto_print_kitchen && printerService.getConnectedPrinter('Kitchen')) {
+        printerService.printTicket('Kitchen', {
+            orderNo: orderNo,
+            tableNo: saleData.tableNo || '-',
+            waiterName: saleData.waiterName || '-',
+            cashierName: cashierDisplayName,
+            time: new Date().toLocaleTimeString(),
+            items: kitchenItems.map(item => ({ name: item.product_name, quantity: item.quantity }))
+        });
+      }
+
+      if (barItems.length > 0 && storeSettings?.auto_print_bar && printerService.getConnectedPrinter('Bar')) {
+        printerService.printTicket('Bar', {
+            orderNo: orderNo,
+            tableNo: saleData.tableNo || '-',
+            waiterName: saleData.waiterName || '-',
+            cashierName: cashierDisplayName,
+            time: new Date().toLocaleTimeString(),
+            items: barItems.map(item => ({ name: item.product_name, quantity: item.quantity }))
+        });
+      }
 
       // 4. Force refresh the transactions list to show the new sale immediately
       await fetchTransactions();
@@ -1449,24 +1555,29 @@ function Home() {
     setPendingOrders(prev => [kdsOrder, ...prev]);
 
     // --- Automatic Bluetooth Printing ---
-    const kitchenItems = kdsOrder.items.filter(i => i.target === 'Kitchen');
-    const barItems = kdsOrder.items.filter(i => i.target === 'Bar');
+    const kitchenItems = kdsOrder.items.filter(i => {
+      const target = (i.target || '').toLowerCase().trim();
+      return target === 'kitchen' || target === 'dapur' || target === 'kds' || target === 'waitress' || target === '' || target === 'null';
+    });
+    const barItems = kdsOrder.items.filter(i => (i.target || '').toLowerCase().trim() === 'bar');
 
-    if (kitchenItems.length > 0 && storeSettings?.auto_print_kitchen) {
+    if (kitchenItems.length > 0 && storeSettings?.auto_print_kitchen && printerService.getConnectedPrinter('Kitchen')) {
       printerService.printTicket('Kitchen', {
         orderNo: kdsOrder.orderNo,
         tableNo: kdsOrder.tableNo,
         waiterName: kdsOrder.waiterName,
+        cashierName: user?.user_metadata?.name || user?.email || role || 'Admin',
         time: kdsOrder.time,
         items: kitchenItems
       });
     }
 
-    if (barItems.length > 0 && storeSettings?.auto_print_bar) {
+    if (barItems.length > 0 && storeSettings?.auto_print_bar && printerService.getConnectedPrinter('Bar')) {
       printerService.printTicket('Bar', {
         orderNo: kdsOrder.orderNo,
         tableNo: kdsOrder.tableNo,
         waiterName: kdsOrder.waiterName,
+        cashierName: user?.user_metadata?.name || user?.email || role || 'Admin',
         time: kdsOrder.time,
         items: barItems
       });

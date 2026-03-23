@@ -9,13 +9,14 @@ import { Search, Filter, Calendar, RefreshCw, ChevronLeft, Printer, X, Receipt, 
 
 import { useSession } from '../context/SessionContext';
 import ReceiptPreviewModal from '../components/ReceiptPreviewModal';
+import { WifiVoucherService } from '../lib/WifiVoucherService';
 
 export default function HistoryScreen() {
     const navigation = useNavigation();
     const { width, height } = useWindowDimensions();
     const isLandscape = width > height;
     const isSmallDevice = width < 380;
-    const { currentBranchId, branchName } = useSession();
+    const { currentBranchId, branchName, branchAddress, branchPhone, userName, storeSettings } = useSession();
 
     const [loading, setLoading] = useState(true);
     const [history, setHistory] = useState<any[]>([]);
@@ -84,10 +85,10 @@ export default function HistoryScreen() {
                     *,
                     sale_items (
                         *,
-                        product:product_id (name)
+                        product:product_id (name, category)
                     )
                 `)
-                .eq('branch_id', parseInt(currentBranchId))
+                .eq('branch_id', currentBranchId)
                 .order('date', { ascending: false });
 
             if (dateFilter === 'today') {
@@ -138,24 +139,65 @@ export default function HistoryScreen() {
         setShowPaymentModal(true);
     };
 
-    const handlePreviewReceipt = () => {
+    const handlePreviewReceipt = async () => {
         if (!selectedSale) return;
+        setShowDetailModal(false);
         
+        const templateFields = {
+            receipt_header: storeSettings?.receipt_header || branchName || 'WINNY POS',
+            receipt_footer: storeSettings?.receipt_footer || 'Terima Kasih Atas\nKunjungan Anda',
+            receipt_paper_width: storeSettings?.receipt_paper_width,
+            receipt_logo_url: storeSettings?.receipt_logo_url,
+            show_logo: storeSettings?.show_logo,
+            shop_address: storeSettings?.address || branchAddress || '',
+            shop_phone: storeSettings?.phone || branchPhone || '',
+            show_date: storeSettings?.show_date !== false,
+            show_table: storeSettings?.show_table !== false,
+            show_waiter: storeSettings?.show_waiter !== false,
+            show_customer_name: storeSettings?.show_customer_name !== false,
+            show_cashier_name: storeSettings?.show_cashier_name !== false,
+            enable_wifi_vouchers: storeSettings?.enable_wifi_vouchers || false,
+            wifi_voucher_min_amount: storeSettings?.wifi_voucher_min_amount || 0,
+            wifi_voucher_notice: storeSettings?.wifi_voucher_notice || '',
+        };
+
+        // WiFi Voucher Fetching
+        let wifiVoucher = null;
+        const minAmount = storeSettings?.wifi_voucher_min_amount || 0;
+        
+        if (storeSettings?.enable_wifi_vouchers && selectedSale.total_amount >= minAmount) {
+            try {
+                wifiVoucher = await WifiVoucherService.getVoucherForSale(selectedSale.id, currentBranchId || '1');
+            } catch (e) {
+                console.warn('[HistoryScreen] Failed to fetch WiFi voucher:', e);
+            }
+        }
+
         const orderData = {
-            orderNo: selectedSale.order_no,
-            tableNo: selectedSale.table_no,
-            customerName: selectedSale.customer_name || 'Guest',
-            waiterName: selectedSale.waiter_name || '-',
+            ...templateFields,
+            wifi_voucher: wifiVoucher,
+            wifi_voucher_notice: templateFields.wifi_voucher_notice,
+            order_no: selectedSale.order_no,
+            table_no: selectedSale.table_no,
+            customer_name: selectedSale.customer_name || 'Guest',
+            cashier_name: userName || '',
+            waiter_name: selectedSale.waiter_name || '',
             total: selectedSale.total_amount,
+            discount: selectedSale.discount || 0,
+            tax: selectedSale.tax || 0,
+            service_charge: selectedSale.service_charge || 0,
+            tax_rate: storeSettings?.tax_rate || 0,
+            service_rate: storeSettings?.service_rate || 0,
             payment_method: selectedSale.payment_method,
-            date: selectedSale.date,
+            created_at: selectedSale.date,
             items: selectedSale.sale_items.map((item: any) => ({
                 name: item.product_name || (item.product?.name || 'Produk'),
                 quantity: item.quantity,
                 price: item.price,
+                target: item.target || '',
+                category: item.product?.category || '',
                 isManual: !!item.isManual
             })),
-            shopName: branchName || 'Catering'
         };
 
         setPreviewOrderData(orderData);
@@ -167,24 +209,77 @@ export default function HistoryScreen() {
         
         try {
             setPrinting(true);
+
+            const templateFields = {
+                receipt_header: storeSettings?.receipt_header || branchName || 'WINNY POS',
+                receipt_footer: storeSettings?.receipt_footer || 'Terima Kasih Atas\nKunjungan Anda',
+                receipt_paper_width: storeSettings?.receipt_paper_width,
+                receipt_logo_url: storeSettings?.receipt_logo_url,
+                show_logo: storeSettings?.show_logo,
+                shop_address: storeSettings?.address || branchAddress || '',
+                shop_phone: storeSettings?.phone || branchPhone || '',
+                show_date: storeSettings?.show_date !== false,
+                show_table: storeSettings?.show_table !== false,
+                show_waiter: storeSettings?.show_waiter !== false,
+                show_customer_name: storeSettings?.show_customer_name !== false,
+                show_cashier_name: storeSettings?.show_cashier_name !== false,
+                enable_wifi_vouchers: storeSettings?.enable_wifi_vouchers || false,
+                wifi_voucher_notice: storeSettings?.wifi_voucher_notice || '',
+            };
+
+            // WiFi Voucher Fetching
+            let wifiVoucher = null;
+            const minAmount = storeSettings?.wifi_voucher_min_amount || 0;
+            
+            if (storeSettings?.enable_wifi_vouchers && selectedSale.total_amount >= minAmount) {
+                try {
+                    wifiVoucher = await WifiVoucherService.getVoucherForSale(selectedSale.id, currentBranchId || '1');
+                } catch (e) {
+                    console.warn('[HistoryScreen] Failed to fetch WiFi voucher:', e);
+                }
+            }
+
             const orderData = {
-                orderNo: selectedSale.order_no,
-                tableNo: selectedSale.table_no,
-                customerName: selectedSale.customer_name || 'Guest',
-                waiterName: selectedSale.waiter_name || '-',
+                ...templateFields,
+                wifi_voucher: wifiVoucher,
+                wifi_voucher_notice: templateFields.wifi_voucher_notice,
+                order_no: selectedSale.order_no,
+                table_no: selectedSale.table_no,
+                customer_name: selectedSale.customer_name || 'Guest',
+                cashier_name: userName || '',
+                waiter_name: selectedSale.waiter_name || '',
                 total: selectedSale.total_amount,
+                discount: selectedSale.discount || 0,
+                tax: selectedSale.tax || 0,
+                service_charge: selectedSale.service_charge || 0,
+                tax_rate: storeSettings?.tax_rate || 0,
+                service_rate: storeSettings?.service_rate || 0,
                 payment_method: selectedSale.payment_method,
-                date: selectedSale.date,
+                created_at: selectedSale.date,
                 items: selectedSale.sale_items.map((item: any) => ({
                     name: item.product_name || (item.product?.name || 'Produk'),
                     quantity: item.quantity,
                     price: item.price,
+                    target: item.target || '',
+                    category: item.product?.category || '',
                     isManual: !!item.isManual
                 })),
-                shopName: branchName || 'Catering'
             };
 
             const success = await PrinterManager.printOrderReceipt(orderData);
+            
+            // 2. Also reprint Kitchen and Bar tickets
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Delay to avoid BT congestion
+            const kitchenSuccess = await PrinterManager.printToTarget(orderData.items, 'kitchen', orderData);
+            const barSuccess = await PrinterManager.printToTarget(orderData.items, 'bar', orderData);
+
+            if (!kitchenSuccess) {
+                showToast('Printer Dapur/Kitchen belum diatur atau tidak terhubung', 'error');
+            }
+            if (!barSuccess) {
+                showToast('Printer Bar belum diatur atau tidak terhubung', 'error');
+            }
+
             if (success) {
                 Alert.alert('Sukses', 'Struk berhasil dicetak.');
             } else {
@@ -252,6 +347,7 @@ export default function HistoryScreen() {
     };
 
     const handleOpenEdit = () => {
+        setShowDetailModal(false);
         setEditData({
             customer_name: selectedSale.customer_name || '',
             table_no: selectedSale.table_no || ''
@@ -302,7 +398,7 @@ export default function HistoryScreen() {
                 .from('sales')
                 .insert([{
                     order_no: orderNo,
-                    branch_id: parseInt(currentBranchId),
+                    branch_id: currentBranchId,
                     customer_name: newData.customer_name || 'Manual Entry',
                     table_no: newData.table_no || 'Tanpa Meja',
                     total_amount: total,
@@ -436,74 +532,50 @@ export default function HistoryScreen() {
                         </TouchableOpacity>
                     </View>
 
-                    <ScrollView style={styles.modalScroll}>
-                        {/* Info Section */}
-                        <View style={styles.infoGrid}>
-                            <View style={styles.infoItem}>
-                                <Calendar size={16} color="#94a3b8" />
-                                <View style={{ marginLeft: 8 }}>
-                                    <Text style={styles.infoLabel}>Tanggal Pesanan</Text>
-                                    <Text style={styles.infoValue}>{selectedSale ? formatDate(selectedSale.created_at || selectedSale.date) : '-'}</Text>
-                                </View>
+                    <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+                        {/* Info Section - More Compact */}
+                        <View style={styles.compactInfoRow}>
+                            <View style={styles.compactInfoItem}>
+                                <Calendar size={12} color="#94a3b8" />
+                                <Text style={styles.compactInfoLabel}>{selectedSale ? formatDate(selectedSale.date) : '-'}</Text>
                             </View>
-                            <View style={styles.infoItem}>
-                                <Calendar size={16} color="#94a3b8" />
-                                <View style={{ marginLeft: 8 }}>
-                                    <Text style={styles.infoLabel}>Tanggal Bayar</Text>
-                                    <Text style={styles.infoValue}>{selectedSale ? formatDate(selectedSale.date) : '-'}</Text>
-                                </View>
+                            <View style={styles.compactInfoItem}>
+                                <User size={12} color="#94a3b8" />
+                                <Text style={styles.compactInfoLabel}>{selectedSale?.customer_name || 'Guest'}</Text>
                             </View>
-                            {(selectedSale?.status === 'Paid' || selectedSale?.status === 'Completed' || selectedSale?.status === 'Served' || selectedSale?.status === 'Ready') && (() => {
-                                // Prioritize waiting_time field from DB
-                                const dur = selectedSale.waiting_time || formatDuration(selectedSale.created_at, selectedSale.date);
-                                return dur ? (
-                                    <View style={[styles.infoItem, { backgroundColor: '#fff7ed', borderRadius: 12, padding: 8, borderWidth: 1, borderColor: '#ffedd5' }]}>
-                                        <Text style={{ fontSize: 18 }}>⏱️</Text>
-                                        <View style={{ marginLeft: 8 }}>
-                                            <Text style={styles.infoLabel}>Waktu Penyiapan</Text>
-                                            <Text style={[styles.infoValue, { color: '#ea580c', fontWeight: 'bold' }]}>{dur}</Text>
-                                        </View>
-                                    </View>
-                                ) : null;
-                            })()}
-                            <View style={styles.infoItem}>
-                                <User size={16} color="#94a3b8" />
-                                <View style={{ marginLeft: 8 }}>
-                                    <Text style={styles.infoLabel}>Pelanggan</Text>
-                                    <Text style={styles.infoValue}>{selectedSale?.customer_name || 'Guest'}</Text>
-                                </View>
-                            </View>
-                            <View style={styles.infoItem}>
-                                <MapPin size={16} color="#94a3b8" />
-                                <View style={{ marginLeft: 8 }}>
-                                    <Text style={styles.infoLabel}>Meja</Text>
-                                    <Text style={styles.infoValue}>{selectedSale?.table_no || 'Tanpa Meja'}</Text>
-                                </View>
-                            </View>
-                            <View style={styles.infoItem}>
-                                <Receipt size={16} color="#94a3b8" />
-                                <View style={{ marginLeft: 8 }}>
-                                    <Text style={styles.infoLabel}>Metode</Text>
-                                    <Text style={styles.infoValue}>{selectedSale?.payment_method || '-'}</Text>
-                                </View>
+                            <View style={styles.compactInfoItem}>
+                                <MapPin size={12} color="#94a3b8" />
+                                <Text style={styles.compactInfoLabel}>{selectedSale?.table_no || 'No Table'}</Text>
                             </View>
                         </View>
 
-                        <View style={styles.modalDivider} />
+                        <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                            <View style={[styles.compactInfoItem, { backgroundColor: '#f1f5f9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }]}>
+                                <Receipt size={12} color="#64748b" />
+                                <Text style={[styles.compactInfoLabel, { color: '#475569' }]}>{selectedSale?.payment_method || '-'}</Text>
+                            </View>
+                            {(selectedSale?.status === 'Paid' || selectedSale?.status === 'Completed' || selectedSale?.status === 'Served' || selectedSale?.status === 'Ready') && (() => {
+                                const dur = selectedSale.waiting_time || formatDuration(selectedSale.created_at, selectedSale.date);
+                                return dur ? (
+                                    <View style={[styles.compactInfoItem, { backgroundColor: '#fff7ed', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }]}>
+                                        <Text style={{ fontSize: 12 }}>⏱️</Text>
+                                        <Text style={[styles.compactInfoLabel, { color: '#ea580c', fontWeight: 'bold' }]}>{dur}</Text>
+                                    </View>
+                                ) : null;
+                            })()}
+                        </View>
 
                         {/* Items Section */}
-                        <Text style={styles.sectionTitle}>Rincian Pesanan</Text>
+                        <Text style={[styles.sectionTitle, { marginTop: 12, marginBottom: 8 }]}>Rincian Item</Text>
                         {selectedSale?.sale_items?.map((item: any, idx: number) => (
-                            <View key={idx} style={styles.detailItemRow}>
+                            <View key={idx} style={[styles.detailItemRow, { marginBottom: 6 }]}>
                                 <View style={{ flex: 1 }}>
-                                    <Text style={styles.detailItemName}>{item.product_name || (item.product?.name || 'Produk')}</Text>
+                                    <Text style={[styles.detailItemName, { fontSize: 13 }]}>{item.product_name || (item.product?.name || 'Produk')}</Text>
                                     <Text style={styles.detailItemSub}>{item.quantity} x {formatCurrency(item.price)}</Text>
                                 </View>
-                                <Text style={styles.detailItemTotal}>{formatCurrency(item.quantity * item.price)}</Text>
+                                <Text style={[styles.detailItemTotal, { fontSize: 13 }]}>{formatCurrency(item.quantity * item.price)}</Text>
                             </View>
                         ))}
-
-                        <View style={styles.modalDivider} />
 
                         {/* Summary Section */}
                         <View style={styles.summaryRow}>
@@ -511,86 +583,70 @@ export default function HistoryScreen() {
                             <Text style={styles.summaryValue}>{formatCurrency(selectedSale?.total_amount || 0)}</Text>
                         </View>
                     </ScrollView>
-
                     <View style={styles.modalFooter}>
-                        {(selectedSale?.status === 'Paid' || selectedSale?.status === 'Completed' || selectedSale?.status === 'Served' || selectedSale?.status === 'Ready') ? (
-                            <>
-                                <View style={[styles.detailRow, { borderBottomWidth: 0 }]}>
-                                    <Text style={styles.totalLabel}>Total Bayar</Text>
-                                    <Text style={styles.totalAmountLarge}>{formatCurrency(selectedSale.total_amount)}</Text>
-                                </View>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f8fafc', padding: 12, borderRadius: 12 }}>
+                            <Text style={{ fontSize: 14, color: '#64748b', fontWeight: 'bold' }}>Total Bayar</Text>
+                            <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#1e293b' }}>{formatCurrency(selectedSale?.total_amount || 0)}</Text>
+                        </View>
 
-                                <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
-                                    <TouchableOpacity 
-                                        style={[styles.actionBtn, { backgroundColor: '#f1f5f9' }]}
-                                        onPress={handleOpenEdit}
-                                    >
-                                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                            <Edit size={16} color="#64748b" style={{ marginRight: 6 }} />
-                                            <Text style={{ color: '#475569', fontWeight: 'bold' }}>Edit</Text>
-                                        </View>
-                                    </TouchableOpacity>
-
-                                    <TouchableOpacity 
-                                        style={[styles.actionBtn, { backgroundColor: '#fee2e2' }]}
-                                        onPress={handleDeleteSale}
-                                    >
-                                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                            <Trash2 size={16} color="#ef4444" style={{ marginRight: 6 }} />
-                                            <Text style={{ color: '#ef4444', fontWeight: 'bold' }}>Hapus</Text>
-                                        </View>
-                                    </TouchableOpacity>
-                                </View>
-
-                                <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-                                    <TouchableOpacity 
-                                        style={[styles.actionBtn, { flex: 1, backgroundColor: '#ea580c' }]}
-                                        onPress={handlePrintReceipt}
-                                        disabled={printing}
-                                    >
-                                        {printing ? <ActivityIndicator size="small" color="white" /> : (
-                                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                                <Printer size={16} color="white" style={{ marginRight: 8 }} />
-                                                <Text style={styles.actionBtnText}>Cetak</Text>
-                                            </View>
-                                        )}
-                                    </TouchableOpacity>
-
-                                    <TouchableOpacity 
-                                        style={[styles.actionBtn, { flex: 1, backgroundColor: '#f1f5f9' }]}
-                                        onPress={handlePreviewReceipt}
-                                    >
-                                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                            <Receipt size={16} color="#64748b" style={{ marginRight: 8 }} />
-                                            <Text style={[styles.actionBtnText, { color: '#64748b' }]}>Preview</Text>
-                                        </View>
-                                    </TouchableOpacity>
-
-                                    {(selectedSale.status !== 'Paid' && selectedSale.status !== 'Completed' && selectedSale.status !== 'Served' && selectedSale.status !== 'Ready') && (
-                                        <TouchableOpacity 
-                                            style={[styles.actionBtn, { flex: 1, backgroundColor: '#22c55e' }]}
-                                            onPress={handlePayFromDetail}
-                                        >
-                                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                                <Receipt size={16} color="white" style={{ marginRight: 8 }} />
-                                                <Text style={styles.actionBtnText}>Bayar Sekarang</Text>
-                                            </View>
-                                        </TouchableOpacity>
-                                    )}
-                                </View>
-
-                                <TouchableOpacity 
-                                    style={[styles.closeBtnDetail, { marginTop: 15 }]} 
-                                    onPress={() => setShowDetailModal(false)}
-                                >
-                                    <Text style={styles.closeBtnText}>Tutup</Text>
-                                </TouchableOpacity>
-                            </>
-                        ) : (
-                            <TouchableOpacity style={styles.payBtnLarge} onPress={handlePayFromDetail}>
-                                <Text style={styles.payBtnTextLarge}>Bayar Sekarang</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+                            {/* Actions Group 1: Print & Preview */}
+                            <TouchableOpacity 
+                                style={[styles.compactActionBtn, { backgroundColor: '#ea580c' }]}
+                                onPress={handlePrintReceipt}
+                                disabled={printing}
+                            >
+                                {printing ? <ActivityIndicator size="small" color="white" /> : (
+                                    <>
+                                        <Printer size={16} color="white" />
+                                        <Text style={styles.compactActionBtnText}>Cetak</Text>
+                                    </>
+                                )}
                             </TouchableOpacity>
-                        )}
+
+                            <TouchableOpacity 
+                                style={[styles.compactActionBtn, { backgroundColor: '#f1f5f9' }]}
+                                onPress={handlePreviewReceipt}
+                            >
+                                <Receipt size={16} color="#64748b" />
+                                <Text style={[styles.compactActionBtnText, { color: '#64748b' }]}>Preview</Text>
+                            </TouchableOpacity>
+
+                            {/* Actions Group 2: Edit & Delete */}
+                            <TouchableOpacity 
+                                style={[styles.compactActionBtn, { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0' }]}
+                                onPress={handleOpenEdit}
+                            >
+                                <Edit size={14} color="#64748b" />
+                                <Text style={[styles.compactActionBtnText, { color: '#64748b' }]}>Edit</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity 
+                                style={[styles.compactActionBtn, { backgroundColor: '#fef2f2' }]}
+                                onPress={handleDeleteSale}
+                            >
+                                <Trash2 size={14} color="#ef4444" />
+                                <Text style={[styles.compactActionBtnText, { color: '#ef4444' }]}>Hapus</Text>
+                            </TouchableOpacity>
+
+                            {/* Conditional: Pay Now */}
+                            {selectedSale && !['Paid', 'Completed', 'Served', 'Ready'].includes(selectedSale.status) && (
+                                <TouchableOpacity 
+                                    style={[styles.compactActionBtn, { backgroundColor: '#22c55e', width: '100%' }]}
+                                    onPress={handlePayFromDetail}
+                                >
+                                    <Receipt size={16} color="white" />
+                                    <Text style={styles.compactActionBtnText}>Bayar Sekarang</Text>
+                                </TouchableOpacity>
+                            )}
+                        </View>
+
+                        <TouchableOpacity 
+                            style={[styles.closeBtnSimple, { marginTop: 4 }]} 
+                            onPress={() => setShowDetailModal(false)}
+                        >
+                            <Text style={{ color: '#94a3b8', fontSize: 13, fontWeight: '600' }}>Tutup</Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
             </View>
@@ -1201,26 +1257,48 @@ const styles = StyleSheet.create({
     
     // Modal Styles
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-    modalContent: { backgroundColor: 'white', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, maxHeight: '90%', width: '100%', alignSelf: 'center' },
-    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-    modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#1e293b' },
-    modalSubtitle: { fontSize: 14, color: '#ea580c', fontWeight: '600' },
+    modalContent: { backgroundColor: 'white', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 16, maxHeight: '85%', width: '100%', alignSelf: 'center' },
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+    modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#1e293b' },
+    modalSubtitle: { fontSize: 12, color: '#ea580c', fontWeight: '600' },
     closeBtn: { padding: 4 },
-    modalScroll: { marginBottom: 20 },
-    infoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginBottom: 8 },
-    infoItem: { width: '45%', flexDirection: 'row', alignItems: 'center' },
-    infoLabel: { fontSize: 10, color: '#94a3b8', textTransform: 'uppercase' },
-    infoValue: { fontSize: 13, fontWeight: 'bold', color: '#334155' },
-    modalDivider: { height: 1, backgroundColor: '#f1f5f9', marginVertical: 16 },
-    sectionTitle: { fontSize: 14, fontWeight: 'bold', color: '#1e293b', marginBottom: 12 },
-    detailItemRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
-    detailItemName: { fontSize: 14, color: '#334155', fontWeight: '500' },
-    detailItemSub: { fontSize: 12, color: '#94a3b8', marginTop: 2 },
-    detailItemTotal: { fontSize: 14, fontWeight: 'bold', color: '#1e293b' },
-    summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
-    summaryLabel: { fontSize: 16, fontWeight: 'bold', color: '#64748b' },
-    summaryValue: { fontSize: 24, fontWeight: 'bold', color: '#ea580c' },
-    modalFooter: { gap: 12 },
+ 
+    // Compact Info Styles
+    compactInfoRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'center' },
+    compactInfoItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    compactInfoLabel: { fontSize: 11, color: '#64748b', fontWeight: '500' },
+ 
+    modalScroll: { marginBottom: 16 },
+    modalDivider: { height: 1, backgroundColor: '#f1f5f9', marginVertical: 12 },
+    sectionTitle: { fontSize: 13, fontWeight: 'bold', color: '#1e293b', marginBottom: 8 },
+    detailItemRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+    detailItemName: { fontSize: 13, color: '#334155', fontWeight: '500' },
+    detailItemSub: { fontSize: 11, color: '#94a3b8', marginTop: 1 },
+    detailItemTotal: { fontSize: 13, fontWeight: 'bold', color: '#1e293b' },
+    summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
+    summaryLabel: { fontSize: 14, fontWeight: 'bold', color: '#64748b' },
+    summaryValue: { fontSize: 18, fontWeight: 'bold', color: '#ea580c' },
+    modalFooter: { gap: 8, marginTop: 4 },
+    compactActionBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 10,
+        paddingHorizontal: 12,
+        borderRadius: 10,
+        flex: 1,
+        minWidth: '45%',
+        gap: 6,
+    },
+    compactActionBtnText: {
+        fontSize: 13,
+        fontWeight: 'bold',
+        color: 'white',
+    },
+    closeBtnSimple: {
+        paddingVertical: 10,
+        alignItems: 'center',
+    },
     printBtn: { backgroundColor: '#1e293b', padding: 16, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
     printBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
     payBtnLarge: { backgroundColor: '#ea580c', padding: 16, borderRadius: 16, alignItems: 'center' },

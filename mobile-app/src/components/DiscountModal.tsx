@@ -5,18 +5,20 @@ interface DiscountModalProps {
     visible: boolean;
     onClose: () => void;
     currentTotal: number;
-    onApply: (discount: { type: 'percentage' | 'fixed'; value: number }) => void;
+    onApply: (discount: { type: 'percentage' | 'fixed'; value: number; reason?: string }) => void;
 }
 
 export default function DiscountModal({ visible, onClose, currentTotal, onApply }: DiscountModalProps) {
     const [type, setType] = useState<'percentage' | 'fixed'>('percentage');
     const [value, setValue] = useState('');
+    const [reason, setReason] = useState('');
 
     const handleApply = () => {
         const numValue = parseFloat(value) || 0;
         if (numValue <= 0) return;
-        onApply({ type, value: numValue });
+        onApply({ type, value: numValue, reason: reason.trim() || undefined });
         setValue('');
+        setReason('');
         onClose();
     };
 
@@ -59,6 +61,16 @@ export default function DiscountModal({ visible, onClose, currentTotal, onApply 
                         keyboardType="numeric"
                         autoFocus
                     />
+
+                    <View style={{ marginTop: 16 }}>
+                        <Text style={{ fontSize: 13, color: '#6b7280', marginBottom: 8, fontWeight: '600' }}>Alasan Diskon (Opsional)</Text>
+                        <TextInput
+                            style={[styles.input, { fontSize: 14, fontWeight: 'normal' }]}
+                            placeholder="Misal: Promo Ulang Tahun, Member..."
+                            value={reason}
+                            onChangeText={setReason}
+                        />
+                    </View>
 
                     {value !== '' && (
                         <View style={styles.summary}>

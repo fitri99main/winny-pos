@@ -30,6 +30,25 @@ export function SettingsView({
     const [activeTab, setActiveTab] = useState('general');
     const [localSettings, setLocalSettings] = useState(settings);
     const [hasChanges, setHasChanges] = useState(false);
+    const [previewType, setPreviewType] = useState<'receipt' | 'kitchen' | 'bar'>('receipt');
+    const [settingsSubTab, setSettingsSubTab] = useState<'receipt' | 'kitchen' | 'bar'>('receipt');
+    const [connectedPrinters, setConnectedPrinters] = useState<{
+        Kitchen: string | null;
+        Bar: string | null;
+        Cashier: string | null;
+    }>({
+        Kitchen: printerService.getConnectedPrinter('Kitchen'),
+        Bar: printerService.getConnectedPrinter('Bar'),
+        Cashier: printerService.getConnectedPrinter('Cashier')
+    });
+
+    const refreshPrinters = () => {
+        setConnectedPrinters({
+            Kitchen: printerService.getConnectedPrinter('Kitchen'),
+            Bar: printerService.getConnectedPrinter('Bar'),
+            Cashier: printerService.getConnectedPrinter('Cashier')
+        });
+    };
 
     // Profile Settings State
     const { user } = useAuth();
@@ -891,20 +910,21 @@ export function SettingsView({
                                             <p className="text-xs text-gray-500">Untuk mencetak pesanan makanan</p>
                                         </div>
                                     </div>
-                                    {printerService.getConnectedPrinter('Kitchen') ? (
+                                    {connectedPrinters.Kitchen ? (
                                         <div className="flex items-center gap-2 text-green-600 text-xs font-bold bg-green-50 px-3 py-1.5 rounded-lg border border-green-100">
                                             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                                            {printerService.getConnectedPrinter('Kitchen')}
+                                            {connectedPrinters.Kitchen}
                                         </div>
                                     ) : (
                                         <span className="text-xs font-bold text-gray-400">Belum Terhubung</span>
                                     )}
                                 </div>
-                                <div className="flex gap-3">
+                                <div className="flex flex-wrap gap-3">
                                     <Button
                                         onClick={async () => {
                                             try {
                                                 await printerService.connect('Kitchen');
+                                                refreshPrinters();
                                                 toast.success('Printer Dapur terhubung!');
                                             } catch (e) {
                                                 toast.error('Gagal menghubungkan printer. Pastikan Bluetooth aktif.');
@@ -914,13 +934,27 @@ export function SettingsView({
                                     >
                                         Pair Printer Dapur
                                     </Button>
+                                    {connectedPrinters.Kitchen && (
+                                        <Button
+                                            variant="outline"
+                                            className="text-red-500 border-red-100 hover:bg-red-50 hover:text-red-600 px-3"
+                                            onClick={async () => {
+                                                await printerService.disconnect('Kitchen');
+                                                refreshPrinters();
+                                                toast.success('Printer Dapur terputus');
+                                            }}
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </Button>
+                                    )}
                                     <Button
-                                        disabled={!printerService.getConnectedPrinter('Kitchen')}
+                                        disabled={!connectedPrinters.Kitchen}
                                         onClick={async () => {
                                             await printerService.printTicket('Kitchen', {
                                                 orderNo: 'TEST-001',
                                                 tableNo: 'T1',
                                                 waiterName: 'Admin',
+                                                cashierName: 'Admin',
                                                 time: new Date().toLocaleTimeString(),
                                                 items: [{ name: 'Test Print (Dapur)', quantity: 1 }]
                                             });
@@ -952,20 +986,21 @@ export function SettingsView({
                                             <p className="text-xs text-gray-500">Untuk mencetak pesanan minuman</p>
                                         </div>
                                     </div>
-                                    {printerService.getConnectedPrinter('Bar') ? (
+                                    {connectedPrinters.Bar ? (
                                         <div className="flex items-center gap-2 text-green-600 text-xs font-bold bg-green-50 px-3 py-1.5 rounded-lg border border-green-100">
                                             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                                            {printerService.getConnectedPrinter('Bar')}
+                                            {connectedPrinters.Bar}
                                         </div>
                                     ) : (
                                         <span className="text-xs font-bold text-gray-400">Belum Terhubung</span>
                                     )}
                                 </div>
-                                <div className="flex gap-3">
+                                <div className="flex flex-wrap gap-3">
                                     <Button
                                         onClick={async () => {
                                             try {
                                                 await printerService.connect('Bar');
+                                                refreshPrinters();
                                                 toast.success('Printer Bar terhubung!');
                                             } catch (e) {
                                                 toast.error('Gagal menghubungkan printer.');
@@ -975,13 +1010,27 @@ export function SettingsView({
                                     >
                                         Pair Printer Bar
                                     </Button>
+                                    {connectedPrinters.Bar && (
+                                        <Button
+                                            variant="outline"
+                                            className="text-red-500 border-red-100 hover:bg-red-50 hover:text-red-600 px-3"
+                                            onClick={async () => {
+                                                await printerService.disconnect('Bar');
+                                                refreshPrinters();
+                                                toast.success('Printer Bar terputus');
+                                            }}
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </Button>
+                                    )}
                                     <Button
-                                        disabled={!printerService.getConnectedPrinter('Bar')}
+                                        disabled={!connectedPrinters.Bar}
                                         onClick={async () => {
                                             await printerService.printTicket('Bar', {
                                                 orderNo: 'TEST-001',
                                                 tableNo: 'T1',
                                                 waiterName: 'Admin',
+                                                cashierName: 'Admin',
                                                 time: new Date().toLocaleTimeString(),
                                                 items: [{ name: 'Test Print (Bar)', quantity: 1 }]
                                             });
@@ -1013,20 +1062,21 @@ export function SettingsView({
                                             <p className="text-xs text-gray-500">Untuk mencetak struk belanja pelanggan</p>
                                         </div>
                                     </div>
-                                    {printerService.getConnectedPrinter('Cashier') ? (
+                                    {connectedPrinters.Cashier ? (
                                         <div className="flex items-center gap-2 text-green-600 text-xs font-bold bg-green-50 px-3 py-1.5 rounded-lg border border-green-100">
                                             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                                            {printerService.getConnectedPrinter('Cashier')}
+                                            {connectedPrinters.Cashier}
                                         </div>
                                     ) : (
                                         <span className="text-xs font-bold text-gray-400">Belum Terhubung</span>
                                     )}
                                 </div>
-                                <div className="flex gap-3">
+                                <div className="flex flex-wrap gap-3">
                                     <Button
                                         onClick={async () => {
                                             try {
                                                 await printerService.connect('Cashier');
+                                                refreshPrinters();
                                                 toast.success('Printer Kasir terhubung!');
                                             } catch (e) {
                                                 toast.error('Gagal menghubungkan printer.');
@@ -1036,8 +1086,21 @@ export function SettingsView({
                                     >
                                         Pair Printer Kasir
                                     </Button>
+                                    {connectedPrinters.Cashier && (
+                                        <Button
+                                            variant="outline"
+                                            className="text-red-500 border-red-100 hover:bg-red-50 hover:text-red-600 px-3"
+                                            onClick={async () => {
+                                                await printerService.disconnect('Cashier');
+                                                refreshPrinters();
+                                                toast.success('Printer Kasir terputus');
+                                            }}
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </Button>
+                                    )}
                                     <Button
-                                        disabled={!printerService.getConnectedPrinter('Cashier')}
+                                        disabled={!connectedPrinters.Cashier}
                                         onClick={async () => {
                                             await printerService.printReceipt({
                                                 orderNo: 'POS-001',
@@ -1078,10 +1141,36 @@ export function SettingsView({
                     <div className="max-w-2xl space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
                         <div>
                             <h3 className="text-lg font-bold text-gray-800">Pengaturan Templat Struk</h3>
-                            <p className="text-sm text-gray-500">Sesuaikan tampilan struk yang dicetak ke pelanggan.</p>
+                            <p className="text-sm text-gray-500">Sesuaikan tampilan struk dan tiket pesanan.</p>
                         </div>
 
-                        <div className="space-y-6">
+                        {/* Settings Sub-Tabs */}
+                        <div className="flex bg-gray-100 p-1.5 rounded-xl self-start">
+                            <button
+                                onClick={() => { setSettingsSubTab('receipt'); setPreviewType('receipt'); }}
+                                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${settingsSubTab === 'receipt' ? 'bg-white shadow-sm text-primary' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                <FileText className="w-4 h-4" />
+                                Struk Pelanggan
+                            </button>
+                            <button
+                                onClick={() => { setSettingsSubTab('kitchen'); setPreviewType('kitchen'); }}
+                                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${settingsSubTab === 'kitchen' ? 'bg-white shadow-sm text-orange-600' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                <Printer className="w-4 h-4" />
+                                Tiket Dapur
+                            </button>
+                            <button
+                                onClick={() => { setSettingsSubTab('bar'); setPreviewType('bar'); }}
+                                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${settingsSubTab === 'bar' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                <Printer className="w-4 h-4" />
+                                Tiket Bar
+                            </button>
+                        </div>
+
+                        {settingsSubTab === 'receipt' && (
+                            <div className="space-y-6 animate-in fade-in slide-in-from-left-2 duration-300">
                             <div className="grid gap-4">
                                 <div className="space-y-2">
                                     <Label className="text-sm font-bold text-gray-700">Nama Toko (Header)</Label>
@@ -1135,6 +1224,20 @@ export function SettingsView({
                                         </button>
                                     </div>
                                 </div>
+                                <div className="space-y-2">
+                                    <Label className="text-sm font-bold text-gray-700">Baris Kosong Akhir Struk</Label>
+                                    <div className="flex items-center gap-3">
+                                        <input
+                                            type="number"
+                                            value={localSettings.receipt_footer_feed ?? 4}
+                                            onChange={e => handleLocalChange({ ...localSettings, receipt_footer_feed: parseInt(e.target.value) || 0 })}
+                                            className="w-24 px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 outline-none"
+                                            min="0"
+                                            max="20"
+                                        />
+                                        <span className="text-[10px] text-gray-500 italic">Jumlah baris kosong sebelum kertas dipotong (Default: 4).</span>
+                                    </div>
+                                </div>
                             </div>
 
                             <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100 space-y-4">
@@ -1186,6 +1289,14 @@ export function SettingsView({
                                 <h4 className="font-bold text-gray-800 text-sm">Opsi Informasi</h4>
                                 <div className="space-y-4">
                                     <div className="flex items-center justify-between">
+                                        <Label htmlFor="show-cashier-name" className="cursor-pointer">Tampilkan Nama Kasir</Label>
+                                        <Switch
+                                            id="show-cashier-name"
+                                            checked={localSettings.show_cashier_name ?? true}
+                                            onCheckedChange={checked => handleLocalChange({ ...localSettings, show_cashier_name: checked })}
+                                        />
+                                    </div>
+                                    <div className="flex items-center justify-between">
                                         <Label htmlFor="show-date" className="cursor-pointer">Tampilkan Tanggal & Waktu</Label>
                                         <Switch
                                             id="show-date"
@@ -1225,48 +1336,307 @@ export function SettingsView({
                                             onCheckedChange={checked => handleLocalChange({ ...localSettings, show_customer_status: checked })}
                                         />
                                     </div>
+                                    <div className="pt-2 border-t border-gray-100 mt-2">
+                                        <div className="flex items-center justify-between py-2">
+                                            <div className="space-y-0.5">
+                                                <Label htmlFor="enable-wifi-vouchers" className="cursor-pointer font-bold text-blue-600">Tampilkan Voucher WiFi</Label>
+                                                <p className="text-[10px] text-gray-400">Sisipkan kode voucher WiFi di bagian bawah struk</p>
+                                            </div>
+                                            <Switch
+                                                id="enable-wifi-vouchers"
+                                                checked={localSettings.enable_wifi_vouchers || false}
+                                                onCheckedChange={checked => handleLocalChange({ ...localSettings, enable_wifi_vouchers: checked })}
+                                            />
+                                        </div>
+                                        {localSettings.enable_wifi_vouchers && (
+                                            <div className="space-y-4 mt-2 animate-in slide-in-from-top-2 duration-200">
+                                                <div className="space-y-2">
+                                                    <Label className="text-[11px] font-bold text-gray-500 uppercase">Minimal Belanja (Rp)</Label>
+                                                    <input
+                                                        type="number"
+                                                        value={localSettings.wifi_voucher_min_amount || 0}
+                                                        onChange={(e) => handleLocalChange({ ...localSettings, wifi_voucher_min_amount: parseInt(e.target.value) || 0 })}
+                                                        placeholder="Contoh: 50000"
+                                                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/20 outline-none"
+                                                    />
+                                                    <p className="text-[10px] text-gray-400">Voucher hanya muncul jika total belanja mencapai nilai ini.</p>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label className="text-[11px] font-bold text-gray-500 uppercase">Pesan WiFi (Notice)</Label>
+                                                    <input
+                                                        type="text"
+                                                        value={localSettings.wifi_voucher_notice || ''}
+                                                        onChange={(e) => handleLocalChange({ ...localSettings, wifi_voucher_notice: e.target.value })}
+                                                        placeholder="Contoh: Gunakan kode ini untuk akses WiFi"
+                                                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/20 outline-none"
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        )}
+
+                        {settingsSubTab === 'kitchen' && (
+                            <div className="space-y-6 animate-in fade-in slide-in-from-right-2 duration-300">
+                                <div className="grid gap-4">
+                                    <div className="space-y-2">
+                                        <Label className="text-sm font-bold text-gray-700">Nama Dapur (Header)</Label>
+                                        <input
+                                            type="text"
+                                            value={localSettings.kitchen_header || ''}
+                                            onChange={e => handleLocalChange({ ...localSettings, kitchen_header: e.target.value })}
+                                            className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 outline-none font-bold"
+                                            placeholder="Contoh: DAPUR UTAMA"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-sm font-bold text-gray-700">Pesan Penutup Dapur (Footer)</Label>
+                                        <input
+                                            type="text"
+                                            value={localSettings.kitchen_footer || ''}
+                                            onChange={e => handleLocalChange({ ...localSettings, kitchen_footer: e.target.value })}
+                                            className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 outline-none"
+                                            placeholder="Contoh: Segera disiapkan!"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="p-6 bg-orange-50/50 rounded-2xl border border-orange-100 space-y-4">
+                                    <h4 className="font-bold text-orange-800 text-sm">Opsi Informasi Tiket Dapur</h4>
+                                    <div className="space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <Label htmlFor="k-show-table" className="cursor-pointer text-gray-700 font-medium">Tampilkan Nomor Meja</Label>
+                                            <Switch
+                                                id="k-show-table"
+                                                checked={localSettings.kitchen_show_table ?? true}
+                                                onCheckedChange={checked => handleLocalChange({ ...localSettings, kitchen_show_table: checked })}
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between">
+                                            <Label htmlFor="k-show-waiter" className="cursor-pointer text-gray-700 font-medium">Tampilkan Nama Pelayan</Label>
+                                            <Switch
+                                                id="k-show-waiter"
+                                                checked={localSettings.kitchen_show_waiter ?? true}
+                                                onCheckedChange={checked => handleLocalChange({ ...localSettings, kitchen_show_waiter: checked })}
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between">
+                                            <Label htmlFor="k-show-date" className="cursor-pointer text-gray-700 font-medium">Tampilkan Waktu Pesanan</Label>
+                                            <Switch
+                                                id="k-show-date"
+                                                checked={localSettings.kitchen_show_date ?? true}
+                                                onCheckedChange={checked => handleLocalChange({ ...localSettings, kitchen_show_date: checked })}
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between">
+                                            <Label htmlFor="k-show-cashier" className="cursor-pointer text-gray-700 font-medium">Tampilkan Nama Kasir</Label>
+                                            <Switch
+                                                id="k-show-cashier"
+                                                checked={localSettings.kitchen_show_cashier ?? true}
+                                                onCheckedChange={checked => handleLocalChange({ ...localSettings, kitchen_show_cashier: checked })}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {settingsSubTab === 'bar' && (
+                            <div className="space-y-6 animate-in fade-in slide-in-from-right-2 duration-300">
+                                <div className="grid gap-4">
+                                    <div className="space-y-2">
+                                        <Label className="text-sm font-bold text-gray-700">Nama Bar (Header)</Label>
+                                        <input
+                                            type="text"
+                                            value={localSettings.bar_header || ''}
+                                            onChange={e => handleLocalChange({ ...localSettings, bar_header: e.target.value })}
+                                            className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 outline-none font-bold text-blue-800"
+                                            placeholder="Contoh: BAR & COFFEE"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-sm font-bold text-gray-700">Pesan Penutup Bar (Footer)</Label>
+                                        <input
+                                            type="text"
+                                            value={localSettings.bar_footer || ''}
+                                            onChange={e => handleLocalChange({ ...localSettings, bar_footer: e.target.value })}
+                                            className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 outline-none"
+                                            placeholder="Contoh: Selamat menikmati!"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="p-6 bg-blue-50/50 rounded-2xl border border-blue-100 space-y-4">
+                                    <h4 className="font-bold text-blue-800 text-sm">Opsi Informasi Tiket Bar</h4>
+                                    <div className="space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <Label htmlFor="b-show-table" className="cursor-pointer text-gray-700 font-medium">Tampilkan Nomor Meja</Label>
+                                            <Switch
+                                                id="b-show-table"
+                                                checked={localSettings.bar_show_table ?? true}
+                                                onCheckedChange={checked => handleLocalChange({ ...localSettings, bar_show_table: checked })}
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between">
+                                            <Label htmlFor="b-show-waiter" className="cursor-pointer text-gray-700 font-medium">Tampilkan Nama Pelayan</Label>
+                                            <Switch
+                                                id="b-show-waiter"
+                                                checked={localSettings.bar_show_waiter ?? true}
+                                                onCheckedChange={checked => handleLocalChange({ ...localSettings, bar_show_waiter: checked })}
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between">
+                                            <Label htmlFor="b-show-date" className="cursor-pointer text-gray-700 font-medium">Tampilkan Waktu Pesanan</Label>
+                                            <Switch
+                                                id="b-show-date"
+                                                checked={localSettings.bar_show_date ?? true}
+                                                onCheckedChange={checked => handleLocalChange({ ...localSettings, bar_show_date: checked })}
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between">
+                                            <Label htmlFor="b-show-cashier" className="cursor-pointer text-gray-700 font-medium">Tampilkan Nama Kasir</Label>
+                                            <Switch
+                                                id="b-show-cashier"
+                                                checked={localSettings.bar_show_cashier ?? true}
+                                                onCheckedChange={checked => handleLocalChange({ ...localSettings, bar_show_cashier: checked })}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Preview */}
                         <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm space-y-4">
-                            <h4 className="font-bold text-gray-800 text-sm">Pratinjau Struk ({localSettings.receipt_paper_width})</h4>
-                            <div className={`border border-dashed border-gray-300 p-6 bg-gray-50/50 text-center font-mono text-[10px] space-y-1 text-gray-600 mx-auto transition-all ${localSettings.receipt_paper_width === '80mm' ? 'max-w-xs' : 'max-w-[200px]'
-                                }`}>
-                                {localSettings.show_logo && localSettings.receipt_logo_url && (
-                                    <div className="flex justify-center mb-2">
-                                        <img src={localSettings.receipt_logo_url} alt="Logo" className="w-12 h-12 object-contain grayscale" />
-                                    </div>
+                            <div className="flex items-center justify-between">
+                                <h4 className="font-bold text-gray-800 text-sm">Pratinjau {previewType === 'receipt' ? 'Struk' : (previewType === 'kitchen' ? 'Tiket Dapur' : 'Tiket Bar')} ({localSettings.receipt_paper_width})</h4>
+                                <div className="flex bg-gray-100 p-1 rounded-lg">
+                                    <button
+                                        onClick={() => setPreviewType('receipt')}
+                                        className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${previewType === 'receipt' ? 'bg-white shadow-sm text-primary' : 'text-gray-500 hover:text-gray-700'}`}
+                                    >
+                                        Struk
+                                    </button>
+                                    <button
+                                        onClick={() => setPreviewType('kitchen')}
+                                        className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${previewType === 'kitchen' ? 'bg-white shadow-sm text-primary' : 'text-gray-500 hover:text-gray-700'}`}
+                                    >
+                                        Dapur
+                                    </button>
+                                    <button
+                                        onClick={() => setPreviewType('bar')}
+                                        className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${previewType === 'bar' ? 'bg-white shadow-sm text-primary' : 'text-gray-500 hover:text-gray-700'}`}
+                                    >
+                                        Bar
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className={`border border-dashed border-gray-300 p-4 bg-gray-50/50 font-mono text-[10px] space-y-0.5 text-gray-600 mx-auto transition-all ${localSettings.receipt_paper_width === '80mm' ? 'max-w-xs' : 'max-w-[200px]'}`}>
+                                {previewType === 'receipt' ? (
+                                    <>
+                                        {/* Logo */}
+                                        {localSettings.show_logo && localSettings.receipt_logo_url && (
+                                            <div className="flex justify-center mb-2">
+                                                <img src={localSettings.receipt_logo_url} alt="Logo" className="w-12 h-12 object-contain grayscale" />
+                                            </div>
+                                        )}
+                                        {/* Header */}
+                                        <p className="font-bold text-xs uppercase text-gray-800 text-center">{localSettings.receipt_header || 'NAMA TOKO'}</p>
+                                        {localSettings.address && <p className="text-center whitespace-pre-line">{localSettings.address}</p>}
+                                        {localSettings.phone && <p className="text-center">Telp: {localSettings.phone}</p>}
+                                        <p className="text-center">{localSettings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
+                                        {/* Order Info */}
+                                        <div className="text-left space-y-0.5">
+                                            <p>No: ORD-12345</p>
+                                            {localSettings.show_date && <p>Waktu: {new Date().toLocaleDateString('id-ID')} {new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p>}
+                                            {localSettings.show_table && <p>Meja: T-05</p>}
+                                            {localSettings.show_customer_name && <p>Pelanggan: Winny</p>}
+                                            {localSettings.show_customer_status && <p>Status: Member Gold</p>}
+                                            {(localSettings.show_cashier_name ?? true) && <p>Kasir: Admin</p>}
+                                            {localSettings.show_waiter && <p>Pelayan: Budi R.</p>}
+                                        </div>
+                                        <p className="text-center">{localSettings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
+                                        {/* Items */}
+                                        <div className="text-left">
+                                            <div className="flex justify-between"><span>1x KOPI SUSU GULA AREN</span><span>25.000</span></div>
+                                            <div className="flex justify-between"><span>2x PISANG GORENG</span><span>30.000</span></div>
+                                        </div>
+                                        <p className="text-center">{localSettings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
+                                        {/* Totals */}
+                                        <div className="space-y-0.5">
+                                            <div className="flex justify-between"><span>Subtotal</span><span>55.000</span></div>
+                                            <div className="flex justify-between text-red-500"><span>Diskon</span><span>0</span></div>
+                                            {(localSettings.service_rate > 0) && <div className="flex justify-between"><span>Layanan ({localSettings.service_rate}%)</span><span>{Math.round(55000 * localSettings.service_rate / 100).toLocaleString('id-ID')}</span></div>}
+                                            {(localSettings.tax_rate > 0) && <div className="flex justify-between"><span>Pajak ({localSettings.tax_rate}%)</span><span>{Math.round(55000 * localSettings.tax_rate / 100).toLocaleString('id-ID')}</span></div>}
+                                            <div className="font-bold flex justify-between text-xs text-gray-800"><span>TOTAL</span><span>55.000</span></div>
+                                        </div>
+                                        <p className="text-center">{localSettings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
+                                        {/* Payment */}
+                                        <div className="space-y-0.5 text-left">
+                                            <div className="flex justify-between"><span>CASH</span><span>60.000</span></div>
+                                            <div className="flex justify-between"><span>Kembali</span><span>5.000</span></div>
+                                        </div>
+                                        <p className="text-center">{localSettings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
+                                        {/* WiFi Voucher (if enabled) */}
+                                        {localSettings.enable_wifi_vouchers && (
+                                            <>
+                                                <p className="text-center text-gray-500">{localSettings.wifi_voucher_notice || 'Gunakan kode ini untuk akses WiFi'}</p>
+                                                <p className="font-bold text-center text-xs text-gray-800">WIFI-XXXX-XXXX</p>
+                                                <p className="text-center">{localSettings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
+                                            </>
+                                        )}
+                                        {/* Footer */}
+                                        <p className="italic text-center text-gray-500 mt-2">{localSettings.receipt_footer || 'Terima Kasih'}</p>
+                                        <p className="text-center text-gray-400">{localSettings.receipt_header || 'NAMA TOKO'}</p>
+                                    </>
+                                ) : (
+                                    <>
+                                        {/* Ticket Header */}
+                                        <p className="font-bold text-sm uppercase text-gray-800 text-center">{
+                                            previewType === 'kitchen' 
+                                            ? (localSettings.kitchen_header || 'DAPUR') 
+                                            : (localSettings.bar_header || 'BAR')
+                                        }</p>
+                                        <p className="text-center font-bold">--- PESANAN {previewType === 'kitchen' ? 'DAPUR' : 'BAR'} ---</p>
+
+                                        {/* Order Info */}
+                                        <div className="text-left mt-2 space-y-0.5">
+                                            <p>No: ORD-12345</p>
+                                            {(previewType === 'kitchen' ? (localSettings.kitchen_show_table ?? true) : (localSettings.bar_show_table ?? true)) && <p>Meja: T-05</p>}
+                                            {(previewType === 'kitchen' ? (localSettings.kitchen_show_waiter ?? true) : (localSettings.bar_show_waiter ?? true)) && <p>Pelayan: Budi R.</p>}
+                                            {(previewType === 'kitchen' ? (localSettings.kitchen_show_cashier ?? true) : (localSettings.bar_show_cashier ?? true)) && <p>Kasir: Admin</p>}
+                                            {(previewType === 'kitchen' ? (localSettings.kitchen_show_date ?? true) : (localSettings.bar_show_date ?? true)) && <p>Waktu: {new Date().toLocaleDateString('id-ID')} {new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p>}
+                                        </div>
+                                        <p className="text-center">{localSettings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
+
+                                        {/* Items */}
+                                        <div className="text-left font-bold text-xs py-1">
+                                            {previewType === 'kitchen' ? (
+                                                <>
+                                                    <p>2x NASI GORENG SPESIAL</p>
+                                                    <p>1x MIE GORENG JAWA</p>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <p>1x ES TEH MANIS</p>
+                                                    <p>2x JUS ALPUKAT</p>
+                                                </>
+                                            )}
+                                        </div>
+                                        <p className="text-center">{localSettings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
+
+                                        {/* Footer */}
+                                        {((previewType === 'kitchen' ? localSettings.kitchen_footer : localSettings.bar_footer)) && (
+                                            <p className="italic text-center text-gray-500 mt-2">{(previewType === 'kitchen' ? localSettings.kitchen_footer : localSettings.bar_footer)}</p>
+                                        )}
+
+                                        <div className="h-8"></div> {/* Spacer for feed */}
+                                    </>
                                 )}
-                                <p className="font-bold text-xs uppercase text-gray-800">{localSettings.receipt_header || 'NAMA TOKO'}</p>
-                                <p className="whitespace-pre-line">{localSettings.address || 'Alamat Toko'}</p>
-                                <p>{localSettings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
-                                <div className="text-left space-y-0.5">
-                                    <p>No: ORD-12345</p>
-                                    {localSettings.show_date && <p>Waktu: {new Date().toLocaleDateString()} {new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p>}
-                                    {localSettings.show_table && <p>Meja: T-05</p>}
-                                    {localSettings.show_customer_name && <p>Pelanggan: Winny</p>}
-                                    {localSettings.show_customer_status && <p>Status: Member Gold</p>}
-                                    {localSettings.show_waiter && <p>Pelayan: Budi R.</p>}
-                                </div>
-                                <p>{localSettings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
-                                <div className="text-left flex justify-between"><span>KOPI SUSU GULA AREN</span> <span>25.000</span></div>
-                                <div className="text-left flex justify-between"><span>PISANG GORENG</span> <span>15.000</span></div>
-                                <p>{localSettings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
-                                <div className="space-y-0.5">
-                                    <div className="flex justify-between"><span>Subtotal</span><span>40.000</span></div>
-                                    <div className="flex justify-between text-red-500"><span>Diskon</span><span>0</span></div>
-                                    <div className="flex justify-between"><span>Pajak (0%)</span><span>0</span></div>
-                                    <div className="font-bold flex justify-between text-xs text-gray-800"><span>TOTAL</span> <span>40.000</span></div>
-                                </div>
-                                <p>{localSettings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
-                                <div className="space-y-0.5 text-left">
-                                    <div className="flex justify-between text-left"><span>CASH</span> <span>50.000</span></div>
-                                    <div className="flex justify-between text-left"><span>Kembali</span> <span>10.000</span></div>
-                                </div>
-                                <p>{localSettings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
-                                <p className="italic mt-4 text-gray-500">{localSettings.receipt_footer || 'Terima Kasih'}</p>
                             </div>
                         </div>
                     </div>
@@ -1280,7 +1650,7 @@ export function SettingsView({
                         </div>
                         <div className="space-y-4">
                             <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50 border border-gray-100">
-                                <div className="flex gap-3">
+                                <div className="flex flex-wrap gap-3">
                                     <div className="bg-white p-2 rounded-lg border border-gray-200 shadow-sm">
                                         <Bell className="w-4 h-4 text-blue-600" />
                                     </div>
@@ -1295,7 +1665,7 @@ export function SettingsView({
                                 />
                             </div>
                             <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50 border border-gray-100">
-                                <div className="flex gap-3">
+                                <div className="flex flex-wrap gap-3">
                                     <div className="bg-white p-2 rounded-lg border border-gray-200 shadow-sm">
                                         <Bell className="w-4 h-4 text-purple-600" />
                                     </div>
@@ -1310,7 +1680,7 @@ export function SettingsView({
                                 />
                             </div>
                             <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50 border border-gray-100">
-                                <div className="flex gap-3">
+                                <div className="flex flex-wrap gap-3">
                                     <div className="bg-white p-2 rounded-lg border border-gray-200 shadow-sm">
                                         <Bell className="w-4 h-4 text-orange-600" />
                                     </div>
@@ -1325,7 +1695,7 @@ export function SettingsView({
                                 />
                             </div>
                             <div className="flex items-center justify-between p-4 rounded-xl bg-orange-50 border border-orange-100">
-                                <div className="flex gap-3">
+                                <div className="flex flex-wrap gap-3">
                                     <div className="bg-white p-2 rounded-lg border border-orange-200 shadow-sm">
                                         <Monitor className="w-4 h-4 text-orange-600" />
                                     </div>
@@ -1533,15 +1903,27 @@ export function SettingsView({
                                 />
                             </div>
 
-                            <div className="space-y-2">
-                                <Label className="text-sm font-medium text-gray-700">Pesan Header Voucher</Label>
-                                <input
-                                    type="text"
-                                    value={localSettings.wifi_voucher_notice || ''}
-                                    onChange={e => handleLocalChange({ ...localSettings, wifi_voucher_notice: e.target.value })}
-                                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
-                                    placeholder="Gunakan kode ini untuk akses WiFi"
-                                />
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label className="text-sm font-medium text-gray-700">Minimal Belanja (Rp)</Label>
+                                    <input
+                                        type="number"
+                                        value={localSettings.wifi_voucher_min_amount || 0}
+                                        onChange={e => handleLocalChange({ ...localSettings, wifi_voucher_min_amount: parseInt(e.target.value) || 0 })}
+                                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                        placeholder="50000"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label className="text-sm font-medium text-gray-700">Pesan Header Voucher</Label>
+                                    <input
+                                        type="text"
+                                        value={localSettings.wifi_voucher_notice || ''}
+                                        onChange={e => handleLocalChange({ ...localSettings, wifi_voucher_notice: e.target.value })}
+                                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                        placeholder="Gunakan kode ini untuk akses WiFi"
+                                    />
+                                </div>
                             </div>
                         </div>
 

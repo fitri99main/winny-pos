@@ -11,6 +11,7 @@ interface BluetoothDevice {
 
 interface BluetoothRemoteGATTServer {
     connect(): Promise<BluetoothRemoteGATTServer>;
+    disconnect(): void;
     getPrimaryService(service: string): Promise<BluetoothRemoteGATTService>;
 }
 
@@ -44,8 +45,24 @@ class PrinterService {
         showTable: true,
         showCustomerName: true,
         showCustomerStatus: true,
+        showCashierName: true,
         showLogo: true,
-        logoUrl: ''
+        logoUrl: '',
+        receipt_footer_feed: 4,
+        // Kitchen Specifics
+        kitchenHeader: 'DAPUR',
+        kitchenFooter: '',
+        kitchenShowTable: true,
+        kitchenShowWaiter: true,
+        kitchenShowDate: true,
+        kitchenShowCashier: true,
+        // Bar Specifics
+        barHeader: 'BAR',
+        barFooter: '',
+        barShowTable: true,
+        barShowWaiter: true,
+        barShowDate: true,
+        barShowCashier: true
     };
 
     // ESC/POS Commands
@@ -109,6 +126,7 @@ class PrinterService {
         orderNo: string;
         tableNo: string;
         waiterName: string;
+        cashierName?: string;
         time: string;
         items: { name: string; quantity: number }[];
     }) {
@@ -121,13 +139,22 @@ class PrinterService {
         const encoder = new TextEncoder();
         let commands: Uint8Array[] = [];
 
+        // Specific settings based on type
+        const isKitchen = type === 'Kitchen';
+        const header = isKitchen ? (this.template.kitchenHeader || this.template.receipt_header || 'PESANAN') : (this.template.barHeader || this.template.receipt_header || 'PESANAN');
+        const footer = isKitchen ? (this.template.kitchenFooter || '') : (this.template.barFooter || '');
+        const showTable = isKitchen ? (this.template.kitchenShowTable ?? this.template.showTable) : (this.template.barShowTable ?? this.template.showTable);
+        const showWaiter = isKitchen ? (this.template.kitchenShowWaiter ?? this.template.showWaiter) : (this.template.barShowWaiter ?? this.template.showWaiter);
+        const showCashier = isKitchen ? (this.template.kitchenShowCashier ?? this.template.showCashierName) : (this.template.barShowCashier ?? this.template.showCashierName);
+        const showDate = isKitchen ? (this.template.kitchenShowDate ?? this.template.showDate) : (this.template.barShowDate ?? this.template.showDate);
+
         // Initialize
         commands.push(new Uint8Array([this.ESC, 0x40]));
 
         // Header (Double Size)
         commands.push(new Uint8Array([this.GS, 0x21, 0x11])); // Double width & height
         commands.push(new Uint8Array([this.ESC, 0x61, 0x01])); // Center align
-        commands.push(encoder.encode(`${(this.template.header || 'PESANAN').toUpperCase()}\n`));
+        commands.push(encoder.encode(`${header.toUpperCase()}\n`));
 
         // Reset size
         commands.push(new Uint8Array([this.GS, 0x21, 0x00]));
@@ -137,9 +164,10 @@ class PrinterService {
 
         commands.push(encoder.encode(`--- PESANAN ${type.toUpperCase()} ---\n`));
         commands.push(encoder.encode(`No: ${data.orderNo}\n`));
-        if (this.template.showTable) commands.push(encoder.encode(`Meja: ${data.tableNo}\n`));
-        if (this.template.showWaiter) commands.push(encoder.encode(`Pelayan: ${data.waiterName}\n`));
-        if (this.template.showDate) commands.push(encoder.encode(`Waktu: ${data.time}\n`));
+        if (showTable) commands.push(encoder.encode(`Meja: ${data.tableNo}\n`));
+        if (showWaiter && data.waiterName && data.waiterName !== '-') commands.push(encoder.encode(`Pelayan: ${data.waiterName}\n`));
+        if (showCashier && data.cashierName) commands.push(encoder.encode(`Kasir: ${data.cashierName}\n`));
+        if (showDate) commands.push(encoder.encode(`Waktu: ${data.time}\n`));
         const line = '-'.repeat(this.getLineWidth()) + '\n';
         commands.push(encoder.encode(line));
 
@@ -151,12 +179,15 @@ class PrinterService {
 
         commands.push(encoder.encode(line));
 
-        if (this.template.footer && type !== 'Kitchen' && type !== 'Bar') {
+        if (footer) {
             commands.push(new Uint8Array([this.ESC, 0x61, 0x01])); // Center align
-            commands.push(encoder.encode(`\n${this.template.footer}\n`));
+            commands.push(encoder.encode(`\n${footer}\n`));
         }
 
-        commands.push(new Uint8Array([this.LF, this.LF, this.LF]));
+        const feedLines = this.template.receipt_footer_feed ?? 4;
+        if (feedLines > 0) {
+            commands.push(new Uint8Array(feedLines).fill(this.LF));
+        }
 
         // Cut (if supported)
         commands.push(new Uint8Array([this.GS, 0x56, 0x41, 0x00]));
@@ -182,6 +213,7 @@ class PrinterService {
         change: number;
         customerName?: string;
         customerLevel?: string;
+        cashierName?: string;
         wifiVoucher?: string;
         wifiNotice?: string;
     }) {
@@ -218,7 +250,8 @@ class PrinterService {
         if (this.template.showTable) commands.push(encoder.encode(`Meja: ${data.tableNo}\n`));
         if (this.template.showCustomerName && data.customerName) commands.push(encoder.encode(`Pelanggan: ${data.customerName}\n`));
         if (this.template.showCustomerStatus && data.customerLevel) commands.push(encoder.encode(`Status: ${data.customerLevel}\n`));
-        if (this.template.showWaiter) commands.push(encoder.encode(`Pelayan: ${data.waiterName}\n`));
+        if (this.template.showWaiter && data.waiterName && data.waiterName !== '-') commands.push(encoder.encode(`Pelayan: ${data.waiterName}\n`));
+        if (this.template.showCashierName && data.cashierName) commands.push(encoder.encode(`Kasir: ${data.cashierName}\n`));
         commands.push(encoder.encode(line));
 
         // Items
@@ -269,7 +302,10 @@ class PrinterService {
             commands.push(encoder.encode(`\n${this.template.footer}\n`));
         }
 
-        commands.push(new Uint8Array([this.LF, this.LF, this.LF]));
+        const feedLines = this.template.receipt_footer_feed ?? 4;
+        if (feedLines > 0) {
+            commands.push(new Uint8Array(feedLines).fill(this.LF));
+        }
         commands.push(new Uint8Array([this.GS, 0x56, 0x41, 0x00])); // Cut
 
         const finalBuffer = this.concatenateTypedArrays(commands);
@@ -290,6 +326,20 @@ class PrinterService {
     getConnectedPrinter(type: 'Kitchen' | 'Bar' | 'Cashier'): string | null {
         const printer = type === 'Kitchen' ? this.kitchenPrinter : (type === 'Bar' ? this.barPrinter : this.cashierPrinter);
         return printer?.name || null;
+    }
+
+    async disconnect(type: 'Kitchen' | 'Bar' | 'Cashier') {
+        const printer = type === 'Kitchen' ? this.kitchenPrinter : (type === 'Bar' ? this.barPrinter : this.cashierPrinter);
+        if (printer && printer.server) {
+            try {
+                await printer.server.disconnect();
+            } catch (e) {
+                console.warn('Printer disconnect error:', e);
+            }
+        }
+        if (type === 'Kitchen') this.kitchenPrinter = null;
+        else if (type === 'Bar') this.barPrinter = null;
+        else this.cashierPrinter = null;
     }
 
     async printBarcode(code: string, options?: {
@@ -335,7 +385,10 @@ class PrinterService {
         commands.push(code128Data);
 
         // 5. Feed & Cut
-        commands.push(new Uint8Array([this.LF, this.LF, this.LF]));
+        const feedLines = this.template.receipt_footer_feed ?? 4;
+        if (feedLines > 0) {
+            commands.push(new Uint8Array(feedLines).fill(this.LF));
+        }
         commands.push(new Uint8Array([this.GS, 0x56, 0x41, 0x00]));
 
         const finalBuffer = this.concatenateTypedArrays(commands);

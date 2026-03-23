@@ -68,7 +68,7 @@ export default function AccountingScreen() {
             }
 
             // 1. Fetch Sales Summary
-            const bId = parseInt(currentBranchId);
+            const bId = currentBranchId;
             if (!bId) {
                 setLoading(false);
                 return;

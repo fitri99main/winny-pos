@@ -14,7 +14,7 @@ export interface SalesOrder {
     order_no?: string;
     date: string;
     items: number;
-    productDetails: { name: string; quantity: number; price: number; isManual?: boolean; target?: 'Kitchen' | 'Bar' | 'Waitress' }[];
+    productDetails: { name: string; quantity: number; price: number; isManual?: boolean; target?: 'Kitchen' | 'Bar' | 'Waitress'; category?: string }[];
     subtotal?: number;
     discount?: number;
     tax?: number;
@@ -23,6 +23,7 @@ export interface SalesOrder {
     paymentType?: 'cash' | 'card' | 'e-wallet' | 'qris';
     tableNo?: string;
     waiterName?: string;
+    cashierName?: string;
     customerName?: string;
     branchId?: string;
     status: 'Completed' | 'Returned' | 'Unpaid' | 'Pending' | 'Served' | 'Paid';
@@ -335,7 +336,9 @@ export function SalesView({
         if (!processDateFilter(sale.date)) return false;
 
         // Cashier Logic
-        if (selectedCashier && sale.waiterName !== selectedCashier) return false;
+        // Cashier Logic
+        if (selectedCashier && (sale.cashierName === selectedCashier || sale.waiterName === selectedCashier)) return true;
+        if (selectedCashier && sale.cashierName !== selectedCashier && sale.waiterName !== selectedCashier) return false;
 
         return matchesBranch && matchesSearch;
     });
@@ -501,7 +504,7 @@ export function SalesView({
                             <th className="px-3 py-2 text-right">Diskon</th>
                             <th className="px-3 py-2 text-right">Total</th>
                             <th className="px-3 py-2">Bayar</th>
-                            <th className="px-3 py-2">Pelayan</th>
+                            <th className="px-3 py-2">Kasir</th>
                             <th className="px-3 py-2 text-center">Cetak</th>
                             <th className="px-3 py-2 text-center">Status</th>
                             <th className="px-3 py-2 text-center hidden lg:table-cell">Sinkron</th>
@@ -570,9 +573,9 @@ export function SalesView({
                                     <td className="px-3 py-2 text-right font-bold whitespace-nowrap">Rp {sale.totalAmount.toLocaleString()}</td>
                                     <td className="px-3 py-2 text-gray-600 truncate max-w-[80px]">{sale.paymentMethod}</td>
                                     <td className="px-3 py-2">
-                                        {sale.waiterName ? (
+                                        {sale.cashierName || sale.waiterName ? (
                                             <span className="text-gray-700 text-[10px] font-medium bg-gray-100 px-1.5 py-0.5 rounded whitespace-nowrap">
-                                                {sale.waiterName}
+                                                {sale.cashierName || sale.waiterName}
                                             </span>
                                         ) : (
                                             <span className="text-gray-300 text-xs">-</span>
@@ -1068,13 +1071,13 @@ export function SalesView({
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Pelayan</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Kasir</label>
                                     <select
                                         className="w-full p-2 border rounded-lg"
                                         value={editForm.waiterName || ''}
                                         onChange={e => setEditForm({ ...editForm, waiterName: e.target.value })}
                                     >
-                                        <option value="">- Pilih Pelayan -</option>
+                                        <option value="">- Pilih Kasir -</option>
                                         {(employees || []).map(emp => (
                                             <option key={emp.id} value={emp.name}>{emp.name}</option>
                                         ))}
@@ -1160,7 +1163,7 @@ export function SalesView({
                                         </div>
                                     )}
                                     {printerService.getTemplate().showWaiter && (
-                                        <div className="flex justify-between"><span>Pelayan:</span><span>{receiptPreviewData.waiterName || '-'}</span></div>
+                                        <div className="flex justify-between"><span>Kasir:</span><span>{receiptPreviewData.cashierName || receiptPreviewData.waiterName || '-'}</span></div>
                                     )}
                                 </div>
 

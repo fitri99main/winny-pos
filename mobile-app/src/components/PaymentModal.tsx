@@ -14,16 +14,29 @@ interface PaymentModalProps {
     onDiscount?: () => void;
     onSplitBill?: () => void;
     onHold?: () => void;
+    paymentMethods?: DynamicPaymentMethod[];
 }
 
-const PAYMENT_METHODS = [
-    { id: 'cash', name: 'Tunai', icon: '💵', color: '#10b981' },
-    { id: 'debit', name: 'Debit', icon: '💳', color: '#3b82f6' },
-    { id: 'credit', name: 'Kredit', icon: '💳', color: '#8b5cf6' },
-    { id: 'qris', name: 'QRIS', icon: '📱', color: '#f59e0b' },
-    { id: 'transfer', name: 'Transfer', icon: '🏦', color: '#06b6d4' },
-    { id: 'cek', name: 'Cek', icon: '📝', color: '#6366f1' },
+export interface DynamicPaymentMethod {
+    id: string | number;
+    name: string;
+    type: string;
+}
+
+const DEFAULT_METHODS = [
+    { id: 'cash', name: 'Tunai', icon: '💵', color: '#10b981', type: 'cash' },
+    { id: 'qris', name: 'QRIS', icon: '📱', color: '#f59e0b', type: 'digital' },
+    { id: 'debit', name: 'Debit', icon: '💳', color: '#3b82f6', type: 'card' }
 ];
+
+const getMethodIconAndColor = (type: string) => {
+    switch (type) {
+        case 'cash': return { icon: '💵', color: '#10b981' };
+        case 'card': return { icon: '💳', color: '#3b82f6' };
+        case 'digital': return { icon: '📱', color: '#f59e0b' };
+        default: return { icon: '📝', color: '#6366f1' }; // fallback
+    }
+};
 
 export default function PaymentModal({
     visible,
@@ -33,11 +46,23 @@ export default function PaymentModal({
     onManualItem,
     onDiscount,
     onSplitBill,
-    onHold
+    onHold,
+    paymentMethods
 }: PaymentModalProps) {
     const { width } = useWindowDimensions();
     const isSmallDevice = width < 380;
-    const [selectedMethod, setSelectedMethod] = useState('cash');
+    
+    // Map dynamic methods to include icon and color
+    const displayMethods = paymentMethods && paymentMethods.length > 0 
+        ? paymentMethods.map(m => ({
+            id: String(m.id || m.name),
+            name: m.name,
+            type: m.type,
+            ...getMethodIconAndColor(m.type)
+        }))
+        : DEFAULT_METHODS;
+
+    const [selectedMethod, setSelectedMethod] = useState(displayMethods[0]?.id || 'cash');
     const [paidAmount, setPaidAmount] = useState('');
     const [change, setChange] = useState(0);
     const [error, setError] = useState<string | null>(null);
@@ -53,7 +78,7 @@ export default function PaymentModal({
     // Reset when modal opens
     useEffect(() => {
         if (visible) {
-            setSelectedMethod('cash');
+            setSelectedMethod(displayMethods[0]?.id || 'cash');
             setPaidAmount('');
             setChange(0);
             setError(null);
@@ -76,16 +101,18 @@ export default function PaymentModal({
 
     const handleConfirm = () => {
         const paid = parseFloat(paidAmount.replace(/,/g, '')) || 0;
+        const selectedObj = displayMethods.find(m => m.id === selectedMethod);
+        const isCashType = selectedObj ? selectedObj.type === 'cash' || selectedMethod === 'cash' : false;
 
-        if (selectedMethod === 'cash' && paid < total) {
+        if (isCashType && paid < total) {
             setError('Jumlah pembayaran kurang dari total');
             return;
         }
 
         onConfirm({
-            method: PAYMENT_METHODS.find(m => m.id === selectedMethod)?.name || 'Tunai',
+            method: selectedObj?.name || 'Tunai',
             amount: paid || total,
-            change: selectedMethod === 'cash' ? change : 0
+            change: isCashType ? change : 0
         });
         onClose();
     };
@@ -161,7 +188,7 @@ export default function PaymentModal({
                                 styles.methodsGrid,
                                 isSmallDevice && { gap: 6 }
                             ]}>
-                                {PAYMENT_METHODS.map(method => (
+                                {displayMethods.map(method => (
                                     <TouchableOpacity
                                         key={method.id}
                                         style={[
@@ -189,7 +216,7 @@ export default function PaymentModal({
                         </View>
 
                         {/* Amount Input (for Cash only) */}
-                        {selectedMethod === 'cash' && (
+                        {(displayMethods.find(m => m.id === selectedMethod)?.type === 'cash' || selectedMethod === 'cash') && (
                             <View style={styles.section}>
                                 <Text style={styles.sectionTitle}>Jumlah Dibayar</Text>
                                 <TextInput
@@ -233,7 +260,7 @@ export default function PaymentModal({
                         )}
 
                         {/* Number Pad */}
-                        {selectedMethod === 'cash' && (
+                        {(displayMethods.find(m => m.id === selectedMethod)?.type === 'cash' || selectedMethod === 'cash') && (
                             <View style={[
                                 styles.numberPad,
                                 isSmallDevice && { padding: 12, gap: 6 }
@@ -261,7 +288,7 @@ export default function PaymentModal({
                     <TouchableOpacity
                         style={[
                             styles.confirmButton,
-                            { backgroundColor: PAYMENT_METHODS.find(m => m.id === selectedMethod)?.color || '#10b981' }
+                            { backgroundColor: displayMethods.find(m => m.id === selectedMethod)?.color || '#10b981' }
                         ]}
                         onPress={handleConfirm}
                     >

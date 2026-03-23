@@ -24,6 +24,7 @@ export function ReportsView({ sales, returns, paymentMethods }: ReportsViewProps
         return sales.filter(s => {
             const matchesSearch = s.orderNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 (s.customerName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                (s.cashierName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                 (s.waiterName || '').toLowerCase().includes(searchQuery.toLowerCase());
 
             const matchesMethod = methodFilter === 'All' || s.paymentMethod === methodFilter;
@@ -98,7 +99,7 @@ export function ReportsView({ sales, returns, paymentMethods }: ReportsViewProps
                 'Total Amount': s.totalAmount,
                 'Metode Pembayaran': s.paymentMethod,
                 'Status': s.status === 'Completed' ? 'Selesai' : 'Retur',
-                'Pelayan': s.waiterName || '-',
+                'Kasir': s.cashierName || s.waiterName || '-',
                 'Meja': s.tableNo || '-'
             }));
 

@@ -4,17 +4,19 @@ import { View, Text, Modal, TouchableOpacity, TextInput, StyleSheet } from 'reac
 interface ManualItemModalProps {
     visible: boolean;
     onClose: () => void;
-    onAdd: (item: { name: string; price: number }) => void;
+    onAdd: (item: { name: string; price: number; notes?: string }) => void;
 }
 
 export default function ManualItemModal({ visible, onClose, onAdd }: ManualItemModalProps) {
     const [name, setName] = useState('');
     const [price, setPrice] = useState('');
+    const [notes, setNotes] = useState('');
 
     useEffect(() => {
         if (visible) {
             setName('');
             setPrice('');
+            setNotes('');
         }
     }, [visible]);
 
@@ -24,7 +26,8 @@ export default function ManualItemModal({ visible, onClose, onAdd }: ManualItemM
         
         onAdd({
             name: name.trim(),
-            price: numericPrice
+            price: numericPrice,
+            notes: notes.trim() || undefined
         });
         onClose();
     };
@@ -54,6 +57,17 @@ export default function ManualItemModal({ visible, onClose, onAdd }: ManualItemM
                             value={price}
                             onChangeText={setPrice}
                             keyboardType="numeric"
+                        />
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.label}>Keterangan (Opsional)</Text>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Tambahkan catatan..."
+                            value={notes}
+                            onChangeText={setNotes}
+                            multiline
                         />
                     </View>
 
