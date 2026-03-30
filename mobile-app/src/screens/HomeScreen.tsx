@@ -584,9 +584,6 @@ export default function HomeScreen() {
                                                 <Text style={{ fontWeight: '900', fontSize: 16, color: '#1e293b', marginBottom: 2 }}>
                                                     #{order.order_no.split('-').pop()}
                                                 </Text>
-                                                <Text style={{ fontSize: 13, color: '#64748b', marginBottom: 4 }}>
-                                                    {order.table_no && order.table_no !== 'Tanpa Meja' ? `🪑 Meja ${order.table_no}` : '🛍️ Take Away'}
-                                                </Text>
                                             </View>
                                             <TouchableOpacity 
                                                 style={{ padding: 4, marginTop: -4, marginRight: -8 }}
