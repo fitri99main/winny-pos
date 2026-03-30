@@ -27,6 +27,7 @@ import { BranchesView } from './branches/BranchesView';
 import { ShiftsView } from './shifts/ShiftsView';
 import { InventoryView, Ingredient as InvIngredient, StockMovement } from './inventory/InventoryView';
 import { KDSView } from './pos/KDSView';
+import { PromosView } from './promos/PromosView';
 import { SessionHistoryView } from './pos/SessionHistoryView';
 import { DashboardSkeleton } from './skeletons/DashboardSkeleton';
 import { PWAInstallButton } from './ui/PWAInstallButton';
@@ -35,7 +36,7 @@ import { mockProducts } from '@/data/products';
 import { toast } from 'sonner';
 import { printerService } from '../lib/PrinterService';
 
-type ModuleType = 'dashboard' | 'users' | 'contacts' | 'products' | 'purchases' | 'pos' | 'kds' | 'reports' | 'accounting' | 'settings' | 'employees' | 'attendance' | 'payroll' | 'branches' | 'shifts' | 'performance_indicators' | 'inventory' | 'session_history';
+type ModuleType = 'dashboard' | 'users' | 'contacts' | 'products' | 'purchases' | 'pos' | 'kds' | 'reports' | 'accounting' | 'settings' | 'employees' | 'attendance' | 'payroll' | 'branches' | 'shifts' | 'performance_indicators' | 'inventory' | 'session_history' | 'promos';
 
 
 
@@ -115,6 +116,77 @@ function Home() {
   const [performanceIndicators, setPerformanceIndicators] = useState<any[]>([]);
   const [performanceEvaluations, setPerformanceEvaluations] = useState<any[]>([]);
 
+  // --- Handlers ---
+  const handleTableCRUD = async (action: 'create' | 'update' | 'delete', data: any) => {
+    try {
+      if (action === 'create') {
+        const { id, ...rest } = data;
+        const payload = { ...rest, branch_id: currentBranchId };
+        const { error } = await supabase.from('tables').insert([payload]);
+        if (error) throw error;
+        toast.success('Meja berhasil ditambahkan');
+      } else if (action === 'update') {
+        const { id, ...rest } = data;
+        const { error } = await supabase.from('tables').update(rest).eq('id', id);
+        if (error) throw error;
+        toast.success('Meja berhasil diupdate');
+      } else if (action === 'delete') {
+        const { error } = await supabase.from('tables').delete().eq('id', data.id);
+        if (error) throw error;
+        toast.success('Meja berhasil dihapus');
+      }
+      if (currentBranchId) fetchBranchData(currentBranchId);
+    } catch (err: any) {
+      toast.error('Error Table: ' + err.message);
+    }
+  };
+
+  const handlePaymentMethodCRUD = async (action: 'create' | 'update' | 'delete', data: any) => {
+    try {
+      if (action === 'create') {
+        const { error } = await supabase.from('payment_methods').insert([data]);
+        if (error) throw error;
+        toast.success('Metode pembayaran ditambahkan');
+      } else if (action === 'update') {
+        const { id, ...rest } = data;
+        const { error } = await supabase.from('payment_methods').update(rest).eq('id', id);
+        if (error) throw error;
+        toast.success('Metode pembayaran diperbarui');
+      } else if (action === 'delete') {
+        const { error } = await supabase.from('payment_methods').delete().eq('id', data.id);
+        if (error) throw error;
+        toast.success('Metode pembayaran dihapus');
+      }
+    } catch (err: any) {
+      toast.error('Gagal memproses metode pembayaran: ' + err.message);
+    }
+  };
+
+  const handleModuleClick = (moduleId: string) => {
+    if (moduleId === 'kasir') {
+      setIsCashierOpen(true);
+    } else {
+      setActiveModule(moduleId as ModuleType);
+    }
+  };
+
+  const handleClearTableStatus = async (tableNo: string) => {
+    try {
+      const { error } = await supabase
+        .from('tables')
+        .update({ status: 'Available' })
+        .eq('number', tableNo)
+        .eq('branch_id', currentBranchId);
+
+      if (error) throw error;
+      toast.success(`Meja ${tableNo} sekarang tersedia`);
+      if (currentBranchId) fetchBranchData(currentBranchId);
+    } catch (err: any) {
+      toast.error('Gagal update status meja: ' + err.message);
+    }
+  };
+
+  // --- END HANDLERS ---
 
   // Inventory Handlers
   const handleIngredientCRUD = async (action: 'create' | 'update' | 'delete', data: any) => {
@@ -190,27 +262,7 @@ function Home() {
   // --- Payment Methods State ---
   const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
 
-  const handlePaymentMethodCRUD = async (action: 'create' | 'update' | 'delete', data: any) => {
-    try {
-      if (action === 'create') {
-        const { error } = await supabase.from('payment_methods').insert([data]);
-        if (error) throw error;
-        toast.success('Metode pembayaran ditambahkan');
-      } else if (action === 'update') {
-        const { id, ...rest } = data;
-        const { error } = await supabase.from('payment_methods').update(rest).eq('id', id);
-        if (error) throw error;
-        toast.success('Metode pembayaran diperbarui');
-      } else if (action === 'delete') {
 
-        const { error } = await supabase.from('payment_methods').delete().eq('id', data.id);
-        if (error) throw error;
-        toast.success('Metode pembayaran dihapus');
-      }
-    } catch (err: any) {
-      toast.error('Gagal memproses metode pembayaran: ' + err.message);
-    }
-  };
 
 
   const [payrollData, setPayrollData] = useState<any[]>([]);
@@ -233,7 +285,6 @@ function Home() {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [journalEntries, setJournalEntries] = useState<any[]>([]);
 
-  // --- Settings State ---
   const [storeSettings, setStoreSettings] = useState<any>({
     store_name: 'Winny Pangeran Natakusuma',
     receipt_header: 'Winny Pangeran Natakusuma',
@@ -250,6 +301,25 @@ function Home() {
     enable_table_management: true
   });
 
+  // --- WiFi Voucher State ---
+  const [voucherStats, setVoucherStats] = useState({ total: 0, used: 0, available: 0 });
+
+  const fetchVoucherStats = async () => {
+    try {
+      const { WifiVoucherService } = await import('../lib/WifiVoucherService');
+      const stats = await WifiVoucherService.getCounts(currentBranchId || 'default');
+      setVoucherStats(stats);
+    } catch (e) {
+      console.error("[Home] Failed to fetch voucher stats:", e);
+    }
+  };
+
+  useEffect(() => {
+    if (activeModule === 'dashboard' || activeModule === 'settings') {
+      fetchVoucherStats();
+    }
+  }, [activeModule, currentBranchId]);
+
   // --- Master Data Integration ---
   const fetchGlobalData = async () => {
     // Fetch data that doesn't depend on branch
@@ -265,7 +335,7 @@ function Home() {
     };
 
     const results = await Promise.all([
-      safeFetch(supabase.from('categories').select('*').order('name'), 'categories'),
+      safeFetch(supabase.from('categories').select('*').order('sort_order'), 'categories'),
       safeFetch(supabase.from('units').select('*').order('name'), 'units'),
       safeFetch(supabase.from('brands').select('*').order('name'), 'brands'),
       safeFetch(supabase.from('contacts').select('*').order('name'), 'contacts'),
@@ -316,7 +386,7 @@ function Home() {
     };
 
     const results = await Promise.all([
-      safeFetch(supabase.from('products').select('*').eq('branch_id', branchId).order('created_at', { ascending: false }), 'products'),
+      safeFetch(supabase.from('products').select('*').eq('branch_id', branchId).order('sort_order', { ascending: true }), 'products'),
       safeFetch(supabase.from('shift_schedules').select('*').order('date'), 'schedules'), // Needs JS filtering or relation update
       safeFetch(supabase.from('tables').select('*').eq('branch_id', branchId).order('number'), 'tables'),
       safeFetch(supabase.from('ingredients').select('*').eq('branch_id', branchId).order('name'), 'ingredients'),
@@ -523,7 +593,10 @@ function Home() {
       .from('sales')
       .select(`
         *,
-        items:sale_items(*)
+        items:sale_items(
+          *,
+          product:product_id(category)
+        )
       `)
       .eq('branch_id', currentBranchId)
       .order('date', { ascending: false }); // Sort by Payment Time (Date) not Creation Time
@@ -565,7 +638,8 @@ function Home() {
           name: i.product_name,
           quantity: i.quantity,
           price: i.price,
-          target: i.target // Include target from DB
+          target: i.target,
+          category: i.product?.category
         })),
         printCount: s.print_count || 0,
         lastPrintedAt: s.last_printed_at
@@ -704,7 +778,10 @@ function Home() {
 
           const { data: items, error } = await supabase
             .from('sale_items')
-            .select('*')
+            .select(`
+              *,
+              product:product_id(category)
+            `)
             .eq('sale_id', newOrder.id);
 
           if (error) {
@@ -722,6 +799,7 @@ function Home() {
               name: i.product_name,
               quantity: i.quantity,
               price: i.price,
+              category: i.product?.category,
               isManual: false
             })) || [],
             subtotal: newOrder.subtotal,
@@ -985,13 +1063,28 @@ function Home() {
         if (error) throw error;
         toast.success(`Data berhasil diperbarui`);
       } else if (action === 'delete') {
+        // [MODIFIED] Archive fallback for products to prevent FK conflicts
         const { error } = await supabase.from(table).delete().eq('id', data.id);
-        if (error) throw error;
+        
+        if (error) {
+          if (table === 'products' && error.code === '23503') {
+            console.log('Product still referenced, archiving instead of deletion...');
+            const { error: archiveError } = await supabase
+              .from('products')
+              .update({ is_sellable: false })
+              .eq('id', data.id);
+            
+            if (archiveError) throw archiveError;
+            toast.success(`Produk diarsipkan karena memiliki riwayat stok/penjualan`);
+            return;
+          }
+          throw error;
+        }
         toast.success(`Data berhasil dihapus`);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(`Error ${action} ${table}:`, err);
-      toast.error(`Gagal memproses data`);
+      toast.error(`Gagal memproses data: ${err.message || ''}`);
     }
   };
   // const [receiptSettings, setReceiptSettings] = useState({ ... }); // REMOVED - Using storeSettings
@@ -1209,7 +1302,7 @@ function Home() {
             branch_id: currentBranchId,
             discount: sale.discount || 0,
             subtotal: sale.subtotal || sale.totalAmount,
-            tax: 0, // Not explicitly in SalesOrder
+            tax: sale.tax || 0,
             service_charge: 0 // Not explicitly in SalesOrder
           };
 
@@ -1273,6 +1366,72 @@ function Home() {
     return () => clearInterval(timer);
   }, []);
 
+  const recordAccountingEntry = async (sale: any, items: any[], paymentType?: string) => {
+    try {
+      const orderNo = sale.order_no || sale.orderNo;
+      const totalAmount = sale.total_amount || sale.totalAmount;
+      const paymentMethod = (sale.payment_method || sale.paymentMethod || '').toLowerCase().trim();
+      
+      if (!orderNo || !totalAmount) return false;
+
+      // Check if entry already exists to prevent duplicates
+      const { data: existing } = await supabase
+        .from('journal_entries')
+        .select('id')
+        .ilike('description', `Penjualan ${orderNo}`)
+        .maybeSingle();
+
+      if (existing) {
+        console.log('Accounting entry already exists for:', orderNo);
+        return true;
+      }
+
+      const isCash =
+        paymentType === 'cash' ||
+        paymentMethod === 'cash' ||
+        paymentMethod === 'tunai' ||
+        paymentMethod.includes('tunai') ||
+        paymentMethod.includes('cash');
+
+      const debitAcc = isCash ? '101' : '102';
+
+      // 1. Revenue Entry
+      const { error: revError } = await supabase.from('journal_entries').insert([{
+        date: new Date().toISOString().split('T')[0],
+        description: `Penjualan ${orderNo}`,
+        debit_account: debitAcc,
+        credit_account: '401', // Pendapatan Penjualan
+        amount: totalAmount
+      }]);
+
+      if (revError) {
+        console.error('Revenue Sync Failed:', revError);
+        return false;
+      }
+
+      // 2. COGS (HPP) Entry
+      const totalCost = items.reduce((acc, item) => acc + ((item.cost || 0) * (item.quantity || 0)), 0);
+      if (totalCost > 0) {
+        const { error: hppError } = await supabase.from('journal_entries').insert([{
+          date: new Date().toISOString().split('T')[0],
+          description: `HPP Penjualan ${orderNo}`,
+          debit_account: '501', // Beban Pembelian / HPP
+          credit_account: '104', // Persediaan
+          amount: totalCost
+        }]);
+        if (hppError) console.error('HPP Sync Failed:', hppError);
+      }
+      
+      // Refresh the local accounting data after successful sync
+      fetchAccounting();
+      
+      return true;
+    } catch (err) {
+      console.error('Accounting Error:', err);
+      return false;
+    }
+  };
+
   const handleAddSale = async (saleData: Omit<SalesOrder, 'id' | 'orderNo' | 'date' | 'status'> & { id?: number, order_no?: string }) => {
     try {
       let sale;
@@ -1304,6 +1463,7 @@ function Home() {
             cashier_name: user?.user_metadata?.name || user?.email || role || 'Admin',
             customer_name: saleData.customerName,
             discount: saleData.discount || 0,
+            tax: saleData.tax || 0,
             date: new Date().toISOString()
           })
           .eq('id', targetId)
@@ -1313,9 +1473,51 @@ function Home() {
         if (error) throw error;
         sale = data;
       } else {
-        // [CREATE NEW]
-        const finalOrderNo = saleData.order_no || `INV-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
-        const { data, error: saleError } = await supabase.from('sales').insert([{
+        // [CREATE NEW] - Handle Invoice Numbering
+        let finalOrderNo = saleData.order_no;
+
+        // Function to generate offline invoice number
+        const generateOfflineOrderNo = () => {
+          const mode = storeSettings?.offline_invoice_mode || 'auto';
+          const prefix = storeSettings?.offline_invoice_prefix || 'OFF';
+          const lastNumber = Number(storeSettings?.offline_invoice_last_number) || 0;
+
+          if (mode === 'auto') {
+            const nextNumber = lastNumber + 1;
+            const newNo = `${prefix}-${nextNumber.toString().padStart(4, '0')}`;
+            // Update local counter
+            setStoreSettings(prev => prev ? { ...prev, offline_invoice_last_number: nextNumber } : null);
+            // Non-blocking update to DB
+            supabase.from('store_settings').update({ offline_invoice_last_number: nextNumber }).eq('id', 1).then(() => {});
+            return newNo;
+          } else {
+            const timestamp = Date.now().toString().slice(-6);
+            return `${prefix}-${new Date().getFullYear()}-${timestamp}`;
+          }
+        };
+
+        if (!finalOrderNo) {
+          if (isOnline) {
+            const mode = storeSettings?.invoice_mode || 'auto';
+            const prefix = storeSettings?.invoice_prefix || 'INV';
+            const lastNumber = Number(storeSettings?.invoice_last_number) || 0;
+
+            if (mode === 'auto') {
+              const nextNumber = lastNumber + 1;
+              finalOrderNo = `${prefix}-${nextNumber.toString().padStart(4, '0')}`;
+              // Increment the counter
+              await supabase.from('store_settings').update({ invoice_last_number: nextNumber }).eq('id', 1);
+              setStoreSettings(prev => prev ? { ...prev, invoice_last_number: nextNumber } : null);
+            } else {
+              const timestamp = Date.now().toString().slice(-6);
+              finalOrderNo = `${prefix}-${new Date().getFullYear()}-${timestamp}`;
+            }
+          } else {
+            finalOrderNo = generateOfflineOrderNo();
+          }
+        }
+
+        const salePayload = {
           order_no: finalOrderNo,
           date: new Date().toISOString(),
           total_amount: saleData.totalAmount,
@@ -1326,18 +1528,57 @@ function Home() {
           cashier_name: user?.user_metadata?.name || user?.email || role || 'Admin',
           table_no: saleData.tableNo,
           customer_name: saleData.customerName,
-          discount: saleData.discount || 0
-        }]).select().single();
+          discount: saleData.discount || 0,
+          tax: saleData.tax || 0
+        };
 
-        if (saleError) throw saleError;
-        sale = data;
+        if (isOnline) {
+          try {
+            const { data, error: saleError } = await supabase.from('sales').insert([salePayload]).select().single();
+            if (saleError) throw saleError;
+            sale = data;
+          } catch (err) {
+            console.error('Online save failed, falling back to offline:', err);
+            
+            // [REGENERATE FOR OFFLINE] If it was generated with online prefix, regenerate with offline prefix
+            let offlineOrderNo = finalOrderNo;
+            if (!saleData.order_no) { // Only if it was auto-generated
+               offlineOrderNo = generateOfflineOrderNo();
+               console.log('Regenerated Order No for offline fallback:', offlineOrderNo);
+            }
+
+            const tempId = Date.now();
+            const offlineSale = { 
+              ...salePayload, 
+              id: tempId, 
+              orderNo: offlineOrderNo, 
+              order_no: offlineOrderNo,
+              syncStatus: 'pending' as const 
+            };
+            setSales(prev => [offlineSale as any, ...prev]);
+            sale = offlineSale;
+            toast.info(`Transaksi disimpan offline (${offlineOrderNo})`);
+          }
+        } else {
+          const tempId = Date.now();
+          const offlineSale = { 
+            ...salePayload, 
+            id: tempId, 
+            orderNo: finalOrderNo, 
+            order_no: finalOrderNo, 
+            syncStatus: 'pending' as const 
+          };
+          setSales(prev => [offlineSale as any, ...prev]);
+          sale = offlineSale;
+          toast.info('Transaksi disimpan offline');
+        }
       }
 
       const orderNo = sale.order_no;
 
       if (!sale) throw new Error('Failed to save sale');
 
-      // 2. Create Sale Items (Re-insert)
+      // 2. Create Sale Items
       const saleItems = saleData.productDetails.map(item => {
         const product = products.find(p => p.name === item.name);
         return {
@@ -1347,42 +1588,33 @@ function Home() {
           quantity: item.quantity,
           price: item.price,
           cost: product?.cost || 0,
-          target: item.target || product?.target || 'Waitress', // Persist target to DB
+          target: item.target || product?.target || 'Waitress',
           category: (item as any).category || product?.category || 'General'
         };
       });
 
-      const { error: itemsError } = await supabase.from('sale_items').insert(saleItems);
-      if (itemsError) throw itemsError;
+      if (isOnline && sale.syncStatus !== 'pending') {
+         const { error: itemsError } = await supabase.from('sale_items').insert(saleItems);
+         if (itemsError) console.error('Sale items insert failed:', itemsError);
+      }
 
       toast.success(`Transaksi ${orderNo} berhasil disimpan`);
-      console.log('Transaction Saved. Redirecting to KDS...');
+      
+      // Update Ref for immediate listener availability
+      lastProcessedOrderIdRef.current = sale.id;
 
-      // FORCE REDIRECT TO KDS (Redundancy)
-      setIsCashierOpen(false);
-      setActiveModule('kds');
-
-      // 6. [FIX] Prevent Auto-Open Loop by updating the last processed ID immediately
-      lastProcessedOrderIdRef.current = sale.id; // Update Ref for immediate listener availability
-
-      // 7. [CHANGED] Table Clearing is now MANUAL only (per user request)
-      // Force status to 'Occupied' so it stays red until manually cleared.
-      if (saleData.tableNo) {
+      // Table Clearing (Manual stay Occupied)
+      if (saleData.tableNo && isOnline) {
         await supabase.from('tables').update({ status: 'Occupied' }).eq('number', saleData.tableNo);
       }
 
-      // --- Client-Side Stock Deduction (Temporary) ---
-      // Real deduction should happen via trigger or backend API
-      saleData.productDetails.forEach(item => {
-        const product = products.find(p => p.name === item.name);
-        // Logic for complex recipe deduction could be here if needed client-side
-      });
-
       // --- Automatic Printing ---
       let wifiVoucher = undefined;
-      if (storeSettings?.enable_wifi_vouchers) {
-        const { WifiVoucherService } = await import('../lib/WifiVoucherService');
-        wifiVoucher = await WifiVoucherService.getVoucherForSale(sale.id, currentBranchId) || undefined;
+      if (storeSettings?.enable_wifi_vouchers && isOnline) {
+        try {
+          const { WifiVoucherService } = await import('../lib/WifiVoucherService');
+          wifiVoucher = await WifiVoucherService.getVoucherForSale(sale.id, currentBranchId) || undefined;
+        } catch (e) { console.error('WiFi Voucher failed:', e); }
       }
 
       printerService.printReceipt({
@@ -1408,30 +1640,14 @@ function Home() {
         wifiNotice: storeSettings?.wifi_voucher_notice
       });
 
-      // Kitchen / Bar Printing for Web (Robust v3 Heuristic)
+      // Ticket Printing logic (Kitchen/Bar)
       const kitchenItems = saleItems.filter(item => {
         const target = (item.target || '').toLowerCase().trim();
         const nameLow = (item.product_name || '').toLowerCase();
         const categoryLow = (item.category || '').toLowerCase();
-
-        const isDrink = [
-            'minum', 'drink', 'beverage', 'juice', 'jus', 'tea', 'teh', 'coffee', 'kopi', 
-            'susu', 'milk', 'water', 'air', 'mineral', 'soda', 'cola', 'coke', 'sprite', 'fanta',
-            'beer', 'bir', 'wine', 'cocktail', 'mocktail', 'smoothie', 'shake', 'milo', 
-            'boba', 'thai tea', 'green tea', 'lemongrass', 'jeruk', 'lemon', 'alpukat', 'mangga', 
-            'strawberry', 'jahe', 'madu', 'sirup', 'cendol', 'dawet', 'wedang', 'gembira', 'arak',
-            'espresso', 'latte', 'cappuccino', 'frappe'
-        ].some(k => categoryLow.includes(k) || nameLow.includes(k)) || 
-        nameLow.startsWith('es ') || nameLow.startsWith('ice ') || 
-        nameLow.includes(' es ') || nameLow.includes(' ice ') ||
-        nameLow.includes(' panas') || nameLow.includes(' hot') || 
-        nameLow.includes(' dingin') || nameLow.includes(' cold');
-
-        // Explicit targets take precedence
+        const isDrink = ['minum', 'drink', 'beverage', 'juice', 'jus', 'tea', 'teh', 'coffee', 'kopi'].some(k => categoryLow.includes(k) || nameLow.includes(k));
         if (target === 'bar') return false; 
         if (target === 'kitchen' || target === 'dapur' || target === 'kds') return true;
-
-        // Default routing for Waitress/Empty/Manual items
         return !isDrink;
       });
 
@@ -1439,101 +1655,50 @@ function Home() {
         const target = (item.target || '').toLowerCase().trim();
         const nameLow = (item.product_name || '').toLowerCase();
         const categoryLow = (item.category || '').toLowerCase();
-
-        const isDrink = [
-            'minum', 'drink', 'beverage', 'juice', 'jus', 'tea', 'teh', 'coffee', 'kopi', 
-            'susu', 'milk', 'water', 'air', 'mineral', 'soda', 'cola', 'coke', 'sprite', 'fanta',
-            'beer', 'bir', 'wine', 'cocktail', 'mocktail', 'smoothie', 'shake', 'milo', 
-            'boba', 'thai tea', 'green tea', 'lemongrass', 'jeruk', 'lemon', 'alpukat', 'mangga', 
-            'strawberry', 'jahe', 'madu', 'sirup', 'cendol', 'dawet', 'wedang', 'gembira', 'arak',
-            'espresso', 'latte', 'cappuccino', 'frappe'
-        ].some(k => categoryLow.includes(k) || nameLow.includes(k)) || 
-        nameLow.startsWith('es ') || nameLow.startsWith('ice ') || 
-        nameLow.includes(' es ') || nameLow.includes(' ice ') ||
-        nameLow.includes(' panas') || nameLow.includes(' hot') || 
-        nameLow.includes(' dingin') || nameLow.includes(' cold');
-
+        const isDrink = ['minum', 'drink', 'beverage', 'juice', 'jus', 'tea', 'teh', 'coffee', 'kopi'].some(k => categoryLow.includes(k) || nameLow.includes(k));
         if (target === 'bar') return true;
         if (target === 'kitchen' || target === 'dapur' || target === 'kds') return false;
-
         return isDrink;
       });
 
       const cashierDisplayName = user?.user_metadata?.name || user?.email || role || 'Admin';
 
-      if (kitchenItems.length > 0 && storeSettings?.auto_print_kitchen && printerService.getConnectedPrinter('Kitchen')) {
+      if (kitchenItems.length > 0 && storeSettings?.auto_print_kitchen) {
         printerService.printTicket('Kitchen', {
             orderNo: orderNo,
             tableNo: saleData.tableNo || '-',
             waiterName: saleData.waiterName || '-',
             cashierName: cashierDisplayName,
+            customerName: saleData.customerName,
             time: new Date().toLocaleTimeString(),
-            items: kitchenItems.map(item => ({ name: item.product_name, quantity: item.quantity }))
+            items: kitchenItems.map(item => ({ name: item.product_name, quantity: item.quantity, note: (item as any).note })),
+            notes: (saleData as any).note
         });
       }
 
-      if (barItems.length > 0 && storeSettings?.auto_print_bar && printerService.getConnectedPrinter('Bar')) {
+      if (barItems.length > 0 && storeSettings?.auto_print_bar) {
         printerService.printTicket('Bar', {
             orderNo: orderNo,
             tableNo: saleData.tableNo || '-',
             waiterName: saleData.waiterName || '-',
             cashierName: cashierDisplayName,
+            customerName: saleData.customerName,
             time: new Date().toLocaleTimeString(),
-            items: barItems.map(item => ({ name: item.product_name, quantity: item.quantity }))
+            items: barItems.map(item => ({ name: item.product_name, quantity: item.quantity, note: (item as any).note })),
+            notes: (saleData as any).note
         });
       }
 
-      // 4. Force refresh the transactions list to show the new sale immediately
-      await fetchTransactions();
+      if (isOnline) await fetchTransactions();
+      if (isOnline) await recordAccountingEntry(sale, saleItems, saleData.paymentType);
 
-      // 5. [NEW] Accounting Integration: Auto-Journal Entry
-      // Determine Debit Account (Asset)
-      const pType = saleData.paymentType || 'cash';
-      const pMethod = (saleData.paymentMethod || '').toLowerCase().trim();
+      // Redirect to KDS
+      setIsCashierOpen(false);
+      setActiveModule('kds');
 
-      // Robust check: Trust 'paymentType' first (from PaymentModal), then fallback to name string matching
-      const isCash =
-        pType === 'cash' ||
-        pMethod === 'cash' ||
-        pMethod === 'tunai' ||
-        pMethod.includes('tunai') ||
-        pMethod.includes('cash');
-
-      const debitAcc = isCash ? '101' : '102';
-
-      const { error: journalError } = await supabase.from('journal_entries').insert([{
-        date: new Date().toISOString(),
-        description: `Penjualan ${orderNo}`,
-        debit_account: debitAcc,
-        credit_account: '401', // Pendapatan Penjualan
-        amount: saleData.totalAmount
-      }]);
-
-      if (journalError) {
-        console.error('Accounting Sync Failed:', journalError);
-        toast.error('Gagal mencatat ke pembukuan (Sales OK)');
-      } else {
-        // [NEW] HPP (COGS) Journal Entry
-        const totalCost = saleItems.reduce((acc, item) => acc + ((item.cost || 0) * item.quantity), 0);
-
-        if (totalCost > 0) {
-          const { error: hppError } = await supabase.from('journal_entries').insert([{
-            date: new Date().toISOString(),
-            description: `HPP Penjualan ${orderNo}`,
-            debit_account: '501', // Beban Pembelian / HPP
-            credit_account: '104', // Persediaan
-            amount: totalCost
-          }]);
-
-          if (hppError) console.error('HPP Sync Failed:', hppError);
-        }
-
-        toast.success('Pembukuan otomatis berhasil!');
-      }
-
-    } catch (err) {
+    } catch (err: any) {
       console.error('Transaction failed:', err);
-      toast.error('Gagal menyimpan transaksi');
+      toast.error('Gagal menyimpan transaksi: ' + (err.message || 'Unknown error'));
     }
   };
   const handleSendToKDS = (orderData: any) => {
@@ -1567,8 +1732,14 @@ function Home() {
         tableNo: kdsOrder.tableNo,
         waiterName: kdsOrder.waiterName,
         cashierName: user?.user_metadata?.name || user?.email || role || 'Admin',
+        customerName: orderData.customerName,
         time: kdsOrder.time,
-        items: kitchenItems
+        items: kitchenItems.map(i => ({
+            name: i.name || i.product_name,
+            quantity: i.quantity,
+            note: i.note || i.notes
+        })),
+        notes: orderData.notes || orderData.note
       });
     }
 
@@ -1578,8 +1749,14 @@ function Home() {
         tableNo: kdsOrder.tableNo,
         waiterName: kdsOrder.waiterName,
         cashierName: user?.user_metadata?.name || user?.email || role || 'Admin',
+        customerName: orderData.customerName,
         time: kdsOrder.time,
-        items: barItems
+        items: barItems.map(i => ({
+            name: i.name || i.product_name,
+            quantity: i.quantity,
+            note: i.note || i.notes
+        })),
+        notes: orderData.notes || orderData.note
       });
     }
   };
@@ -1661,6 +1838,17 @@ function Home() {
 
       if (error) throw error;
 
+      // 5. [NEW] Accounting Integration: Auto-Journal Entry
+      if (updatedSale.status === 'Paid') {
+        // Fetch FULL sale data to ensure we have order_no and total_amount for accounting
+        const { data: fullSale } = await supabase.from('sales').select('*').eq('id', updatedSale.id).single();
+        const { data: items } = await supabase.from('sale_items').select('*').eq('sale_id', updatedSale.id);
+        
+        if (fullSale && items) {
+          await recordAccountingEntry(fullSale, items);
+        }
+      }
+
       // [CHANGED] Table Clearing is now MANUAL only (per user request)
       /*
       // Automatically clear table if sale is completed
@@ -1716,6 +1904,13 @@ function Home() {
         if (journalError) console.warn('Failed to delete associated journal entries:', journalError);
       }
 
+      // [FIX] Manual Cascade Delete: Unlink WiFi Vouchers (so they can be sold again)
+      const { error: wifiError } = await supabase
+        .from('wifi_vouchers')
+        .update({ is_used: false, used_at: null, sale_id: null })
+        .eq('sale_id', saleId);
+      if (wifiError) console.warn('Failed to unlink WiFi vouchers:', wifiError);
+
       const { error } = await supabase.from('sales').delete().eq('id', saleId);
       if (error) throw error;
 
@@ -1733,45 +1928,6 @@ function Home() {
     }
   };
 
-  // [NEW] Manual Table Clearing Handler
-  const handleClearTableStatus = async (tableNo: string) => {
-    try {
-      // 1. Check if there are other Active Sales for this table
-      const { data: activeSales } = await supabase
-        .from('sales')
-        .select('order_no')
-        .eq('table_no', tableNo)
-        .in('status', ['Pending', 'Unpaid', 'Served']) // Only block if truly active/unpaid. Paid/Completed is fine.
-        .limit(1);
-
-      if (activeSales && activeSales.length > 0) {
-        // [FIX] Allow Force Clear if user confirms
-        const confirmForce = window.confirm(`Peringatan: Ada pesanan aktif (${activeSales[0].order_no}) di meja ini. \n\nApakah Anda yakin ingin PAKSA kosongkan meja?`);
-        if (!confirmForce) return;
-      }
-
-      // 2. Clear Table Status
-      const { error } = await supabase
-        .from('tables')
-        .update({ status: 'Empty' })
-        .eq('number', tableNo);
-
-      if (error) throw error;
-
-      // 3. Refresh State
-      if (currentBranchId) {
-        await Promise.all([
-          fetchBranchData(currentBranchId), // Updates tables
-          fetchTransactions() // Updates sales (to sync status)
-        ]);
-      }
-
-      toast.success(`Meja ${tableNo} berhasil dikosongkan`);
-    } catch (err) {
-      console.error('Clear table failed:', err);
-      toast.error('Gagal mengosongkan meja');
-    }
-  };
 
   /* OLD ROLE-BASED LOGIC DEPRECATED
   const modules = [
@@ -1813,6 +1969,7 @@ function Home() {
         { id: 'inventory', label: 'Stok Bahan', icon: Archive, color: 'text-blue-700', bgColor: 'bg-blue-50' },
         { id: 'purchases', label: 'Pembelian', icon: ShoppingCart, color: 'text-orange-600', bgColor: 'bg-orange-50' },
         { id: 'contacts', label: 'Kontak', icon: Contact, color: 'text-purple-600', bgColor: 'bg-purple-50' },
+        { id: 'promos', label: 'Promotion', icon: Percent, color: 'text-orange-500', bgColor: 'bg-orange-50' },
       ]
     },
     {
@@ -2346,6 +2503,7 @@ function Home() {
           onAddTransaction={handleAddJournalEntry}
           onDeleteTransaction={handleDeleteJournalEntry}
           onResetTransactions={handleResetJournalEntries}
+          onRefresh={fetchAccounting}
           onBack={() => setActiveModule('payroll')}
         />
       );
@@ -2461,6 +2619,12 @@ function Home() {
           onScheduleAction={handleScheduleCRUD}
         />
       );
+      case 'promos': return (
+        <PromosView 
+          currentBranchId={currentBranchId}
+          products={products}
+        />
+      );
       case 'inventory': return (
         <InventoryView
           ingredients={inventoryIngredients}
@@ -2488,41 +2652,13 @@ function Home() {
           returns={returns}
           products={products}
           ingredients={inventoryIngredients}
+          voucherStats={voucherStats}
           onNavigate={(module) => setActiveModule(module as ModuleType)}
         />
       );
     }
   };
 
-  // --- Table Handlers ---
-  const handleTableCRUD = async (action: 'create' | 'update' | 'delete', data: any) => {
-    try {
-      if (action === 'create') {
-        const { id, ...rest } = data;
-        const payload = { ...rest, branch_id: currentBranchId };
-        const { error } = await supabase.from('tables').insert([payload]);
-        if (error) throw error;
-        toast.success('Meja berhasil ditambahkan');
-      } else if (action === 'update') {
-        const { id, ...rest } = data;
-        const { error } = await supabase.from('tables').update(rest).eq('id', id);
-        if (error) throw error;
-        toast.success('Meja berhasil diupdate');
-      } else if (action === 'delete') {
-        const { error } = await supabase.from('tables').delete().eq('id', data.id);
-        if (error) throw error;
-        toast.success('Meja berhasil dihapus');
-      }
-    } catch (err: any) {
-      toast.error('Error Table: ' + err.message);
-    }
-  };
-
-
-
-  const handleModuleClick = (moduleId: string) => {
-    setActiveModule(moduleId as ModuleType);
-  };
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden font-sans relative transition-colors duration-300">

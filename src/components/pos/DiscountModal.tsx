@@ -11,6 +11,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
+import { Promo } from '@/types/pos';
+
 interface DiscountModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -20,6 +22,7 @@ interface DiscountModalProps {
     reason: string;
   }) => void;
   currentTotal: number;
+  availablePromos?: Promo[];
 }
 
 export function DiscountModal({
@@ -27,6 +30,7 @@ export function DiscountModal({
   onOpenChange,
   onApplyDiscount,
   currentTotal,
+  availablePromos = [],
 }: DiscountModalProps) {
   const [discountType, setDiscountType] = useState<'percentage' | 'fixed'>('percentage');
   const [discountValue, setDiscountValue] = useState('');
@@ -118,6 +122,36 @@ export function DiscountModal({
               </SelectContent>
             </Select>
           </div>
+
+          {availablePromos.length > 0 && (
+            <div className="space-y-3 pt-2 border-t border-gray-100">
+              <Label className="text-sm font-bold text-gray-500 uppercase tracking-wider">Promosi Tersedia</Label>
+              <div className="grid grid-cols-1 gap-2">
+                {availablePromos.map(promo => (
+                  <Button
+                    key={promo.id}
+                    type="button"
+                    variant="outline"
+                    className="flex flex-col items-start h-auto p-3 text-left hover:border-pos-coral hover:bg-orange-50/50 group transition-all"
+                    onClick={() => {
+                      setDiscountType(promo.discount_type);
+                      setDiscountValue(String(promo.discount_value));
+                      setReason(promo.name);
+                    }}
+                  >
+                    <div className="w-full flex justify-between items-center mb-1">
+                      <span className="font-bold text-gray-800 group-hover:text-pos-coral">{promo.name}</span>
+                      <span className="bg-orange-100 text-pos-coral text-[10px] px-2 py-0.5 rounded-full font-bold">
+                        {promo.discount_type === 'percentage' ? `${promo.discount_value}%` : formatPrice(promo.discount_value)}
+                      </span>
+                    </div>
+                    {promo.description && <p className="text-[10px] text-gray-500 line-clamp-1">{promo.description}</p>}
+                    {promo.min_spend > 0 && <p className="text-[10px] text-orange-600 font-medium mt-1">Min. belanja: {formatPrice(promo.min_spend)}</p>}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {discountValue && (
             <div className="p-4 bg-gray-50 rounded-xl space-y-2">

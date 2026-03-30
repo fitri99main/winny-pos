@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { ProductCategory, OrderItem, Product } from '@/types/pos';
+import { ProductCategory, OrderItem, Product, Promo, PromoProduct } from '@/types/pos';
 // import { mockProducts } from '@/data/products'; // REMOVED
 import { SearchBar } from './SearchBar';
 import { CategoryTabs } from './CategoryTabs';
@@ -16,7 +16,7 @@ import { NewOrderModal } from './NewOrderModal'; // [NEW] Import NewOrderModal
 import { TableSelectionGrid, Table } from './TableSelectionGrid';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
-import { ArrowLeft, ShoppingCart, Store, User, Users, ChevronDown, Check, Puzzle, LogOut, Cake, CreditCard, Search, Star } from 'lucide-react';
+import { ArrowLeft, ShoppingCart, Store, User, Users, ChevronDown, Check, Puzzle, LogOut, Cake, CreditCard, Search, Star, FileText, Table2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '../auth/AuthProvider';
 import { useSessionGuard } from '../auth/SessionGuardContext';
@@ -147,6 +147,9 @@ export function CashierInterface({
   const [addonPendingProduct, setAddonPendingProduct] = useState<Product | null>(null);
   const [tempSelectedAddons, setTempSelectedAddons] = useState<Addon[]>([]);
   const [newOrderModalOpen, setNewOrderModalOpen] = useState(false); // [NEW] State for incoming order modal
+  const [promos, setPromos] = useState<Promo[]>([]);
+  const [promoProducts, setPromoProducts] = useState<PromoProduct[]>([]);
+  const [automaticDiscount, setAutomaticDiscount] = useState(0);
 
   // Shift Session State (Managed by Context)
   const { role, loading } = useAuth();
@@ -259,14 +262,6 @@ export function CashierInterface({
     return currentProducts;
   }, [activeCategory, searchQuery, products]);
 
-  // Calculate totals
-  const subtotal = useMemo(() => {
-    return orderItems.reduce((sum, item) => {
-      const addonsPrice = item.selectedAddons?.reduce((aSum, a) => aSum + a.price, 0) || 0;
-      return sum + (item.product.price + addonsPrice) * item.quantity;
-    }, 0);
-  }, [orderItems]);
-
   const taxableSubtotal = useMemo(() => {
     return orderItems.reduce((sum, item) => {
       if (item.product.is_taxed === false) return sum;
@@ -275,7 +270,98 @@ export function CashierInterface({
     }, 0);
   }, [orderItems]);
 
-  const discountRatio = subtotal > 0 ? (subtotal - orderDiscount) / subtotal : 0;
+  const subtotal = useMemo(() => {
+    return orderItems.reduce((sum, item) => {
+      const addonsPrice = item.selectedAddons?.reduce((aSum, a) => aSum + a.price, 0) || 0;
+      return sum + (item.product.price + addonsPrice) * item.quantity;
+    }, 0);
+  }, [orderItems]);
+
+  // --- Promo Management ---
+  useEffect(() => {
+    const fetchPromos = async () => {
+      try {
+        const { data: promosData, error: promosError } = await supabase
+          .from('promos')
+          .select('*')
+          .eq('is_active', true);
+
+        if (promosError) throw promosError;
+
+        const { data: mappingData, error: mappingError } = await supabase
+          .from('promo_products')
+          .select('*');
+
+        if (mappingError) throw mappingError;
+
+        setPromos(promosData || []);
+        setPromoProducts(mappingData || []);
+      } catch (err) {
+        console.error('Error fetching promos:', err);
+      }
+    };
+
+    fetchPromos();
+  }, []);
+
+  // Automatic Promo Application
+  useEffect(() => {
+    if (orderItems.length === 0) {
+      setAutomaticDiscount(0);
+      return;
+    }
+
+    const activePromos = promos.filter(p => {
+      if (p.type !== 'automatic') return false;
+      const now = new Date();
+      if (p.start_date && new Date(p.start_date) > now) return false;
+      if (p.end_date && new Date(p.end_date) < now) return false;
+      return true;
+    });
+
+    let totalAutoDiscount = 0;
+
+    activePromos.forEach(promo => {
+      // Check min spend
+      if (subtotal < promo.min_spend) return;
+
+      // Check applicable products
+      const applicableProductIds = promoProducts
+        .filter(pp => pp.promo_id === promo.id)
+        .map(pp => pp.product_id);
+
+      let discountableAmount = 0;
+      if (applicableProductIds.length === 0) {
+        // Applies to all
+        discountableAmount = subtotal;
+      } else {
+        // Applies only to specific products
+        discountableAmount = orderItems.reduce((sum, item) => {
+          if (applicableProductIds.includes(String(item.product.id))) {
+            const addonsPrice = item.selectedAddons?.reduce((aSum, a) => aSum + a.price, 0) || 0;
+            return sum + (item.product.price + addonsPrice) * item.quantity;
+          }
+          return sum;
+        }, 0);
+      }
+
+      if (discountableAmount > 0) {
+        if (promo.discount_type === 'percentage') {
+          totalAutoDiscount += (discountableAmount * promo.discount_value) / 100;
+        } else {
+          totalAutoDiscount += promo.discount_value;
+        }
+      }
+    });
+
+    setAutomaticDiscount(totalAutoDiscount);
+    // Note: Automatic discount is added to orderDiscount visually in the calculation
+  }, [orderItems, promos, promoProducts, subtotal]);
+
+  // Calculate totals
+
+  const totalDiscount = orderDiscount + automaticDiscount;
+  const discountRatio = subtotal > 0 ? (subtotal - totalDiscount) / subtotal : 0;
   const taxableAmount = taxableSubtotal * discountRatio;
   const taxRate = settings?.tax_rate || 0;
   const serviceRate = settings?.service_rate || 0;
@@ -283,7 +369,7 @@ export function CashierInterface({
   const taxAmount = (taxableAmount * taxRate) / 100;
   const serviceAmount = (taxableAmount * serviceRate) / 100;
 
-  const total = (subtotal - orderDiscount) + taxAmount + serviceAmount;
+  const total = (subtotal - totalDiscount) + taxAmount + serviceAmount;
 
   // Hydrate order when table or specific sale ID is selected
   useEffect(() => {
@@ -965,8 +1051,9 @@ export function CashierInterface({
       <DiscountModal
         open={discountModalOpen}
         onOpenChange={setDiscountModalOpen}
-        currentTotal={subtotal}
         onApplyDiscount={handleApplyDiscount}
+        currentTotal={subtotal}
+        availablePromos={promos.filter(p => p.type === 'manual')}
       />
 
       <PaymentModal

@@ -69,3 +69,22 @@ export interface Transaction {
     timestamp: Date;
   };
 }
+export interface Promo {
+  id: number;
+  name: string;
+  description: string | null;
+  type: 'manual' | 'automatic';
+  discount_type: 'percentage' | 'fixed';
+  discount_value: number;
+  min_spend: number;
+  start_date: string | null;
+  end_date: string | null;
+  is_active: boolean;
+  branch_id: number | null;
+  created_at?: string;
+}
+
+export interface PromoProduct {
+  promo_id: number;
+  product_id: string;
+}
