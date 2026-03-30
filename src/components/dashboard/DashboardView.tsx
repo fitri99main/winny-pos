@@ -15,16 +15,17 @@ import { ContactData } from '../contacts/ContactsView';
 import { SalesOrder, SalesReturn } from '../pos/SalesView';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar } from 'recharts';
 
-interface DashboardViewProps {
+export interface DashboardViewProps {
     contacts: ContactData[];
     sales: SalesOrder[];
     returns: SalesReturn[];
     products: any[];
     ingredients: any[];
+    voucherStats?: { total: number; used: number; available: number };
     onNavigate: (module: string) => void;
 }
 
-export function DashboardView({ contacts = [], sales = [], returns = [], products = [], ingredients = [], onNavigate }: DashboardViewProps) {
+export function DashboardView({ contacts = [], sales = [], returns = [], products = [], ingredients = [], voucherStats = { total: 0, used: 0, available: 0 }, onNavigate }: DashboardViewProps) {
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
 
@@ -65,18 +66,31 @@ export function DashboardView({ contacts = [], sales = [], returns = [], product
     });
 
     // --- Best Sellers Calculation ---
-    const productSales: Record<string, number> = {};
+    const coffeeSales: Record<string, number> = {};
+    const nonCoffeeSales: Record<string, number> = {};
+
     (sales || []).forEach(sale => {
         if (sale.status !== 'Returned' && Array.isArray(sale.productDetails)) {
             sale.productDetails.forEach((item: any) => {
                 if (item && item.name) {
-                    productSales[item.name] = (productSales[item.name] || 0) + (item.quantity || 0);
+                    const category = (item.category || '').toLowerCase();
+                    const lowerName = item.name.toLowerCase();
+                    if (category.includes('kopi') || lowerName.startsWith('kopi')) {
+                        coffeeSales[item.name] = (coffeeSales[item.name] || 0) + (item.quantity || 0);
+                    } else {
+                        nonCoffeeSales[item.name] = (nonCoffeeSales[item.name] || 0) + (item.quantity || 0);
+                    }
                 }
             });
         }
     });
 
-    const bestSellers = Object.entries(productSales)
+    const coffeeBestSellers = Object.entries(coffeeSales)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 5);
+
+    const nonCoffeeBestSellers = Object.entries(nonCoffeeSales)
         .map(([name, value]) => ({ name, value }))
         .sort((a, b) => b.value - a.value)
         .slice(0, 5);
@@ -118,6 +132,15 @@ export function DashboardView({ contacts = [], sales = [], returns = [], product
             gradient: 'from-red-500 to-rose-600',
             shadow: 'shadow-red-500/20'
         },
+        {
+            label: 'Voucher WiFi',
+            value: (voucherStats?.available || 0).toString(),
+            icon: Activity,
+            trend: (voucherStats?.available || 0) < 10 ? 'Segera Import' : 'Cukup',
+            trendUp: (voucherStats?.available || 0) >= 10,
+            gradient: (voucherStats?.available || 0) < 10 ? 'from-orange-600 to-red-700' : 'from-emerald-500 to-teal-600',
+            shadow: 'shadow-orange-500/20'
+        },
     ];
 
     return (
@@ -150,7 +173,7 @@ export function DashboardView({ contacts = [], sales = [], returns = [], product
 
 
             {/* 2. Stats Grid - Fixed Height */}
-            <div className="grid grid-cols-4 gap-3 shrink-0">
+            <div className="grid grid-cols-5 gap-3 shrink-0">
                 {stats.map((stat, index) => (
                     <div key={index} className="bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex items-center gap-3">
                         <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${stat.gradient} flex items-center justify-center text-white shadow-sm shrink-0`}>
@@ -193,19 +216,40 @@ export function DashboardView({ contacts = [], sales = [], returns = [], product
                 </div>
 
                 {/* Best Sellers */}
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col h-full">
+                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col h-full overflow-hidden">
                     <div className="mb-2 shrink-0">
                         <h3 className="text-sm font-bold text-gray-800">Top Produk</h3>
                     </div>
-                    <div className="flex-1 min-h-0 w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart layout="vertical" data={bestSellers} margin={{ left: 0, right: 0 }} barGap={2}>
-                                <XAxis type="number" hide />
-                                <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 10, fill: '#6b7280' }} />
-                                <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '11px' }} />
-                                <Bar dataKey="value" fill="#ec4899" radius={[0, 4, 4, 0]} barSize={12} />
-                            </BarChart>
-                        </ResponsiveContainer>
+                    <div className="flex-1 min-h-0 w-full overflow-y-auto space-y-4">
+                        {/* Kopi Chart */}
+                        <div className="h-1/2 flex flex-col">
+                            <h4 className="text-[10px] font-bold text-orange-600 uppercase mb-1 tracking-wider">Kopi</h4>
+                            <div className="flex-1 min-h-0">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart layout="vertical" data={coffeeBestSellers} margin={{ left: -20, right: 10 }}>
+                                        <XAxis type="number" hide />
+                                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 9, fill: '#6b7280' }} />
+                                        <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px' }} />
+                                        <Bar dataKey="value" fill="#ea580c" radius={[0, 4, 4, 0]} barSize={10} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                        {/* Non-Kopi Chart */}
+                        <div className="h-1/2 flex flex-col">
+                            <h4 className="text-[10px] font-bold text-blue-600 uppercase mb-1 tracking-wider">Non-Kopi</h4>
+                            <div className="flex-1 min-h-0">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart layout="vertical" data={nonCoffeeBestSellers} margin={{ left: -20, right: 10 }}>
+                                        <XAxis type="number" hide />
+                                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 9, fill: '#6b7280' }} />
+                                        <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px' }} />
+                                        <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={10} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

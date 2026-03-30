@@ -30,15 +30,16 @@ interface JournalEntry {
 
 // --- Sub-Components ---
 
-function JournalTab({ transactions, accounts, onAddTransaction, onDeleteTransaction, onResetTransactions, role }: {
+function JournalTab({ transactions, accounts, onAddTransaction, onDeleteTransaction, onResetTransactions, onRefresh, role }: {
     transactions: JournalEntry[],
     accounts: Account[],
     onAddTransaction: (tx: JournalEntry) => void,
     onDeleteTransaction: (id: number) => void,
-    onResetTransactions: () => void,
-    role?: string
+    onResetTransactions: () => void;
+    onRefresh?: () => void;
+    role?: string;
 }) {
-    const [formData, setFormData] = useState({ date: new Date().toISOString().split('T')[0], desc: '', debit: '', credit: '', amount: '' });
+    const [formData, setFormData] = useState({ date: new Date().toISOString().split('T')[0] || '', desc: '', debit: '', credit: '', amount: '' });
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -325,7 +326,7 @@ function AccountManagementTab({ accounts, getBalance, onAddAccount, onUpdateAcco
 
 // --- Main Component ---
 
-interface AccountingViewProps {
+export interface AccountingViewProps {
     accounts?: Account[]; // Made optional to prevent crash if not passed immediately
     transactions?: JournalEntry[];
     onAddAccount?: (acc: Account) => Promise<void>;
@@ -334,6 +335,7 @@ interface AccountingViewProps {
     onAddTransaction?: (tx: JournalEntry) => Promise<void>;
     onDeleteTransaction?: (id: number) => Promise<void>;
     onResetTransactions?: () => Promise<void>;
+    onRefresh?: () => void;
     onBack?: () => void;
 }
 
@@ -346,6 +348,7 @@ export function AccountingView({
     onAddTransaction = async () => { },
     onDeleteTransaction = async () => { },
     onResetTransactions = async () => { },
+    onRefresh,
     onBack
 }: AccountingViewProps) {
     const { role } = useAuth();
@@ -359,9 +362,24 @@ export function AccountingView({
     });
     const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
 
+    // [DIAGNOSTIC] Log current data state
+    useMemo(() => {
+        console.log('AccountingView State:', { 
+            totalTransactions: transactions.length, 
+            accountsCount: accounts.length,
+            startDate,
+            endDate,
+            transactionsSample: transactions.slice(0, 3)
+        });
+    }, [transactions, accounts, startDate, endDate]);
+
     // --- Filtered Transactions for Reports ---
     const filteredTransactions = useMemo(() => {
-        return transactions.filter(tx => tx.date >= startDate && tx.date <= endDate);
+        return transactions.filter(tx => {
+            if (!tx.date) return false;
+            const txDate = String(tx.date).split('T')[0];
+            return txDate >= startDate && txDate <= endDate;
+        });
     }, [transactions, startDate, endDate]);
 
     // --- CRUD Actions (Wrappers) ---
@@ -739,12 +757,25 @@ export function AccountingView({
                     <Button
                         onClick={onBack}
                         variant="outline"
-                        className="flex items-center gap-2 border-gray-300 text-gray-700 hover:bg-gray-100"
+                        className="flex items-center gap-2 bg-gray-100 text-gray-700 hover:bg-gray-200"
                     >
-                        <LayoutDashboard className="w-4 h-4 rotate-180" /> {/* Simulating Back Icon */}
+                        <LayoutDashboard className="w-4 h-4 rotate-180 text-gray-500" />
                         Kembali ke Payroll
                     </Button>
                 )}
+                <div className="flex gap-2">
+                    <Button
+                        onClick={() => {
+                            if (onRefresh) onRefresh();
+                            toast.info('Memperbarui data akuntansi...');
+                        }}
+                        variant="outline"
+                        className="flex items-center gap-2 bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100"
+                    >
+                        <Plus className="w-4 h-4 rotate-45" /> 
+                        Refresh
+                    </Button>
+                </div>
             </div>
 
             {/* Navigation Tabs & Date Filters */}

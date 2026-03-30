@@ -30,13 +30,24 @@ export interface PrinterDevice {
     characteristic?: BluetoothRemoteGATTCharacteristic;
 }
 
+export interface TicketData {
+    orderNo: string;
+    tableNo: string;
+    waiterName: string;
+    cashierName?: string;
+    customerName?: string;
+    time: string;
+    items: { name: string; quantity: number; note?: string; notes?: string }[];
+    notes?: string;
+}
+
 class PrinterService {
     private kitchenPrinter: PrinterDevice | null = null;
     private barPrinter: PrinterDevice | null = null;
     private cashierPrinter: PrinterDevice | null = null;
     private template: any = {
-        store_name: 'Winny Pangeran Natakusuma',
-        receipt_header: 'Winny Pangeran Natakusuma',
+        store_name: 'WINNY COFFEE PNK',
+        receipt_header: 'WINNY COFFEE PNK',
         address: 'Jl. Contoh No. 123, Kota',
         footer: 'Terima Kasih Atas Kunjungan Anda',
         paperWidth: '58mm',
@@ -122,14 +133,7 @@ class PrinterService {
         return this.template.paperWidth === '80mm' ? 42 : 32;
     }
 
-    async printTicket(type: 'Kitchen' | 'Bar', data: {
-        orderNo: string;
-        tableNo: string;
-        waiterName: string;
-        cashierName?: string;
-        time: string;
-        items: { name: string; quantity: number }[];
-    }) {
+    async printTicket(type: 'Kitchen' | 'Bar', data: TicketData) {
         const printer = type === 'Kitchen' ? this.kitchenPrinter : this.barPrinter;
         if (!printer || !printer.characteristic) {
             console.warn(`${type} Printer not connected. Skipping print.`);
@@ -143,41 +147,75 @@ class PrinterService {
         const isKitchen = type === 'Kitchen';
         const header = isKitchen ? (this.template.kitchenHeader || this.template.receipt_header || 'PESANAN') : (this.template.barHeader || this.template.receipt_header || 'PESANAN');
         const footer = isKitchen ? (this.template.kitchenFooter || '') : (this.template.barFooter || '');
-        const showTable = isKitchen ? (this.template.kitchenShowTable ?? this.template.showTable) : (this.template.barShowTable ?? this.template.showTable);
-        const showWaiter = isKitchen ? (this.template.kitchenShowWaiter ?? this.template.showWaiter) : (this.template.barShowWaiter ?? this.template.showWaiter);
-        const showCashier = isKitchen ? (this.template.kitchenShowCashier ?? this.template.showCashierName) : (this.template.barShowCashier ?? this.template.showCashierName);
-        const showDate = isKitchen ? (this.template.kitchenShowDate ?? this.template.showDate) : (this.template.barShowDate ?? this.template.showDate);
+        const showTable = isKitchen ? (this.template.kitchenShowTable ?? this.template.showTable ?? true) : (this.template.barShowTable ?? this.template.showTable ?? true);
+        const showWaiter = isKitchen ? (this.template.kitchenShowWaiter ?? this.template.showWaiter ?? true) : (this.template.barShowWaiter ?? this.template.showWaiter ?? true);
+        const showCashier = isKitchen ? (this.template.kitchenShowCashier ?? this.template.showCashierName ?? true) : (this.template.barShowCashier ?? this.template.showCashierName ?? true);
+        const showDate = isKitchen ? (this.template.kitchenShowDate ?? this.template.showDate ?? true) : (this.template.barShowDate ?? this.template.showDate ?? true);
+        const showCustomer = this.template.showCustomerName ?? true;
+        const doubleHeightItems = true; // Match mobile's default
 
         // Initialize
         commands.push(new Uint8Array([this.ESC, 0x40]));
 
-        // Header (Double Size)
+        // Header (Double Size + Bold)
         commands.push(new Uint8Array([this.GS, 0x21, 0x11])); // Double width & height
+        commands.push(new Uint8Array([this.ESC, 0x45, 0x01])); // Bold ON
         commands.push(new Uint8Array([this.ESC, 0x61, 0x01])); // Center align
-        commands.push(encoder.encode(`${header.toUpperCase()}\n`));
+        const targetLabel = isKitchen ? 'DAPUR' : 'BAR';
+        commands.push(encoder.encode(`${header.toUpperCase()} ${targetLabel}\n`));
+        commands.push(new Uint8Array([this.ESC, 0x45, 0x00])); // Bold OFF
 
         // Reset size
         commands.push(new Uint8Array([this.GS, 0x21, 0x00]));
-        if (this.template.address && type !== 'Kitchen' && type !== 'Bar') {
-            commands.push(encoder.encode(`${this.template.address}\n`));
+        
+        // Order No (Centered)
+        commands.push(encoder.encode(`No: ${data.orderNo}\n`));
+        
+        // Table No (Centered, Bold, Double Size)
+        if (showTable && data.tableNo) {
+            commands.push(new Uint8Array([this.GS, 0x21, 0x11])); // Double size
+            commands.push(new Uint8Array([this.ESC, 0x45, 0x01])); // Bold ON
+            commands.push(encoder.encode(`MEJA: ${data.tableNo}\n`));
+            commands.push(new Uint8Array([this.GS, 0x21, 0x00])); // Reset size
+            commands.push(new Uint8Array([this.ESC, 0x45, 0x00])); // Bold OFF
         }
 
-        commands.push(encoder.encode(`--- PESANAN ${type.toUpperCase()} ---\n`));
-        commands.push(encoder.encode(`No: ${data.orderNo}\n`));
-        if (showTable) commands.push(encoder.encode(`Meja: ${data.tableNo}\n`));
+        // Other info (Centered)
+        if (showCustomer && data.customerName && data.customerName !== 'Guest') commands.push(encoder.encode(`Pelanggan: ${data.customerName}\n`));
         if (showWaiter && data.waiterName && data.waiterName !== '-') commands.push(encoder.encode(`Pelayan: ${data.waiterName}\n`));
         if (showCashier && data.cashierName) commands.push(encoder.encode(`Kasir: ${data.cashierName}\n`));
         if (showDate) commands.push(encoder.encode(`Waktu: ${data.time}\n`));
-        const line = '-'.repeat(this.getLineWidth()) + '\n';
+        
+        const lineWidth = this.getLineWidth();
+        const line = '-'.repeat(lineWidth) + '\n';
         commands.push(encoder.encode(line));
 
-        // Items
-        commands.push(new Uint8Array([this.ESC, 0x61, 0x00])); // Left align
+        // Items (Left align for readability)
+        commands.push(new Uint8Array([this.ESC, 0x61, 0x00])); 
         data.items.forEach(item => {
+            // Match mobile's Double Width & Height + Bold for items
+            if (doubleHeightItems) {
+                commands.push(new Uint8Array([this.GS, 0x21, 0x11])); // Double width & height
+            }
+            commands.push(new Uint8Array([this.ESC, 0x45, 0x01])); // Bold ON
             commands.push(encoder.encode(`${item.quantity}x ${item.name}\n`));
+            commands.push(new Uint8Array([this.ESC, 0x45, 0x00])); // Bold OFF
+            if (doubleHeightItems) {
+                commands.push(new Uint8Array([this.GS, 0x21, 0x00])); // Reset size
+            }
+            
+            if (item.note || item.notes) {
+                commands.push(encoder.encode(`   * Catatan: ${item.note || item.notes}\n`));
+            }
+            commands.push(encoder.encode('\n'));
         });
 
+        commands.push(new Uint8Array([this.ESC, 0x61, 0x01])); // Center align for line
         commands.push(encoder.encode(line));
+        
+        if (data.notes) {
+             commands.push(encoder.encode(`Catatan: ${data.notes}\n`));
+        }
 
         if (footer) {
             commands.push(new Uint8Array([this.ESC, 0x61, 0x01])); // Center align
@@ -207,6 +245,7 @@ class PrinterService {
         subtotal: number;
         discount: number;
         tax: number;
+        serviceCharge?: number;
         total: number;
         paymentType: string;
         amountPaid: number;
@@ -232,12 +271,15 @@ class PrinterService {
         // Header (Double Size)
         commands.push(new Uint8Array([this.GS, 0x21, 0x11])); // Double width & height
         commands.push(new Uint8Array([this.ESC, 0x61, 0x01])); // Center align
-        commands.push(encoder.encode(`${(this.template.header || 'WINNY PANGERAN NATAKUSUMA').toUpperCase()}\n`));
+        commands.push(encoder.encode(`${(this.template.header || 'WINNY COFFEE PNK').toUpperCase()}\n`));
 
         // Reset size & Address
         commands.push(new Uint8Array([this.GS, 0x21, 0x00]));
         if (this.template.address) {
             commands.push(encoder.encode(`${this.template.address}\n`));
+        }
+        if (this.template.phone) {
+            commands.push(encoder.encode(`Telp: ${this.template.phone}\n`));
         }
         const lineWidth = this.getLineWidth();
         const line = '-'.repeat(lineWidth) + '\n';
@@ -269,13 +311,21 @@ class PrinterService {
         const valWidth = 12;
         const labelWidth = lineWidth - valWidth;
         commands.push(encoder.encode(`${'Subtotal'.padEnd(labelWidth)}${data.subtotal.toLocaleString('id-ID').padStart(valWidth)}\n`));
+        
         if (data.discount > 0) {
-            commands.push(encoder.encode(`${'Diskon'.padEnd(labelWidth)}${data.discount.toLocaleString('id-ID').padStart(valWidth)}\n`));
+            commands.push(encoder.encode(`${'Diskon'.padEnd(labelWidth)}${('-' + data.discount.toLocaleString('id-ID')).padStart(valWidth)}\n`));
         }
+
+        if ((data.serviceCharge || 0) > 0) {
+            commands.push(encoder.encode(`${'Layanan'.padEnd(labelWidth)}${data.serviceCharge!.toLocaleString('id-ID').padStart(valWidth)}\n`));
+        }
+
         if (data.tax > 0) {
             commands.push(encoder.encode(`${'Pajak'.padEnd(labelWidth)}${data.tax.toLocaleString('id-ID').padStart(valWidth)}\n`));
         }
-        commands.push(new Uint8Array([this.GS, 0x21, 0x01])); // Bold-ish (emphasized)
+
+        // GS, 0x21, 0x01 is Double Height (sync with Mobile DOUBLE_ON)
+        commands.push(new Uint8Array([this.GS, 0x21, 0x01])); 
         commands.push(encoder.encode(`${'TOTAL'.padEnd(labelWidth)}${data.total.toLocaleString('id-ID').padStart(valWidth)}\n`));
         commands.push(new Uint8Array([this.GS, 0x21, 0x00])); // Reset
 

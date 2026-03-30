@@ -5,6 +5,8 @@ import {
   Contact, Archive, MapPin, CalendarCheck, History as ClockHistory, Wallet, Award, Target,
   Store, ChevronLeft, ChevronRight, CheckCircle, Package, RefreshCw, ShieldCheck, Clock, History, Percent
 } from 'lucide-react';
+import { printerService } from '../lib/PrinterService';
+import { WifiVoucherService } from '../lib/WifiVoucherService';
 import { Button } from './ui/button';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './auth/AuthProvider';
@@ -34,7 +36,6 @@ import { PWAInstallButton } from './ui/PWAInstallButton';
 import { OrderItem } from '@/types/pos';
 import { mockProducts } from '@/data/products';
 import { toast } from 'sonner';
-import { printerService } from '../lib/PrinterService';
 
 type ModuleType = 'dashboard' | 'users' | 'contacts' | 'products' | 'purchases' | 'pos' | 'kds' | 'reports' | 'accounting' | 'settings' | 'employees' | 'attendance' | 'payroll' | 'branches' | 'shifts' | 'performance_indicators' | 'inventory' | 'session_history' | 'promos';
 
@@ -71,6 +72,7 @@ function Home() {
   const [currentBranchId, setCurrentBranchId] = useState(localStorage.getItem('winpos_current_branch') || '7');
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [orderDiscount, setOrderDiscount] = useState(0);
+  const [voucherStats, setVoucherStats] = useState({ total: 0, used: 0, available: 0 });
   const [isCashierOpen, setIsCashierOpen] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [autoSelectedTable, setAutoSelectedTable] = useState<string>('');
@@ -302,23 +304,19 @@ function Home() {
   });
 
   // --- WiFi Voucher State ---
-  const [voucherStats, setVoucherStats] = useState({ total: 0, used: 0, available: 0 });
 
   const fetchVoucherStats = async () => {
-    try {
-      const { WifiVoucherService } = await import('../lib/WifiVoucherService');
-      const stats = await WifiVoucherService.getCounts(currentBranchId || 'default');
-      setVoucherStats(stats);
-    } catch (e) {
-      console.error("[Home] Failed to fetch voucher stats:", e);
-    }
+    if (!currentBranchId) return;
+    const stats = await WifiVoucherService.getCounts(currentBranchId);
+    setVoucherStats(stats);
   };
 
   useEffect(() => {
-    if (activeModule === 'dashboard' || activeModule === 'settings') {
-      fetchVoucherStats();
-    }
-  }, [activeModule, currentBranchId]);
+    fetchVoucherStats();
+    // Refresh stats every 30 seconds or when branch changes
+    const interval = setInterval(fetchVoucherStats, 30000);
+    return () => clearInterval(interval);
+  }, [currentBranchId]);
 
   // --- Master Data Integration ---
   const fetchGlobalData = async () => {
