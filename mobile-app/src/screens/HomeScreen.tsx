@@ -761,10 +761,7 @@ export default function HomeScreen() {
                             Pesanan Baru Masuk!
                         </Text>
                         <Text style={{ color: '#64748b', fontSize: 13, marginBottom: 16, textAlign: 'center' }}>
-                            {newOrderNotif.tableNo && newOrderNotif.tableNo !== 'Tanpa Meja'
-                                ? `🪑 Meja ${newOrderNotif.tableNo}`
-                                : '🛍️ Take Away'
-                            } — #{newOrderNotif.orderNo}
+                            #{newOrderNotif.orderNo}
                         </Text>
 
 
