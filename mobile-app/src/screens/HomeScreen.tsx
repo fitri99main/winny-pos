@@ -6,8 +6,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSession } from '../context/SessionContext';
 import CashierSessionModal from '../components/CashierSessionModal';
 import ConfirmExitModal from '../components/ConfirmExitModal';
-import { Settings, LogOut, Wifi, WifiOff } from 'lucide-react-native';
+import { Settings, LogOut, Wifi, WifiOff, Trash2, RefreshCw } from 'lucide-react-native';
 import { OfflineService } from '../lib/OfflineService';
+import ManagerAuthModal from '../components/ManagerAuthModal';
+import ModernToast from '../components/ModernToast';
 
 export default function HomeScreen() {
     const navigation = useNavigation();
@@ -20,7 +22,7 @@ export default function HomeScreen() {
     const [loading, setLoading] = React.useState(true);
     const [showOccupiedModal, setShowOccupiedModal] = React.useState(false);
     const [posFlow, setPosFlow] = React.useState<'direct'>('direct');
-    const { currentSession, isSessionActive, requireMandatorySession, checkSession, isDisplayOnly, loading: sessionLoading, branchName, userName, currentBranchId } = useSession();
+    const { currentSession, isSessionActive, requireMandatorySession, checkSession, isDisplayOnly, loading: sessionLoading, branchName, userName, currentBranchId, storeSettings } = useSession();
     const [showSessionModal, setShowSessionModal] = React.useState(false);
     const [showExitModal, setShowExitModal] = React.useState(false);
     const [showLogoutModal, setShowLogoutModal] = React.useState(false);
@@ -33,6 +35,21 @@ export default function HomeScreen() {
     const [fetchingPending, setFetchingPending] = React.useState(false);
     const [isOnline, setIsOnline] = React.useState(true);
     const [isManualOffline, setIsManualOffline] = React.useState(false);
+    const [showManagerAuth, setShowManagerAuth] = React.useState(false);
+    const [managerAuthTitle, setManagerAuthTitle] = React.useState('Otorisasi Manager');
+    const [pendingAction, setPendingAction] = React.useState<(() => void) | null>(null);
+    const [realtimeStatus, setRealtimeStatus] = React.useState<string>('CONNECTING...');
+    const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
+    const [orderToDelete, setOrderToDelete] = React.useState<any>(null);
+    const [toastVisible, setToastVisible] = React.useState(false);
+    const [toastMessage, setToastMessage] = React.useState('');
+    const [toastType, setToastType] = React.useState<'success' | 'info' | 'error'>('success');
+
+    const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
+        setToastMessage(message);
+        setToastType(type);
+        setToastVisible(true);
+    };
 
     useFocusEffect(
         React.useCallback(() => {
@@ -71,7 +88,7 @@ export default function HomeScreen() {
         }
     }, [isSessionActive, requireMandatorySession, isDisplayOnly, sessionLoading, currentBranchId]);
 
-    const fetchPendingOrders = async () => {
+    const fetchPendingOrders = React.useCallback(async () => {
         if (!currentBranchId) return;
         try {
             setFetchingPending(true);
@@ -83,6 +100,7 @@ export default function HomeScreen() {
                 .order('date', { ascending: false });
 
             if (error) throw error;
+            console.log(`[HomeScreen] Fetched ${data?.length || 0} pending orders for branch ${currentBranchId}`);
             setPendingOrders(data || []);
 
             // Update lastKnownOrderId to avoid duplicate notifications for existing items
@@ -97,13 +115,73 @@ export default function HomeScreen() {
         } finally {
             setFetchingPending(false);
         }
-    };
+    }, [currentBranchId]);
 
-    const debouncedFetchPending = () => {
+    const debouncedFetchPending = React.useCallback(() => {
         if (fetchPendingDebounceRef.current) clearTimeout(fetchPendingDebounceRef.current);
         fetchPendingDebounceRef.current = setTimeout(() => {
             fetchPendingOrders();
         }, 1000);
+    }, [fetchPendingOrders]);
+
+    const handleManagerAuthSuccess = () => {
+        if (pendingAction) {
+            pendingAction();
+            setPendingAction(null);
+        }
+    };
+
+    const performDelete = async (order: any) => {
+        try {
+            // 1. Delete sale_items
+            const { error: itemsError } = await supabase
+                .from('sale_items')
+                .delete()
+                .eq('sale_id', order.id);
+            
+            if (itemsError) throw itemsError;
+
+            // 2. Delete sale
+            const { error: saleError } = await supabase
+                .from('sales')
+                .delete()
+                .eq('id', order.id);
+
+            if (saleError) throw saleError;
+
+            // 3. Update table status if applicable
+            if (order.table_no && order.table_no !== 'Tanpa Meja' && order.table_no !== '-') {
+                await supabase
+                    .from('tables')
+                    .update({ status: 'Available' })
+                    .eq('table_no', order.table_no)
+                    .eq('branch_id', currentBranchId);
+            }
+
+            showToast('Pesanan berhasil dihapus', 'success');
+            fetchPendingOrders();
+        } catch (err: any) {
+            console.error('[HomeScreen] Delete Error:', err);
+            showToast('Gagal menghapus pesanan: ' + err.message, 'error');
+        }
+    };
+
+    const handleDeletePendingOrder = (order: any) => {
+        setOrderToDelete(order);
+        setShowDeleteConfirm(true);
+    };
+
+    const onConfirmDelete = () => {
+        setShowDeleteConfirm(false);
+        if (!orderToDelete) return;
+
+        if (storeSettings?.enable_manager_auth) {
+            setManagerAuthTitle('Otorisasi Hapus Pesanan');
+            setPendingAction(() => () => performDelete(orderToDelete));
+            setShowManagerAuth(true);
+        } else {
+            performDelete(orderToDelete);
+        }
     };
 
 
@@ -124,65 +202,103 @@ export default function HomeScreen() {
         return () => clearInterval(interval);
     }, []);
 
-    // Real-time Monitor + New Order Notification for Cashier
+    // ─── Real-time Monitor + New Order Notification for Cashier ───────
     React.useEffect(() => {
         if (!currentBranchId) return;
 
-        const branchIdInt = currentBranchId;
+        let channel: any = null;
+        let isActive = true;
+        let retryCount = 0;
 
-        // ─── 1. Consolidated Sales Channel ─────────────────────────────────────
-        const salesChannel = supabase
-            .channel(`sales_sync_${currentBranchId}`)
-            .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'sales', filter: `branch_id=eq.${branchIdInt}` },
-                async (payload: any) => {
-                    console.log('[HomeScreen] Sales change detected:', payload.eventType);
-                    
-                    // Always trigger a debounced fetch for any change
-                    debouncedFetchPending();
+        const connect = () => {
+            if (!isActive) return;
+            
+            const channelName = `home_sync_${currentBranchId}_${Date.now()}`;
+            console.log(`[Realtime] Connecting to ${channelName} (attempt ${retryCount + 1})`);
+            setRealtimeStatus('CONNECTING...');
 
-                    // Specific handling for NEW orders (Notifications)
-                    if (payload.eventType === 'INSERT') {
-                        if (isDisplayOnly) return; // Only for cashier
+            channel = supabase.channel(channelName);
+            
+            channel
+                .on(
+                    'postgres_changes',
+                    { event: '*', schema: 'public', table: 'sales' },
+                    async (payload: any) => {
                         const newRow = payload.new as any;
-                        if (!newRow) return;
-                        if (newRow.status !== 'Pending' && newRow.status !== 'Unpaid') return;
-                        if (newRow.id <= lastKnownOrderIdRef.current) return;
-
-                        console.log('[HomeScreen] New Pending/Unpaid order detected, showing notification:', newRow.id);
-                        lastKnownOrderIdRef.current = newRow.id;
-
-                        setNewOrderNotif({
-                            visible: true,
-                            orderId: newRow.id,
-                            tableNo: newRow.table_no || 'Tanpa Meja',
-                            orderNo: newRow.order_no || String(newRow.id),
-                            itemCount: 0,
-                        });
+                        
+                        // 1. Process Insert (New Order Notification)
+                        if (payload.eventType === 'INSERT') {
+                            if (newRow && String(newRow.branch_id) === String(currentBranchId)) {
+                                // Important: Only trigger popup for cashier
+                                if (!isDisplayOnly && (newRow.status === 'Pending' || newRow.status === 'Unpaid')) {
+                                    setNewOrderNotif({
+                                        visible: true,
+                                        orderId: newRow.id,
+                                        tableNo: newRow.table_no || 'Tanpa Meja',
+                                        orderNo: newRow.order_no || String(newRow.id),
+                                        itemCount: 0,
+                                    });
+                                    
+                                    if (newRow.id > lastKnownOrderIdRef.current) {
+                                        lastKnownOrderIdRef.current = newRow.id;
+                                    }
+                                }
+                                debouncedFetchPending();
+                            }
+                        } else {
+                            // 2. Process other changes (Update/Delete)
+                            if (newRow && String(newRow.branch_id) === String(currentBranchId)) {
+                                debouncedFetchPending();
+                            } else if (payload.old && String(payload.old.branch_id) === String(currentBranchId)) {
+                                debouncedFetchPending();
+                            }
+                        }
                     }
-                }
-            )
-            .subscribe();
+                )
+                .on(
+                    'postgres_changes',
+                    { event: 'UPDATE', schema: 'public', table: 'store_settings', filter: 'id=eq.1' },
+                    () => console.log('[Realtime] Store settings updated')
+                )
+                .subscribe((status: string) => {
+                    if (!isActive) return;
+                    console.log(`[Realtime] Status for ${channelName}: ${status}`);
+                    setRealtimeStatus(status.toUpperCase());
 
-        // ─── 2. Settings channel remains separate for purity ─────────────────
-        const settingsChannel = supabase
-            .channel('silent_sync_settings')
-            .on(
-                'postgres_changes',
-                { event: 'UPDATE', schema: 'public', table: 'store_settings', filter: 'id=eq.1' },
-                () => {
-                    console.log('[HomeScreen] Settings changed');
-                }
-            )
-            .subscribe();
+                    if (status === 'SUBSCRIBED') {
+                        retryCount = 0;
+                        fetchPendingOrders();
+                    } else if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR') {
+                        // RECONNECT LOGIC
+                        supabase.removeChannel(channel);
+                        const nextRetry = Math.min(1000 * Math.pow(2, retryCount), 10000); // Exp backoff
+                        setTimeout(() => {
+                            if (isActive) {
+                                retryCount++;
+                                connect();
+                            }
+                        }, nextRetry);
+                    }
+                });
+        };
+
+        connect();
+
+        // ─── Fallback Polling (Every 30s) ─────────────────────────────────
+        const pollInterval = setInterval(() => {
+            if (isActive && realtimeStatus !== 'SUBSCRIBED') {
+                console.log('[Realtime] Fallback polling due to connection: ', realtimeStatus);
+                fetchPendingOrders();
+            }
+        }, 30000);
 
         return () => {
-            supabase.removeChannel(salesChannel);
-            supabase.removeChannel(settingsChannel);
+            isActive = false;
+            if (channel) supabase.removeChannel(channel);
+            clearInterval(pollInterval);
             if (fetchPendingDebounceRef.current) clearTimeout(fetchPendingDebounceRef.current);
         };
-    }, [currentBranchId, isDisplayOnly]);
+    }, [currentBranchId, isDisplayOnly, fetchPendingOrders, debouncedFetchPending]);
 
     const openNewOrder = (orderId: number) => {
         setNewOrderNotif(prev => ({ ...prev, visible: false }));
@@ -271,13 +387,35 @@ export default function HomeScreen() {
                                 backgroundColor: isOnline ? '#22c55e' : '#ef4444',
                                 marginRight: 4
                             }} />
-                            <Text style={{
+                             <Text style={{
                                 fontSize: 8,
                                 fontWeight: '700',
                                 color: isOnline ? '#16a34a' : '#dc2626',
                                 letterSpacing: 0.5
                             }}>
                                 {isManualOffline ? 'OFF_M' : (isOnline ? 'ONLINE' : 'OFFLINE')}
+                            </Text>
+                        </View>
+
+                        {/* Realtime Status Indicator */}
+                        <View style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            marginLeft: 4,
+                            backgroundColor: realtimeStatus === 'SUBSCRIBED' ? '#0ea5e915' : '#f59e0b15',
+                            paddingHorizontal: 6,
+                            paddingVertical: 1,
+                            borderRadius: 6,
+                            borderWidth: 0.5,
+                            borderColor: realtimeStatus === 'SUBSCRIBED' ? '#0ea5e940' : '#f59e0b40'
+                        }}>
+                            <Text style={{
+                                fontSize: 8,
+                                fontWeight: '700',
+                                color: realtimeStatus === 'SUBSCRIBED' ? '#0284c7' : '#d97706',
+                                letterSpacing: 0.5
+                            }}>
+                                {realtimeStatus === 'SUBSCRIBED' ? 'SIAP!' : `RT: ${realtimeStatus}`}
                             </Text>
                         </View>
                     </View>
@@ -380,9 +518,19 @@ export default function HomeScreen() {
         <SafeAreaView style={styles.container}>
             {/* Background Watermark */}
             <Image
-                source={require('../../assets/cafe-bg.jpg')}
-                style={styles.watermarkBg}
-                resizeMode="cover"
+                source={require('../../assets/winny-bg.jpg')}
+                style={[
+                    styles.watermarkBg,
+                    {
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        width: '100%',
+                        height: '100%',
+                    }
+                ]}
+                resizeMode="contain"
             />
 
             <View style={styles.flex1}>
@@ -399,7 +547,16 @@ export default function HomeScreen() {
                     {!isDisplayOnly && pendingOrders.length > 0 && (
                         <View style={[styles.menuSection, isSmallDevice ? { marginTop: -10, paddingHorizontal: 12 } : { marginTop: -15 }]}>
                             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                                <Text style={[styles.sectionTitle, { color: 'white', marginBottom: 0 }]}>Pesanan Menunggu ({pendingOrders.length})</Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                    <Text style={[styles.sectionTitle, { color: 'white', marginBottom: 0 }]}>Pesanan Menunggu ({pendingOrders.length})</Text>
+                                    <TouchableOpacity 
+                                        onPress={() => fetchPendingOrders()}
+                                        style={{ backgroundColor: 'rgba(255,255,255,0.2)', padding: 6, borderRadius: 10 }}
+                                        disabled={fetchingPending}
+                                    >
+                                        <RefreshCw size={16} color="white" style={fetchingPending ? { opacity: 0.5 } : {}} />
+                                    </TouchableOpacity>
+                                </View>
                                 {fetchingPending && <ActivityIndicator size="small" color="white" />}
                             </View>
                             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 20 }}>
@@ -422,13 +579,26 @@ export default function HomeScreen() {
                                         }}
                                         onPress={() => openNewOrder(order.id)}
                                     >
-                                        <Text style={{ fontWeight: '900', fontSize: 16, color: '#1e293b', marginBottom: 2 }}>
-                                            #{order.order_no.split('-').pop()}
-                                        </Text>
-                                        <Text style={{ fontSize: 13, color: '#64748b', marginBottom: 4 }}>
-                                            {order.table_no && order.table_no !== 'Tanpa Meja' ? `🪑 Meja ${order.table_no}` : '🛍️ Take Away'}
-                                        </Text>
-                                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                            <View style={{ flex: 1 }}>
+                                                <Text style={{ fontWeight: '900', fontSize: 16, color: '#1e293b', marginBottom: 2 }}>
+                                                    #{order.order_no.split('-').pop()}
+                                                </Text>
+                                                <Text style={{ fontSize: 13, color: '#64748b', marginBottom: 4 }}>
+                                                    {order.table_no && order.table_no !== 'Tanpa Meja' ? `🪑 Meja ${order.table_no}` : '🛍️ Take Away'}
+                                                </Text>
+                                            </View>
+                                            <TouchableOpacity 
+                                                style={{ padding: 4, marginTop: -4, marginRight: -8 }}
+                                                onPress={(e) => {
+                                                    e.stopPropagation();
+                                                    handleDeletePendingOrder(order);
+                                                }}
+                                            >
+                                                <Trash2 size={16} color="#ef4444" />
+                                            </TouchableOpacity>
+                                        </View>
+                                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
                                             <Text style={{ fontSize: 11, color: '#94a3b8' }}>
                                                 {new Date(order.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                             </Text>
@@ -538,6 +708,17 @@ export default function HomeScreen() {
                 iconType="alert"
             />
 
+            <ConfirmExitModal
+                visible={showDeleteConfirm}
+                onClose={() => setShowDeleteConfirm(false)}
+                onConfirm={onConfirmDelete}
+                title="Hapus Pesanan?"
+                message={`Pesanan #${orderToDelete?.order_no?.split('-').pop() || orderToDelete?.id} akan dihapus.`}
+                confirmText="Hapus"
+                cancelText="Batal"
+                iconType="trash"
+            />
+
             {/* Logout Modal */}
             <ConfirmExitModal
                 visible={showLogoutModal}
@@ -604,6 +785,20 @@ export default function HomeScreen() {
                 </View>
             </Modal>
 
+            <ManagerAuthModal
+                visible={showManagerAuth}
+                title={managerAuthTitle}
+                onClose={() => setShowManagerAuth(false)}
+                onSuccess={handleManagerAuthSuccess}
+            />
+
+            <ModernToast
+                visible={toastVisible}
+                message={toastMessage}
+                type={toastType}
+                onHide={() => setToastVisible(false)}
+            />
+
         </SafeAreaView>
     );
 }
@@ -618,13 +813,7 @@ const styles = StyleSheet.create({
     },
     watermarkBg: {
         position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        opacity: 0.05,
-        width: '100%',
-        height: '100%',
+        opacity: 0.1,
     },
     header: {
         backgroundColor: 'transparent',
