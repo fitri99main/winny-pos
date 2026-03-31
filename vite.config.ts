@@ -9,7 +9,7 @@ export default defineConfig({
   base: process.env.NODE_ENV === "development" ? "/" : process.env.VITE_BASE_PATH || "/",
   optimizeDeps: {
     entries: ["src/main.tsx", "src/tempobook/**/*"],
-    exclude: ["WebSdk"],
+    exclude: ["WebSdk", "@digitalpersona/devices", "@digitalpersona/services", "@digitalpersona/core"],
   },
   build: {
     chunkSizeWarningLimit: 1000,
@@ -94,6 +94,7 @@ export default defineConfig({
   },
   define: {
     'window.ES6Promise': 'window.Promise',
+    'global': 'window',
   },
   server: {
     port: 3000,
