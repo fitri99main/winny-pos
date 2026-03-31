@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Settings, User, Monitor, Globe, Bell, Shield, Save, Clock, Calendar, Printer, FileText, LayoutGrid, Plus, Trash2, Edit, CreditCard, CheckCircle2, XCircle, Database, Upload, Download, AlertTriangle, Loader2, Calculator, RotateCcw, Zap, Info } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { printerService } from '../../lib/PrinterService';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -248,22 +249,125 @@ export function SettingsView({
     const [isRestoring, setIsRestoring] = useState(false);
     const [restoreProgress, setRestoreProgress] = useState('');
 
+    const handleVoucherFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const text = e.target?.result as string;
+                let codes: string[] = [];
+
+                if (file.name.toLowerCase().endsWith('.csv')) {
+                    // Simple CSV parsing: take first column and handle potential quotes
+                    codes = text.split('\n')
+                        .map(line => {
+                            const firstCol = line.split(',')[0].trim();
+                            return firstCol.replace(/^["'](.+)["']$/, '$1');
+                        })
+                        .filter(c => c.length > 0 && !c.toLowerCase().includes('username') && !c.toLowerCase().includes('code'));
+                } else {
+                    // Plain text: one code per line
+                    codes = text.split('\n')
+                        .map(c => c.trim())
+                        .filter(c => c.length > 0);
+                }
+
+                const area = document.getElementById('wifi-import-area') as HTMLTextAreaElement;
+                if (area) {
+                    area.value = codes.join('\n');
+                    toast.success(`${codes.length} kode berhasil diekstrak dari file!`);
+                }
+            } catch (err: any) {
+                toast.error('Gagal membaca file: ' + err.message);
+            }
+        };
+        reader.readAsText(file);
+        event.target.value = ''; // Reset for next use
+    };
+
     // WiFi Voucher Stats
     const [voucherStats, setVoucherStats] = useState({ total: 0, used: 0, available: 0 });
+    const [vouchers, setVouchers] = useState<any[]>([]);
+    const [voucherCount, setVoucherCount] = useState(0);
+    const [voucherPage, setVoucherPage] = useState(1);
+    const [voucherSearch, setVoucherSearch] = useState('');
+    const [voucherFilter, setVoucherFilter] = useState<'all' | 'used' | 'unused'>('all');
+    const [loadingVouchers, setLoadingVouchers] = useState(false);
 
-    useEffect(() => {
-        if (activeTab === 'wifi') {
-            loadVoucherStats();
+    const loadVouchers = async () => {
+        setLoadingVouchers(true);
+        try {
+            const { WifiVoucherService } = await import('../../lib/WifiVoucherService');
+            const { data, count } = await WifiVoucherService.getVouchers({
+                page: voucherPage,
+                pageSize: 10,
+                branchId: localSettings.branch_id || 'default',
+                isUsed: voucherFilter === 'all' ? undefined : voucherFilter === 'used',
+                search: voucherSearch
+            });
+            setVouchers(data);
+            setVoucherCount(count);
+        } catch (e) {
+            console.error("Failed to load vouchers", e);
+        } finally {
+            setLoadingVouchers(false);
         }
-    }, [activeTab]);
+    };
 
     const loadVoucherStats = async () => {
         try {
             const { WifiVoucherService } = await import('../../lib/WifiVoucherService');
             const stats = await WifiVoucherService.getCounts(localSettings.branch_id || 'default');
             setVoucherStats(stats);
+            loadVouchers();
         } catch (e) {
             console.error("Failed to load voucher stats", e);
+        }
+    };
+
+    useEffect(() => {
+        if (activeTab === 'wifi') {
+            loadVoucherStats();
+        }
+    }, [activeTab, voucherPage, voucherFilter, voucherSearch]);
+
+    const handleDeleteVoucher = async (id: number) => {
+        if (!confirm('Hapus voucher ini?')) return;
+        try {
+            const { WifiVoucherService } = await import('../../lib/WifiVoucherService');
+            await WifiVoucherService.deleteVoucher(id);
+            toast.success('Voucher berhasil dihapus');
+            loadVoucherStats();
+        } catch (err: any) {
+            toast.error('Gagal menghapus voucher: ' + err.message);
+        }
+    };
+
+    const handleToggleVoucherStatus = async (voucher: any) => {
+        try {
+            const { WifiVoucherService } = await import('../../lib/WifiVoucherService');
+            await WifiVoucherService.updateVoucher(voucher.id, { 
+                is_used: !voucher.is_used,
+                used_at: !voucher.is_used ? new Date().toISOString() : null
+            });
+            toast.success('Status voucher berhasil diupdate');
+            loadVoucherStats();
+        } catch (err: any) {
+            toast.error('Gagal update status: ' + err.message);
+        }
+    };
+
+    const handleDeleteUnusedVouchers = async () => {
+        if (!confirm('Hapus semua voucher yang belum terpakai?')) return;
+        try {
+            const { WifiVoucherService } = await import('../../lib/WifiVoucherService');
+            await WifiVoucherService.deleteUnusedVouchers(localSettings.branch_id || 'default');
+            toast.success('Semua voucher belum terpakai berhasil dihapus');
+            loadVoucherStats();
+        } catch (err: any) {
+            toast.error('Gagal menghapus voucher: ' + err.message);
         }
     };
 
@@ -625,6 +729,22 @@ export function SettingsView({
                         </div>
 
                         <div className="bg-blue-50/50 p-6 rounded-2xl border border-blue-100 space-y-4">
+                            <div className="flex items-center justify-between p-4 bg-white rounded-2xl border border-blue-100 shadow-sm">
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-blue-50 p-2 rounded-xl border border-blue-100">
+                                        <Shield className="w-5 h-5 text-blue-600" />
+                                    </div>
+                                    <div>
+                                        <h4 className="font-bold text-gray-800">Otorisasi Manager (PIN/Fingerprint)</h4>
+                                        <p className="text-[10px] text-gray-400">Retur & Penghapusan transaksi memerlukan PIN atau Sidik Jari Manager.</p>
+                                    </div>
+                                </div>
+                                <Switch
+                                    checked={localSettings.enable_manager_auth || false}
+                                    onCheckedChange={c => handleLocalChange({ ...localSettings, enable_manager_auth: c })}
+                                />
+                            </div>
+
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-3">
                                     <div className="bg-blue-600 p-2 rounded-lg shadow-lg shadow-blue-100">
@@ -654,18 +774,6 @@ export function SettingsView({
                                         <Switch
                                             checked={localSettings.hide_camera_scanner || false}
                                             onCheckedChange={c => handleLocalChange({ ...localSettings, hide_camera_scanner: c })}
-                                        />
-                                    </div>
-                                    <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-blue-100">
-                                        <div>
-                                            <p className="text-sm font-bold text-gray-700 flex items-center gap-2">
-                                                <Shield className="w-3.5 h-3.5" /> Otorisasi Manager
-                                            </p>
-                                            <p className="text-[10px] text-gray-400">Retur & pembatalan memerlukan scan fingerprint Manager.</p>
-                                        </div>
-                                        <Switch
-                                            checked={localSettings.enable_manager_auth || false}
-                                            onCheckedChange={c => handleLocalChange({ ...localSettings, enable_manager_auth: c })}
                                         />
                                     </div>
                                     <div className="p-3 bg-blue-100/30 rounded-xl border border-blue-100 space-y-3">
@@ -717,6 +825,7 @@ export function SettingsView({
                         </div>
                     </div>
                 )}
+
 
                 {activeTab === 'tables' && (
                     <div className="max-w-4xl space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
@@ -864,6 +973,121 @@ export function SettingsView({
                                     checked={localSettings.enable_table_management ?? true}
                                     onCheckedChange={c => handleLocalChange({ ...localSettings, enable_table_management: c })}
                                 />
+                            </div>
+                        </div>
+
+                        <div className="space-y-4 pt-4 border-t border-gray-100">
+                            <h4 className="font-bold text-gray-800">Penomoran Invoice</h4>
+                            <div className="grid gap-4">
+                                <div className="flex items-center justify-between p-4 bg-blue-50/50 rounded-xl border border-blue-100">
+                                    <div>
+                                        <h4 className="font-bold text-blue-800">Mode Penomoran</h4>
+                                        <p className="text-xs text-blue-600">Pilih antara penomoran otomatis atau manual.</p>
+                                    </div>
+                                    <div className="flex bg-gray-100 p-1 rounded-lg">
+                                        <button
+                                            onClick={() => handleLocalChange({ ...localSettings, invoice_mode: 'auto' })}
+                                            className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${localSettings.invoice_mode === 'auto' ? 'bg-white shadow-sm text-primary' : 'text-gray-500 hover:text-gray-700'}`}
+                                        >
+                                            Otomatis
+                                        </button>
+                                        <button
+                                            onClick={() => handleLocalChange({ ...localSettings, invoice_mode: 'manual' })}
+                                            className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${localSettings.invoice_mode === 'manual' ? 'bg-white shadow-sm text-primary' : 'text-gray-500 hover:text-gray-700'}`}
+                                        >
+                                            Manual
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {localSettings.invoice_mode === 'auto' && (
+                                    <motion.div 
+                                        initial={{ opacity: 0, y: -10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        className="grid grid-cols-2 gap-4 animate-in slide-in-from-top-2"
+                                    >
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-gray-700">Prefix Invoice (Awal)</Label>
+                                            <input
+                                                type="text"
+                                                value={localSettings.invoice_prefix || 'INV'}
+                                                onChange={e => handleLocalChange({ ...localSettings, invoice_prefix: e.target.value.toUpperCase() })}
+                                                className="w-full px-4 py-2 border border-blue-100 bg-white rounded-xl focus:ring-2 focus:ring-primary/20 outline-none text-sm font-bold"
+                                                placeholder="Contoh: INV"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-gray-700">Nomor Selanjutnya</Label>
+                                            <input
+                                                type="number"
+                                                value={Number(localSettings.invoice_last_number || 0) + 1}
+                                                onChange={e => handleLocalChange({ ...localSettings, invoice_last_number: Math.max(0, parseInt(e.target.value) - 1) })}
+                                                className="w-full px-4 py-2 border border-blue-100 bg-white rounded-xl focus:ring-2 focus:ring-primary/20 outline-none text-sm font-mono"
+                                                min="1"
+                                            />
+                                            <p className="text-[10px] text-gray-400 italic">Angka terakhir adalah {localSettings.invoice_last_number || 0}.</p>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="space-y-4 pt-4 border-t border-gray-100">
+                            <div className="flex items-center gap-2">
+                                <h4 className="font-bold text-gray-800">Penomoran Invoice Offline</h4>
+                                <span className="px-2 py-0.5 bg-orange-100 text-orange-600 text-[10px] font-bold rounded-full uppercase tracking-wider">Web Offline Mode</span>
+                            </div>
+                            <div className="grid gap-4">
+                                <div className="flex items-center justify-between p-4 bg-orange-50/30 rounded-xl border border-orange-100/50">
+                                    <div>
+                                        <h4 className="font-bold text-orange-800 text-sm">Mode Penomoran Offline</h4>
+                                        <p className="text-[10px] text-orange-600">Digunakan saat aplikasi dalam mode offline/tanpa internet.</p>
+                                    </div>
+                                    <div className="flex bg-gray-100 p-1 rounded-lg">
+                                        <button
+                                            onClick={() => handleLocalChange({ ...localSettings, offline_invoice_mode: 'auto' })}
+                                            className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${localSettings.offline_invoice_mode === 'auto' ? 'bg-white shadow-sm text-orange-600' : 'text-gray-500 hover:text-gray-700'}`}
+                                        >
+                                            Otomatis
+                                        </button>
+                                        <button
+                                            onClick={() => handleLocalChange({ ...localSettings, offline_invoice_mode: 'manual' })}
+                                            className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${localSettings.offline_invoice_mode === 'manual' ? 'bg-white shadow-sm text-orange-600' : 'text-gray-500 hover:text-gray-700'}`}
+                                        >
+                                            Manual
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {localSettings.offline_invoice_mode === 'auto' && (
+                                    <motion.div 
+                                        initial={{ opacity: 0, y: -10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        className="grid grid-cols-2 gap-4 animate-in slide-in-from-top-2"
+                                    >
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-gray-700">Prefix Offline</Label>
+                                            <input
+                                                type="text"
+                                                value={localSettings.offline_invoice_prefix || 'OFF'}
+                                                onChange={e => handleLocalChange({ ...localSettings, offline_invoice_prefix: e.target.value.toUpperCase() })}
+                                                className="w-full px-4 py-2 border border-orange-100 bg-white rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none text-sm font-bold"
+                                                placeholder="Contoh: OFF"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-gray-700">Nomor Selanjutnya (Offline)</Label>
+                                            <input
+                                                type="number"
+                                                value={Number(localSettings.offline_invoice_last_number || 0) + 1}
+                                                onChange={e => handleLocalChange({ ...localSettings, offline_invoice_last_number: Math.max(0, parseInt(e.target.value) - 1) })}
+                                                className="w-full px-4 py-2 border border-orange-100 bg-white rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none text-sm font-mono"
+                                                min="1"
+                                            />
+                                            <p className="text-[10px] text-gray-400 italic">Angka terakhir offline adalah {localSettings.offline_invoice_last_number || 0}.</p>
+                                        </div>
+                                    </motion.div>
+                                )}
                             </div>
                         </div>
 
@@ -1350,16 +1574,30 @@ export function SettingsView({
                                         </div>
                                         {localSettings.enable_wifi_vouchers && (
                                             <div className="space-y-4 mt-2 animate-in slide-in-from-top-2 duration-200">
-                                                <div className="space-y-2">
-                                                    <Label className="text-[11px] font-bold text-gray-500 uppercase">Minimal Belanja (Rp)</Label>
-                                                    <input
-                                                        type="number"
-                                                        value={localSettings.wifi_voucher_min_amount || 0}
-                                                        onChange={(e) => handleLocalChange({ ...localSettings, wifi_voucher_min_amount: parseInt(e.target.value) || 0 })}
-                                                        placeholder="Contoh: 50000"
-                                                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/20 outline-none"
-                                                    />
-                                                    <p className="text-[10px] text-gray-400">Voucher hanya muncul jika total belanja mencapai nilai ini.</p>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    <div className="space-y-2">
+                                                        <Label className="text-[11px] font-bold text-gray-500 uppercase">Minimal Belanja (Rp)</Label>
+                                                        <input
+                                                            type="number"
+                                                            value={localSettings.wifi_voucher_min_amount || 0}
+                                                            onChange={(e) => handleLocalChange({ ...localSettings, wifi_voucher_min_amount: parseInt(e.target.value) || 0 })}
+                                                            placeholder="Contoh: 50000"
+                                                            className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/20 outline-none"
+                                                        />
+                                                        <p className="text-[10px] text-gray-400">Voucher hanya muncul jika total belanja mencapai nilai ini.</p>
+                                                    </div>
+
+                                                    <div className="space-y-2">
+                                                        <Label className="text-[11px] font-bold text-gray-500 uppercase">Kelipatan Belanja (Rp)</Label>
+                                                        <input
+                                                            type="number"
+                                                            value={localSettings.wifi_voucher_multiplier || 0}
+                                                            onChange={(e) => handleLocalChange({ ...localSettings, wifi_voucher_multiplier: parseInt(e.target.value) || 0 })}
+                                                            placeholder="Contoh: 50000"
+                                                            className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/20 outline-none"
+                                                        />
+                                                        <p className="text-[10px] text-gray-400">Setiap kelipatan jumlah ini akan mendapatkan 1 voucher tambahan (0 = hanya 1 voucher).</p>
+                                                    </div>
                                                 </div>
                                                 <div className="space-y-2">
                                                     <Label className="text-[11px] font-bold text-gray-500 uppercase">Pesan WiFi (Notice)</Label>
@@ -1551,7 +1789,7 @@ export function SettingsView({
                                         <p className="text-center">{localSettings.receipt_paper_width === '80mm' ? '------------------------------------------' : '--------------------------------'}</p>
                                         {/* Order Info */}
                                         <div className="text-left space-y-0.5">
-                                            <p>No: ORD-12345</p>
+                                            <p>No: {localSettings.offline_invoice_prefix || 'OFF'}-12345</p>
                                             {localSettings.show_date && <p>Waktu: {new Date().toLocaleDateString('id-ID')} {new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p>}
                                             {localSettings.show_table && <p>Meja: T-05</p>}
                                             {localSettings.show_customer_name && <p>Pelanggan: Winny</p>}
@@ -1596,17 +1834,16 @@ export function SettingsView({
                                 ) : (
                                     <>
                                         {/* Ticket Header */}
-                                        <p className="font-bold text-sm uppercase text-gray-800 text-center">{
-                                            previewType === 'kitchen' 
-                                            ? (localSettings.kitchen_header || 'DAPUR') 
-                                            : (localSettings.bar_header || 'BAR')
+                                        <p className="font-bold text-base uppercase text-gray-800 text-center">{
+                                             `PESANAN ${previewType === 'kitchen' ? 'DAPUR' : 'BAR'}`
                                         }</p>
-                                        <p className="text-center font-bold">--- PESANAN {previewType === 'kitchen' ? 'DAPUR' : 'BAR'} ---</p>
 
                                         {/* Order Info */}
-                                        <div className="text-left mt-2 space-y-0.5">
-                                            <p>No: ORD-12345</p>
-                                            {(previewType === 'kitchen' ? (localSettings.kitchen_show_table ?? true) : (localSettings.bar_show_table ?? true)) && <p>Meja: T-05</p>}
+                                        <div className="text-center mt-2 space-y-0.5">
+                                            <p>No: {localSettings.offline_invoice_prefix || 'OFF'}-12345</p>
+                                            {(previewType === 'kitchen' ? (localSettings.kitchen_show_table ?? true) : (localSettings.bar_show_table ?? true)) && (
+                                                <p className="font-bold text-base text-gray-900 mt-1">MEJA: T-05</p>
+                                            )}
                                             {(previewType === 'kitchen' ? (localSettings.kitchen_show_waiter ?? true) : (localSettings.bar_show_waiter ?? true)) && <p>Pelayan: Budi R.</p>}
                                             {(previewType === 'kitchen' ? (localSettings.kitchen_show_cashier ?? true) : (localSettings.bar_show_cashier ?? true)) && <p>Kasir: Admin</p>}
                                             {(previewType === 'kitchen' ? (localSettings.kitchen_show_date ?? true) : (localSettings.bar_show_date ?? true)) && <p>Waktu: {new Date().toLocaleDateString('id-ID')} {new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p>}
@@ -1949,7 +2186,24 @@ export function SettingsView({
                             <div className="p-6 bg-gray-50 border border-dashed border-gray-200 rounded-2xl space-y-4">
                                 <div className="text-center">
                                     <Globe className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-                                    <p className="text-sm text-gray-600 font-medium">Tempel kode voucher di bawah (1 kode per baris)</p>
+                                    <p className="text-sm text-gray-600 font-medium">Tempel kode voucher di bawah atau unggah file (.txt, .csv)</p>
+                                    <div className="mt-4 flex justify-center gap-2">
+                                        <Button 
+                                            variant="outline" 
+                                            size="sm" 
+                                            className="h-8 text-[11px]"
+                                            onClick={() => document.getElementById('voucher-file-upload')?.click()}
+                                        >
+                                            <Upload className="w-3 h-3 mr-2" /> Pilih File (.txt/.csv)
+                                        </Button>
+                                        <input 
+                                            type="file" 
+                                            id="voucher-file-upload" 
+                                            className="hidden" 
+                                            accept=".txt,.csv"
+                                            onChange={handleVoucherFileUpload}
+                                        />
+                                    </div>
                                 </div>
                                 <textarea
                                     id="wifi-import-area"
@@ -1976,6 +2230,149 @@ export function SettingsView({
                                 >
                                     Import Voucher Sekarang
                                 </Button>
+                            </div>
+                        </div>
+
+                        <div className="pt-8 border-t border-gray-100 space-y-4">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                <h4 className="font-bold text-gray-800">Daftar Voucher Terimport</h4>
+                                <div className="flex items-center gap-2">
+                                    <div className="relative">
+                                        <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                                        <input
+                                            type="text"
+                                            value={voucherSearch}
+                                            onChange={e => {
+                                                setVoucherSearch(e.target.value);
+                                                setVoucherPage(1);
+                                            }}
+                                            placeholder="Cari kode..."
+                                            className="pl-9 pr-4 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 w-40"
+                                        />
+                                    </div>
+                                    <select
+                                        value={voucherFilter}
+                                        onChange={e => {
+                                            setVoucherFilter(e.target.value as any);
+                                            setVoucherPage(1);
+                                        }}
+                                        className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none bg-white font-medium"
+                                    >
+                                        <option value="all">Semua Status</option>
+                                        <option value="unused">Belum Terpakai</option>
+                                        <option value="used">Terpakai</option>
+                                    </select>
+                                    <Button 
+                                        variant="outline" 
+                                        size="sm" 
+                                        className="h-8 text-[10px] text-red-600 border-red-100 hover:bg-red-50"
+                                        onClick={handleDeleteUnusedVouchers}
+                                    >
+                                        <Trash2 className="w-3 h-3 mr-1" /> Hapus Belum Terpakai
+                                    </Button>
+                                </div>
+                            </div>
+
+                            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-xs">
+                                        <thead>
+                                            <tr className="bg-gray-50 border-b border-gray-200">
+                                                <th className="px-4 py-3 font-bold text-gray-600 uppercase tracking-wider">Kode Voucher</th>
+                                                <th className="px-4 py-3 font-bold text-gray-600 uppercase tracking-wider">Status</th>
+                                                <th className="px-4 py-3 font-bold text-gray-600 uppercase tracking-wider">Dicetak Pada</th>
+                                                <th className="px-4 py-3 font-bold text-gray-600 uppercase tracking-wider text-right">Aksi</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100">
+                                            {loadingVouchers ? (
+                                                <tr>
+                                                    <td colSpan={4} className="px-4 py-10 text-center">
+                                                        <Loader2 className="w-6 h-6 animate-spin mx-auto text-gray-300 mb-2" />
+                                                        <p className="text-gray-400">Memuat data voucher...</p>
+                                                    </td>
+                                                </tr>
+                                            ) : vouchers.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={4} className="px-4 py-10 text-center">
+                                                        <p className="text-gray-400 font-medium">Tidak ada voucher ditemukan.</p>
+                                                        <p className="text-[10px] text-gray-400 mt-1">Silakan import kode voucher di atas.</p>
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                vouchers.map(v => (
+                                                    <tr key={v.id} className="hover:bg-gray-50/50 transition-colors">
+                                                        <td className="px-4 py-3">
+                                                            <code className="bg-gray-100 px-2 py-1 rounded text-gray-800 font-mono font-bold select-all cursor-pointer" title="Klik untuk pilih koden">{v.code}</code>
+                                                        </td>
+                                                        <td className="px-4 py-3">
+                                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full font-bold text-[9px] ${v.is_used ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}`}>
+                                                                {v.is_used ? (
+                                                                    <>
+                                                                        <CheckCircle2 className="w-2.5 h-2.5 mr-1" /> TERPAKAI
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <Zap className="w-2.5 h-2.5 mr-1" /> TERSEDIA
+                                                                    </>
+                                                                )}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-gray-500">
+                                                            {v.used_at ? new Date(v.used_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '-'}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right">
+                                                            <div className="flex items-center justify-end gap-1">
+                                                                <button
+                                                                    onClick={() => handleToggleVoucherStatus(v)}
+                                                                    className={`p-1.5 rounded-lg transition-colors ${v.is_used ? 'text-green-600 hover:bg-green-50' : 'text-orange-600 hover:bg-orange-50'}`}
+                                                                    title={v.is_used ? 'Tandai sebagai Belum Terpakai' : 'Tandai sebagai Terpakai'}
+                                                                >
+                                                                    {v.is_used ? <RotateCcw className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleDeleteVoucher(v.id)}
+                                                                    className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                                                    title="Hapus Voucher"
+                                                                >
+                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {voucherCount > 10 && (
+                                    <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+                                        <p className="text-[10px] text-gray-500">
+                                            Menampilkan {(voucherPage - 1) * 10 + 1} - {Math.min(voucherPage * 10, voucherCount)} dari {voucherCount} voucher
+                                        </p>
+                                        <div className="flex items-center gap-2">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="h-7 px-2 text-[10px]"
+                                                disabled={voucherPage === 1}
+                                                onClick={() => setVoucherPage(prev => prev - 1)}
+                                            >
+                                                Sebelumnya
+                                            </Button>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="h-7 px-2 text-[10px]"
+                                                disabled={voucherPage * 10 >= voucherCount}
+                                                onClick={() => setVoucherPage(prev => prev + 1)}
+                                            >
+                                                Berikutnya
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>

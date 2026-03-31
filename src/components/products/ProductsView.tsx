@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Package, Tags, Scale, Ticket, Plus, Search, Edit, Trash2, Filter, ChefHat, Info, Calculator, Puzzle, Settings2, X, Check, Coffee, Barcode, Printer } from 'lucide-react';
+import { Package, Tags, Scale, Ticket, Plus, Search, Edit, Trash2, Filter, ChefHat, Info, Calculator, Puzzle, Settings2, X, Check, Coffee, Barcode, Printer, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
 import { getAcronym } from '../../lib/utils';
 import { printerService } from '../../lib/PrinterService';
+import { ImageStorageService } from '../../lib/ImageStorageService';
 
 // --- Types ---
 
@@ -26,6 +27,7 @@ export interface Product {
     image_url?: string;
     branch_id?: number | string;
     target?: 'Kitchen' | 'Bar';
+    sort_order?: number;
 }
 
 export interface Addon {
@@ -43,6 +45,7 @@ export interface Category {
     id: number;
     name: string;
     description: string;
+    sort_order?: number;
 }
 
 export interface Unit {
@@ -157,12 +160,22 @@ export function ProductsView({
             }
         } else {
             // Master data (Category, Unit, Brand) only needs minimal fields
-            setFormData(isNew ? { name: '', description: '', abbreviation: '' } : data);
+            if (isNew) {
+                const initialData: any = { name: '', description: '' };
+                if (activeTab === 'units') initialData.abbreviation = '';
+                setFormData(initialData);
+            } else {
+                setFormData(data);
+            }
         }
     };
 
     const handleDelete = (id: number, type: 'product' | 'category' | 'unit' | 'brand') => {
-        if (!confirm('Yakin ingin menghapus data ini?')) return;
+        const msg = type === 'product' 
+            ? 'Yakin ingin menghapus produk ini? Jika produk sudah pernah terjual, maka produk akan diarsipkan (disembunyikan dari kasir) demi keamanan data.'
+            : 'Yakin ingin menghapus data ini?';
+            
+        if (!confirm(msg)) return;
 
         if (type === 'product') onProductCRUD('delete', { id });
         if (type === 'category') onCategoryCRUD('delete', { id });
@@ -179,6 +192,75 @@ export function ProductsView({
         }, 0);
     };
 
+    const handleMoveCategory = async (category: Category, direction: 'up' | 'down') => {
+        const currentIndex = categories.findIndex(c => c.id === category.id);
+        if (direction === 'up' && currentIndex === 0) return;
+        if (direction === 'down' && currentIndex === categories.length - 1) return;
+
+        const neighborIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+        const neighbor = categories[neighborIndex];
+
+        // Swap sort_order values
+        // If sort_order is null/undefined, use the temporary ID as fallback logic
+        const currentOrder = category.sort_order ?? category.id;
+        const neighborOrder = neighbor.sort_order ?? neighbor.id;
+
+        try {
+            // Transactional update (sequential for simplicity as Supabase JS doesn't support complex transactions easily without RPC)
+            const { error: err1 } = await supabase
+                .from('categories')
+                .update({ sort_order: neighborOrder })
+                .eq('id', category.id);
+            if (err1) throw err1;
+
+            const { error: err2 } = await supabase
+                .from('categories')
+                .update({ sort_order: currentOrder })
+                .eq('id', neighbor.id);
+            if (err2) throw err2;
+
+            toast.success('Urutan kategori diperbarui');
+        } catch (error: any) {
+            console.error('Swap error:', error);
+            toast.error('Gagal mengubah urutan: ' + error.message);
+        }
+    };
+
+    const handleMoveProduct = async (product: Product, direction: 'up' | 'down') => {
+        // Find visible products based on current filters to match what the user sees
+        const visibleProducts = products
+            .filter(p => !currentBranchId || String(p.branch_id) === String(currentBranchId) || !p.branch_id);
+            
+        const currentIndex = visibleProducts.findIndex(p => p.id === product.id);
+        if (direction === 'up' && currentIndex === 0) return;
+        if (direction === 'down' && currentIndex === visibleProducts.length - 1) return;
+
+        const neighborIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+        const neighbor = visibleProducts[neighborIndex];
+
+        const currentOrder = product.sort_order ?? product.id;
+        const neighborOrder = neighbor.sort_order ?? neighbor.id;
+
+        try {
+            const { error: err1 } = await supabase
+                .from('products')
+                .update({ sort_order: neighborOrder })
+                .eq('id', product.id);
+            if (err1) throw err1;
+
+            const { error: err2 } = await supabase
+                .from('products')
+                .update({ sort_order: currentOrder })
+                .eq('id', neighbor.id);
+            if (err2) throw err2;
+
+            toast.success('Urutan produk diperbarui');
+        } catch (error: any) {
+            console.error('Swap error:', error);
+            toast.error('Gagal mengubah urutan produk: ' + error.message);
+        }
+    };
+
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -187,28 +269,14 @@ export function ProductsView({
         if (!file.type.startsWith('image/')) {
             return toast.error('Pilih file gambar yang valid');
         }
-        if (file.size > 2 * 1024 * 1024) {
-            return toast.error('Ukuran gambar maksimal 2MB');
-        }
-
         try {
             setUploadingImage(true);
-            const fileExt = file.name.split('.').pop();
-            const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
-            const filePath = `${fileName}`;
-
-            const { error: uploadError } = await supabase.storage
-                .from('product-images')
-                .upload(filePath, file);
-
-            if (uploadError) throw uploadError;
-
-            const { data: { publicUrl } } = supabase.storage
-                .from('product-images')
-                .getPublicUrl(filePath);
+            
+            // Use ImageStorageService to handle replacement (deletes old image automatically)
+            const publicUrl = await ImageStorageService.replaceImage(formData.image_url, file);
 
             setFormData({ ...formData, image_url: publicUrl });
-            toast.success('Gambar berhasil diunggah');
+            toast.success('Gambar berhasil diperbarui');
         } catch (error: any) {
             console.error('Error uploading:', error);
             toast.error('Gagal mengunggah gambar: ' + error.message);
@@ -235,7 +303,15 @@ export function ProductsView({
                 console.log('Calling onProductCRUD with:', productWithHPP);
 
                 const action = product.id ? 'update' : 'create';
-                await onProductCRUD(action, productWithHPP);
+                
+                // Set initial sort_order for new products
+                const productToSave = { ...productWithHPP };
+                if (action === 'create') {
+                    const maxOrder = products.reduce((max, p) => Math.max(max, p.sort_order || 0), 0);
+                    productToSave.sort_order = maxOrder + 1;
+                }
+                
+                await onProductCRUD(action, productToSave);
                 console.log('onProductCRUD success');
                 setIsFormOpen(false);
             } else {
@@ -255,8 +331,25 @@ export function ProductsView({
                 const handler = (crudMap as any)[activeTab];
                 if (activeTab !== 'ingredients' && handler) {
                     const action = formData.id ? 'update' : 'create';
-                    console.log(`Calling ${activeTab} handler with:`, formData);
-                    await handler(action, formData);
+                    
+                    // Cleanup payload for Supabase (Remove non-existent columns)
+                    const cleanPayload: any = { name: formData.name };
+                    
+                    if (activeTab === 'categories' || activeTab === 'brands') {
+                        cleanPayload.description = formData.description || '';
+                        // Set initial sort_order for new categories
+                        if (activeTab === 'categories' && action === 'create') {
+                            const maxOrder = categories.reduce((max, c) => Math.max(max, c.sort_order || 0), 0);
+                            cleanPayload.sort_order = maxOrder + 1;
+                        }
+                    } else if (activeTab === 'units') {
+                        cleanPayload.abbreviation = formData.abbreviation || '';
+                    }
+                    
+                    if (formData.id) cleanPayload.id = formData.id;
+                    
+                    console.log(`Calling ${activeTab} handler with clean payload:`, cleanPayload);
+                    await handler(action, cleanPayload);
                     console.log(`${activeTab} handler success`);
                     setIsFormOpen(false);
                     setFormData({});
@@ -315,13 +408,38 @@ export function ProductsView({
                     <tbody className="divide-y divide-gray-50">
                         {products
                             .filter(p => !currentBranchId || String(p.branch_id) === String(currentBranchId) || !p.branch_id)
-                            .map(p => {
+                            .map((p, idx, filtered) => {
                                 const currentHPP = calculateHPP(p.recipe);
                                 const margin = p.price - currentHPP;
                                 return (
                                     <tr key={p.id} className="group hover:bg-gray-50/50 transition-all">
 
-                                        <td className="px-4 py-5 font-mono text-gray-400 text-xs">{p.code}</td>
+                                        <td className="px-4 py-5 font-mono text-gray-400 text-xs">
+                                            <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-1">
+                                                    <GripVertical className="w-4 h-4 text-gray-200 cursor-move" />
+                                                    <div className="flex flex-col gap-0.5">
+                                                        <button 
+                                                            disabled={idx === 0}
+                                                            onClick={() => handleMoveProduct(p, 'up')}
+                                                            className={`p-1 rounded hover:bg-gray-100 transition-colors ${idx === 0 ? 'text-gray-100' : 'text-gray-400 hover:text-primary'}`}
+                                                            title="Geser Atas"
+                                                        >
+                                                            <ChevronUp className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        <button 
+                                                            disabled={idx === filtered.length - 1}
+                                                            onClick={() => handleMoveProduct(p, 'down')}
+                                                            className={`p-1 rounded hover:bg-gray-100 transition-colors ${idx === filtered.length - 1 ? 'text-gray-100' : 'text-gray-400 hover:text-primary'}`}
+                                                            title="Geser Bawah"
+                                                        >
+                                                            <ChevronDown className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                {p.code}
+                                            </div>
+                                        </td>
                                         <td className="px-4 py-5">
                                             <div className="flex items-center gap-4">
                                                 <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center overflow-hidden border border-gray-100 flex-shrink-0">
@@ -362,7 +480,7 @@ export function ProductsView({
                                             <button onClick={() => { setSelectedProduct(p); setIsAddonOpen(true); }} className="p-2.5 bg-purple-50 text-purple-600 rounded-xl hover:bg-purple-100 transition-colors" title="Atur Toping / Add-ons"><Puzzle className="w-4.5 h-4.5" /></button>
                                             <button onClick={() => { setSelectedProduct(p); setIsPrintModalOpen(true); }} className="p-2.5 bg-gray-50 text-gray-600 rounded-xl hover:bg-gray-100 transition-colors" title="Cetak Barcode"><Barcode className="w-4.5 h-4.5" /></button>
                                             <button onClick={() => handleOpenForm(p)} className="p-2.5 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors" title="Edit"><Edit className="w-4.5 h-4.5" /></button>
-                                            <button onClick={() => handleDelete(p.id, 'product')} className="p-2.5 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors" title="Hapus"><Trash2 className="w-4.5 h-4.5" /></button>
+                                             <button onClick={() => handleDelete(p.id, 'product')} className="p-2.5 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors" title="Hapus / Arsipkan"><Trash2 className="w-4.5 h-4.5" /></button>
                                         </td>
                                     </tr>
                                 );
@@ -391,9 +509,36 @@ export function ProductsView({
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                    {data.map(item => (
+                    {data.map((item, idx) => (
                         <tr key={item.id} className="group hover:bg-gray-50/50 transition-all">
-                            <td className="px-8 py-5 font-bold text-gray-700">{item.name}</td>
+                            <td className="px-8 py-5 font-bold text-gray-700">
+                                <div className="flex items-center gap-3">
+                                    {type === 'category' && (
+                                        <div className="flex items-center gap-1 mr-3">
+                                            <GripVertical className="w-4 h-4 text-gray-200 cursor-move" />
+                                            <div className="flex flex-col gap-0.5">
+                                                <button 
+                                                    disabled={idx === 0}
+                                                    onClick={() => handleMoveCategory(item, 'up')}
+                                                    className={`p-1 rounded hover:bg-gray-100 transition-colors ${idx === 0 ? 'text-gray-100' : 'text-gray-400 hover:text-primary'}`}
+                                                    title="Geser Atas"
+                                                >
+                                                    <ChevronUp className="w-3.5 h-3.5" />
+                                                </button>
+                                                <button 
+                                                    disabled={idx === data.length - 1}
+                                                    onClick={() => handleMoveCategory(item, 'down')}
+                                                    className={`p-1 rounded hover:bg-gray-100 transition-colors ${idx === data.length - 1 ? 'text-gray-200' : 'text-gray-400 hover:text-primary'}`}
+                                                    title="Geser Bawah"
+                                                >
+                                                    <ChevronDown className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {item.name}
+                                </div>
+                            </td>
                             <td className="px-8 py-5 text-gray-500 text-xs italic">{type === 'unit' ? item.abbreviation : item.description}</td>
                             <td className="px-8 py-5 flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <button onClick={() => handleOpenForm(item)} className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors"><Edit className="w-4 h-4" /></button>
@@ -495,6 +640,22 @@ export function ProductsView({
                                                         <Plus className="w-5 h-5" />
                                                         <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} disabled={uploadingImage} />
                                                     </label>
+                                                    {formData.image_url && (
+                                                        <button 
+                                                            type="button"
+                                                            onClick={async () => {
+                                                                if (confirm('Hapus gambar produk?')) {
+                                                                    await ImageStorageService.deleteImage(formData.image_url);
+                                                                    setFormData(prev => ({ ...prev, image_url: null }));
+                                                                    toast.success('Gambar dihapus dari penyimpanan');
+                                                                }
+                                                            }}
+                                                            className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 rounded-lg shadow-md flex items-center justify-center hover:scale-110 active:scale-95 transition-all text-white border border-white"
+                                                            title="Hapus Gambar"
+                                                        >
+                                                            <X className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    )}
                                                 </div>
 
                                                 {/* Core Info (right) */}
