@@ -93,9 +93,9 @@ export default defineConfig({
     alias: {
       "@": path.resolve(__dirname, "./src"),
       "WebSdk": path.resolve(__dirname, "node_modules/@digitalpersona/websdk/dist/websdk.client.ui.js"),
-      "@digitalpersona/devices": path.resolve(__dirname, "node_modules/@digitalpersona/devices/dist/index.umd.min.js"),
-      "@digitalpersona/services": path.resolve(__dirname, "node_modules/@digitalpersona/services/dist/index.umd.min.js"),
-      "@digitalpersona/core": path.resolve(__dirname, "node_modules/@digitalpersona/core/dist/index.umd.min.js"),
+      "@digitalpersona/devices": path.resolve(__dirname, "node_modules/@digitalpersona/devices/dist/es5.bundles/index.umd.min.js"),
+      "@digitalpersona/services": path.resolve(__dirname, "node_modules/@digitalpersona/services/dist/es5.bundles/index.umd.min.js"),
+      "@digitalpersona/core": path.resolve(__dirname, "node_modules/@digitalpersona/core/dist/es5.bundles/index.umd.min.js"),
     },
   },
   define: {
