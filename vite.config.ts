@@ -44,7 +44,10 @@ export default defineConfig({
           'utils': ['date-fns', 'clsx', 'tailwind-merge', 'class-variance-authority'],
         }
       }
-    }
+    },
+    commonjsOptions: {
+      transformMixedEsModules: true,
+    },
   },
   plugins: [
 
