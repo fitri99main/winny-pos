@@ -16,6 +16,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import * as ImagePicker from 'expo-image-picker';
+import { ImageStorageService } from '../lib/ImageStorageService';
+import { ChevronLeft } from 'lucide-react-native';
 
 export default function ProductScreen() {
     const navigation = useNavigation();
@@ -86,27 +88,12 @@ export default function ProductScreen() {
     const uploadImage = async (uri: string) => {
         try {
             setUploading(true);
-            const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.jpg`;
-            const filePath = `${fileName}`;
-
-            // Reliable way to upload in React Native: fetch the URI as a Blob
-            const response = await fetch(uri);
-            const blob = await response.blob();
-
-            const { error: uploadError } = await supabase.storage
-                .from('product-images')
-                .upload(filePath, blob, {
-                    contentType: 'image/jpeg'
-                });
-
-            if (uploadError) throw uploadError;
-
-            const { data: { publicUrl } } = supabase.storage
-                .from('product-images')
-                .getPublicUrl(filePath);
+            
+            // Use ImageStorageService to handle replacement (deletes old image automatically)
+            const publicUrl = await ImageStorageService.replaceImage(editingProduct?.image_url, uri);
 
             setEditingProduct({ ...editingProduct, image_url: publicUrl });
-            Alert.alert('Sukses', 'Gambar berhasil diunggah');
+            Alert.alert('Sukses', 'Gambar berhasil diperbarui');
         } catch (error: any) {
             console.error('Upload error:', error);
             Alert.alert('Error', 'Gagal mengunggah gambar: ' + error.message);
@@ -131,7 +118,7 @@ export default function ProductScreen() {
                     price: parseFloat(editingProduct.price) || 0,
                     category: editingProduct.category,
                     image_url: editingProduct.image_url,
-                    is_sellable: editingProduct.is_sellable
+                    is_sellable: editingProduct.is_sellable !== false // Preserve or default to true
                 })
                 .eq('id', editingProduct.id);
 
@@ -146,6 +133,56 @@ export default function ProductScreen() {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleDelete = async () => {
+        if (!editingProduct?.id) return;
+        
+        Alert.alert(
+            'Konfirmasi Arsip',
+            'Yakin ingin menghapus/mengarsipkan produk ini? Produk tidak akan muncul di kasir tetapi tetap tersimpan di riwayat.',
+            [
+                { text: 'Batal', style: 'cancel' },
+                { 
+                    text: 'Arsipkan', 
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            setLoading(true);
+                            // Try delete first
+                            const { error: deleteError } = await supabase
+                                .from('products')
+                                .delete()
+                                .eq('id', editingProduct.id);
+                            
+                            if (deleteError) {
+                                if (deleteError.code === '23503') {
+                                    // Referenced, so archive
+                                    const { error: archiveError } = await supabase
+                                        .from('products')
+                                        .update({ is_sellable: false })
+                                        .eq('id', editingProduct.id);
+                                    
+                                    if (archiveError) throw archiveError;
+                                    Alert.alert('Arsip Berhasil', 'Produk memiliki riwayat transaksi, sehingga diarsipkan secara otomatis.');
+                                } else {
+                                    throw deleteError;
+                                }
+                            } else {
+                                Alert.alert('Sukses', 'Produk berhasil dihapus');
+                            }
+                            
+                            setModalVisible(false);
+                            fetchProducts();
+                        } catch (error: any) {
+                            Alert.alert('Error', 'Gagal menghapus: ' + error.message);
+                        } finally {
+                            setLoading(false);
+                        }
+                    }
+                }
+            ]
+        );
     };
 
     const renderProductItem = ({ item }: { item: any }) => (
@@ -178,7 +215,7 @@ export default function ProductScreen() {
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-                    <Text style={styles.backButtonText}>←</Text>
+                    <ChevronLeft size={32} color="#1f2937" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Manajemen Produk</Text>
             </View>
@@ -199,7 +236,7 @@ export default function ProductScreen() {
             ) : (
                 <FlatList
                     data={filteredProducts}
-                    keyExtractor={(item) => item.id.toString()}
+                    keyExtractor={(item, index) => (item?.id ?? index).toString()}
                     renderItem={renderProductItem}
                     contentContainerStyle={styles.listContent}
                     ListEmptyComponent={
@@ -229,31 +266,54 @@ export default function ProductScreen() {
 
                         <ScrollView style={styles.modalBody}>
                             <View style={styles.imageUploadSection}>
-                                <TouchableOpacity
-                                    style={styles.imagePicker}
-                                    onPress={handlePickImage}
-                                    disabled={uploading}
-                                >
-                                    {editingProduct?.image_url ? (
-                                        <Image source={{ uri: editingProduct.image_url }} style={styles.uploadPreview} />
-                                    ) : (
-                                        <View style={styles.uploadPlaceholder}>
-                                            <Text style={styles.uploadIcon}>📷</Text>
-                                            <Text style={styles.uploadText}>Ketuk untuk Upload</Text>
-                                        </View>
-                                    )}
-                                    {uploading && (
-                                        <View style={styles.uploadingOverlay}>
-                                            <ActivityIndicator color="white" />
-                                        </View>
-                                    )}
-                                </TouchableOpacity>
-                                {editingProduct?.image_url && (
+                                <View style={{ position: 'relative' }}>
                                     <TouchableOpacity
-                                        onPress={() => setEditingProduct({ ...editingProduct, image_url: null })}
+                                        style={styles.imagePicker}
+                                        onPress={handlePickImage}
+                                        disabled={uploading}
                                     >
-                                        <Text style={styles.removeImageText}>Hapus Gambar</Text>
+                                        {editingProduct?.image_url ? (
+                                            <Image source={{ uri: editingProduct.image_url }} style={styles.uploadPreview} />
+                                        ) : (
+                                            <View style={styles.uploadPlaceholder}>
+                                                <Text style={styles.uploadIcon}>📷</Text>
+                                                <Text style={styles.uploadText}>Ketuk untuk Upload</Text>
+                                            </View>
+                                        )}
+                                        {uploading && (
+                                            <View style={styles.uploadingOverlay}>
+                                                <ActivityIndicator color="white" />
+                                            </View>
+                                        )}
                                     </TouchableOpacity>
+                                    
+                                    {editingProduct?.image_url && (
+                                        <TouchableOpacity
+                                            style={styles.removeImageOverlay}
+                                            onPress={async () => {
+                                                Alert.alert(
+                                                    'Hapus Gambar',
+                                                    'Yakin ingin menghapus gambar ini dari penyimpanan?',
+                                                    [
+                                                        { text: 'Batal', style: 'cancel' },
+                                                        { 
+                                                            text: 'Hapus', 
+                                                            style: 'destructive',
+                                                            onPress: async () => {
+                                                                await ImageStorageService.deleteImage(editingProduct.image_url);
+                                                                setEditingProduct({ ...editingProduct, image_url: null });
+                                                            }
+                                                        }
+                                                    ]
+                                                );
+                                            }}
+                                        >
+                                            <Text style={styles.removeImageIcon}>✕</Text>
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+                                {editingProduct?.image_url && (
+                                    <Text style={styles.imageStatusText}>Gambar aktif tersimpan di cloud</Text>
                                 )}
                             </View>
 
@@ -279,7 +339,7 @@ export default function ProductScreen() {
                                 <Text style={styles.label}>Harga Jual</Text>
                                 <TextInput
                                     style={styles.input}
-                                    value={editingProduct?.price?.toString()}
+                                    value={(editingProduct?.price || '').toString()}
                                     keyboardType="numeric"
                                     onChangeText={(text) => setEditingProduct({ ...editingProduct, price: text })}
                                 />
@@ -305,6 +365,16 @@ export default function ProductScreen() {
                                     <Text style={styles.saveButtonText}>Simpan Perubahan</Text>
                                 )}
                             </TouchableOpacity>
+
+                            {editingProduct?.id && (
+                                <TouchableOpacity
+                                    style={[styles.saveButton, { backgroundColor: '#fee2e2', shadowColor: '#ef4444', marginTop: 12 }]}
+                                    onPress={handleDelete}
+                                    disabled={loading}
+                                >
+                                    <Text style={[styles.saveButtonText, { color: '#ef4444' }]}>Hapus / Arsipkan Produk</Text>
+                                </TouchableOpacity>
+                            )}
                         </ScrollView>
                     </View>
                 </View>
@@ -327,11 +397,25 @@ const styles = StyleSheet.create({
         borderBottomColor: '#f3f4f6',
     },
     backButton: {
-        marginRight: 16,
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        backgroundColor: '#f3f4f6',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12,
+        // Add subtle shadow for visibility
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+        elevation: 2,
     },
     backButtonText: {
-        fontSize: 24,
+        fontSize: 28,
         color: '#1f2937',
+        fontWeight: 'bold',
+        marginTop: -2, // Optical alignment for the arrow
     },
     headerTitle: {
         fontSize: 20,
@@ -509,6 +593,31 @@ const styles = StyleSheet.create({
         color: '#ef4444',
         fontWeight: '600',
         fontSize: 12,
+    },
+    removeImageOverlay: {
+        position: 'absolute',
+        top: 8,
+        right: 8,
+        backgroundColor: 'rgba(239, 68, 68, 0.9)',
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 2,
+        borderColor: 'white',
+    },
+    removeImageIcon: {
+        color: 'white',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    imageStatusText: {
+        fontSize: 10,
+        color: '#9ca3af',
+        marginTop: 8,
+        fontWeight: 'bold',
+        textAlign: 'center',
     },
     formGroup: {
         marginBottom: 20,

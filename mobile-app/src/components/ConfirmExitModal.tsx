@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, Modal, TouchableOpacity, StyleSheet, Dimensions, Animated } from 'react-native';
-import { LogOut, AlertTriangle } from 'lucide-react-native';
+import { LogOut, AlertTriangle, Trash2 } from 'lucide-react-native';
 
 interface ConfirmExitModalProps {
     visible: boolean;
@@ -10,7 +10,7 @@ interface ConfirmExitModalProps {
     message?: string;
     confirmText?: string;
     cancelText?: string;
-    iconType?: 'logout' | 'alert';
+    iconType?: 'logout' | 'alert' | 'trash';
     showCancel?: boolean;
 }
 
@@ -73,6 +73,8 @@ export default function ConfirmExitModal({
                     <View style={styles.iconContainer}>
                         {iconType === 'logout' ? (
                             <LogOut size={32} color="#ea580c" />
+                        ) : iconType === 'trash' ? (
+                            <Trash2 size={32} color="#ef4444" />
                         ) : (
                             <AlertTriangle size={32} color="#ea580c" />
                         )}

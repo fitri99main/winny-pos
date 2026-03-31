@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { History, RotateCcw, Search, FileText, CheckCircle, XCircle, X, ShoppingCart, Printer, ChevronDown, Users } from 'lucide-react';
+import { History, RotateCcw, Search, FileText, CheckCircle, XCircle, X, ShoppingCart, Printer, ChevronDown, Users, Trash2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
 import { ContactData } from '../contacts/ContactsView';
@@ -7,6 +7,8 @@ import { PaymentModal } from './PaymentModal';
 import { PaymentMethod } from '@/types/pos';
 import { printerService } from '../../lib/PrinterService';
 import { FingerprintAuthModal } from '../shared/FingerprintAuthModal';
+import { ManagerAuthModal } from '../shared/ManagerAuthModal';
+
 
 export interface SalesOrder {
     id: number;
@@ -18,6 +20,7 @@ export interface SalesOrder {
     subtotal?: number;
     discount?: number;
     tax?: number;
+    serviceCharge?: number;
     totalAmount: number;
     paymentMethod: string;
     paymentType?: 'cash' | 'card' | 'e-wallet' | 'qris';
@@ -246,8 +249,25 @@ export function SalesView({
         const printReceiptData = async () => {
             let wifiVoucher = undefined;
             if (settings?.enable_wifi_vouchers) {
-                const { WifiVoucherService } = await import('../../lib/WifiVoucherService');
-                wifiVoucher = await WifiVoucherService.getVoucherForSale(saleToProcess.id, saleToProcess.branchId || 'default') || undefined;
+                const minAmount = settings.wifi_voucher_min_amount || 0;
+                const multiplier = settings.wifi_voucher_multiplier || 0;
+                const total = saleToProcess.totalAmount || 0;
+
+                if (total >= minAmount) {
+                    let count = 1;
+                    if (multiplier > 0) {
+                        count = Math.floor(total / multiplier);
+                    }
+                    
+                    if (count > 0) {
+                        const { WifiVoucherService } = await import('../../lib/WifiVoucherService');
+                        wifiVoucher = await WifiVoucherService.getVoucherForSale(
+                            saleToProcess.id, 
+                            saleToProcess.branchId || 'default',
+                            count
+                        ) || undefined;
+                    }
+                }
             }
 
             try {
@@ -261,8 +281,9 @@ export function SalesView({
                         quantity: item.quantity,
                         price: item.price
                     })),
-                    subtotal: saleToProcess.totalAmount + (saleToProcess.discount || 0),
+                    subtotal: (saleToProcess.productDetails || []).reduce((sum, item) => sum + (item.price * item.quantity), 0),
                     discount: saleToProcess.discount || 0,
+                    serviceCharge: saleToProcess.serviceCharge || 0,
                     tax: saleToProcess.tax || 0,
                     total: saleToProcess.totalAmount,
                     paymentType: updatedSale.paymentMethod,
@@ -296,7 +317,10 @@ export function SalesView({
     const [selectedOrderToEdit, setSelectedOrderToEdit] = useState<SalesOrder | null>(null);
     const [editForm, setEditForm] = useState<Partial<SalesOrder>>({});
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+    const [isManagerAuthOpen, setIsManagerAuthOpen] = useState(false);
     const [pendingReturnAction, setPendingReturnAction] = useState<(() => void) | null>(null);
+    const [pendingDeleteAction, setPendingDeleteAction] = useState<(() => void) | null>(null);
+
 
     // Keyboard Shortcuts
     useEffect(() => {
@@ -400,8 +424,9 @@ export function SalesView({
                         quantity: item.quantity,
                         price: item.price
                     })),
-                    subtotal: sale.totalAmount + (sale.discount || 0),
+                    subtotal: (sale.productDetails || []).reduce((sum, item) => sum + (item.price * item.quantity), 0),
                     discount: sale.discount || 0,
+                    serviceCharge: sale.serviceCharge || 0,
                     tax: sale.tax || 0,
                     total: sale.totalAmount,
                     paymentType: sale.paymentMethod,
@@ -481,12 +506,22 @@ export function SalesView({
     };
 
     const handleDeleteClick = (saleId: number) => {
-        if (window.confirm('Apakah Anda yakin ingin menghapus transaksi ini?')) {
-            if (onDeleteSale) {
+        const processDelete = () => {
+             if (onDeleteSale) {
                 onDeleteSale(saleId);
+            }
+        };
+
+        if (settings?.enable_manager_auth) {
+            setPendingDeleteAction(() => processDelete);
+            setIsManagerAuthOpen(true);
+        } else {
+            if (window.confirm('Apakah Anda yakin ingin menghapus transaksi ini?')) {
+                processDelete();
             }
         }
     };
+
 
     // --- Renderers ---
 
@@ -502,6 +537,7 @@ export function SalesView({
                             <th className="px-3 py-2">Tanggal</th>
                             <th className="px-3 py-2 text-center hidden xl:table-cell">Item</th>
                             <th className="px-3 py-2 text-right">Diskon</th>
+                            <th className="px-3 py-2 text-right">Pajak</th>
                             <th className="px-3 py-2 text-right">Total</th>
                             <th className="px-3 py-2">Bayar</th>
                             <th className="px-3 py-2">Kasir</th>
@@ -569,6 +605,9 @@ export function SalesView({
                                     <td className="px-3 py-2 text-center hidden xl:table-cell">{sale.items}</td>
                                     <td className="px-3 py-2 text-right text-red-500 font-medium whitespace-nowrap">
                                         {sale.discount ? `- Rp ${sale.discount.toLocaleString()}` : '-'}
+                                    </td>
+                                    <td className="px-3 py-2 text-right text-blue-500 font-medium whitespace-nowrap">
+                                        {sale.tax ? `+ Rp ${sale.tax.toLocaleString()}` : '-'}
                                     </td>
                                     <td className="px-3 py-2 text-right font-bold whitespace-nowrap">Rp {sale.totalAmount.toLocaleString()}</td>
                                     <td className="px-3 py-2 text-gray-600 truncate max-w-[80px]">{sale.paymentMethod}</td>
@@ -1026,16 +1065,36 @@ export function SalesView({
                                             <span>- Rp {selectedOrderDetails.discount.toLocaleString()}</span>
                                         </div>
                                     )}
+                                    {selectedOrderDetails.tax > 0 && (
+                                        <div className="flex justify-between text-sm text-blue-500 font-medium">
+                                            <span>Pajak</span>
+                                            <span>+ Rp {selectedOrderDetails.tax.toLocaleString()}</span>
+                                        </div>
+                                    )}
                                     <div className="flex justify-between text-lg font-bold text-blue-700 pt-2 border-t border-blue-100">
                                         <span>Total Akhir</span>
                                         <span>Rp {selectedOrderDetails.totalAmount.toLocaleString()}</span>
                                     </div>
                                 </div>
                             </div>
-                            <div className="px-6 py-4 bg-gray-50 flex justify-end gap-3">
-                                <Button variant="outline" onClick={() => handlePrintReceipt(selectedOrderDetails)}>Cetak Struk</Button>
-                                <Button className="bg-gray-800" onClick={() => setIsDetailsModalOpen(false)}>Tutup</Button>
+                            <div className="px-6 py-4 bg-gray-50 flex justify-between items-center gap-3">
+                                <Button 
+                                    variant="ghost" 
+                                    className="text-red-600 hover:bg-red-50 hover:text-red-700 gap-2"
+                                    onClick={() => {
+                                        setIsDetailsModalOpen(false);
+                                        handleDeleteClick(selectedOrderDetails.id);
+                                    }}
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                    Hapus Transaksi
+                                </Button>
+                                <div className="flex gap-3">
+                                    <Button variant="outline" onClick={() => handlePrintReceipt(selectedOrderDetails)}>Cetak Struk</Button>
+                                    <Button className="bg-gray-800" onClick={() => setIsDetailsModalOpen(false)}>Tutup</Button>
+                                </div>
                             </div>
+
                         </div>
                     </div>
                 )
@@ -1183,11 +1242,13 @@ export function SalesView({
 
                                 {/* Totals */}
                                 <div className="space-y-0.5 text-gray-600">
-                                    <div className="flex justify-between"><span>Subtotal</span><span>{(receiptPreviewData.totalAmount + (receiptPreviewData.discount || 0)).toLocaleString('id-ID')}</span></div>
+                                    <div className="flex justify-between"><span>Subtotal</span><span>{(receiptPreviewData.totalAmount + (receiptPreviewData.discount || 0) - (receiptPreviewData.tax || 0)).toLocaleString('id-ID')}</span></div>
                                     {(receiptPreviewData.discount || 0) > 0 && (
                                         <div className="flex justify-between text-red-500"><span>Diskon</span><span>-{(receiptPreviewData.discount || 0).toLocaleString('id-ID')}</span></div>
                                     )}
-                                    <div className="flex justify-between"><span>Pajak (0%)</span><span>0</span></div>
+                                    {(receiptPreviewData.tax || 0) > 0 && (
+                                        <div className="flex justify-between"><span>Pajak</span><span>{(receiptPreviewData.tax || 0).toLocaleString('id-ID')}</span></div>
+                                    )}
                                     <div className="flex justify-between font-bold text-xs text-gray-800"><span>TOTAL</span><span>{receiptPreviewData.totalAmount.toLocaleString('id-ID')}</span></div>
                                 </div>
 
@@ -1241,6 +1302,21 @@ export function SalesView({
                 }}
                 employees={employees}
             />
+
+            <ManagerAuthModal
+                open={isManagerAuthOpen}
+                onClose={() => {
+                    setIsManagerAuthOpen(false);
+                    setPendingDeleteAction(null);
+                }}
+                onSuccess={(manager) => {
+                    if (pendingDeleteAction) {
+                        pendingDeleteAction();
+                    }
+                }}
+                employees={employees}
+            />
+
         </div>
     );
 }

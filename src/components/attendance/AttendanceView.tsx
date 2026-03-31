@@ -404,7 +404,7 @@ export function AttendanceView({ logs, setLogs, employees, onLogAttendance, sett
                                         <span className="font-bold text-[11px] uppercase tracking-wider">Bantuan Diagnosa</span>
                                     </div>
                                     <p className="text-[10px] text-gray-500 mb-4 leading-relaxed text-center font-medium">
-                                        Jika menggunakan HTTPS, Anda perlu memberikan izin akses manual ke service lokal Browser.
+                                        Jika menggunakan HTTPS (Vercel), Anda perlu memberikan izin akses manual ke service lokal di Browser Anda.
                                     </p>
 
                                     <div className="space-y-4">
@@ -417,39 +417,40 @@ export function AttendanceView({ logs, setLogs, employees, onLogAttendance, sett
                                                     rel="noopener noreferrer"
                                                     className="flex items-center justify-between px-4 py-2 bg-white border border-gray-100 rounded-2xl hover:bg-gray-50 transition-all group shadow-sm"
                                                 >
-                                                    <span className="text-[10px] font-black text-gray-500">
-                                                        CHECK {svc.protocol} PORT {svc.port}
+                                                    <span className="text-[10px] font-black text-gray-500 uppercase">
+                                                        Izinkan Port {svc.port} ({svc.protocol})
                                                     </span>
                                                     <ExternalLink className="w-3 h-3 text-red-400 group-hover:text-red-600 transition-colors" />
                                                 </a>
                                             ))}
                                         </div>
 
-                                        {/* Service Restoration Guide */}
-                                        <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
-                                            <p className="text-[10px] text-blue-700 font-black uppercase tracking-wider mb-2">
-                                                Layanan Tidak Ditemukan?
+                                        {/* Chrome PNA Fix */}
+                                        <div className="bg-orange-50/50 p-4 rounded-2xl border border-orange-100">
+                                            <p className="text-[10px] text-orange-700 font-black uppercase tracking-wider mb-2">
+                                                Masalah Private Network (Chrome)?
                                             </p>
-                                            <p className="text-[9px] text-blue-600 leading-relaxed mb-3">
-                                                Jika link "CHECK" di atas bertuliskan <b>Refused to connect</b>, service tidak berjalan.
+                                            <p className="text-[9px] text-orange-600 leading-relaxed mb-3">
+                                                Browser modern memblokir situs publik mengakses localhost. Solusi:
                                             </p>
-                                            <ol className="text-[9px] text-gray-500 list-decimal list-inside space-y-1.5 font-medium">
-                                                <li>Buka <b>C:\Program Files\DigitalPersona\Bin</b></li>
-                                                <li>Cari file <b>DpHost.exe</b></li>
-                                                <li>Klik kanan & pilih <b>Run as Administrator</b></li>
-                                                <li>Cek kembali <b>services.msc</b></li>
-                                            </ol>
+                                            <div className="space-y-2">
+                                                <div className="p-2 bg-white border border-orange-100 rounded-lg select-all font-mono text-[8px] text-gray-600">
+                                                    chrome://flags/#block-insecure-private-network-requests
+                                                </div>
+                                                <p className="text-[8px] text-gray-500 italic">
+                                                    Salin link di atas ke tab baru, cari flag tersebut, set ke <b>Disabled</b>, lalu restart Chrome.
+                                                </p>
+                                            </div>
                                         </div>
 
-                                        <div className="bg-white/50 p-3 rounded-2xl border border-dashed border-red-200">
-                                            <p className="text-[9px] text-red-500 font-bold leading-tight">
-                                                Langkah Protokol (HTTPS):
+                                        {/* Service Restoration Guide */}
+                                        <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
+                                            <p className="text-[10px] text-blue-700 font-black uppercase tracking-wider mb-1">
+                                                Service Tidak Aktif?
                                             </p>
-                                            <ol className="text-[8px] text-gray-400 list-decimal list-inside mt-1 space-y-0.5">
-                                                <li>Klik link port di atas</li>
-                                                <li>Pilih "Lanjutkan/Advanced" jika ada peringatan privasi</li>
-                                                <li>Tutup tab tersebut after loading</li>
-                                                <li>Klik tombol Reset di bawah</li>
+                                            <ol className="text-[9px] text-gray-500 list-decimal list-inside space-y-1 font-medium">
+                                                <li>Buka <b>C:\Program Files\DigitalPersona\Bin</b></li>
+                                                <li>Run <b>DpHost.exe</b> sebagai Administrator</li>
                                             </ol>
                                         </div>
                                     </div>

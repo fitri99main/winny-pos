@@ -52,6 +52,7 @@ export function KioskView() {
     const [customerName, setCustomerName] = useState('');
     const [branches, setBranches] = useState<any[]>([]);
     const [selectedBranchId, setSelectedBranchId] = useState<string | null>(localStorage.getItem('kiosk_branch_id'));
+    const [successCountdown, setSuccessCountdown] = useState(2);
 
     // --- OFFLINE & SYNC LOGIC ---
     const [isOnline, setIsOnline] = useState(() => {
@@ -63,6 +64,10 @@ export function KioskView() {
     const [pendingOrders, setPendingOrders] = useState<any[]>(() => {
         const saved = localStorage.getItem('kiosk_pending_orders');
         return saved ? JSON.parse(saved) : [];
+    });
+    const [storeSettings, setStoreSettings] = useState<any>(() => {
+        const saved = localStorage.getItem('kiosk_store_settings');
+        return saved ? JSON.parse(saved) : null;
     });
 
     useEffect(() => {
@@ -218,8 +223,17 @@ export function KioskView() {
             fetchOccupancy();
             fetchTables();
             fetchProducts(); // Refetch products when branch changes
+            fetchStoreSettings();
         }
     }, [selectedBranchId]);
+
+    const fetchStoreSettings = async () => {
+        const { data } = await supabase.from('store_settings').select('*').eq('id', 1).single();
+        if (data) {
+            setStoreSettings(data);
+            localStorage.setItem('kiosk_store_settings', JSON.stringify(data));
+        }
+    };
 
     // Initial Data Fetch
     useEffect(() => {
@@ -273,15 +287,23 @@ export function KioskView() {
 
     const fetchProducts = async () => {
         if (!selectedBranchId) return;
-        const { data } = await supabase
-            .from('products')
-            .select('*')
-            .eq('branch_id', selectedBranchId); // Filter by branch to match POS behavior
+        
+        // Parallel fetch for speed
+        const [productsRes, categoriesRes] = await Promise.all([
+            supabase.from('products').select('*').eq('branch_id', selectedBranchId).order('sort_order', { ascending: true }),
+            supabase.from('categories').select('name').order('sort_order')
+        ]);
 
-        if (data) {
-            setProducts(data);
-            const cats = Array.from(new Set(data.map(p => p.category || 'Other')));
-            setCategories(['All', ...cats]);
+        if (productsRes.data) {
+            setProducts(productsRes.data);
+            
+            if (categoriesRes.data && categoriesRes.data.length > 0) {
+                const orderedCats = Array.from(new Set(categoriesRes.data.map(c => c.name)));
+                setCategories(['All', ...orderedCats]);
+            } else {
+                const cats = Array.from(new Set(productsRes.data.map(p => p.category || 'Other')));
+                setCategories(['All', ...cats]);
+            }
         } else {
             setProducts([]);
             setCategories(['All']);
@@ -334,17 +356,36 @@ export function KioskView() {
     };
 
     const handleSuccessCheckout = (msg?: string) => {
+        setSuccessCountdown(2);
         setStep('success');
         if (msg) toast.success(msg);
         setLoading(false);
-        setTimeout(() => {
-            setStep('table');
-            setCart([]);
-            setSelectedTable(null);
-            setMember(null);
-            setCustomerName('');
-        }, 5000);
     };
+
+    // Auto-reset Effect for Success Step
+    useEffect(() => {
+        let timer: any;
+        if (step === 'success') {
+            timer = setInterval(() => {
+                setSuccessCountdown(prev => {
+                    if (prev <= 1) {
+                        clearInterval(timer);
+                        // Reset all state
+                        setStep('table');
+                        setCart([]);
+                        setSelectedTable(null);
+                        setMember(null);
+                        setCustomerName('');
+                        return 0;
+                    }
+                    return prev - 1;
+                });
+            }, 1000);
+        }
+        return () => {
+            if (timer) clearInterval(timer);
+        };
+    }, [step]);
 
     const handleCheckout = async () => {
         if (submittingRef.current || !selectedTable || cart.length === 0) return;
@@ -366,8 +407,9 @@ export function KioskView() {
             finalAmount -= discountAmount;
         }
 
+        const offlinePrefix = storeSettings?.offline_invoice_prefix || 'OFF';
         const salePayload = {
-            order_no: `ORD-${Date.now()}`,
+            order_no: `${offlinePrefix}-${Date.now()}`,
             date: new Date().toISOString(),
             total_amount: finalAmount,
             payment_method: 'Pay at Cashier',
@@ -533,13 +575,31 @@ export function KioskView() {
     if (step === 'success') {
         return (
             <div className="min-h-screen bg-green-500 flex flex-col items-center justify-center text-white p-10 text-center animate-in fade-in zoom-in duration-300">
-                <div className="w-32 h-32 bg-white rounded-full flex items-center justify-center mb-8 shadow-2xl">
-                    <CheckCircle className="w-16 h-16 text-green-500" />
+                <div className="w-24 h-24 md:w-32 md:h-32 bg-white rounded-full flex items-center justify-center mb-6 md:mb-8 shadow-2xl">
+                    <CheckCircle className="w-12 h-12 md:w-16 md:h-16 text-green-500" />
                 </div>
-                <h1 className="text-5xl font-bold mb-4">Pesanan Diterima!</h1>
-                <p className="text-2xl opacity-90">Mohon tunggu sebentar, kami sedang menyiapkan pesanan Anda.</p>
-                <div className="mt-12 text-sm opacity-75">
-                    Layar akan kembali ke awal dalam 5 detik...
+                <h1 className="text-3xl md:text-5xl font-bold mb-4">Pesanan Diterima!</h1>
+                <p className="text-lg md:text-2xl opacity-90">Mohon tunggu sebentar, kami sedang menyiapkan pesanan Anda.</p>
+                
+                <button
+                    onClick={() => {
+                        if ((window as any)._kioskResetTimer) clearTimeout((window as any)._kioskResetTimer);
+                        setStep('table');
+                        setCart([]);
+                        setSelectedTable(null);
+                        setMember(null);
+                        setCustomerName('');
+                    }}
+                    className="mt-10 bg-white text-green-600 px-8 py-3 rounded-full font-bold text-lg shadow-xl hover:scale-105 active:scale-95 transition-all"
+                >
+                    Pesan Lagi Sekarang
+                </button>
+
+                <div className="mt-8 text-2xl md:text-3xl font-black opacity-90 scale-110 animate-pulse">
+                    {successCountdown}
+                </div>
+                <div className="mt-2 text-xs md:text-sm opacity-75">
+                    Kembali otomatis dalam {successCountdown} detik...
                 </div>
             </div>
         );

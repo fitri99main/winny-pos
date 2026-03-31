@@ -123,7 +123,7 @@ export default function EmployeeSettingsScreen() {
             ) : (
                 <FlatList
                     data={waiters}
-                    keyExtractor={(item) => item.id.toString()}
+                    keyExtractor={(item, index) => (item?.id ?? index).toString()}
                     contentContainerStyle={styles.listContent}
                     renderItem={({ item }) => (
                         <View style={styles.waiterItem}>

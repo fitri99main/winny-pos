@@ -810,15 +810,47 @@ export function SettingsView({
                                         )}
 
                                         {sdkStatus === 'error' && (
-                                            <div className="text-[10px] text-red-600 bg-red-50 p-2 rounded-lg border border-red-100 space-y-1">
-                                                <p className="font-bold">✗ Client Tidak Terdeteksi</p>
-                                                <p className="leading-relaxed">Solusi: Pastikan <strong>DigitalPersona Lite Client v2.1.1</strong> atau <strong>HID Authentication Device Client</strong> sudah terinstal dan Service-nya berjalan di Windows.</p>
+                                            <div className="text-[10px] text-red-600 bg-red-50 p-4 rounded-xl border border-red-100 space-y-3">
+                                                <div className="flex items-center gap-2">
+                                                    <XCircle className="w-3.5 h-3.5" />
+                                                    <p className="font-bold uppercase tracking-tight">Koneksi Layanan Gagal (Production/Vercel)</p>
+                                                </div>
+                                                
+                                                <div className="space-y-2">
+                                                    <p className="leading-relaxed font-medium">Browser memblokir akses ke hardware lokal dari situs publik (HTTPS). Silakan ikuti langkah berikut:</p>
+                                                    
+                                                    <div className="grid grid-cols-1 gap-2">
+                                                        {fingerprint.getServiceUrls().map((svc) => (
+                                                            <a
+                                                                key={svc.port}
+                                                                href={svc.url}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="flex items-center justify-between px-3 py-1.5 bg-white border border-red-100 rounded-lg hover:bg-red-50 transition-all group"
+                                                            >
+                                                                <span className="text-[9px] font-bold text-gray-500 uppercase">Izinkan SSL Port {svc.port}</span>
+                                                                <ExternalLink className="w-3 h-3 text-red-400" />
+                                                            </a>
+                                                        ))}
+                                                    </div>
+
+                                                    <div className="p-2 bg-orange-100/50 rounded-lg border border-orange-200">
+                                                        <p className="text-[9px] text-orange-700 font-bold mb-1">Akses Private Network (Chrome):</p>
+                                                        <p className="text-[8px] text-orange-600 select-all font-mono">chrome://flags/#block-insecure-private-network-requests</p>
+                                                        <p className="text-[8px] text-orange-600/70 mt-1 italic">Buka link di atas, set ke <b>Disabled</b>, lalu Restart Chrome.</p>
+                                                    </div>
+                                                </div>
                                             </div>
                                         )}
 
-                                        <p className="text-[10px] text-blue-600/80 leading-relaxed">
-                                            Pastikan layanan <strong>DigitalPersona Web SDK Service</strong> sudah berjalan agar browser dapat mengakses hardware scanner.
-                                        </p>
+                                        <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-100">
+                                            <p className="text-[10px] text-blue-800 font-bold flex items-center gap-1.5 mb-1">
+                                                <Info className="w-3 h-3" /> Tips Production
+                                            </p>
+                                            <p className="text-[9px] text-blue-600/80 leading-relaxed">
+                                                Jika menggunakan <b>Vercel/HTTPS</b>, pastikan sertifikat lokal sudah diizinkan dengan mengklik link "Izinkan" di atas. Ini adalah prosedur standar keamanan browser untuk akses Hardware USB dari Web.
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
                             )}

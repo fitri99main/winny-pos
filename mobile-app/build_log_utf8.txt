@@ -1,0 +1,47 @@
+﻿env: load .env
+env: export EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY
+node.exe : 
+CommandError: No 
+Android connected 
+device found, and no 
+emulators could be 
+started automatically.
+At line:1 char:1
++ & "C:\Program Files\
+nodejs/node.exe" 
+"C:\Program 
+Files\nodejs/node_mo 
+...
++ ~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~
+    + CategoryInfo    
+          : NotSpeci  
+  fied: (CommandErr   
+ or: N... automati    
+cally.:String) []    
+, RemoteException
+    + FullyQualifiedE 
+   rrorId : NativeCo  
+  mmandError
+ 
+Connect a device or 
+create an emulator (ht
+tps://docs.expo.dev/wo
+rkflow/android-studio-
+emulator).
+Then follow the 
+instructions here to 
+enable USB debugging:
+https://developer.andr
+oid.com/studio/run/dev
+ice.html#developer-dev
+ice-options. If you 
+are using Genymotion 
+go to Settings -> 
+ADB, select "Use 
+custom Android SDK 
+tools", and point it 
+at your Android SDK 
+directory.

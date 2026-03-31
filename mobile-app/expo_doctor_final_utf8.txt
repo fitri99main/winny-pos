@@ -1,0 +1,64 @@
+﻿env: load .env
+env: export EXPO_PUBLIC_SUPABASE_ANON_KEY EXPO_PUBLIC_SUPABASE_URL
+Running 17 checks on your project...
+15/17 checks passed. 2 checks failed. Possible issues detected:
+Use the --verbose flag to see more details about passed checks.
+
+Γ£û Check that native modules use compatible support package versions for installed Expo SDK
+Expected package @expo/config-plugins@~9.0.0
+Found invalid:
+  @expo/config-plugins@8.0.11
+  @expo/config-plugins@54.0.4
+  (for more info, run: npm why @expo/config-plugins)
+Advice:
+Upgrade dependencies that are using the invalid package versions.
+
+Γ£û Check that packages match versions required by installed Expo SDK
+The following packages should be updated for best compatibility with the installed expo version:
+  @expo/metro-runtime@6.1.2 - expected version: ~4.0.1
+  @react-native-async-storage/async-storage@2.2.0 - expected version: 1.23.1
+  expo-asset@12.0.12 - expected version: ~11.0.5
+  expo-build-properties@1.0.10 - expected version: ~0.13.3
+  expo-camera@17.0.10 - expected version: ~16.0.18
+  expo-constants@18.0.13 - expected version: ~17.0.8
+  expo-dev-client@4.0.29 - expected version: ~5.0.20
+  expo-image-picker@17.0.10 - expected version: ~16.0.6
+  expo-location@19.0.8 - expected version: ~18.0.10
+  expo-status-bar@3.0.9 - expected version: ~2.0.1
+  react-native@0.76.6 - expected version: 0.76.9
+  react-native-safe-area-context@5.6.2 - expected version: 4.12.0
+  react-native-screens@4.16.0 - expected version: ~4.4.0
+  react-native-svg@15.12.1 - expected version: 15.8.0
+  react-native-web@0.21.2 - expected version: ~0.19.13
+  @types/react@19.1.17 - expected version: ~18.3.12
+  babel-preset-expo@54.0.10 - expected version: ~12.0.0
+Your project may not work correctly until you install the expected versions of the packages.
+Found outdated dependencies
+Advice:
+Use 'npx expo install --check' to review and upgrade your dependencies.
+To ignore specific packages, add them to "expo.install.exclude" in package.json. Learn more: https://expo.fyi/dependency-validation
+
+node.exe : 2 checks 
+failed, indicating 
+possible issues with 
+the project.
+At line:1 char:1
++ & "C:\Program Files\
+nodejs/node.exe" 
+"C:\Program 
+Files\nodejs/node_mo 
+...
++ ~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~
+    + CategoryInfo    
+          : NotSpeci  
+  fied: (2 checks f   
+ ailed...th the pr    
+oject.:String) []    
+, RemoteException
+    + FullyQualifiedE 
+   rrorId : NativeCo  
+  mmandError
+ 

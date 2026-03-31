@@ -14,11 +14,15 @@ export interface OfflineSale {
     waiter_name: string;
     total_amount: number;
     discount: number;
+    tax: number;
+    service_charge: number;
     payment_method: string;
     status: string;
     date: string;
     items: any[];
     is_offline: boolean;
+    paid_amount?: number;
+    change?: number;
 }
 
 export const OfflineService = {
@@ -32,6 +36,19 @@ export const OfflineService = {
         } catch (e) {
             console.error('[OfflineService] Error getting queue:', e);
             return [];
+        }
+    },
+
+    /**
+     * Get a specific offline sale by order_no
+     */
+    getSaleByOrderNo: async (orderNo: string): Promise<OfflineSale | null> => {
+        try {
+            const queue = await OfflineService.getOfflineQueue();
+            return queue.find(s => s.order_no === orderNo) || null;
+        } catch (e) {
+            console.error('[OfflineService] Error finding sale in queue:', e);
+            return null;
         }
     },
 
@@ -105,22 +122,31 @@ export const OfflineService = {
                         waiter_name: sale.waiter_name,
                         total_amount: sale.total_amount,
                         discount: sale.discount,
+                        tax: sale.tax || 0,
+                        service_charge: sale.service_charge || 0,
                         status: sale.status,
                         payment_method: sale.payment_method,
-                        date: sale.date
+                        date: sale.date,
+                        paid_amount: sale.paid_amount,
+                        change: sale.change
                     }])
                     .select()
                     .single();
 
                 if (saleError) throw saleError;
 
-                // 2. Insert Items
-                const itemsToInsert = sale.items.map(item => ({
-                    ...item,
-                    sale_id: newSale.id
+                // 2. Insert Items - Map to correct schema columns
+                const cleanedItems = sale.items.map(item => ({
+                    sale_id: newSale.id,
+                    product_id: typeof item.id === 'string' && item.id.startsWith('manual') ? null : item.id,
+                    product_name: item.name,
+                    quantity: item.quantity,
+                    price: item.price,
+                    cost: 0,
+                    target: item.target || 'Waitress',
+                    status: 'Pending',
+                    is_taxed: item.is_taxed || false
                 }));
-                // Remove local UI properties that might conflict with DB schema
-                const cleanedItems = itemsToInsert.map(({ id, isManual, product, ...rest }) => rest);
 
                 const { error: itemsError } = await supabase.from('sale_items').insert(cleanedItems);
                 if (itemsError) throw itemsError;

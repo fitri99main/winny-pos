@@ -8,11 +8,11 @@ import { useSession } from '../context/SessionContext';
 
 export default function StoreSettingsScreen() {
     const navigation = useNavigation();
-    const [loading, setLoading] = React.useState(true);
+    const [loading, setLoading] = React.useState(false); // DEFAULT TO FALSE FOR INSTANT OPEN
     const [saving, setSaving] = React.useState(false);
     const [showSuccess, setShowSuccess] = React.useState(false);
     const [successMsg, setSuccessMsg] = React.useState('');
-    const { currentBranchId } = useSession();
+    const { currentBranchId, storeSettings: sessionSettings } = useSession();
     
     // Branch state
     const [branchData, setBranchData] = React.useState({
@@ -30,45 +30,45 @@ export default function StoreSettingsScreen() {
 
     const fetchData = async () => {
         try {
+            console.log('[StoreSettingsScreen] fetchData: START');
             setLoading(true);
             
+
+
             // 1. Fetch Current Branch
             const bId = currentBranchId;
             if (!bId) {
+                console.warn('[StoreSettingsScreen] fetchData: NO branchId');
                 setLoading(false);
                 return;
             }
 
-            const { data: branch, error: branchError } = await supabase
-                .from('branches')
-                .select('*')
-                .eq('id', bId)
-                .single();
+            // Parallelize branch and settings fetching
+            const [branchRes, settingsRes] = await Promise.all([
+                supabase.from('branches').select('*').eq('id', bId).single(),
+                sessionSettings 
+                    ? Promise.resolve({ data: sessionSettings, error: null }) 
+                    : supabase.from('store_settings').select('*').eq('id', 1).maybeSingle()
+            ]);
 
-            if (branchError) throw branchError;
-            if (branch) {
+            if (branchRes.data) {
                 setBranchData({
-                    name: branch.name || '',
-                    address: branch.address || '',
-                    phone: branch.phone || ''
+                    name: branchRes.data.name || '',
+                    address: branchRes.data.address || '',
+                    phone: branchRes.data.phone || ''
                 });
             }
 
-            // 2. Fetch Global Store Settings
-            const { data: settings, error: settingsError } = await supabase
-                .from('store_settings')
-                .select('*')
-                .eq('id', 1)
-                .maybeSingle();
-
-            if (!settingsError && settings) {
-                setStoreSettings(settings);
+            if (settingsRes.data) {
+                setStoreSettings(settingsRes.data);
             }
 
+            console.log('[StoreSettingsScreen] fetchData: SUCCESS');
         } catch (error) {
-            console.error('Error fetching store settings:', error);
+            console.error('[StoreSettingsScreen] fetchData: ERROR:', error);
             Alert.alert('Error', 'Gagal memuat data toko');
         } finally {
+            console.log('[StoreSettingsScreen] fetchData: FINALLY');
             setLoading(false);
         }
     };
@@ -134,13 +134,29 @@ export default function StoreSettingsScreen() {
 
     const days = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
 
+    // Remove full-screen loading block to ensure "Instant Open"
+    /*
     if (loading) {
         return (
-            <View style={styles.center}>
+            <View style={[styles.center, { gap: 20 }]}>
                 <ActivityIndicator size="large" color="#ea580c" />
+                <Text style={{ color: '#64748b' }}>Memuat Data Toko...</Text>
+                <TouchableOpacity 
+                    onPress={() => navigation.goBack()}
+                    style={{ 
+                        marginTop: 40,
+                        paddingVertical: 10,
+                        paddingHorizontal: 20,
+                        borderRadius: 12,
+                        backgroundColor: '#f1f5f9'
+                    }}
+                >
+                    <Text style={{ color: '#64748b', fontWeight: 'bold' }}>Batal / Kembali</Text>
+                </TouchableOpacity>
             </View>
         );
     }
+    */
 
     return (
         <SafeAreaView style={styles.container}>

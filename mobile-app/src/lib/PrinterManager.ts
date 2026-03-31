@@ -2,6 +2,7 @@ import { BleManager, Device } from 'react-native-ble-plx';
 import { BLEPrinter, IBLEPrinter, COMMANDS } from '@haroldtran/react-native-thermal-printer';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PermissionsAndroid, Platform, Alert } from 'react-native';
+import { Buffer } from 'buffer';
 import Constants from 'expo-constants';
 
 const PRINTER_STORAGE_KEY = '@selected_printer_address';
@@ -137,7 +138,40 @@ export class PrinterManager {
         return await AsyncStorage.getItem(key);
     }
 
-    static getConnectionStatus(macAddress: string) {
+    static async getBase64FromUrl(url: string): Promise<string | null> {
+        try {
+            const encodedUrl = encodeURI(url);
+            console.log(`[PrinterManager] Fetching logo: ${url}`);
+            const response = await fetch(encodedUrl);
+            
+            if (!response.ok) {
+                console.error(`[PrinterManager] Fetch failed: ${response.status}`);
+                return null;
+            }
+
+            const arrayBuffer = await response.arrayBuffer();
+            const rawBase64 = Buffer.from(arrayBuffer).toString('base64');
+            
+            // [CRITICAL] Remove ANY prefix like data:image/png;base64, or data:application/octet-stream;base64,
+            // Native Android Base64.decode FAILS if these prefixes exist.
+            const cleanedBase64 = rawBase64.replace(/^data:.*?;base64,/, '').replace(/\s/g, '');
+            
+            console.log(`[PrinterManager] Logo converted. Length: ${cleanedBase64.length}`);
+            
+            if (cleanedBase64.length < 50) {
+                console.warn('[PrinterManager] Warning: Logo data too short.');
+                return null;
+            }
+
+            return cleanedBase64;
+        } catch (error) {
+            console.error('[PrinterManager] Error in getBase64FromUrl:', error);
+            return null;
+        }
+    }
+
+    static getConnectionStatus(macAddress: string | null | undefined) {
+        if (!macAddress) return 'disconnected';
         return this.connectionStatus[macAddress.toUpperCase()] || 'disconnected';
     }
 
@@ -158,14 +192,24 @@ export class PrinterManager {
         }
     }
 
-    static padColumns(left: string, right: string, width: number = 32): string {
-        const spaceCount = width - (left.length + right.length);
+    static padColumns(left: string | null | undefined, right: string | null | undefined, width: number = 32): string {
+        const leftStr = left || '';
+        const rightStr = right || '';
+        const spaceCount = width - (leftStr.length + rightStr.length);
         if (spaceCount <= 0) return left + ' ' + right;
         return left + ' '.repeat(spaceCount) + right;
     }
 
-    static formatReceipt(orderData: any, isPreview: boolean = false): string {
-        const { 
+    static formatReceipt(orderData: any, isPreview: boolean = false, skipInit: boolean = false): string {
+        if (!isPreview) {
+            console.log('[PrinterManager] formatReceipt data summary:', {
+                order_no: orderData.orderNo || orderData.order_no,
+                items_count: orderData.items?.length,
+                total: orderData.total || orderData.total_amount
+            });
+        }
+        try {
+            const { 
             shop_name, shopName,
             shop_address, shopAddress,
             shop_phone, shopPhone,
@@ -198,7 +242,7 @@ export class PrinterManager {
         // Determine width based on paper setting: 58mm = 32 chars, 80mm = 42 chars
         const paperWidth = receipt_paper_width === '80mm' ? 42 : 32;
 
-        const displayShopName = receipt_header || receiptHeader || shop_name || shopName || 'WINNY POS';
+        const displayShopName = receipt_header || receiptHeader || shop_name || shopName || 'WINNY COFFEE PNK';
         const displayAddress = shop_address || shopAddress || '';
         const displayPhone = shop_phone || shopPhone || '';
         const displayDate = show_date !== false ? (created_at || orderDate ? new Date(created_at || orderDate).toLocaleString('id-ID') : new Date().toLocaleString('id-ID')) : '';
@@ -218,8 +262,8 @@ export class PrinterManager {
             displayWifiVoucher = 'XXXX-XXXX';
         }
 
-        const displayWifiNotice = wifi_voucher_notice || wifiNotice || wifi_notice || 'Gunakan kode ini untuk akses WiFi';
-        const displayReceiptFooter = receipt_footer || receiptFooter || 'Terima Kasih Atas\nKunjungan Anda';
+        const displayWifiNotice = (wifi_voucher_notice || wifiNotice || wifi_notice || 'Gunakan kode ini untuk akses WiFi').trim();
+        const displayReceiptFooter = (receipt_footer || receiptFooter || 'Terima Kasih Atas\nKunjungan Anda').trim();
 
         const CENTER = isPreview ? '[C]' : COMMANDS.TEXT_FORMAT.TXT_ALIGN_CT;
         const LEFT = isPreview ? '[L]' : COMMANDS.TEXT_FORMAT.TXT_ALIGN_LT;
@@ -229,7 +273,7 @@ export class PrinterManager {
         const DOUBLE_OFF = isPreview ? '' : COMMANDS.TEXT_FORMAT.TXT_NORMAL;
         const LINE = '-'.repeat(paperWidth) + '\n';
         
-        let receiptText = isPreview ? '' : COMMANDS.HARDWARE.HW_INIT;
+        let receiptText = '';
 
         // Logo Placeholder for Preview
         if (show_logo && isPreview) {
@@ -238,7 +282,7 @@ export class PrinterManager {
         
         // Header
         // Use only BOLD if paper is 58mm to prevent cutting off Shop Name
-        const shopNameDouble = paperWidth >= 42 ? DOUBLE_ON : '';
+        const shopNameDouble = isPreview ? '' : COMMANDS.TEXT_FORMAT.TXT_4SQUARE;
         receiptText += CENTER + BOLD_ON + shopNameDouble + displayShopName.toUpperCase() + (shopNameDouble ? DOUBLE_OFF : '') + BOLD_OFF + '\n';
         if (displayAddress) receiptText += displayAddress + '\n';
         if (displayPhone) receiptText += 'Telp: ' + displayPhone + '\n';
@@ -270,19 +314,28 @@ export class PrinterManager {
         receiptText += CENTER + LINE;
         receiptText += LEFT;
  
-        items.forEach((item: any) => {
+        const safeItems = items || [];
+        console.log('[PrinterManager] Formatting items, count:', safeItems.length);
+        safeItems.forEach((item: any) => {
             const qtyStr = `${item.quantity}x `;
             const nameStr = item.name;
-            const price = ((item.price || 0) * (item.quantity || 1)).toLocaleString('id-ID');
+            const itemPrice = typeof item.price === 'number' ? item.price : parseFloat(String(item.price || '0').replace(/[^0-9.]/g, '')) || 0;
+            const itemQty = typeof item.quantity === 'number' ? item.quantity : parseFloat(String(item.quantity || '1').replace(/[^0-9.]/g, '')) || 1;
+            const price = (itemPrice * itemQty).toLocaleString('id-ID');
+            
+            const isTaxed = item.is_taxed || item.product?.is_taxed;
+            const taxRate = Number(orderData.tax_rate || 10); // Default to 10 if not set
+            const itemTaxTotal = isTaxed ? (itemPrice * itemQty * taxRate) / 100 : 0;
+            const taxStr = itemTaxTotal > 0 ? ` (Pjk: Rp ${itemTaxTotal.toLocaleString('id-ID')})` : '';
             
             if (isPreview) {
                 // For preview, use the [R] tag that the Modal expects
-                receiptText += `[L]${qtyStr}${nameStr}[R]${price}\n`;
+                receiptText += `[L]${qtyStr}${nameStr}${taxStr}[R]${price}\n`;
             } else {
                 // Layout alignment: Label + Value = paperWidth
                 const valWidth = 12;
                 const labelWidth = paperWidth - valWidth;
-                const itemLine = qtyStr + nameStr;
+                const itemLine = qtyStr + (nameStr || '') + taxStr;
 
                 if (itemLine.length > labelWidth) {
                     receiptText += itemLine + '\n';
@@ -293,67 +346,78 @@ export class PrinterManager {
             }
         });
   
-        const subtotal = items.reduce((sum: number, item: any) => sum + ((item.price || 0) * (item.quantity || 1)), 0);
+        const safeItemsForSummary = items || [];
+        const subtotal = safeItemsForSummary.reduce((sum: number, item: any) => {
+            const p = typeof item.price === 'number' ? item.price : parseFloat(String(item.price || '0').replace(/[^0-9.]/g, '')) || 0;
+            const q = typeof item.quantity === 'number' ? item.quantity : parseFloat(String(item.quantity || '1').replace(/[^0-9.]/g, '')) || 1;
+            return sum + (p * q);
+        }, 0);
+
         const subtotalStr = subtotal.toLocaleString('id-ID');
-        const taxStr = (orderData.tax || 0).toLocaleString('id-ID');
-        const serviceStr = (orderData.service_charge || 0).toLocaleString('id-ID');
-        const discountStr = (orderData.discount || 0).toLocaleString('id-ID');
-        const totalStr = (total || 0).toLocaleString('id-ID');
+        
+        const parseNum = (val: any) => typeof val === 'number' ? val : parseFloat(String(val || '0').replace(/[^0-9.]/g, '')) || 0;
+
+        const taxVal = parseNum(orderData.tax || orderData.tax_amount);
+        const serviceVal = parseNum(orderData.service_charge || orderData.service_amount);
+        const discountVal = parseNum(orderData.discount);
+        const totalVal = parseNum(total || orderData.total_amount);
+
+        const taxStr = taxVal.toLocaleString('id-ID');
+        const serviceStr = serviceVal.toLocaleString('id-ID');
+        const discountStr = discountVal.toLocaleString('id-ID');
+        const totalStr = totalVal.toLocaleString('id-ID');
 
         receiptText += CENTER + LINE;
         receiptText += LEFT;
 
         if (isPreview) {
             receiptText += `[L]Subtotal[R]${subtotalStr}\n`;
-            if (orderData.discount > 0) {
+            if (discountVal > 0) {
                 receiptText += `[L]Diskon[R]-${discountStr}\n`;
-                receiptText += LINE;
-                const afterDiscount = subtotal - (orderData.discount || 0);
-                receiptText += `[L]Total Stlh Diskon[R]${afterDiscount.toLocaleString('id-ID')}\n`;
-                receiptText += LINE;
             }
             
-            if (orderData.service_charge > 0) {
+            if (serviceVal > 0) {
                 const sRate = orderData.service_rate ? ` (${orderData.service_rate}%)` : '';
                 receiptText += `[L]Layanan${sRate}[R]${serviceStr}\n`;
             }
-            if (orderData.tax > 0) {
+            if (taxVal > 0) {
                 const tRate = orderData.tax_rate ? ` (${orderData.tax_rate}%)` : '';
                 receiptText += `[L]Pajak${tRate}[R]${taxStr}\n`;
             }
             receiptText += `[L]<b>TOTAL</b>[R]<b>${totalStr}</b>\n`;
             receiptText += LINE;
-            receiptText += `[L]${payment_method || 'Tunai'}[R]${totalStr}\n`;
-            receiptText += `[L]Kembali[R]0\n`;
+            receiptText += `[L]${payment_method || 'Tunai'}[R]${Number(orderData.paid_amount || totalVal).toLocaleString('id-ID')}\n`;
+            
+            const changeVal = orderData.change !== undefined ? orderData.change : 0;
+            receiptText += `[L]Kembali[R]${Number(changeVal).toLocaleString('id-ID')}\n`;
         } else {
             const summaryValWidth = 12;
             const summaryLabelWidth = paperWidth - summaryValWidth;
 
             receiptText += 'Subtotal'.padEnd(summaryLabelWidth) + subtotalStr.padStart(summaryValWidth) + '\n';
 
-            if (orderData.discount > 0) {
+            if (discountVal > 0) {
                 receiptText += 'Diskon'.padEnd(summaryLabelWidth) + ('-' + discountStr).padStart(summaryValWidth) + '\n';
-                receiptText += LINE;
-                const afterDiscount = subtotal - (orderData.discount || 0);
-                receiptText += 'Tot Stlh Diskon'.padEnd(summaryLabelWidth) + afterDiscount.toLocaleString('id-ID').padStart(summaryValWidth) + '\n';
-                receiptText += LINE;
             }
             
-            if (orderData.service_charge > 0) {
+            if (serviceVal > 0) {
                 const sRate = orderData.service_rate ? ` (${orderData.service_rate}%)` : '';
                 receiptText += ('Layanan' + sRate).padEnd(summaryLabelWidth) + serviceStr.padStart(summaryValWidth) + '\n';
             }
-            if (orderData.tax > 0) {
+            if (taxVal > 0) {
                 const tRate = orderData.tax_rate ? ` (${orderData.tax_rate}%)` : '';
                 receiptText += ('Pajak' + tRate).padEnd(summaryLabelWidth) + taxStr.padStart(summaryValWidth) + '\n';
             }
 
-            receiptText += BOLD_ON + 'TOTAL'.padEnd(summaryLabelWidth) + totalStr.padStart(summaryValWidth) + BOLD_OFF + '\n';
+            // TOTAL: BOLD + Double Height (Taller font, sync with web 0x01)
+            receiptText += BOLD_ON + DOUBLE_ON + 'TOTAL'.padEnd(summaryLabelWidth) + totalStr.padStart(summaryValWidth) + DOUBLE_OFF + BOLD_OFF + '\n';
             receiptText += LINE;
             
-            receiptText += (payment_method || 'Tunai').padEnd(summaryLabelWidth) + totalStr.padStart(summaryValWidth) + '\n';
-            receiptText += 'Kembali'.padEnd(summaryLabelWidth) + '0'.padStart(summaryValWidth) + '\n';
-            receiptText += CENTER + '-- v1.1 --\n';
+            const paidVal = orderData.paid_amount !== undefined ? Number(orderData.paid_amount) : totalVal;
+            const changeVal = orderData.change !== undefined ? Number(orderData.change) : 0;
+
+            receiptText += (payment_method || 'Tunai').padEnd(summaryLabelWidth) + paidVal.toLocaleString('id-ID').padStart(summaryValWidth) + '\n';
+            receiptText += 'Kembali'.padEnd(summaryLabelWidth) + changeVal.toLocaleString('id-ID').padStart(summaryValWidth) + '\n';
         }
         
         receiptText += LINE;
@@ -362,8 +426,8 @@ export class PrinterManager {
         if (displayWifiVoucher) {
             receiptText += CENTER;
             receiptText += displayWifiNotice + '\n';
-            // Use only BOLD for voucher code to ensure it fits on all paper widths
-            receiptText += BOLD_ON + displayWifiVoucher + BOLD_OFF + '\n';
+            // Use Double Height for voucher code to match web exactly
+            receiptText += BOLD_ON + DOUBLE_ON + displayWifiVoucher + DOUBLE_OFF + BOLD_OFF + '\n';
             receiptText += LINE;
         }
 
@@ -373,11 +437,16 @@ export class PrinterManager {
         if (!isPreview) {
             // Feed more lines (dynamic) and partial cut if supported
             // This ensures the bottom of the receipt is fully pushed out of the printer
-            const feedLines = orderData.receipt_footer_feed !== undefined ? Number(orderData.receipt_footer_feed) : 4;
+            const feedLines = orderData.receipt_footer_feed !== undefined ? Number(orderData.receipt_footer_feed) : 3;
             receiptText += '\n'.repeat(feedLines) + COMMANDS.PAPER.PAPER_FULL_CUT;
         }
         
         return receiptText;
+        } catch (e: any) {
+            console.error('[PrinterManager] Error in formatReceipt:', e);
+            if (e.stack) console.error('[PrinterManager] formatReceipt stack:', e.stack);
+            throw e;
+        }
     }
 
     static formatKitchenTicket(items: any[], orderData: any, targetName: string, settings: any = {}): string {
@@ -408,10 +477,12 @@ export class PrinterManager {
             'beer', 'bir', 'wine', 'cocktail', 'mocktail', 'smoothie', 'shake', 'milo', 
             'boba', 'thai tea', 'green tea', 'lemongrass', 'jeruk', 'lemon', 'alpukat', 'mangga', 
             'strawberry', 'jahe', 'madu', 'sirup', 'cendol', 'dawet', 'wedang', 'gembira', 'arak',
-            'espresso', 'latte', 'cappuccino', 'frappe', 'yakult', 'mojito', 'cincau', 'selasih'
+            'espresso', 'latte', 'cappuccino', 'frappe', 'yakult', 'mojito', 'cincau', 'selasih',
+            'melon', 'semangka', 'sirsak', 'kelapa', 'lemonade', 'soda gembira', 'teh botol',
+            'teh pucuk', 'aqua', 'ades', 'le minerale', 'pucuk harum', 'pop ice', 'nutrisari'
         ];
 
-        const targetItems = items.filter(item => {
+        const targetItems = (items || []).filter(item => {
             const itemTarget = (item.target || '').toLowerCase().trim();
             const nameLow = (item.name || '').toLowerCase();
             const categoryLow = (item.category || '').toLowerCase();
@@ -468,7 +539,7 @@ export class PrinterManager {
         const DOUBLE_OFF = COMMANDS.TEXT_FORMAT.TXT_NORMAL;
         const LINE = '--------------------------------\n';
 
-        let ticketText = COMMANDS.HARDWARE.HW_INIT;
+        let ticketText = '';
         ticketText += CENTER + BOLD_ON + DOUBLE_ON + `PESANAN ${targetName.toUpperCase()}` + DOUBLE_OFF + BOLD_OFF + '\n';
         ticketText += CENTER + `No: ${displayOrderNo}\n`;
 
@@ -476,7 +547,7 @@ export class PrinterManager {
             if (showTableLarge) {
                 ticketText += CENTER + BOLD_ON + DOUBLE_ON + `MEJA: ${displayTableNo}` + DOUBLE_OFF + BOLD_OFF + '\n';
             } else {
-                ticketText += CENTER + BOLD_ON + `Meja: ${displayTableNo}` + BOLD_OFF + '\n';
+                ticketText += CENTER + BOLD_ON + `MEJA: ${displayTableNo}` + BOLD_OFF + '\n';
             }
         }
 
@@ -498,11 +569,11 @@ export class PrinterManager {
             ticketText += '\n';
         });
 
-        ticketText += LINE;
-        if (showTime) ticketText += LEFT + `Waktu  : ${displayDate}\n`;
-        if (showWaiter && displayWaiter) ticketText += `Pelayan: ${displayWaiter}\n`;
-        if (showCashier && orderData?.cashier_name && orderData.cashier_name !== '-') ticketText += `Kasir  : ${orderData.cashier_name}\n`;
-        if (notes) ticketText += `Catatan Pesanan: ${notes}\n`;
+        ticketText += CENTER + LINE;
+        if (showTime) ticketText += CENTER + `Waktu: ${displayDate}\n`;
+        if (showWaiter && displayWaiter) ticketText += CENTER + `Pelayan: ${displayWaiter}\n`;
+        if (showCashier && orderData?.cashier_name && orderData.cashier_name !== '-') ticketText += CENTER + `Kasir: ${orderData.cashier_name}\n`;
+        if (notes) ticketText += CENTER + `Catatan: ${notes}\n`;
 
         const feedLines = orderData.receipt_footer_feed !== undefined ? Number(orderData.receipt_footer_feed) : 4;
         ticketText += '\n'.repeat(feedLines) + COMMANDS.PAPER.PAPER_FULL_CUT;
@@ -536,6 +607,18 @@ export class PrinterManager {
     static async printToTarget(items: any[], type: PrinterType, orderData: any) {
         if (!items || items.length === 0) return true;
 
+        // 1. Check LOCAL enabled status from this device (AsyncStorage)
+        try {
+            const localEnableKey = type === 'kitchen' ? 'enable_kitchen_printing' : 'enable_bar_printing';
+            const localEnabled = await AsyncStorage.getItem(localEnableKey);
+            if (localEnabled === 'false') {
+                console.log(`[PrinterManager] Local ${type} printing is DISABLED on this device. Skipping.`);
+                return true;
+            }
+        } catch (e) {
+            console.warn('[PrinterManager] Error checking local printer enablement:', e);
+        }
+
         let macAddress = await this.getSelectedPrinter(type);
         const settings = await this.getProductionSettings();
         const targetName = type === 'kitchen' ? 'Dapur' : (type === 'bar' ? 'Bar' : 'Kasir');
@@ -545,7 +628,7 @@ export class PrinterManager {
 
         if (!macAddress) {
             console.warn(`Printer ${type} not configured.`);
-            // Return false to indicate "skipping because not configured" but only if items were actually found
+            // Return false to indicate unconfigured status to UI
             return false; 
         }
 
@@ -556,8 +639,9 @@ export class PrinterManager {
             }
             
             await this.initPrinter();
-            const mac = macAddress.toUpperCase();
-            
+            const mac = macAddress?.toUpperCase() || '';
+            if (!mac) throw new Error('Printer address missing');
+             
             // Forced reconnect to ensure switching works between Kitchen/Bar/Cashier printers
             this.connectionStatus[mac] = 'connecting';
             await BLEPrinter.connectPrinter(mac);
@@ -573,14 +657,31 @@ export class PrinterManager {
     }
     
     static async printOrderReceipt(orderData: any) {
-        let macAddress = await this.getSelectedPrinter();
-        if (!macAddress) {
-            console.warn('Printer not selected. Skipping print.');
+        if (!orderData) {
+            console.error('[PrinterManager] printOrderReceipt: orderData is null/undefined');
             return false;
         }
 
+        // 1. Check LOCAL enabled status
+        try {
+            const isEnabled = await AsyncStorage.getItem('enable_receipt_printing');
+            if (isEnabled === 'false') {
+                console.log('[PrinterManager] Receipt printing is locally disabled. Skipping.');
+                return true;
+            }
+        } catch (e) {
+            console.warn('[PrinterManager] Error checking local receipt enablement:', e);
+        }
+        let macAddress = await this.getSelectedPrinter();
+        if (!macAddress) {
+            console.warn('Printer not selected. Skipping print.');
+            return true;
+        }
         macAddress = macAddress.toUpperCase();
-        const receiptText = this.formatReceipt(orderData);
+        console.log('[PrinterManager] printOrderReceipt: macAddress =', macAddress);
+        const hasLogo = !!(orderData.show_logo && orderData.receipt_logo_url);
+        const receiptText = this.formatReceipt(orderData, false, hasLogo);
+        console.log('[PrinterManager] printOrderReceipt: receiptText length =', receiptText?.length);
 
         try {
             if (isExpoGo) {
@@ -600,8 +701,28 @@ export class PrinterManager {
             await BLEPrinter.connectPrinter(macAddress);
             this.connectionStatus[macAddress] = 'connected';
             console.log('Bluetooth: Connected successfully!');
+            
+            // Wait for printer to be completely ready
+            await new Promise(resolve => setTimeout(resolve, 1500));
 
-            // 2. Then print
+            if (orderData.show_logo && orderData.receipt_logo_url) {
+                try {
+                    const imageData = await this.getBase64FromUrl(orderData.receipt_logo_url);
+                    
+                    if (imageData && imageData.length > 50) {
+                        await BLEPrinter.printImageBase64(imageData, {
+                            align: 'center',
+                            imageWidth: 200 
+                        });
+                        // Delay after image to allow processing
+                        await new Promise(resolve => setTimeout(resolve, 1200));
+                    }
+                } catch (imgError) {
+                    console.error('[PrinterManager] Logo Print Error:', imgError);
+                }
+            }
+
+            // 3. Then print text
             console.log('Bluetooth: Sending print job...');
             await BLEPrinter.printBill(receiptText);
             console.log('Bluetooth: Print job sent!');
@@ -629,7 +750,6 @@ export class PrinterManager {
         const LINE = '--------------------------------\n';
 
         const testText = 
-            COMMANDS.HARDWARE.HW_INIT +
             CENTER + BOLD_ON + `TEST PRINT ${targetLabel}` + BOLD_OFF + '\n' +
             CENTER + 'Pencetakan Berhasil\n' +
             CENTER + LINE +
@@ -637,7 +757,7 @@ export class PrinterManager {
             LEFT + this.padColumns('Printer:', 'Connected') + '\n' +
             CENTER + LINE +
             CENTER + new Date().toLocaleString('id-ID') + '\n' +
-            '\n\n\n\n' + COMMANDS.PAPER.PAPER_FULL_CUT;
+            '\n\n\n' + COMMANDS.PAPER.PAPER_FULL_CUT;
 
         try {
             if (isExpoGo) {

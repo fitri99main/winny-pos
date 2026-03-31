@@ -11,6 +11,7 @@ export default function KDSScreen() {
     const { initialFilter = 'All' } = (route.params as any) || {};
     const { width } = useWindowDimensions();
     const isSmallDevice = width < 380;
+    const { currentBranchId } = useSession();
 
     const [orders, setOrders] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -26,23 +27,59 @@ export default function KDSScreen() {
     }, []);
 
     useEffect(() => {
+        if (!currentBranchId) return;
+
         fetchActiveOrders();
 
-        const salesSub = supabase.channel('kds_sales')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, fetchActiveOrders)
-            .subscribe();
+        const branchIdInt = parseInt(currentBranchId);
+        const filterValue = isNaN(branchIdInt) ? currentBranchId : branchIdInt;
+        console.log('[KDSScreen] Subscribing to branch:', currentBranchId, '(Filter:', filterValue, ')');
 
-        const itemsSub = supabase.channel('kds_items')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'sale_items' }, fetchActiveOrders)
-            .subscribe();
+        const salesSub = supabase.channel(`kds_sales_${currentBranchId}`)
+            .on('postgres_changes', 
+                { event: '*', schema: 'public', table: 'sales' }, 
+                (payload) => {
+                    const newRow = payload.new as any;
+                    // Manual filter for branch_id
+                    if (newRow && String(newRow.branch_id) === String(currentBranchId)) {
+                        console.log('[KDSScreen] Sales change detected:', payload.eventType);
+                        fetchActiveOrders();
+                    } else if (payload.eventType === 'DELETE' || !payload.new) {
+                        fetchActiveOrders();
+                    }
+                }
+            );
+
+        salesSub.subscribe((status) => {
+            console.log(`[KDSScreen] Sales subscription status for branch ${currentBranchId}:`, status);
+            if (status === 'SUBSCRIBED') {
+                fetchActiveOrders();
+            }
+        });
+
+        const itemsSub = supabase.channel(`kds_items_${currentBranchId}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'sale_items' }, () => {
+                console.log('[KDSScreen] Item change detected');
+                fetchActiveOrders();
+            });
+
+        itemsSub.subscribe((status) => {
+            console.log(`[KDSScreen] Items subscription status for branch ${currentBranchId}:`, status);
+        });
+
+        // Polling fallback (60s as KDS is less critical for instant entry than POS but good to have)
+        const pollingInterval = setInterval(fetchActiveOrders, 60000);
 
         return () => {
-            salesSub.unsubscribe();
-            itemsSub.unsubscribe();
+            supabase.removeChannel(salesSub);
+            supabase.removeChannel(itemsSub);
+            clearInterval(pollingInterval);
         };
-    }, []);
+    }, [currentBranchId]);
 
     const fetchActiveOrders = async () => {
+        if (!currentBranchId) return;
+        
         try {
             // Fetch sales with items that are not yet completed
             const { data, error } = await supabase
@@ -51,6 +88,7 @@ export default function KDSScreen() {
                     *,
                     items:sale_items(*)
                 `)
+                .eq('branch_id', currentBranchId)
                 .in('status', ['Pending', 'Paid', 'Preparing', 'Ready'])
                 .order('date', { ascending: true });
 
@@ -74,6 +112,17 @@ export default function KDSScreen() {
     };
 
     const handleUpdateItemStatus = async (itemId: number, newStatus: string) => {
+        // Optimistic UI Update
+        const originalOrders = [...orders];
+        setOrders(prevOrders => 
+            prevOrders.map(order => ({
+                ...order,
+                items: (order.items || []).map((item: any) => 
+                    item.id === itemId ? { ...item, status: newStatus } : item
+                )
+            }))
+        );
+
         try {
             console.log('[KDS] Updating item:', itemId, 'to', newStatus);
             const { error } = await supabase
@@ -81,12 +130,16 @@ export default function KDSScreen() {
                 .update({ status: newStatus })
                 .eq('id', itemId);
 
-            if (error) throw error;
+            if (error) {
+                // Revert state on error
+                setOrders(originalOrders);
+                throw error;
+            }
             
-            // Re-fetch will be triggered by subscription
-        } catch (error) {
+            // Re-fetch will be triggered by subscription, but optimistic update keeps UI snappy
+        } catch (error: any) {
             console.error('Error updating item status:', error);
-            Alert.alert('Error', 'Gagal memperbarui status item');
+            Alert.alert('Gagal', 'Tidak bisa memperbarui status. Periksa koneksi internet Anda.');
         }
     };
 
@@ -98,33 +151,51 @@ export default function KDSScreen() {
     const confirmCompleteOrder = async () => {
         if (!selectedOrderId) return;
         
+        const originalOrders = [...orders];
+        const orderIdToComplete = selectedOrderId; // Local copy to avoid race conditions
+
+        // 1. Optimistic Update: Remove from UI immediately
+        setOrders(prev => prev.filter(o => o.id !== orderIdToComplete));
+        setShowCompleteModal(false);
+        
         try {
             setCompleting(true);
             
-            // Calculate waiting time (duration from created_at/date to now)
-            const order = orders.find(o => o.id === selectedOrderId);
+            // Calculate waiting time
+            const order = originalOrders.find(o => o.id === orderIdToComplete);
             let waitingTime = '';
             if (order) {
                 const start = new Date(order.created_at || order.date).getTime();
                 const diff = Date.now() - start;
                 const minutes = Math.floor(diff / 60000);
-                waitingTime = `${minutes} mnt`;
+                waitingTime = `${minutes} menit`;
             }
 
+            console.log('[KDS] Completing order:', orderIdToComplete);
+            
+            // Perform update with a timeout-like behavior or just standard await
             const { error } = await supabase
                 .from('sales')
                 .update({ 
                     status: 'Completed',
-                    waiting_time: waitingTime 
+                    waiting_time: waitingTime,
+                    // Ensure the update timestamp is recorded if needed
                 })
-                .eq('id', selectedOrderId);
+                .eq('id', orderIdToComplete);
 
-            if (error) throw error;
-            setShowCompleteModal(false);
+            if (error) {
+                // Revert state if error
+                setOrders(originalOrders);
+                throw error;
+            }
+            
+            console.log('[KDS] Order completed successfully:', orderIdToComplete);
             setSelectedOrderId(null);
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error completing order:', error);
-            Alert.alert('Error', 'Gagal menyelesaikan pesanan');
+            Alert.alert('Gagal', 'Gagal menyelesaikan pesanan. Silakan coba lagi.');
+            // Revert orders if not already done by error check above
+            setOrders(originalOrders);
         } finally {
             setCompleting(false);
         }
@@ -171,7 +242,7 @@ export default function KDSScreen() {
                     isSmallDevice && { marginBottom: 12 }
                 ]}>
                     {order.items.map((item: any, index: number) => (
-                        <View key={index} style={styles.itemRow}>
+                        <View key={item.id || index} style={styles.itemRow}>
                             <View style={styles.itemMain}>
                                 <View style={[
                                     styles.quantityBadge, 
@@ -240,7 +311,7 @@ export default function KDSScreen() {
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-                    <Text style={styles.backButtonText}>←</Text>
+                    <Text style={styles.backButtonText}>&lsaquo;</Text>
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Monitor Pesanan</Text>
             </View>
@@ -271,7 +342,7 @@ export default function KDSScreen() {
                 <FlatList
                     data={filteredOrders}
                     renderItem={renderOrderItem}
-                    keyExtractor={(item) => item.id.toString()}
+                    keyExtractor={(item, index) => (item?.id ?? index).toString()}
                     contentContainerStyle={[
                         styles.listContent,
                         isSmallDevice && { padding: 8 }
@@ -346,11 +417,20 @@ const styles = StyleSheet.create({
         borderBottomColor: '#e5e7eb',
     },
     backButton: {
-        marginRight: 16,
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: '#f1f5f9',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12,
     },
     backButtonText: {
-        fontSize: 24,
+        fontSize: 40,
+        lineHeight: 40,
         color: '#1f2937',
+        textAlign: 'center',
+        marginTop: -4,
     },
     headerTitle: {
         fontSize: 20,
@@ -484,15 +564,15 @@ const styles = StyleSheet.create({
         textDecorationLine: 'line-through',
     },
     readyButton: {
-        paddingVertical: 4,
-        paddingHorizontal: 8,
-        borderRadius: 6,
-        backgroundColor: '#f9fafb',
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        borderRadius: 10,
+        backgroundColor: '#fff7ed',
         borderWidth: 1,
-        borderColor: '#e5e7eb',
+        borderColor: '#fdba74',
     },
     readyButtonText: {
-        fontSize: 10,
+        fontSize: 12,
         fontWeight: 'bold',
         color: '#ea580c',
     },

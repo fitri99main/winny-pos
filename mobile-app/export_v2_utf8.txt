@@ -1,0 +1,291 @@
+﻿env: load .env
+env: export EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY
+Starting Metro Bundler
+node.exe : 
+SyntaxError: App.tsx: 
+C:\Users\USER\Download
+s\kejaan ayah\winny-ma
+in\mobile-app\App.tsx:
+ Use 
+process(css).then(cb) 
+to work with async 
+plugins
+At line:1 char:1
++ & "C:\Program Files\
+nodejs/node.exe" 
+"C:\Program 
+Files\nodejs/node_mo 
+...
++ ~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~
+    + CategoryInfo    
+          : NotSpeci  
+  fied: (SyntaxErro   
+ r: Ap...h async p    
+lugins:String) []    
+, RemoteException
+    + FullyQualifiedE 
+   rrorId : NativeCo  
+  mmandError
+ 
+Error: C:\Users\USER\D
+ownloads\kejaan ayah\w
+inny-main\mobile-app\A
+pp.tsx: Use 
+process(css).then(cb) 
+to work with async 
+plugins
+    at LazyResult.getA
+syncError (C:\Users\US
+ER\Downloads\kejaan ay
+ah\winny-main\mobile-a
+pp\node_modules\postcs
+s\lib\lazy-result.js:1
+74:11)
+    at 
+LazyResult.sync (C:\Us
+ers\USER\Downloads\kej
+aan ayah\winny-main\mo
+bile-app\node_modules\
+postcss\lib\lazy-resul
+t.js:369:20)
+    at 
+LazyResult.stringify (
+C:\Users\USER\Download
+s\kejaan ayah\winny-ma
+in\mobile-app\node_mod
+ules\postcss\lib\lazy-
+result.js:341:10)
+    at get css (C:\Use
+rs\USER\Downloads\keja
+an ayah\winny-main\mob
+ile-app\node_modules\p
+ostcss\lib\lazy-result
+.js:514:17)
+    at extractStyles (
+C:\Users\USER\Download
+s\kejaan ayah\winny-ma
+in\mobile-app\node_mod
+ules\nativewind\dist\p
+ostcss\extract-styles.
+js:32:54)
+    at 
+PluginPass.enter (C:\U
+sers\USER\Downloads\ke
+jaan ayah\winny-main\m
+obile-app\node_modules
+\nativewind\dist\babel
+\index.js:100:67)
+    at newFn (C:\Users
+\USER\Downloads\kejaan
+ ayah\winny-main\mobil
+e-app\node_modules\@ba
+bel\traverse\lib\visit
+ors.js:168:14)
+    at NodePath._call 
+(C:\Users\USER\Downloa
+ds\kejaan ayah\winny-m
+ain\mobile-app\node_mo
+dules\@babel\traverse\
+lib\path\context.js:50
+:20)
+    at NodePath.call (
+C:\Users\USER\Download
+s\kejaan ayah\winny-ma
+in\mobile-app\node_mod
+ules\@babel\traverse\l
+ib\path\context.js:40:
+18)
+    at NodePath.visit 
+(C:\Users\USER\Downloa
+ds\kejaan ayah\winny-m
+ain\mobile-app\node_mo
+dules\@babel\traverse\
+lib\path\context.js:87
+:31)
+    at TraversalContex
+t.visitQueue (C:\Users
+\USER\Downloads\kejaan
+ ayah\winny-main\mobil
+e-app\node_modules\@ba
+bel\traverse\lib\conte
+xt.js:96:16)
+    at TraversalContex
+t.visitSingle (C:\User
+s\USER\Downloads\kejaa
+n ayah\winny-main\mobi
+le-app\node_modules\@b
+abel\traverse\lib\cont
+ext.js:72:19)
+    at TraversalContex
+t.visit (C:\Users\USER
+\Downloads\kejaan ayah
+\winny-main\mobile-app
+\node_modules\@babel\t
+raverse\lib\context.js
+:119:19)
+    at traverseNode (C
+:\Users\USER\Downloads
+\kejaan ayah\winny-mai
+n\mobile-app\node_modu
+les\@babel\traverse\li
+b\traverse-node.js:130
+:17)
+    at traverse (C:\Us
+ers\USER\Downloads\kej
+aan ayah\winny-main\mo
+bile-app\node_modules\
+@babel\traverse\lib\in
+dex.js:53:34)
+    at transformFile (
+C:\Users\USER\Download
+s\kejaan ayah\winny-ma
+in\mobile-app\node_mod
+ules\@babel\core\lib\t
+ransformation\index.js
+:79:29)
+    at 
+transformFile.next 
+(<anonymous>)
+    at run (C:\Users\U
+SER\Downloads\kejaan a
+yah\winny-main\mobile-
+app\node_modules\@babe
+l\core\lib\transformat
+ion\index.js:25:12)
+    at run.next 
+(<anonymous>)
+    at transform (C:\U
+sers\USER\Downloads\ke
+jaan ayah\winny-main\m
+obile-app\node_modules
+\@babel\core\lib\trans
+form.js:22:33)
+    at transform.next 
+(<anonymous>)
+    at evaluateSync (C
+:\Users\USER\Downloads
+\kejaan ayah\winny-mai
+n\mobile-app\node_modu
+les\gensync\index.js:2
+51:28)
+    at sync (C:\Users\
+USER\Downloads\kejaan 
+ayah\winny-main\mobile
+-app\node_modules\gens
+ync\index.js:89:14)
+    at stopHiding - 
+secret - don't use 
+this - v1 (C:\Users\US
+ER\Downloads\kejaan ay
+ah\winny-main\mobile-a
+pp\node_modules\@babel
+\core\lib\errors\rewri
+te-stack-trace.js:47:1
+2)
+    at 
+Object.transformSync (
+C:\Users\USER\Download
+s\kejaan ayah\winny-ma
+in\mobile-app\node_mod
+ules\@babel\core\lib\t
+ransform.js:40:76)
+    at parseWithBabel 
+(C:\Users\USER\Downloa
+ds\kejaan ayah\winny-m
+ain\mobile-app\node_mo
+dules\@expo\metro-conf
+ig\build\transformSync
+.js:65:18)
+    at transformSync (
+C:\Users\USER\Download
+s\kejaan ayah\winny-ma
+in\mobile-app\node_mod
+ules\@expo\metro-confi
+g\build\transformSync.
+js:44:16)
+    at 
+Object.transform (C:\U
+sers\USER\Downloads\ke
+jaan ayah\winny-main\m
+obile-app\node_modules
+\@expo\metro-config\bu
+ild\babel-transformer.
+js:115:58)
+    at 
+transformJSWithBabel (
+C:\Users\USER\Download
+s\kejaan ayah\winny-ma
+in\mobile-app\node_mod
+ules\@expo\metro-confi
+g\build\transform-work
+er\metro-transform-wor
+ker.js:440:47)
+    at 
+Object.transform (C:\U
+sers\USER\Downloads\ke
+jaan ayah\winny-main\m
+obile-app\node_modules
+\@expo\metro-config\bu
+ild\transform-worker\m
+etro-transform-worker.
+js:549:12)
+    at 
+Object.transform (C:\U
+sers\USER\Downloads\ke
+jaan ayah\winny-main\m
+obile-app\node_modules
+\@expo\metro-config\bu
+ild\transform-worker\t
+ransform-worker.js:117
+:23)
+    at transformFile (
+C:\Users\USER\Download
+s\kejaan ayah\winny-ma
+in\mobile-app\node_mod
+ules\metro\src\DeltaBu
+ndler\Worker.flow.js:5
+4:36)
+    at 
+Object.transform (C:\U
+sers\USER\Downloads\ke
+jaan ayah\winny-main\m
+obile-app\node_modules
+\metro\src\DeltaBundle
+r\Worker.flow.js:30:10
+)
+    at execFunction (C
+:\Users\USER\Downloads
+\kejaan ayah\winny-mai
+n\mobile-app\node_modu
+les\jest-worker\build\
+workers\processChild.j
+s:149:17)
+    at execHelper (C:\
+Users\USER\Downloads\k
+ejaan ayah\winny-main\
+mobile-app\node_module
+s\jest-worker\build\wo
+rkers\processChild.js:
+137:5)
+    at execMethod (C:\
+Users\USER\Downloads\k
+ejaan ayah\winny-main\
+mobile-app\node_module
+s\jest-worker\build\wo
+rkers\processChild.js:
+140:5)
+    at process.message
+Listener (C:\Users\USE
+R\Downloads\kejaan aya
+h\winny-main\mobile-ap
+p\node_modules\jest-wo
+rker\build\workers\pro
+cessChild.js:44:7)
+    at process.emit 
+(node:events:508:28)
+    at emit (node:inte
+rnal/child_process:949
+:14)

@@ -18,7 +18,9 @@ import { Wifi, WifiOff } from 'lucide-react-native';
 import ReceiptPreviewModal from '../components/ReceiptPreviewModal';
 import ManagerAuthModal from '../components/ManagerAuthModal';
 import HoldNoteModal from '../components/HoldNoteModal';
-import ModernToast from '../components/ModernToast';const getAcronym = (name: string) => {
+import ModernToast from '../components/ModernToast';
+
+const getAcronym = (name: string) => {
     return name?.substring(0, 2).toUpperCase() || '??';
 };
 
@@ -27,7 +29,7 @@ const ProductCard = memo(({ item, isTablet, onAdd, formatCurrency }: any) => {
         <TouchableOpacity
             style={[
                 styles.productCard,
-                { width: '100%', padding: 0, borderRadius: isTablet ? 12 : 8, overflow: 'hidden', flex: 1, backgroundColor: '#f3f4f6' }
+                { width: '100%', margin: 0, borderRadius: isTablet ? 12 : 8, overflow: 'hidden', backgroundColor: '#f3f4f6', height: isTablet ? 150 : 100 }
             ]}
             onPress={() => onAdd(item)}
         >
@@ -47,13 +49,13 @@ const ProductCard = memo(({ item, isTablet, onAdd, formatCurrency }: any) => {
                 position: 'absolute', 
                 bottom: 0, 
                 width: '100%', 
-                backgroundColor: 'rgba(0, 0, 0, 0.55)', 
+                backgroundColor: 'rgba(0, 0, 0, 0.6)', 
                 paddingVertical: isTablet ? 6 : 4,
                 paddingHorizontal: 4,
                 alignItems: 'center'
             }}>
                 <Text style={{ 
-                    fontSize: isTablet ? 12 : 8.5, 
+                    fontSize: isTablet ? 12 : 9, 
                     color: 'white', 
                     textAlign: 'center', 
                     fontWeight: '600' 
@@ -61,7 +63,7 @@ const ProductCard = memo(({ item, isTablet, onAdd, formatCurrency }: any) => {
                     {item.name}
                 </Text>
                 <Text style={{ 
-                    fontSize: isTablet ? 11 : 8, 
+                    fontSize: isTablet ? 11 : 8.5, 
                     color: '#fdba74', 
                     fontWeight: 'bold',
                     marginTop: 1
@@ -101,6 +103,7 @@ export default function POSScreen() {
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [successModalConfig, setSuccessModalConfig] = useState({ title: 'Pesanan Terkirim!', message: 'Pesanan Anda telah masuk ke sistem kasir.' });
     const [lastOrderNo, setLastOrderNo] = useState('');
+    const [lastSaleId, setLastSaleId] = useState('');
     const [showCartModal, setShowCartModal] = useState(false);
     // const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [currentSaleId, setCurrentSaleId] = useState<number | null>(null);
@@ -140,8 +143,13 @@ export default function POSScreen() {
     const [splitItemsToPay, setSplitItemsToPay] = useState<any[]>([]);
     const [showReceiptPreview, setShowReceiptPreview] = useState(false);
     const [previewOrderData, setPreviewOrderData] = useState<any>(null);
+    const [isPrinting, setIsPrinting] = useState(false);
+    const [isPartialSplit, setIsPartialSplit] = useState(false);
     const [remoteOrders, setRemoteOrders] = useState<any[]>([]);
     const [isFetchingRemote, setIsFetchingRemote] = useState(false);
+    const lastFetchTime = React.useRef(0);
+    const fetchInProgress = React.useRef(false);
+    const fetchTimeoutRef = React.useRef<any>(null);
     const isFirstRender = React.useRef(true);
 
     // Manager Auth state
@@ -210,37 +218,53 @@ export default function POSScreen() {
         }
     }, [userName]);
 
+    const isActuallyDisplay = useMemo(() => {
+        return isDisplayOnly; // Session context version is usually sufficient
+    }, [isDisplayOnly]);
+
     // Countdown effect for success screen
     useEffect(() => {
         let timer: any;
         if (showSuccessModal) {
-            setCountdown(10); // Increase to 10s to give time for printing
+            // [UPDATED] If it's a partial split, we don't auto-navigate
+            // If it's final, we give 20 seconds. 
+            // BUT if it's display mode, we give only 2 seconds for fast reset.
+            const timeout = isActuallyDisplay ? 2 : 20;
+            setCountdown(isPartialSplit ? 999 : timeout); 
+            
             timer = setInterval(() => {
                 setCountdown((prev) => {
-                    if (prev <= 1) {
-                        clearInterval(timer);
-                        setShowSuccessModal(false);
-                        // @ts-ignore
-                        navigation.navigate('Main');
-                        return 0;
-                    }
-                    return prev - 1;
+                    // [UPDATED] Pause countdown if printing or if it's a partial split
+                    if (isPrinting || isPartialSplit) return prev;
+                    return prev > 0 ? prev - 1 : 0;
                 });
             }, 1000);
         }
         return () => {
             if (timer) clearInterval(timer);
         };
-    }, [showSuccessModal, navigation]);
+    }, [showSuccessModal, isPartialSplit, isPrinting]);
 
-    const [isPrinting, setIsPrinting] = useState(false);
+    // Navigate when countdown reaches zero
+    useEffect(() => {
+        if (showSuccessModal && !isPartialSplit && countdown === 0) {
+            setShowSuccessModal(false);
+            if (!isActuallyDisplay) {
+                // @ts-ignore
+                navigation.navigate('Main');
+            }
+        }
+    }, [countdown, showSuccessModal, isPartialSplit, navigation]);
+
+
+
 
     const handlePrintReceipt = async () => {
-        if (!lastOrderNo) return;
+        if (!lastSaleId && !lastOrderNo) return;
         
         setIsPrinting(true);
         try {
-            const orderData = await fetchOrderDataForReceipt(lastOrderNo);
+            const orderData = await fetchOrderDataForReceipt(lastSaleId || lastOrderNo);
             if (!orderData) throw new Error('Order not found');
 
             // 1. Print Main Receipt
@@ -252,7 +276,7 @@ export default function POSScreen() {
             await new Promise(resolve => setTimeout(resolve, 1500)); // Delay after main receipt
             const kitchenSuccess = await PrinterManager.printToTarget(orderData.items, 'kitchen', orderData);
             
-            await new Promise(resolve => setTimeout(resolve, 800)); // Delay between targets
+            await new Promise(resolve => setTimeout(resolve, 1500)); // Increased delay between targets
             const barSuccess = await PrinterManager.printToTarget(orderData.items, 'bar', orderData);
 
             if (success) {
@@ -277,10 +301,10 @@ export default function POSScreen() {
     };
 
     const handlePreviewReceipt = async () => {
-        if (!lastOrderNo) return;
+        if (!lastSaleId && !lastOrderNo) return;
         
         try {
-            const orderData = await fetchOrderDataForReceipt(lastOrderNo);
+            const orderData = await fetchOrderDataForReceipt(lastSaleId || lastOrderNo);
             if (orderData) {
                 setPreviewOrderData(orderData);
                 setShowReceiptPreview(true);
@@ -290,20 +314,45 @@ export default function POSScreen() {
         }
     };
 
-    const fetchOrderDataForReceipt = async (orderNo: string) => {
-        const { data: sale, error } = await supabase
+    const fetchOrderDataForReceipt = async (identifier: string) => {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
+        const isNumeric = /^\d+$/.test(identifier);
+        
+        const query = supabase
             .from('sales')
             .select(`
                 *,
                 sale_items (
                     *,
-                    product:product_id (name, category)
+                    product:product_id (name, category, is_taxed)
                 )
-            `)
-            .eq('order_no', orderNo)
-            .single();
+            `);
 
-        if (error) throw error;
+        if (isUuid || isNumeric) {
+            query.eq('id', identifier);
+        } else {
+            query.eq('order_no', identifier).order('created_at', { ascending: false }).limit(1);
+        }
+
+        const { data: sale, error } = await query.single();
+
+        if (error) {
+            // PGRST116 with 0 rows: try looking in OfflineService if it's an order_no search
+            if (!isUuid) {
+                const offlineSale = await OfflineService.getSaleByOrderNo(identifier);
+                if (offlineSale) {
+                    // Map OfflineSale to the expected format
+                    return {
+                        ...offlineSale,
+                        sale_items: offlineSale.items.map(item => ({
+                            ...item,
+                            product: { name: item.name } // Minimal product info suffices for receipt
+                        }))
+                    };
+                }
+            }
+            throw error;
+        }
 
         // Fetch customer tier separately to avoid join errors if FK not defined
         let customerTier = 'Regular';
@@ -321,14 +370,22 @@ export default function POSScreen() {
         // WiFi Voucher Fetching
         let wifiVoucher = null;
         const minAmount = storeSettings?.wifi_voucher_min_amount || 0;
+        const multiplier = storeSettings?.wifi_voucher_multiplier || 0;
         
         if (storeSettings?.enable_wifi_vouchers && sale.total_amount >= minAmount) {
             try {
-                wifiVoucher = await WifiVoucherService.getVoucherForSale(sale.id, currentBranchId || '1');
-                if (wifiVoucher) {
-                    console.log('[POSScreen] WiFi Voucher fetched successfully:', wifiVoucher);
-                } else {
-                    console.warn('[POSScreen] WiFi Voucher pool is EMPTY or fetch failed.');
+                let count = 1;
+                if (multiplier > 0) {
+                    count = Math.floor(sale.total_amount / multiplier);
+                }
+
+                if (count > 0) {
+                    wifiVoucher = await WifiVoucherService.getVoucherForSale(sale.id, currentBranchId || '1', count);
+                    if (wifiVoucher) {
+                        console.log('[POSScreen] WiFi Vouchers fetched successfully:', wifiVoucher);
+                    } else {
+                        console.warn('[POSScreen] WiFi Voucher pool is EMPTY or fetch failed.');
+                    }
                 }
             } catch (e) {
                 console.error('[POSScreen] Failed to fetch WiFi voucher:', e);
@@ -364,6 +421,8 @@ export default function POSScreen() {
             wifi_voucher: wifiVoucher,
             wifi_voucher_notice: storeSettings?.wifi_voucher_notice,
             payment_method: sale.payment_method,
+            paid_amount: sale.paid_amount,
+            change: sale.change,
             created_at: sale.date,
             shop_name: branchName,
             shop_phone: branchPhone,
@@ -372,7 +431,8 @@ export default function POSScreen() {
                 price: si.price,
                 quantity: si.quantity,
                 target: si.target || 'Kitchen',
-                category: si.product?.category || ''
+                category: si.product?.category || '',
+                is_taxed: si.is_taxed || false
             }))
         };
     };
@@ -491,9 +551,14 @@ export default function POSScreen() {
         };
     }, [currentBranchId, route.params?.orderId]);
 
-    const fetchRemotePendingOrders = async () => {
-        if (!currentBranchId || isDisplayOnly) return;
+    const fetchRemotePendingOrders = async (force: boolean = false) => {
+        if (!currentBranchId || isDisplayOnly || fetchInProgress.current) return;
+        
+        // Remove restrictive throttle to ensure orders are never missed.
+        // We still use fetchInProgress ref to prevent parallel overlapping calls.
+
         try {
+            fetchInProgress.current = true;
             setIsFetchingRemote(true);
             console.log('[POSScreen] Fetching remote pending orders...');
             const { data, error } = await supabase
@@ -501,7 +566,8 @@ export default function POSScreen() {
                 .select('*')
                 .eq('branch_id', currentBranchId)
                 .in('status', ['Pending', 'Unpaid'])
-                .order('date', { ascending: false });
+                .order('date', { ascending: false })
+                .limit(50);
 
             if (error) throw error;
             
@@ -519,10 +585,12 @@ export default function POSScreen() {
             }));
             
             setRemoteOrders(mappedOrders);
+            lastFetchTime.current = Date.now();
         } catch (err) {
             console.error('[POSScreen] Fetch Remote Orders Error:', err);
         } finally {
             setIsFetchingRemote(false);
+            fetchInProgress.current = false;
         }
     };
 
@@ -544,21 +612,28 @@ export default function POSScreen() {
                 (payload) => {
                     console.log('[POSScreen] Real-time sales change detected:', payload.eventType);
                     
-                    // Refresh the list for any change
-                    fetchRemotePendingOrders();
-
+                    // 1. Instant UI Feedback for new orders
                     if (payload.eventType === 'INSERT') {
                         const newOrder = payload.new as any;
                         if (newOrder.status === 'Pending' || newOrder.status === 'Unpaid') {
                             showToast(`Pesanan Baru: ${newOrder.order_no || newOrder.id} (Meja: ${newOrder.table_no || '-'})`, 'info');
                         }
                     }
+
+                    // 2. DEBOUNCED List Refresh: Wait 500ms of silence before fetching
+                    if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current);
+                    fetchTimeoutRef.current = setTimeout(() => {
+                        fetchRemotePendingOrders(true);
+                    }, 500);
                 }
             )
-            .subscribe();
+            .subscribe((status) => {
+                console.log(`[POSScreen] Sales subscription status for branch ${branchIdInt}: ${status}`);
+            });
 
         return () => {
             console.log('[POSScreen] Unsubscribing from real-time orders');
+            if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current);
             supabase.removeChannel(salesChannel);
         };
     }, [currentBranchId, isDisplayOnly]);
@@ -693,7 +768,7 @@ export default function POSScreen() {
     // Refresh remote orders when modal opens
     useEffect(() => {
         if (showHeldOrdersModal) {
-            fetchRemotePendingOrders();
+            fetchRemotePendingOrders(true);
         }
     }, [showHeldOrdersModal]);
 
@@ -703,7 +778,7 @@ export default function POSScreen() {
             const { data, error } = await supabase
                 .from('categories')
                 .select('name')
-                .order('name');
+                .order('sort_order');
 
             if (error) throw error;
 
@@ -733,8 +808,9 @@ export default function POSScreen() {
             // Speed optimization: Select only required columns instead of '*'
             const { data, error } = await supabase
                 .from('products')
-                .select('id, name, price, image_url, category, target, stock, is_taxed, branch_id')
-                .eq('branch_id', currentBranchId);
+                .select('id, name, price, image_url, category, target, stock, is_taxed, branch_id, sort_order')
+                .eq('branch_id', currentBranchId)
+                .order('sort_order', { ascending: true });
 
             if (error) throw error;
 
@@ -768,12 +844,6 @@ export default function POSScreen() {
         return result;
     }, [products, searchQuery, selectedCategory]);
 
-    const chunkedProducts = useMemo(() => {
-        const rows = 5;
-        return Array.from({ length: Math.ceil(filteredProducts.length / rows) }, (v, i) =>
-            filteredProducts.slice(i * rows, i * rows + rows)
-        );
-    }, [filteredProducts]);
 
     // Cart Total used in Apply Discount
 
@@ -883,28 +953,17 @@ export default function POSScreen() {
     };
 
     const calculateTaxAmount = () => {
-        const subtotal = calculateSubtotal();
-        if (subtotal === 0) return 0;
-        
         const taxableSubtotal = calculateTaxableSubtotal();
-        const discountRatio = (subtotal - orderDiscount) / subtotal;
-        const taxableAmount = taxableSubtotal * discountRatio;
         const taxRate = storeSettings?.tax_rate || 0;
         
-        return (taxableAmount * taxRate) / 100;
+        return (taxableSubtotal * taxRate) / 100;
     };
 
     const calculateServiceAmount = () => {
-        const subtotal = calculateSubtotal();
-        if (subtotal === 0) return 0;
-        
-        const taxableSubtotal = calculateTaxableSubtotal(); // Service charge usually follows taxable items or total? 
-        // Parity with Web: taxableAmount = taxableSubtotal * discountRatio; serviceAmount = (taxableAmount * serviceRate) / 100
-        const discountRatio = (subtotal - orderDiscount) / subtotal;
-        const taxableAmount = taxableSubtotal * discountRatio;
+        const taxableSubtotal = calculateTaxableSubtotal();
         const serviceRate = storeSettings?.service_rate || 0;
         
-        return (taxableAmount * serviceRate) / 100;
+        return (taxableSubtotal * serviceRate) / 100;
     };
 
     const calculateTotal = () => {
@@ -912,6 +971,50 @@ export default function POSScreen() {
         const tax = calculateTaxAmount();
         const service = calculateServiceAmount();
         return Math.max(0, (subtotal - orderDiscount) + tax + service);
+    };
+
+    const calculateActiveTotal = () => {
+        const { total } = calculateActiveBreakdown();
+        return total;
+    };
+
+    const calculateActiveBreakdown = () => {
+        if (!isSplitPayment) {
+            const subtotal = calculateSubtotal();
+            const tax = calculateTaxAmount();
+            const service = calculateServiceAmount();
+            const discount = orderDiscount;
+            const total = Math.max(0, (subtotal - discount) + tax + service);
+            return { subtotal, tax, serviceCharge: service, discount, total };
+        }
+        
+        const totalSubtotal = calculateSubtotal();
+        if (totalSubtotal <= 0) return { subtotal: 0, tax: 0, serviceCharge: 0, discount: 0, total: 0 };
+
+        const splitSubtotal = splitItemsToPay.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        
+        // Split Tax/Service based ONLY on split taxable items (independent of discount)
+        const splitTaxableSubtotal = splitItemsToPay.reduce((sum, item) => {
+            if (item.is_taxed === false) return sum;
+            return sum + (item.price * item.quantity);
+        }, 0);
+
+        const taxRate = storeSettings?.tax_rate || 0;
+        const serviceRate = storeSettings?.service_rate || 0;
+        
+        const splitTax = (splitTaxableSubtotal * taxRate) / 100;
+        const splitService = (splitTaxableSubtotal * serviceRate) / 100;
+        
+        const splitDiscount = orderDiscount * (splitSubtotal / totalSubtotal);
+        const splitTotal = Math.max(0, splitSubtotal - splitDiscount + splitTax + splitService);
+        
+        return { 
+            subtotal: splitSubtotal, 
+            tax: splitTax, 
+            serviceCharge: splitService, 
+            discount: splitDiscount, 
+            total: splitTotal 
+        };
     };
 
     // New POS Action Handlers
@@ -995,6 +1098,32 @@ export default function POSScreen() {
         setHeldOrders(prev => prev.filter(h => h.id !== id));
     };
 
+    // Helper for invoice numbering
+    const generateOrderNo = (online: boolean) => {
+        const mode = online ? storeSettings?.invoice_mode : (storeSettings?.offline_invoice_mode || 'auto');
+        const prefix = online ? (storeSettings?.invoice_prefix || 'INV') : (storeSettings?.offline_invoice_prefix || 'OFF');
+        const lastNumber = online ? (Number(storeSettings?.invoice_last_number) || 0) : (Number(storeSettings?.offline_invoice_last_number) || 0);
+
+        if (mode === 'auto') {
+            const nextNumber = lastNumber + 1;
+            const newNo = `${prefix}-${nextNumber.toString().padStart(4, '0')}`;
+            
+            if (online) {
+                supabase.from('store_settings').update({ invoice_last_number: nextNumber }).eq('id', 1).then(() => {
+                    console.log('[POSScreen] Online Counter Incremented');
+                });
+            } else {
+                supabase.from('store_settings').update({ offline_invoice_last_number: nextNumber }).eq('id', 1).then(() => {
+                    console.log('[POSScreen] Offline Counter Incremented');
+                });
+            }
+            return newNo;
+        } else {
+            const timestamp = Date.now().toString().slice(-6);
+            return `${prefix}-${new Date().getFullYear()}-${timestamp}`;
+        }
+    };
+
     const onSplitCommit = (selectedItems: any[]) => {
         setSplitItemsToPay(selectedItems);
         setIsSplitPayment(true);
@@ -1011,11 +1140,6 @@ export default function POSScreen() {
         });
 
         // Bypass session check if user is in display-only mode
-        // ADDED: Safety fallback check directly from metadata
-        const { data: { user } } = await supabase.auth.getUser();
-        const isActuallyDisplay = isDisplayOnly || 
-            (user?.user_metadata?.role || '').toLowerCase().includes('display');
-
         console.log('[POSScreen] Checkout Check:', { isSessionActive, cashierMode, isActuallyDisplay });
 
         if (!isSessionActive && cashierMode && !isActuallyDisplay && !isAdmin) {
@@ -1049,7 +1173,7 @@ export default function POSScreen() {
             
             if (existingSaleId) {
                 // Update Existing Sale
-                const { error: saleError } = await supabase
+                const { data: updatedSale, error: saleError } = await supabase
                     .from('sales')
                     .update({
                         customer_name: customerName,
@@ -1061,7 +1185,9 @@ export default function POSScreen() {
                         service_charge: calculateServiceAmount(),
                         date: new Date().toISOString()
                     })
-                    .eq('id', existingSaleId);
+                    .eq('id', existingSaleId)
+                    .select()
+                    .single();
 
                 if (saleError) throw saleError;
 
@@ -1076,12 +1202,15 @@ export default function POSScreen() {
                     price: item.price,
                     cost: 0,
                     target: item.target || 'Waitress',
-                    status: 'Pending'
+                    status: 'Pending',
+                    is_taxed: item.is_taxed || false
                 }));
 
                 const { error: itemsError } = await supabase.from('sale_items').insert(itemsToInsert);
                 if (itemsError) throw itemsError;
 
+                setLastOrderNo(updatedSale.order_no || '');
+                setLastSaleId(String(existingSaleId) || '');
                 setSuccessModalConfig({
                     title: 'Pesanan Terkirim!',
                     message: isActuallyDisplay ? 'Pesanan berhasil dikirim ke kasir' : 'Pesanan berhasil diperbarui'
@@ -1089,7 +1218,8 @@ export default function POSScreen() {
                 setShowSuccessModal(true);
             } else {
                 // Create New Sale
-                const orderNo = `INV-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+                const effectiveOnline = isOnline && !isManualOffline;
+                const orderNo = generateOrderNo(effectiveOnline); // Respect manual offline toggle
                 const { data: sale, error: saleError } = await supabase
                     .from('sales')
                     .insert([{
@@ -1120,13 +1250,15 @@ export default function POSScreen() {
                     price: item.price,
                     cost: 0,
                     target: item.target || 'Waitress',
-                    status: 'Pending'
+                    status: 'Pending',
+                    is_taxed: item.is_taxed || false
                 }));
 
                 const { error: itemsError } = await supabase.from('sale_items').insert(itemsToInsert);
                 if (itemsError) throw itemsError;
                 
                 setLastOrderNo(orderNo);
+                setLastSaleId(sale.id);
                 setCurrentSaleId(sale.id);
                 setSuccessModalConfig({
                     title: 'Pesanan Terkirim!',
@@ -1147,8 +1279,17 @@ export default function POSScreen() {
             // We'll queue it if it's not a business logic error
             if (!existingSaleId) {
                 const totalAmount = calculateTotal();
-                const orderNo = `OFF-INV-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+                // REGENERATED with Offline Prefix for fallback
+                const orderNo = (storeSettings?.offline_invoice_mode === 'auto') 
+                    ? `${storeSettings?.offline_invoice_prefix || 'OFF'}-${(Number(storeSettings?.offline_invoice_last_number) + 1).toString().padStart(4, '0')}`
+                    : `OFF-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
                 
+                // Increment offline counter in DB even if we are offline (it will be non-blocking)
+                if (storeSettings?.offline_invoice_mode === 'auto') {
+                    const nextNum = Number(storeSettings?.offline_invoice_last_number) + 1;
+                    supabase.from('store_settings').update({ offline_invoice_last_number: nextNum }).eq('id', 1).then(() => {});
+                }
+
                 const saleData = {
                     order_no: orderNo,
                     branch_id: currentBranchId,
@@ -1160,6 +1301,8 @@ export default function POSScreen() {
                     status: 'Pending',
                     payment_method: 'Tunai',
                     discount: orderDiscount,
+                    tax: calculateTaxAmount(),
+                    service_charge: calculateServiceAmount()
                 };
 
                 const success = await OfflineService.queueOfflineSale(saleData, cart);
@@ -1174,10 +1317,10 @@ export default function POSScreen() {
                     setShowCartModal(false);
                     return;
                 }
-            }
 
             Alert.alert('Error', 'Gagal memproses pesanan: ' + error.message);
         }
+    };
     };
 
     const handlePaymentConfirm = async (paymentData: { method: string; amount: number; change: number }) => {
@@ -1186,9 +1329,38 @@ export default function POSScreen() {
             return;
         }
         try {
-            const finalTotal = isSplitPayment 
-                ? splitItemsToPay.reduce((sum, item) => sum + (item.price * item.quantity), 0)
-                : calculateTotal();
+            // [FIXED] Proportional Calculation for Split Bill
+            let finalTotal = calculateTotal();
+            let currentDiscount = orderDiscount;
+            let currentTax = calculateTaxAmount();
+            let currentService = calculateServiceAmount();
+
+            if (isSplitPayment) {
+                const totalSubtotal = calculateSubtotal();
+                
+                if (totalSubtotal > 0) {
+                    const splitSubtotal = splitItemsToPay.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+                    const splitTaxableSubtotal = splitItemsToPay.reduce((sum, item) => {
+                        if (item.is_taxed === false) return sum;
+                        return sum + (item.price * item.quantity);
+                    }, 0);
+
+                    currentDiscount = orderDiscount * (splitSubtotal / totalSubtotal);
+                    
+                    const taxRate = storeSettings?.tax_rate || 0;
+                    const serviceRate = storeSettings?.service_rate || 0;
+                    
+                    currentTax = (splitTaxableSubtotal * taxRate) / 100;
+                    currentService = (splitTaxableSubtotal * serviceRate) / 100;
+                    
+                    finalTotal = splitSubtotal - currentDiscount + currentTax + currentService;
+                } else {
+                    finalTotal = 0;
+                    currentDiscount = 0;
+                    currentTax = 0;
+                    currentService = 0;
+                }
+            }
             
             const itemsToProc = isSplitPayment ? splitItemsToPay : cart;
 
@@ -1196,7 +1368,9 @@ export default function POSScreen() {
             let sale: any = null;
             let orderNoText = '';
 
-            if (existingSaleId) {
+            // [FIXED] If it's a split payment, ALWAYS create a NEW sale record.
+            // Only update the existingSaleId if it's a FINAL full payment (!isSplitPayment).
+            if (existingSaleId && !isSplitPayment) {
                 const { data: updatedSale, error: saleError } = await supabase
                     .from('sales')
                     .update({
@@ -1205,11 +1379,14 @@ export default function POSScreen() {
                         table_no: selectedTable || 'Tanpa Meja',
                         waiter_name: userName || selectedWaiter, // [UPDATED] Use current cashier name
                         total_amount: finalTotal,
-                        discount: isSplitPayment ? 0 : orderDiscount,
-                        tax: isSplitPayment ? 0 : calculateTaxAmount(),
-                        service_charge: isSplitPayment ? 0 : calculateServiceAmount(),
+                        discount: currentDiscount,
+                        tax: currentTax,
+                        service_charge: currentService,
+
                         status: 'Paid',
                         payment_method: paymentData.method,
+                        paid_amount: paymentData.amount,
+                        change: paymentData.change,
                         date: new Date().toISOString()
                     })
                     .eq('id', existingSaleId)
@@ -1224,29 +1401,81 @@ export default function POSScreen() {
                 const { error: deleteError } = await supabase.from('sale_items').delete().eq('sale_id', existingSaleId);
                 if (deleteError) console.warn('Failed to clear old items:', deleteError);
             } else {
-                orderNoText = `INV-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
-                const { data: newSale, error: saleError } = await supabase
-                    .from('sales')
-                    .insert([{
+                const effectiveOnline = isOnline && !isManualOffline;
+                orderNoText = generateOrderNo(effectiveOnline); // Attempt prefix based on manual toggle
+                try {
+                    const { data: newSale, error: saleError } = await supabase
+                        .from('sales')
+                        .insert([{
+                            order_no: orderNoText,
+                            branch_id: currentBranchId,
+                            customer_name: customerName,
+                            customer_id: selectedCustomerId,
+                            table_no: selectedTable || 'Tanpa Meja',
+                            waiter_name: userName || selectedWaiter,
+                            total_amount: finalTotal,
+                            discount: currentDiscount,
+                            tax: currentTax,
+                            service_charge: currentService,
+
+                            status: 'Paid',
+                            payment_method: paymentData.method,
+                            paid_amount: paymentData.amount,
+                            change: paymentData.change,
+                            date: new Date().toISOString()
+                        }])
+                        .select()
+                        .single();
+
+                    if (saleError) throw saleError;
+                    sale = newSale;
+                } catch (err) {
+                    console.log('[POSScreen] Online payment save failed, falling back to offline:', err);
+                    
+                    // REGENERATE with Offline Prefix for fallback
+                    orderNoText = (storeSettings?.offline_invoice_mode === 'auto')
+                        ? `${storeSettings?.offline_invoice_prefix || 'OFF'}-${(Number(storeSettings?.offline_invoice_last_number) + 1).toString().padStart(4, '0')}`
+                        : `OFF-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+                    
+                    // Increment offline counter in DB non-blocking
+                    if (storeSettings?.offline_invoice_mode === 'auto') {
+                        const nextNum = Number(storeSettings?.offline_invoice_last_number) + 1;
+                        supabase.from('store_settings').update({ offline_invoice_last_number: nextNum }).eq('id', 1).then(() => {});
+                    }
+
+                    const offlineSaleData = {
                         order_no: orderNoText,
                         branch_id: currentBranchId,
                         customer_name: customerName,
                         customer_id: selectedCustomerId,
                         table_no: selectedTable || 'Tanpa Meja',
-                        waiter_name: userName || selectedWaiter, // [UPDATED] Use current cashier name
+                        waiter_name: userName || selectedWaiter,
                         total_amount: finalTotal,
-                        discount: isSplitPayment ? 0 : orderDiscount,
-                        tax: isSplitPayment ? 0 : calculateTaxAmount(),
-                        service_charge: isSplitPayment ? 0 : calculateServiceAmount(),
+                        discount: currentDiscount,
+                        tax: currentTax,
+                        service_charge: currentService,
                         status: 'Paid',
                         payment_method: paymentData.method,
+                        paid_amount: paymentData.amount,
+                        change: paymentData.change,
                         date: new Date().toISOString()
-                    }])
-                    .select()
-                    .single();
+                    };
 
-                if (saleError) throw saleError;
-                sale = newSale;
+                    const success = await OfflineService.queueOfflineSale(offlineSaleData, itemsToProc);
+                    if (success) {
+                        setLastOrderNo(orderNoText);
+                        setLastSaleId(''); // No UUID for offline yet
+                        setSuccessModalConfig({
+                            title: 'Tersimpan Offline!',
+                            message: 'Pembayaran diterima dan disimpan lokal karena gangguan koneksi.'
+                        });
+                        setShowSuccessModal(true);
+                        clearCart();
+                        setShowPaymentModal(false);
+                        return; // Exit early as it's handled offline
+                    }
+                    throw err; // Rethrow if offline queuing also fails
+                }
             }
 
             // 2. Create Sale Items
@@ -1258,7 +1487,8 @@ export default function POSScreen() {
                 price: item.price,
                 cost: 0,
                 target: item.target || 'Waitress',
-                status: 'Pending'
+                status: 'Pending',
+                is_taxed: item.is_taxed || false
             }));
 
             const { error: itemsError } = await supabase
@@ -1284,15 +1514,69 @@ export default function POSScreen() {
                 setCart(newCart);
                 setIsSplitPayment(false);
                 setSplitItemsToPay([]);
-                Alert.alert('Sukses', 'Pembayaran sebagian berhasil');
+                
+                // [FIXED] If we are splitting an existing held order, 
+                // we must update the original record to remove the paid items.
+                if (existingSaleId) {
+                    try {
+                        // Calculate remaining totals
+                        const remSubtotal = newCart.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
+                        const totalSubtotal = calculateSubtotal(); 
+                        const remRatio = totalSubtotal > 0 ? remSubtotal / totalSubtotal : 0;
+                        
+                        const remDiscount = orderDiscount * remRatio;
+                        const remTax = calculateTaxAmount() * remRatio;
+                        const remService = calculateServiceAmount() * remRatio;
+                        const remTotal = Math.max(0, remSubtotal - remDiscount + remTax + remService);
+
+                        await supabase.from('sales').update({
+                            total_amount: remTotal,
+                            discount: remDiscount,
+                            tax: remTax,
+                            service_charge: remService,
+                            date: new Date().toISOString()
+                        }).eq('id', existingSaleId);
+
+                        // Update items for original sale
+                        await supabase.from('sale_items').delete().eq('sale_id', existingSaleId);
+                        const remItemsToInsert = newCart.map((item: any) => ({
+                            sale_id: existingSaleId,
+                            product_id: typeof item.id === 'string' && item.id.startsWith('manual') ? null : item.id,
+                            product_name: item.name,
+                            quantity: item.quantity,
+                            price: item.price,
+                            cost: 0,
+                            target: item.target || 'Waitress',
+                            status: 'Pending',
+                            is_taxed: item.is_taxed || false
+                        }));
+                        await supabase.from('sale_items').insert(remItemsToInsert);
+                        console.log('[POSScreen] Original held order updated successfully after split.');
+                    } catch (err) {
+                        console.error('[POSScreen] Failed to update original held order after split:', err);
+                    }
+                }
+
+                // [UPDATED] Show Success Modal for Partial Split
+                setLastOrderNo(orderNoText);
+                setLastSaleId(sale.id);
+                setCurrentSaleId(sale.id);
+                setIsPartialSplit(true);
+                setSuccessModalConfig({
+                    title: 'Pembayaran Sebagian Berhasil!',
+                    message: 'Silakan cetak struk untuk bagian ini jika diperlukan.'
+                });
+                setShowSuccessModal(true);
             } else {
                 // Clear Cart
                 clearCart();
                 setOrderDiscount(0);
                 setExistingSaleId(null);
+                setIsPartialSplit(false); // Ensure final mode
                 
 
                 setLastOrderNo(orderNoText);
+                setLastSaleId(sale.id);
                 setSuccessModalConfig({
                     title: 'Pembayaran Berhasil!',
                     message: 'Transaksi telah selesai dan pembayaran diterima.'
@@ -1317,7 +1601,7 @@ export default function POSScreen() {
             // Queue Payment Offline
             if (!isSplitPayment) {
                 const finalTotal = calculateTotal();
-                const orderNoText = `OFF-INV-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+                const orderNoText = generateOrderNo(false);
                 
                 const saleData = {
                     order_no: orderNoText,
@@ -1325,11 +1609,13 @@ export default function POSScreen() {
                     customer_name: customerName,
                     customer_id: selectedCustomerId,
                     table_no: selectedTable || 'Tanpa Meja',
-                    waiter_name: selectedWaiter,
+                    waiter_name: userName || selectedWaiter,
                     total_amount: finalTotal,
                     discount: orderDiscount,
                     status: 'Paid',
                     payment_method: paymentData.method,
+                    paid_amount: paymentData.amount,
+                    change: paymentData.change,
                 };
 
                 const success = await OfflineService.queueOfflineSale(saleData, cart);
@@ -1338,6 +1624,7 @@ export default function POSScreen() {
                     setOrderDiscount(0);
                     setExistingSaleId(null);
                     setLastOrderNo(orderNoText);
+                    setLastSaleId(''); // Manual offline has no UUID yet
                     setSuccessModalConfig({
                         title: 'Pembayaran Offline!',
                         message: 'Pembayaran disimpan di HP. Silakan sinkronisasi di Pengaturan setelah internet aktif.'
@@ -1348,7 +1635,6 @@ export default function POSScreen() {
                     return;
                 }
             }
-
         }
     };
 
@@ -1357,39 +1643,36 @@ export default function POSScreen() {
             <View style={styles.flex1}>
                 {/* Header */}
                 <View style={[styles.header, { paddingVertical: 2 }]}>
-                    <TouchableOpacity style={[styles.headerBackButton, { width: 32, height: 32 }]} onPress={() => navigation.goBack()}>
-                        <Text style={[styles.backButtonText, { fontSize: 20 }]}>&lsaquo;</Text>
+                    <TouchableOpacity style={[styles.headerBackButton, { width: 60, height: 60, borderRadius: 30, backgroundColor: '#f1f5f9', justifyContent: 'center', alignItems: 'center' }]} onPress={() => navigation.goBack()}>
+                        <Text style={[styles.backButtonText, { fontSize: 40, lineHeight: 40, textAlign: 'center', marginTop: -4 }]}>&lsaquo;</Text>
                     </TouchableOpacity>
                     <View style={styles.headerTitleContainer}>
                         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                             <Text style={[styles.headerTitleText, { fontSize: 14 }]}>{branchName}</Text>
-                            <View style={{ 
-                                flexDirection: 'row', 
-                                alignItems: 'center', 
-                                marginLeft: 8, 
-                                backgroundColor: isOnline ? '#22c55e15' : '#ef444415',
-                                paddingHorizontal: 6,
-                                paddingVertical: 1,
-                                borderRadius: 6,
-                                borderWidth: 0.5,
-                                borderColor: isOnline ? '#22c55e40' : '#ef444440'
-                            }}>
-                                <View style={{ 
-                                    width: 4, 
-                                    height: 4, 
-                                    borderRadius: 2, 
-                                    backgroundColor: isOnline ? '#22c55e' : '#ef4444',
-                                    marginRight: 4
-                                }} />
+                            <TouchableOpacity 
+                                onPress={() => setIsManualOffline(!isManualOffline)}
+                                style={{ 
+                                    flexDirection: 'row', 
+                                    alignItems: 'center', 
+                                    marginLeft: 8, 
+                                    backgroundColor: (isOnline && !isManualOffline) ? '#22c55e15' : '#ef444415',
+                                    paddingHorizontal: 8,
+                                    paddingVertical: 3,
+                                    borderRadius: 8,
+                                    borderWidth: 1,
+                                    borderColor: (isOnline && !isManualOffline) ? '#22c55e40' : '#ef444440'
+                                }}
+                            >
+                                {(isOnline && !isManualOffline) ? <Wifi size={10} color="#16a34a" style={{ marginRight: 4 }} /> : <WifiOff size={10} color="#dc2626" style={{ marginRight: 4 }} />}
                                 <Text style={{ 
-                                    fontSize: 8, 
-                                    fontWeight: '700', 
-                                    color: isOnline ? '#16a34a' : '#dc2626',
+                                    fontSize: 9, 
+                                    fontWeight: '800', 
+                                    color: (isOnline && !isManualOffline) ? '#16a34a' : '#dc2626',
                                     letterSpacing: 0.5
                                 }}>
-                                    {isManualOffline ? 'MANUAL OFFLINE' : (isOnline ? 'ONLINE' : 'OFFLINE')}
+                                    {isManualOffline ? 'OFFLINE (M)' : (isOnline ? 'ONLINE' : 'OFFLINE')}
                                 </Text>
-                            </View>
+                            </TouchableOpacity>
                         </View>
                     </View>
                     <TouchableOpacity 
@@ -1488,33 +1771,32 @@ export default function POSScreen() {
                         </View>
                     ) : (
                         <FlatList
-                            data={chunkedProducts}
-                            key={isTablet ? "tablet-horizontal" : "mobile-horizontal"}
-                            horizontal={true}
-                            showsHorizontalScrollIndicator={false}
-                            windowSize={3}
-                            initialNumToRender={8}
-                            maxToRenderPerBatch={5}
+                            data={filteredProducts}
+                            key={isTablet ? "tablet-vertical" : "mobile-vertical"}
+                            numColumns={isTablet ? 5 : 3}
+                            keyExtractor={(item) => item.id.toString()}
+                            showsVerticalScrollIndicator={true}
+                            windowSize={5}
+                            initialNumToRender={15}
+                            maxToRenderPerBatch={10}
                             removeClippedSubviews={true}
+                            columnWrapperStyle={{ 
+                                gap: isTablet ? 12 : 8,
+                                paddingHorizontal: isTablet ? 16 : 8,
+                                marginBottom: isTablet ? 12 : 8
+                            }}
                             contentContainerStyle={[
                                 styles.productListContent, 
-                                { padding: 4, paddingBottom: 16 },
-                                isTablet && { paddingHorizontal: 16 }
+                                { paddingBottom: 150 }
                             ]}
-                            renderItem={({ item: chunk, index }) => (
-                                <View key={`chunk-${index}`} style={{ width: isTablet ? 140 : 80, gap: isTablet ? 12 : 6, marginHorizontal: isTablet ? 8 : 3 }}>
-                                    {chunk.map((item: any) => (
-                                        <ProductCard 
-                                            key={item.id}
-                                            item={item} 
-                                            isTablet={isTablet} 
-                                            onAdd={addToCart} 
-                                            formatCurrency={formatCurrency}
-                                        />
-                                    ))}
-                                    {chunk.length < 5 && Array.from({ length: 5 - chunk.length }).map((_, i) => (
-                                        <View key={`empty-${i}`} style={{ flex: 1 }} />
-                                    ))}
+                            renderItem={({ item }) => (
+                                <View style={{ flex: 1 }}>
+                                    <ProductCard 
+                                        item={item} 
+                                        isTablet={isTablet} 
+                                        onAdd={addToCart} 
+                                        formatCurrency={formatCurrency}
+                                    />
                                 </View>
                             )}
                         />
@@ -1529,7 +1811,7 @@ export default function POSScreen() {
 
                 <PaymentModal
                     visible={showPaymentModal && !isDisplayOnly}
-                    total={calculateTotal()}
+                    {...calculateActiveBreakdown()}
                     paymentMethods={paymentMethods}
                     onClose={() => setShowPaymentModal(false)}
                     onConfirm={handlePaymentConfirm}
@@ -1710,11 +1992,19 @@ export default function POSScreen() {
                                     }}
                                     onPress={() => {
                                         setShowSuccessModal(false);
-                                        // @ts-ignore
-                                        navigation.navigate('Main');
+                                        if (!isPartialSplit) {
+                                            if (!isActuallyDisplay) {
+                                                // @ts-ignore
+                                                navigation.navigate('Main');
+                                            }
+                                        } else {
+                                            setIsPartialSplit(false);
+                                        }
                                     }}
                                 >
-                                    <Text style={{ color: '#22c55e', fontWeight: 'bold', fontSize: 16 }}>Kembali ke Utama</Text>
+                                    <Text style={{ color: '#22c55e', fontWeight: 'bold', fontSize: 16 }}>
+                                        {isPartialSplit ? 'Lanjut Sisa Pembayaran' : (isActuallyDisplay ? 'Pesan Baru Sekarang' : 'Kembali ke Utama')}
+                                    </Text>
                                 </TouchableOpacity>
                             </View>
                             <View style={{ 
@@ -1745,9 +2035,11 @@ export default function POSScreen() {
                                 </Text>
                             </View>
 
-                            <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 24 }}>
-                                Otomatis kembali dalam {countdown} detik.
-                            </Text>
+                            {!isPartialSplit && (
+                                <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 24 }}>
+                                    Otomatis kembali dalam {countdown} detik.
+                                </Text>
+                            )}
                         </View>
                     </SafeAreaView>
                 </Modal>
@@ -2078,7 +2370,10 @@ export default function POSScreen() {
                 <HeldOrdersModal
                     visible={showHeldOrdersModal}
                     onClose={() => setShowHeldOrdersModal(false)}
-                    orders={[...heldOrders, ...remoteOrders].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())}
+                    orders={useMemo(() => 
+                        [...heldOrders, ...remoteOrders].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+                        [heldOrders, remoteOrders]
+                    )}
                     onRestore={handleRestoreHeldOrder}
                     onDelete={handleDeleteHeldOrder}
                     onRefresh={fetchRemotePendingOrders}

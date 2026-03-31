@@ -1,0 +1,32 @@
+﻿env: load .env
+env: export EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY
+Starting Metro Bundler
+Web Bundled 51033ms index.js (2287 modules)
+Android Bundled 92845ms index.js (2647 modules)
+iOS Bundled 98109ms index.js (2648 modules)
+
+ΓÇ║ Assets (17):
+assets\cafe-bg.6f0bad0fc01a68a269ba9914c5029912.jpg (832 kB)
+assets\cafe-bg.jpg (832 kB)
+assets\logo.637ce6bcdfe705ab5f33cc9786ba576f.png (87 kB)
+assets\logo.png (87 kB)
+node_modules\@react-navigation\elements\lib\module\assets\back-icon-mask.5223c8d9b0d08b82a5670fb5f71faf78.png (913 B)
+node_modules\@react-navigation\elements\lib\module\assets\back-icon.35ba0eaec5a4f5ed12ca16fabeae451d.png (207 B)
+node_modules\@react-navigation\elements\src\assets\back-icon-mask.png (913 B)
+node_modules\@react-navigation\elements\src\assets\back-icon.png (10 variations | 338 B)
+
+ΓÇ║ web bundles (1):
+_expo/static/js/web/index-1878a480aa918feabf56a774cade24e8.js (3.4 MB)
+
+ΓÇ║ android bundles (1):
+_expo/static/js/android/index-782b7566161924dd59094e05ba78999d.hbc (5.04 MB)
+
+ΓÇ║ ios bundles (1):
+_expo/static/js/ios/index-8facfca721cc405193f3686f9c5d350f.hbc (5.03 MB)
+
+ΓÇ║ Files (3):
+favicon.ico (14.5 kB)
+index.html (1.22 kB)
+metadata.json (1.27 kB)
+
+Exported: dist

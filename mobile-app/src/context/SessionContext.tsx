@@ -6,7 +6,7 @@ interface SessionContextType {
     currentSession: any | null;
     isSessionActive: boolean;
     loading: boolean;
-    checkSession: () => Promise<void>;
+    checkSession: (showLoading?: boolean, force?: boolean) => Promise<void>;
     requireMandatorySession: boolean;
     storeSettings: any;
     permissions: string[];
@@ -41,7 +41,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const checkSession = async (showLoading = true, force = false) => {
         const now = Date.now();
         // Throttle rapid calls unless it's a forced full update
-        if (isCheckingRef.current || (now - lastCheckTimeRef.current < 2000 && !showLoading && !force)) return;
+        if (isCheckingRef.current || (now - lastCheckTimeRef.current < 2000 && !showLoading && !force)) {
+            console.log('[SessionContext] checkSession: Throttled or already checking');
+            return;
+        }
+        
+        // Failsafe timeout to prevent infinite loading screen
+        const failsafe = setTimeout(() => {
+            if (loading) {
+                console.warn('[SessionContext] checkSession: FAILSAFE TIMEOUT - Forcing loading off');
+                setLoading(false);
+            }
+        }, 8000); // 8 seconds failsafe for global session
         
         try {
             isCheckingRef.current = true;
@@ -133,9 +144,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             // 4. Update Session
             setCurrentSession(sessionRes.data);
             
-        } catch (error) {
-            console.error('[SessionContext] checkSession failed:', error);
+        } catch (error: any) {
+            console.error('[SessionContext] checkSession failed:', error?.message || error);
         } finally {
+            clearTimeout(failsafe);
             setLoading(false);
             isCheckingRef.current = false;
             console.log('[SessionContext] checkSession complete.');
@@ -236,25 +248,38 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         };
     }, []);
 
+    const contextValue = React.useMemo(() => ({
+        currentSession,
+        isSessionActive: !!currentSession,
+        loading,
+        checkSession,
+        requireMandatorySession,
+        storeSettings,
+        permissions,
+        isDisplayOnly,
+        isAdmin,
+        branchName,
+        branchAddress,
+        branchPhone,
+        userName,
+        currentBranchId
+    }), [
+        currentSession,
+        loading,
+        requireMandatorySession,
+        storeSettings,
+        permissions,
+        isDisplayOnly,
+        isAdmin,
+        branchName,
+        branchAddress,
+        branchPhone,
+        userName,
+        currentBranchId
+    ]);
+
     return (
-        <SessionContext.Provider
-            value={{
-                currentSession,
-                isSessionActive: !!currentSession,
-                loading,
-                checkSession,
-                requireMandatorySession,
-                storeSettings,
-                permissions,
-                isDisplayOnly,
-                isAdmin,
-                branchName,
-                branchAddress,
-                branchPhone,
-                userName,
-                currentBranchId
-            }}
-        >
+        <SessionContext.Provider value={contextValue}>
             {children}
         </SessionContext.Provider>
     );

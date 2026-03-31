@@ -5,6 +5,10 @@ interface PaymentModalProps {
     visible: boolean;
     onClose: () => void;
     total: number;
+    subtotal?: number;
+    tax?: number;
+    serviceCharge?: number;
+    discount?: number;
     onConfirm: (paymentData: {
         method: string;
         amount: number;
@@ -42,6 +46,10 @@ export default function PaymentModal({
     visible,
     onClose,
     total,
+    subtotal,
+    tax,
+    serviceCharge,
+    discount,
     onConfirm,
     onManualItem,
     onDiscount,
@@ -96,7 +104,7 @@ export default function PaymentModal({
     };
 
     const handleQuickAmount = (amount: number) => {
-        setPaidAmount(amount.toString());
+        setPaidAmount((amount || 0).toString());
     };
 
     const handleConfirm = () => {
@@ -143,11 +151,34 @@ export default function PaymentModal({
                     </View>
 
                     <ScrollView showsVerticalScrollIndicator={false}>
-                    {/* Total */}
                     <View style={[
                         styles.totalSection,
                         isSmallDevice && { padding: 12, margin: 12, marginBottom: 4 }
                     ]}>
+                        <View style={{ width: '100%', marginBottom: 12, borderBottomWidth: 1, borderBottomColor: '#e2e8f0', paddingBottom: 8 }}>
+                            <View style={styles.breakdownRow}>
+                                <Text style={styles.breakdownLabel}>Subtotal</Text>
+                                <Text style={styles.breakdownValue}>{formatCurrency(subtotal || 0)}</Text>
+                            </View>
+                            {(serviceCharge || 0) > 0 && (
+                                <View style={styles.breakdownRow}>
+                                    <Text style={styles.breakdownLabel}>Layanan</Text>
+                                    <Text style={styles.breakdownValue}>+{formatCurrency(serviceCharge || 0)}</Text>
+                                </View>
+                            )}
+                            {(tax || 0) > 0 && (
+                                <View style={styles.breakdownRow}>
+                                    <Text style={styles.breakdownLabel}>Pajak</Text>
+                                    <Text style={styles.breakdownValue}>+{formatCurrency(tax || 0)}</Text>
+                                </View>
+                            )}
+                            {(discount || 0) > 0 && (
+                                <View style={styles.breakdownRow}>
+                                    <Text style={styles.breakdownLabel}>Diskon</Text>
+                                    <Text style={[styles.breakdownValue, { color: '#ef4444' }]}>-{formatCurrency(discount || 0)}</Text>
+                                </View>
+                            )}
+                        </View>
                         <Text style={styles.totalLabel}>Total Pembayaran</Text>
                         <Text style={[
                             styles.totalAmount,
@@ -520,5 +551,20 @@ const styles = StyleSheet.create({
         fontSize: 13,
         color: '#dc2626',
         fontWeight: '600',
+    },
+    breakdownRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: 4,
+        width: '100%',
+    },
+    breakdownLabel: {
+        fontSize: 12,
+        color: '#64748b',
+    },
+    breakdownValue: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: '#1e293b',
     },
 });

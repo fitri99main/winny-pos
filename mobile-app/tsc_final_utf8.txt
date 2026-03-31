@@ -1,0 +1,7 @@
+﻿node_modules/@haroldtran/react-native-thermal-printer/src/index.tsx(308,83): error TS7006: Parameter 'error' implicitly has an 'any' type.
+node_modules/@haroldtran/react-native-thermal-printer/src/utils/EPToolkit.ts(111,53): error TS7053: Element implicitly has an 'any' type because expression of type '"encoding"' can't be used to index type '{ cut: Buffer<ArrayBuffer>; beep: Buffer<ArrayBuffer>; tailingLine: Buffer<ArrayBuffer>; }'.
+  Property 'encoding' does not exist on type '{ cut: Buffer<ArrayBuffer>; beep: Buffer<ArrayBuffer>; tailingLine: Buffer<ArrayBuffer>; }'.
+node_modules/@haroldtran/react-native-thermal-printer/src/utils/EPToolkit.ts(112,18): error TS7053: Element implicitly has an 'any' type because expression of type '"encoding"' can't be used to index type '{ cut: Buffer<ArrayBuffer>; beep: Buffer<ArrayBuffer>; tailingLine: Buffer<ArrayBuffer>; }'.
+  Property 'encoding' does not exist on type '{ cut: Buffer<ArrayBuffer>; beep: Buffer<ArrayBuffer>; tailingLine: Buffer<ArrayBuffer>; }'.
+node_modules/@haroldtran/react-native-thermal-printer/src/utils/net-connect.ts(1,18): error TS7016: Could not find a declaration file for module 'react-native-ping'. 'C:/Users/USER/Downloads/kejaan ayah/winny-main/mobile-app/node_modules/react-native-ping/index.js' implicitly has an 'any' type.
+  Try `npm i --save-dev @types/react-native-ping` if it exists or add a new declaration (.d.ts) file containing `declare module 'react-native-ping';`

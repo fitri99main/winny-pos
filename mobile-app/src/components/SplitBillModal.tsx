@@ -6,9 +6,18 @@ interface SplitBillModalProps {
     onClose: () => void;
     items: any[];
     onSplit: (selectedItems: any[]) => void;
+    orderDiscount?: number;
+    totalSubtotal?: number;
 }
 
-export default function SplitBillModal({ visible, onClose, items, onSplit }: SplitBillModalProps) {
+export default function SplitBillModal({ 
+    visible, 
+    onClose, 
+    items, 
+    onSplit,
+    orderDiscount = 0,
+    totalSubtotal = 0
+}: SplitBillModalProps) {
     const [selectedQuantities, setSelectedQuantities] = useState<Record<string, number>>({});
 
     useEffect(() => {
@@ -24,10 +33,14 @@ export default function SplitBillModal({ visible, onClose, items, onSplit }: Spl
     };
 
     const getSplitItems = () => {
+        const ratio = totalSubtotal > 0 ? (totalSubtotal - orderDiscount) / totalSubtotal : 1;
         return items
             .filter(item => selectedQuantities[item.id] > 0)
             .map(item => ({
                 ...item,
+                original_price: item.price,
+                // Proportional discounted price
+                price: Math.round(item.price * ratio),
                 quantity: selectedQuantities[item.id]
             }));
     };
@@ -56,7 +69,18 @@ export default function SplitBillModal({ visible, onClose, items, onSplit }: Spl
                             <View key={item.id} style={styles.itemRow}>
                                 <View style={styles.itemInfo}>
                                     <Text style={styles.itemName}>{item.name}</Text>
-                                    <Text style={styles.itemPrice}>{formatCurrency(item.price)} (Tersedia: {item.quantity})</Text>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                        {/* Original Price (Strikethrough if discounted) */}
+                                        {orderDiscount > 0 ? (
+                                            <Text style={[styles.itemPrice, { textDecorationLine: 'line-through', opacity: 0.6 }]}>
+                                                {formatCurrency(item.price)}
+                                            </Text>
+                                        ) : null}
+                                        <Text style={styles.itemPrice}>
+                                            {formatCurrency(Math.round(item.price * (totalSubtotal > 0 ? (totalSubtotal - orderDiscount) / totalSubtotal : 1)))}
+                                        </Text>
+                                        <Text style={{ fontSize: 10, color: '#94a3b8' }}>(Tersedia: {item.quantity})</Text>
+                                    </View>
                                 </View>
                                 <View style={styles.controls}>
                                     <TouchableOpacity 

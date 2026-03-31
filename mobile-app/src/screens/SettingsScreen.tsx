@@ -37,21 +37,66 @@ import {
 } from 'lucide-react-native';
 import { OfflineService } from '../lib/OfflineService';
 
+const SettingItem = React.memo(({ icon: Icon, label, subtitle, value, onToggle, onPress, type = 'navigate', isSmallDevice }: any) => (
+    <TouchableOpacity 
+        style={[
+            styles.settingItem,
+            isSmallDevice && { padding: 10 }
+        ]} 
+        onPress={onPress} 
+        disabled={type === 'switch'}
+        activeOpacity={0.6}
+    >
+        <View style={[
+            styles.settingIconContainer,
+            isSmallDevice && { width: 34, height: 34, borderRadius: 10 }
+        ]}>
+            <Icon size={isSmallDevice ? 18 : 20} color="#6b7280" />
+        </View>
+        <View style={styles.settingContent}>
+            <Text style={[
+                styles.settingLabel,
+                isSmallDevice && { fontSize: 13 }
+            ]}>{label}</Text>
+            {subtitle ? <Text style={[
+                styles.settingSubtitleText,
+                isSmallDevice && { fontSize: 11 }
+            ]}>{subtitle}</Text> : null}
+        </View>
+        {type === 'switch' ? (
+            <Switch 
+                value={value} 
+                onValueChange={onToggle}
+                trackColor={{ false: '#e5e7eb', true: '#fb923c' }}
+                thumbColor={value ? '#fff' : '#fff'}
+                ios_backgroundColor="#e5e7eb"
+                style={isSmallDevice ? { transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] } : undefined}
+            />
+        ) : (
+            <ChevronRight size={isSmallDevice ? 16 : 18} color="#d1d5db" />
+        )}
+    </TouchableOpacity>
+));
+
 export default function SettingsScreen() {
     const navigation = useNavigation();
     const { width } = useWindowDimensions();
     const isSmallDevice = width < 380;
     const [posFlow, setPosFlow] = React.useState<'table' | 'direct'>('table');
     const [cashierMode, setCashierMode] = React.useState<boolean>(false);
-    const [loading, setLoading] = React.useState(true);
+    const [loading, setLoading] = React.useState(false); // DEFAULT TO FALSE FOR INSTANT OPEN
+    const loadingRef = React.useRef(true);
+    
+    // Add effect to sync ref with state
+    React.useEffect(() => {
+        loadingRef.current = loading;
+    }, [loading]);
     const [isScanning, setIsScanning] = React.useState(false);
     const [discoveredDevices, setDiscoveredDevices] = React.useState<Device[]>([]);
-    const [selectedPrinter, setSelectedPrinter] = React.useState<string | null>(null);
-    const [selectedKitchenPrinter, setSelectedKitchenPrinter] = React.useState<string | null>(null);
-    const [selectedBarPrinter, setSelectedBarPrinter] = React.useState<string | null>(null);
+    const [selectedPrinters, setSelectedPrinters] = React.useState<{receipt: string | null, kitchen: string | null, bar: string | null}>({ receipt: null, kitchen: null, bar: null });
     const [configuringPrinterType, setConfiguringPrinterType] = React.useState<'receipt' | 'kitchen' | 'bar'>('receipt');
     const [autoPrint, setAutoPrint] = React.useState<boolean>(false);
-    const { currentSession, isSessionActive, checkSession, requireMandatorySession, permissions, currentBranchId } = useSession();
+    const { currentSession, isSessionActive, checkSession, requireMandatorySession, permissions, currentBranchId, storeSettings: sessionSettings } = useSession();
     const [showSessionModal, setShowSessionModal] = React.useState(false);
     const [sessionMode, setSessionMode] = React.useState<'open' | 'close'>('open');
     const [showLogoutModal, setShowLogoutModal] = React.useState(false);
@@ -69,6 +114,9 @@ export default function SettingsScreen() {
         doubleHeightItems: true
     });
     const [printerStatus, setPrinterStatus] = React.useState<Record<string, 'connected' | 'disconnected' | 'connecting'>>({});
+    const [enableReceipt, setEnableReceipt] = React.useState<boolean>(true);
+    const [enableKitchen, setEnableKitchen] = React.useState<boolean>(true);
+    const [enableBar, setEnableBar] = React.useState<boolean>(true);
 
     const [fullSettings, setFullSettings] = React.useState<any>(null);
     const [toast, setToast] = React.useState<{ visible: boolean; message: string; submessage?: string; type: 'success' | 'info' | 'error' }>({ visible: false, message: '', type: 'success' });
@@ -112,76 +160,134 @@ export default function SettingsScreen() {
 
     const loadSettings = async () => {
         try {
-            const { data: settings, error } = await supabase
-                .from('store_settings')
-                .select('*')
-                .eq('id', 1)
-                .maybeSingle();
+            console.log('[SettingsScreen] loadSettings: START');
+            
+            // Failsafe timeout
+            const failsafeTimeout = setTimeout(() => {
+                if (loadingRef.current) {
+                    console.warn('[SettingsScreen] loadSettings: FAILSAFE');
+                    setLoading(false);
+                }
+            }, 5000);
 
-            if (!error && settings) {
-                setFullSettings(settings);
-                const syncedFlow = settings.enable_table_management ? 'table' : 'direct';
-                setPosFlow(syncedFlow);
-                await AsyncStorage.setItem('pos_flow', syncedFlow);
-                if (settings.preparation_duration_minutes != null) {
-                    setPreparationDuration(settings.preparation_duration_minutes);
+            // 1. Critical Settings from Session or Supabase
+            if (sessionSettings) {
+                setFullSettings(sessionSettings);
+                setPosFlow(sessionSettings.enable_table_management ? 'table' : 'direct');
+                if (sessionSettings.preparation_duration_minutes != null) {
+                    setPreparationDuration(sessionSettings.preparation_duration_minutes);
+                }
+            } else {
+                // Fallback fetch only if session context somehow missed it
+                const { data } = await supabase.from('store_settings').select('*').eq('id', 1).maybeSingle();
+                if (data) {
+                    setFullSettings(data);
+                    setPosFlow(data.enable_table_management ? 'table' : 'direct');
                 }
             }
 
-            const savedFlow = await AsyncStorage.getItem('pos_flow');
-            if (savedFlow) setPosFlow(savedFlow as 'table' | 'direct');
-
-            const savedCashierMode = await AsyncStorage.getItem('cashier_mode');
-            if (savedCashierMode !== null) setCashierMode(savedCashierMode === 'true');
-
-            const [savedPrinter, savedKitchen, savedBar] = await Promise.all([
-                PrinterManager.getSelectedPrinter('receipt'),
-                PrinterManager.getSelectedPrinter('kitchen'),
-                PrinterManager.getSelectedPrinter('bar')
+            // 2. Parallelize ALL remaining local storage and printer status fetches
+            // This is the key optimization: no more sequential awaits
+            const [
+                savedFlow, 
+                savedCashMode, 
+                savedPrinters, 
+                isForced, 
+                savedAutoPrint, 
+                savedProdSettings,
+                savedEnableReceipt,
+                savedEnableKitchen,
+                savedEnableBar
+            ] = await Promise.all([
+                AsyncStorage.getItem('pos_flow'),
+                AsyncStorage.getItem('cashier_mode'),
+                Promise.all([
+                    PrinterManager.getSelectedPrinter('receipt').catch(() => null),
+                    PrinterManager.getSelectedPrinter('kitchen').catch(() => null),
+                    PrinterManager.getSelectedPrinter('bar').catch(() => null)
+                ]),
+                OfflineService.getForcedOfflineMode().catch(() => false),
+                AsyncStorage.getItem('auto_print').catch(() => 'true'),
+                AsyncStorage.getItem('production_settings').catch(() => null),
+                AsyncStorage.getItem('enable_receipt_printing').catch(() => 'true'),
+                AsyncStorage.getItem('enable_kitchen_printing').catch(() => 'true'),
+                AsyncStorage.getItem('enable_bar_printing').catch(() => 'true')
             ]);
-            setSelectedPrinter(savedPrinter);
-            setSelectedKitchenPrinter(savedKitchen);
-            setSelectedBarPrinter(savedBar);
-
-            const isForced = await OfflineService.getForcedOfflineMode();
-            setForcedOffline(isForced);
-
-            const savedAutoPrint = await AsyncStorage.getItem('auto_print');
+ 
+            // Apply results
+            // Apply results in one go to minimize re-renders
+            if (savedFlow) setPosFlow(savedFlow as any);
+            if (savedCashMode !== null) setCashierMode(savedCashMode === 'true');
+            setSelectedPrinters({
+                receipt: savedPrinters[0],
+                kitchen: savedPrinters[1],
+                bar: savedPrinters[2]
+            });
+            setForcedOffline(!!isForced);
             setAutoPrint(savedAutoPrint === 'true');
+            if (savedProdSettings) setProductionSettings(JSON.parse(savedProdSettings));
 
-            const savedProdSettings = await AsyncStorage.getItem('production_settings');
-            if (savedProdSettings) {
-                setProductionSettings(JSON.parse(savedProdSettings));
+            if (sessionSettings) {
+                setFullSettings(sessionSettings);
             }
+
+            setEnableReceipt(savedEnableReceipt !== 'false');
+            setEnableKitchen(savedEnableKitchen !== 'false');
+            setEnableBar(savedEnableBar !== 'false');
+
+            // EXIT CRITICAL LOADING ASAP
+            setLoading(false);
+            clearTimeout(failsafeTimeout);
+            console.log('[SettingsScreen] loadSettings: CRITICAL DONE');
+
+            // 3. Background/Non-blocking fetches
+            loadOfflineCount();
+            
         } catch (e) {
-            console.error('Error loading settings:', e);
-        } finally {
+            console.error('[SettingsScreen] loadSettings Error:', e);
             setLoading(false);
         }
     };
 
     const updatePrinterStatuses = React.useCallback(async () => {
         const statuses: Record<string, any> = {};
-        if (selectedPrinter) statuses[selectedPrinter] = PrinterManager.getConnectionStatus(selectedPrinter);
-        if (selectedKitchenPrinter) statuses[selectedKitchenPrinter] = PrinterManager.getConnectionStatus(selectedKitchenPrinter);
-        if (selectedBarPrinter) statuses[selectedBarPrinter] = PrinterManager.getConnectionStatus(selectedBarPrinter);
+        const { receipt, kitchen, bar } = selectedPrinters;
+        if (receipt) statuses[receipt] = PrinterManager.getConnectionStatus(receipt);
+        if (kitchen) statuses[kitchen] = PrinterManager.getConnectionStatus(kitchen);
+        if (bar) statuses[bar] = PrinterManager.getConnectionStatus(bar);
         setPrinterStatus(statuses);
-    }, [selectedPrinter, selectedKitchenPrinter, selectedBarPrinter]);
+    }, [selectedPrinters]);
 
     React.useEffect(() => {
         updatePrinterStatuses();
         const interval = setInterval(updatePrinterStatuses, 5000);
-        
-        // Auto-reconnect to saved printers on mount
-        const autoReconnect = async () => {
-            if (selectedPrinter) PrinterManager.checkConnection(selectedPrinter);
-            if (selectedKitchenPrinter) PrinterManager.checkConnection(selectedKitchenPrinter);
-            if (selectedBarPrinter) PrinterManager.checkConnection(selectedBarPrinter);
-        };
-        autoReconnect();
-        
         return () => clearInterval(interval);
-    }, [updatePrinterStatuses, selectedPrinter, selectedKitchenPrinter, selectedBarPrinter]);
+    }, [updatePrinterStatuses]);
+
+    // Independent effect for initial component stabilization (NO AUTO-CONNECT)
+    React.useEffect(() => {
+        console.log('[SettingsScreen] Component stabilized - Auto-Connect DISABLED for stability');
+    }, []);
+
+    const handleRefreshAllPrinters = async () => {
+        const { receipt, kitchen, bar } = selectedPrinters;
+        if (!receipt && !kitchen && !bar) {
+            showToast('Tidak ada printer', 'Tambahkan printer terlebih dahulu', 'info');
+            return;
+        }
+
+        showToast('Memperbarui Status...', 'Sedang mengecek koneksi printer', 'info');
+        
+        // Use Promise.all with individual timeouts or catch to keep UI alive
+        await Promise.allSettled([
+            receipt ? PrinterManager.checkConnection(receipt) : Promise.resolve(),
+            kitchen ? PrinterManager.checkConnection(kitchen) : Promise.resolve(),
+            bar ? PrinterManager.checkConnection(bar) : Promise.resolve()
+        ]);
+        
+        updatePrinterStatuses();
+        showToast('Selesai', 'Status printer telah diperbarui', 'success');
+    };
 
     const handleReconnect = async (mac: string) => {
         const success = await PrinterManager.checkConnection(mac);
@@ -232,9 +338,12 @@ export default function SettingsScreen() {
         try {
             await PrinterManager.saveSelectedPrinter(device.id, configuringPrinterType);
             
-            if (configuringPrinterType === 'receipt') setSelectedPrinter(device.id);
-            else if (configuringPrinterType === 'kitchen') setSelectedKitchenPrinter(device.id);
-            else if (configuringPrinterType === 'bar') setSelectedBarPrinter(device.id);
+            setSelectedPrinters(prev => {
+                if (configuringPrinterType === 'receipt') return { ...prev, receipt: device.id };
+                if (configuringPrinterType === 'kitchen') return { ...prev, kitchen: device.id };
+                if (configuringPrinterType === 'bar') return { ...prev, bar: device.id };
+                return prev;
+            });
             
             setDiscoveredDevices([]);
             const typeLabel = configuringPrinterType === 'receipt' ? 'Kasir' : configuringPrinterType === 'kitchen' ? 'Dapur' : 'Bar';
@@ -276,14 +385,40 @@ export default function SettingsScreen() {
                     style: "destructive",
                     onPress: async () => {
                         await PrinterManager.forgetSelectedPrinter(type);
-                        if (type === 'receipt') setSelectedPrinter(null);
-                        else if (type === 'kitchen') setSelectedKitchenPrinter(null);
-                        else if (type === 'bar') setSelectedBarPrinter(null);
+                        setSelectedPrinters(prev => {
+                            if (type === 'receipt') return { ...prev, receipt: null };
+                            if (type === 'kitchen') return { ...prev, kitchen: null };
+                            if (type === 'bar') return { ...prev, bar: null };
+                            return prev;
+                        });
                         Alert.alert('Sukses', 'Printer berhasil dihapus.');
                     }
                 }
             ]
         );
+    };
+
+    const togglePrinterEnable = async (type: 'receipt' | 'kitchen' | 'bar', value: boolean) => {
+        try {
+            if (type === 'receipt') {
+                setEnableReceipt(value);
+                await AsyncStorage.setItem('enable_receipt_printing', value.toString());
+            } else if (type === 'kitchen') {
+                setEnableKitchen(value);
+                await AsyncStorage.setItem('enable_kitchen_printing', value.toString());
+            } else if (type === 'bar') {
+                setEnableBar(value);
+                await AsyncStorage.setItem('enable_bar_printing', value.toString());
+            }
+            
+            showToast(
+                `Printer ${type === 'receipt' ? 'Kasir' : type === 'kitchen' ? 'Dapur' : 'Bar'} ${value ? 'Aktif' : 'Nonaktif'}`,
+                value ? 'Siap digunakan' : 'Cetak akan dilewati secara otomatis',
+                'info'
+            );
+        } catch (e) {
+            console.error('Error toggling printer:', e);
+        }
     };
 
 
@@ -402,54 +537,30 @@ export default function SettingsScreen() {
         );
     };
 
+    // Remove full-screen loading block to ensure "Instant Open"
+    /*
     if (loading) {
         return (
-            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', gap: 20 }]}>
                 <ActivityIndicator size="large" color="#ea580c" />
+                <Text style={{ color: '#64748b' }}>Memuat Pengaturan...</Text>
+                <TouchableOpacity 
+                    onPress={() => navigation.goBack()}
+                    style={{ 
+                        marginTop: 40,
+                        paddingVertical: 10,
+                        paddingHorizontal: 20,
+                        borderRadius: 12,
+                        backgroundColor: '#f1f5f9'
+                    }}
+                >
+                    <Text style={{ color: '#64748b', fontWeight: 'bold' }}>Batal / Kembali</Text>
+                </TouchableOpacity>
             </View>
         );
     }
+    */
 
-    const SettingItem = ({ icon: Icon, label, subtitle, value, onToggle, onPress, type = 'navigate' }: any) => (
-        <TouchableOpacity 
-            style={[
-                styles.settingItem,
-                isSmallDevice && { padding: 10 }
-            ]} 
-            onPress={onPress} 
-            disabled={type === 'switch'}
-            activeOpacity={0.6}
-        >
-            <View style={[
-                styles.settingIconContainer,
-                isSmallDevice && { width: 34, height: 34, borderRadius: 10 }
-            ]}>
-                <Icon size={isSmallDevice ? 18 : 20} color="#6b7280" />
-            </View>
-            <View style={styles.settingContent}>
-                <Text style={[
-                    styles.settingLabel,
-                    isSmallDevice && { fontSize: 13 }
-                ]}>{label}</Text>
-                {subtitle ? <Text style={[
-                    styles.settingSubtitleText,
-                    isSmallDevice && { fontSize: 11 }
-                ]}>{subtitle}</Text> : null}
-            </View>
-            {type === 'switch' ? (
-                <Switch 
-                    value={value} 
-                    onValueChange={onToggle}
-                    trackColor={{ false: '#e5e7eb', true: '#fb923c' }}
-                    thumbColor={value ? '#fff' : '#fff'}
-                    ios_backgroundColor="#e5e7eb"
-                    style={isSmallDevice ? { transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] } : undefined}
-                />
-            ) : (
-                <ChevronRight size={isSmallDevice ? 16 : 18} color="#d1d5db" />
-            )}
-        </TouchableOpacity>
-    );
 
     return (
         <SafeAreaView style={styles.container}>
@@ -476,6 +587,7 @@ export default function SettingsScreen() {
                             label="Profil Toko" 
                             subtitle="Nama, alamat & telp outlet"
                             onPress={() => navigation.navigate('StoreSettings' as never)} 
+                            isSmallDevice={isSmallDevice}
                         />
                         <View style={styles.divider} />
                         <SettingItem 
@@ -483,6 +595,7 @@ export default function SettingsScreen() {
                             label="Daftar Pelayan" 
                             subtitle="Kelola data karyawan & pelayan"
                             onPress={() => navigation.navigate('EmployeeSettings' as never)} 
+                            isSmallDevice={isSmallDevice}
                         />
                     </View>
                 </View>
@@ -498,6 +611,7 @@ export default function SettingsScreen() {
                             type="switch"
                             value={fullSettings?.require_mandatory_session ?? true}
                             onToggle={(val: boolean) => toggleSetting('require_mandatory_session', val)}
+                            isSmallDevice={isSmallDevice}
                         />
                         <View style={styles.divider} />
                         {/* Preparation Duration */}
@@ -533,6 +647,7 @@ export default function SettingsScreen() {
                             type="switch"
                             value={fullSettings?.require_starting_cash ?? true}
                             onToggle={(val: boolean) => toggleSetting('require_starting_cash', val)}
+                            isSmallDevice={isSmallDevice}
                         />
                         <View style={styles.divider} />
                         <TouchableOpacity 
@@ -573,6 +688,7 @@ export default function SettingsScreen() {
                             type="switch"
                             value={cashierMode}
                             onToggle={toggleCashierMode}
+                            isSmallDevice={isSmallDevice}
                         />
                     </View>
                 </View>
@@ -588,6 +704,7 @@ export default function SettingsScreen() {
                             type="switch"
                             value={forcedOffline}
                             onToggle={toggleForcedOffline}
+                            isSmallDevice={isSmallDevice}
                         />
                         <View style={styles.divider} />
                         <View style={[styles.settingItem, { paddingBottom: 8 }]}>
@@ -621,20 +738,30 @@ export default function SettingsScreen() {
                             label="Muat Ulang Data (Cache)" 
                             subtitle="Segarkan data produk & pelanggan"
                             onPress={handleClearCache}
+                            isSmallDevice={isSmallDevice}
                         />
                     </View>
                 </View>
 
                 {/* Printer */}
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Printer Bluetooth</Text>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 6 }}>
+                        <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Printer Bluetooth</Text>
+                        <TouchableOpacity 
+                            onPress={handleRefreshAllPrinters} 
+                            style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingBottom: 2 }}
+                        >
+                            <RefreshCw size={12} color="#ea580c" />
+                            <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#ea580c' }}>Perbarui Semua Status</Text>
+                        </TouchableOpacity>
+                    </View>
                     
                     {/* Multi Printer Management */}
                     <View style={styles.card}>
                         {[
-                            { id: 'receipt', label: 'Printer Kasir (Struk)', value: selectedPrinter },
-                            { id: 'kitchen', label: 'Printer Dapur (Makanan)', value: selectedKitchenPrinter },
-                            { id: 'bar', label: 'Printer Bar (Minuman)', value: selectedBarPrinter }
+                            { id: 'receipt', label: 'Printer Kasir (Struk)', value: selectedPrinters.receipt },
+                            { id: 'kitchen', label: 'Printer Dapur (Makanan)', value: selectedPrinters.kitchen },
+                            { id: 'bar', label: 'Printer Bar (Minuman)', value: selectedPrinters.bar }
                         ].map((printer, index) => (
                             <React.Fragment key={printer.id}>
                                 {index > 0 && <View style={styles.divider} />}
@@ -647,8 +774,21 @@ export default function SettingsScreen() {
                                                 <Text style={styles.printerNameText} numberOfLines={1}>{printer.value || 'Belum ada printer'}</Text>
                                             </View>
                                         </View>
+                                        <View style={{ alignItems: 'flex-end' }}>
+                                            <Text style={{ fontSize: 9, color: '#9ca3af', marginBottom: 2, fontWeight: 'bold' }}>LOKAL</Text>
+                                            <Switch 
+                                                value={printer.id === 'receipt' ? enableReceipt : (printer.id === 'kitchen' ? enableKitchen : enableBar)}
+                                                onValueChange={(val) => togglePrinterEnable(printer.id as any, val)}
+                                                trackColor={{ false: '#e5e7eb', true: '#fb923c' }}
+                                                style={{ transform: [{ scaleX: 0.7 }, { scaleY: 0.7 }] }}
+                                            />
+                                        </View>
+                                    </View>
+
+                                    
+                                    <View style={styles.printerActions}>
                                         {printer.value && (
-                                            <View style={styles.statusBadgeSmall}>
+                                            <View style={[styles.statusBadgeSmall, { marginRight: 'auto', marginLeft: 0 }]}>
                                                 <View style={{ 
                                                     width: 6, 
                                                     height: 6, 
@@ -660,14 +800,12 @@ export default function SettingsScreen() {
                                                 </Text>
                                             </View>
                                         )}
-                                    </View>
                                     
-                                    <View style={styles.printerActions}>
-                                        {printer.value && printerStatus[printer.value] !== 'connected' && (
-                                            <TouchableOpacity style={styles.iconBtnSmall} onPress={() => handleReconnect(printer.value!)}>
-                                                <RefreshCw size={14} color="#3b82f6" />
-                                            </TouchableOpacity>
-                                        )}
+                                {printer.value && printerStatus[printer.value] !== 'connected' && (
+                                    <TouchableOpacity style={styles.iconBtnSmall} onPress={() => handleReconnect(printer.value!)}>
+                                        <RefreshCw size={14} color="#3b82f6" />
+                                    </TouchableOpacity>
+                                )}
                                         {printer.value && (
                                             <TouchableOpacity style={styles.iconBtnSmall} onPress={() => handleTestPrint(printer.id as any)}>
                                                 <Printer size={14} color="#ea580c" />

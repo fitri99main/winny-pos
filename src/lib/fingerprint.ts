@@ -167,39 +167,51 @@ class FingerprintService {
         ];
     }
 
-    async checkServiceAvailability(): Promise<{ available: boolean; error?: string }> {
+    async checkServiceAvailability(): Promise<{ available: boolean; error?: string; errorType?: string }> {
         try {
             if (!this.initialized) {
                 const isHttps = window.location.protocol === 'https:';
-                // Try HTTPS port first if we are on HTTPS, but fall back to HTTP
                 const portsToTry = isHttps ? [52182, 52181] : [52181, 52182];
                 let success = false;
                 let lastError = '';
                 
-                console.log(`[Fp Service] Checking availability (HTTPS: ${isHttps})`);
+                console.log(`[Fp Service] Probing Availability... Origin: ${window.location.origin}`);
 
                 for (const port of portsToTry) {
                     try {
-                        console.log(`[Fp Service] Probing port ${port}...`);
+                        console.log(`[Fp Service] Testing Port ${port}...`);
                         await this.initReader(port);
-                        // Enumerate devices to verify service is actually responding
+                        // Enumerate devices quickly
                         const devices = await this.withTimeout(this.reader.enumerateDevices() as Promise<any[]>, 2000, 'Timeout');
-                        console.log(`[Fp Service] Port ${port} is responding. Devices count: ${devices.length}`);
+                        console.log(`[Fp Service] Success on port ${port}. Devices found: ${devices.length}`);
                         success = true;
                         break;
                     } catch (e: any) {
                         lastError = e?.message || 'Unknown error';
-                        console.warn(`[Fp Service] Port ${port} failed: ${lastError}`);
+                        const isMixedContent = lastError.includes('Mixed Content') || lastError.includes('Insecure');
+                        const isCertError = lastError.includes('cert') || lastError.includes('authority');
+                        
+                        console.warn(`[Fp Service] Port ${port} failed. Msg: ${lastError} (Mixed: ${isMixedContent}, Cert: ${isCertError})`);
                     }
                 }
-                if (!success) throw new Error(`Layanan tidak merespon.`);
+                if (!success) {
+                    const isHttps = window.location.protocol === 'https:';
+                    return {
+                        available: false,
+                        error: isHttps 
+                            ? 'Layanan tidak merespon di HTTPS. Biasanya karena masalah Sertifikat SSL Local atau Private Network Access browser.'
+                            : 'Layanan tidak merespon. Pastikan "DigitalPersona Biometric Service" berjalan.',
+                        errorType: isHttps ? 'HTTPS_PROHIBITED' : 'SERVICE_MISSING'
+                    };
+                }
                 this.initialized = true;
             }
             return { available: true };
-        } catch {
+        } catch (e: any) {
             return {
                 available: false,
-                error: 'Service @digitalpersona/devices tidak merespon. Pastikan "DigitalPersona Biometric Service" berjalan.'
+                error: e.message || 'Gagal inisialisasi SDK.',
+                errorType: 'SDK_LOAD_ERROR'
             };
         }
     }

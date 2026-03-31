@@ -1,0 +1,4 @@
+﻿env: load .env
+env: export EXPO_PUBLIC_SUPABASE_ANON_KEY EXPO_PUBLIC_SUPABASE_URL
+Running 17 checks on your project...
+17/17 checks passed. No issues detected!

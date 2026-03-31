@@ -10,6 +10,7 @@ import { Search, Filter, Calendar, RefreshCw, ChevronLeft, Printer, X, Receipt, 
 import { useSession } from '../context/SessionContext';
 import ReceiptPreviewModal from '../components/ReceiptPreviewModal';
 import { WifiVoucherService } from '../lib/WifiVoucherService';
+import ManagerAuthModal from '../components/ManagerAuthModal';
 
 export default function HistoryScreen() {
     const navigation = useNavigation();
@@ -47,6 +48,8 @@ export default function HistoryScreen() {
     const [newData, setNewData] = useState({ customer_name: '', table_no: '', amount: '' });
     const [showReceiptPreview, setShowReceiptPreview] = useState(false);
     const [previewOrderData, setPreviewOrderData] = useState<any>(null);
+    const [showManagerAuth, setShowManagerAuth] = useState(false);
+    const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
 
     useFocusEffect(
         useCallback(() => {
@@ -158,6 +161,7 @@ export default function HistoryScreen() {
             show_cashier_name: storeSettings?.show_cashier_name !== false,
             enable_wifi_vouchers: storeSettings?.enable_wifi_vouchers || false,
             wifi_voucher_min_amount: storeSettings?.wifi_voucher_min_amount || 0,
+            wifi_voucher_multiplier: storeSettings?.wifi_voucher_multiplier || 0,
             wifi_voucher_notice: storeSettings?.wifi_voucher_notice || '',
         };
 
@@ -165,9 +169,17 @@ export default function HistoryScreen() {
         let wifiVoucher = null;
         const minAmount = storeSettings?.wifi_voucher_min_amount || 0;
         
-        if (storeSettings?.enable_wifi_vouchers && selectedSale.total_amount >= minAmount) {
+        if (storeSettings?.enable_wifi_vouchers && Number(selectedSale.total_amount) >= minAmount) {
             try {
-                wifiVoucher = await WifiVoucherService.getVoucherForSale(selectedSale.id, currentBranchId || '1');
+                const multiplier = storeSettings?.wifi_voucher_multiplier || 0;
+                let count = 1;
+                if (multiplier > 0) {
+                    count = Math.floor(Number(selectedSale.total_amount) / multiplier);
+                }
+                
+                if (count > 0) {
+                    wifiVoucher = await WifiVoucherService.getVoucherForSale(selectedSale.id, currentBranchId || 'default', count);
+                }
             } catch (e) {
                 console.warn('[HistoryScreen] Failed to fetch WiFi voucher:', e);
             }
@@ -182,7 +194,8 @@ export default function HistoryScreen() {
             customer_name: selectedSale.customer_name || 'Guest',
             cashier_name: userName || '',
             waiter_name: selectedSale.waiter_name || '',
-            total: selectedSale.total_amount,
+            total: Number(selectedSale.total_amount),
+            total_amount: Number(selectedSale.total_amount),
             discount: selectedSale.discount || 0,
             tax: selectedSale.tax || 0,
             service_charge: selectedSale.service_charge || 0,
@@ -190,14 +203,17 @@ export default function HistoryScreen() {
             service_rate: storeSettings?.service_rate || 0,
             payment_method: selectedSale.payment_method,
             created_at: selectedSale.date,
-            items: selectedSale.sale_items.map((item: any) => ({
-                name: item.product_name || (item.product?.name || 'Produk'),
-                quantity: item.quantity,
-                price: item.price,
-                target: item.target || '',
-                category: item.product?.category || '',
-                isManual: !!item.isManual
-            })),
+            items: selectedSale.sale_items.map((item: any) => {
+                const itemPrice = typeof item.price === 'number' ? item.price : parseFloat(String(item.price || '0').replace(/[^0-9.]/g, '')) || 0;
+                return {
+                    name: item.product_name || (item.product?.name || 'Produk'),
+                    quantity: item.quantity,
+                    price: itemPrice,
+                    target: item.target || '',
+                    category: item.product?.category || '',
+                    isManual: !!item.isManual
+                };
+            }),
         };
 
         setPreviewOrderData(orderData);
@@ -231,9 +247,17 @@ export default function HistoryScreen() {
             let wifiVoucher = null;
             const minAmount = storeSettings?.wifi_voucher_min_amount || 0;
             
-            if (storeSettings?.enable_wifi_vouchers && selectedSale.total_amount >= minAmount) {
+            if (storeSettings?.enable_wifi_vouchers && Number(selectedSale.total_amount) >= minAmount) {
                 try {
-                    wifiVoucher = await WifiVoucherService.getVoucherForSale(selectedSale.id, currentBranchId || '1');
+                    const multiplier = storeSettings?.wifi_voucher_multiplier || 0;
+                    let count = 1;
+                    if (multiplier > 0) {
+                        count = Math.floor(Number(selectedSale.total_amount) / multiplier);
+                    }
+
+                    if (count > 0) {
+                        wifiVoucher = await WifiVoucherService.getVoucherForSale(selectedSale.id, currentBranchId || 'default', count);
+                    }
                 } catch (e) {
                     console.warn('[HistoryScreen] Failed to fetch WiFi voucher:', e);
                 }
@@ -256,15 +280,21 @@ export default function HistoryScreen() {
                 service_rate: storeSettings?.service_rate || 0,
                 payment_method: selectedSale.payment_method,
                 created_at: selectedSale.date,
-                items: selectedSale.sale_items.map((item: any) => ({
-                    name: item.product_name || (item.product?.name || 'Produk'),
-                    quantity: item.quantity,
-                    price: item.price,
-                    target: item.target || '',
-                    category: item.product?.category || '',
-                    isManual: !!item.isManual
-                })),
+                items: (selectedSale.sale_items || []).map((item: any) => {
+                    const itemPrice = typeof item.price === 'number' ? item.price : parseFloat(String(item.price || '0').replace(/[^0-9.]/g, '')) || 0;
+                    return {
+                        name: item.product_name || (item.product?.name || 'Produk'),
+                        quantity: item.quantity || 0,
+                        price: itemPrice,
+                        target: item.target || '',
+                        category: item.product?.category || '',
+                        isManual: !!item.isManual
+                    };
+                }),
             };
+
+            console.log('[HistoryScreen] Printing with items count:', orderData.items?.length);
+
 
             const success = await PrinterManager.printOrderReceipt(orderData);
             
@@ -274,10 +304,10 @@ export default function HistoryScreen() {
             const barSuccess = await PrinterManager.printToTarget(orderData.items, 'bar', orderData);
 
             if (!kitchenSuccess) {
-                showToast('Printer Dapur/Kitchen belum diatur atau tidak terhubung', 'error');
+                Alert.alert('Printer Dapur Error', 'Printer Dapur/Kitchen belum diatur atau tidak terhubung');
             }
             if (!barSuccess) {
-                showToast('Printer Bar belum diatur atau tidak terhubung', 'error');
+                Alert.alert('Printer Bar Error', 'Printer Bar belum diatur atau tidak terhubung');
             }
 
             if (success) {
@@ -285,9 +315,10 @@ export default function HistoryScreen() {
             } else {
                 Alert.alert('Gagal', 'Gagal mencetak struk. Pastikan printer terhubung di menu Pengaturan.');
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error('Print Error:', error);
-            Alert.alert('Error', 'Terjadi kesalahan saat mencetak.');
+            if (error.stack) console.error('Stack Trace:', error.stack);
+            Alert.alert('Error', 'Terjadi kesalahan saat mencetak: ' + (error.message || 'Unknown error'));
         } finally {
             setPrinting(false);
         }
@@ -296,54 +327,65 @@ export default function HistoryScreen() {
     const handleDeleteSale = async () => {
         if (!selectedSale) return;
 
-        Alert.alert(
-            'Konfirmasi Hapus',
-            'Apakah Anda yakin ingin menghapus transaksi ini? Tindakan ini tidak dapat dibatalkan.',
-            [
-                { text: 'Batal', style: 'cancel' },
-                { 
-                    text: 'Hapus', 
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            setLoading(true);
-                            // 1. Delete sale_items first due to foreign key
-                            const { error: itemsError } = await supabase
-                                .from('sale_items')
-                                .delete()
-                                .eq('sale_id', selectedSale.id);
-                            
-                            if (itemsError) throw itemsError;
+        const processDelete = async () => {
+            try {
+                setLoading(true);
+                // 1. Delete sale_items first due to foreign key
+                const { error: itemsError } = await supabase
+                    .from('sale_items')
+                    .delete()
+                    .eq('sale_id', selectedSale.id);
+                
+                if (itemsError) throw itemsError;
 
-                            // 2. Delete the sale
-                            const { error: saleError } = await supabase
-                                .from('sales')
-                                .delete()
-                                .eq('id', selectedSale.id);
+                // 2. Delete the sale
+                const { error: saleError } = await supabase
+                    .from('sales')
+                    .delete()
+                    .eq('id', selectedSale.id);
 
-                            if (saleError) throw saleError;
+                if (saleError) throw saleError;
 
-                            // 3. Free up table if needed
-                            if (selectedSale.table_no && selectedSale.table_no !== 'Tanpa Meja') {
-                                await supabase
-                                    .from('tables')
-                                    .update({ status: 'Available' })
-                                    .eq('number', selectedSale.table_no);
-                            }
-
-                            setShowDetailModal(false);
-                            fetchHistory();
-                            Alert.alert('Sukses', 'Transaksi berhasil dihapus.');
-                        } catch (error: any) {
-                            console.error('Delete Sale Error:', error);
-                            Alert.alert('Error', 'Gagal menghapus transaksi: ' + error.message);
-                        } finally {
-                            setLoading(false);
-                        }
-                    }
+                // 3. Free up table if needed
+                if (selectedSale.table_no && selectedSale.table_no !== 'Tanpa Meja') {
+                    await supabase
+                        .from('tables')
+                        .update({ status: 'Available' })
+                        .eq('number', selectedSale.table_no);
                 }
-            ]
-        );
+
+                setShowDetailModal(false);
+                fetchHistory();
+                Alert.alert('Sukses', 'Transaksi berhasil dihapus.');
+            } catch (error: any) {
+                console.error('Delete Sale Error:', error);
+                Alert.alert('Error', 'Gagal menghapus transaksi: ' + error.message);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        const confirmDelete = () => {
+            Alert.alert(
+                'Konfirmasi Hapus',
+                'Apakah Anda yakin ingin menghapus transaksi ini? Tindakan ini tidak dapat dibatalkan.',
+                [
+                    { text: 'Batal', style: 'cancel' },
+                    { 
+                        text: 'Hapus', 
+                        style: 'destructive',
+                        onPress: processDelete
+                    }
+                ]
+            );
+        };
+
+        if (storeSettings?.enable_manager_auth) {
+            setPendingAction(() => confirmDelete);
+            setShowManagerAuth(true);
+        } else {
+            confirmDelete();
+        }
     };
 
     const handleOpenEdit = () => {
@@ -568,7 +610,7 @@ export default function HistoryScreen() {
                         {/* Items Section */}
                         <Text style={[styles.sectionTitle, { marginTop: 12, marginBottom: 8 }]}>Rincian Item</Text>
                         {selectedSale?.sale_items?.map((item: any, idx: number) => (
-                            <View key={idx} style={[styles.detailItemRow, { marginBottom: 6 }]}>
+                            <View key={item.id || idx} style={[styles.detailItemRow, { marginBottom: 6 }]}>
                                 <View style={{ flex: 1 }}>
                                     <Text style={[styles.detailItemName, { fontSize: 13 }]}>{item.product_name || (item.product?.name || 'Produk')}</Text>
                                     <Text style={styles.detailItemSub}>{item.quantity} x {formatCurrency(item.price)}</Text>
@@ -782,7 +824,7 @@ export default function HistoryScreen() {
             />
             <View style={styles.header}>
                 <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-                    <ChevronLeft size={24} color="#1e293b" />
+                    <ChevronLeft size={32} color="#1e293b" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Riwayat Transaksi</Text>
                 <View style={{ flexDirection: 'row', gap: 12 }}>
@@ -887,7 +929,7 @@ export default function HistoryScreen() {
             ) : (
                 <FlatList
                     data={filteredHistory}
-                    keyExtractor={(item) => item.id.toString()}
+                    keyExtractor={(item, index) => (item?.id ?? index).toString()}
                     contentContainerStyle={{ padding: 12, paddingBottom: 100 }}
                     renderItem={({ item }) => (
                         <TouchableOpacity 
@@ -1011,7 +1053,21 @@ export default function HistoryScreen() {
                 onClose={() => setShowPaymentModal(false)}
                 onConfirm={handlePaymentConfirm}
             />
+            <ManagerAuthModal
+                visible={showManagerAuth}
+                onClose={() => {
+                    setShowManagerAuth(false);
+                    setPendingAction(null);
+                }}
+                onSuccess={() => {
+                    if (pendingAction) {
+                        pendingAction();
+                        setPendingAction(null);
+                    }
+                }}
+            />
         </SafeAreaView>
+
     );
 }
 
@@ -1026,7 +1082,15 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: '#f1f5f9',
     },
-    backButton: { padding: 4, marginRight: 8 },
+    backButton: { 
+        width: 48, 
+        height: 48, 
+        borderRadius: 24, 
+        backgroundColor: '#f1f5f9', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        marginRight: 8 
+    },
     headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#1e293b', flex: 1 },
     refreshBtn: { padding: 8 },
     searchSection: { padding: 16, backgroundColor: '#fff', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 },
