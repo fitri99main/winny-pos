@@ -14,7 +14,19 @@ export default defineConfig({
   build: {
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
+      external: [
+        "@digitalpersona/core",
+        "@digitalpersona/devices",
+        "@digitalpersona/services",
+        "WebSdk"
+      ],
       output: {
+        globals: {
+          "@digitalpersona/core": "dp.core",
+          "@digitalpersona/devices": "dp.devices",
+          "@digitalpersona/services": "dp.services",
+          "WebSdk": "WebSdk"
+        },
         manualChunks: {
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
           'radix-ui': [
@@ -92,10 +104,6 @@ export default defineConfig({
     preserveSymlinks: true,
     alias: {
       "@": path.resolve(__dirname, "./src"),
-      "WebSdk": path.resolve(__dirname, "node_modules/@digitalpersona/websdk/dist/websdk.client.ui.js"),
-      "@digitalpersona/devices": path.resolve(__dirname, "node_modules/@digitalpersona/devices/dist/es5.bundles/index.umd.min.js"),
-      "@digitalpersona/services": path.resolve(__dirname, "node_modules/@digitalpersona/services/dist/es5.bundles/index.umd.min.js"),
-      "@digitalpersona/core": path.resolve(__dirname, "node_modules/@digitalpersona/core/dist/es5.bundles/index.umd.min.js"),
     },
   },
   define: {
