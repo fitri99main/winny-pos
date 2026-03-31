@@ -104,6 +104,10 @@ export default defineConfig({
     preserveSymlinks: true,
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "WebSdk": path.resolve(__dirname, "src/lib/digitalpersona-shim.ts"),
+      "@digitalpersona/core": path.resolve(__dirname, "src/lib/digitalpersona-shim.ts"),
+      "@digitalpersona/devices": path.resolve(__dirname, "src/lib/digitalpersona-shim.ts"),
+      "@digitalpersona/services": path.resolve(__dirname, "src/lib/digitalpersona-shim.ts"),
     },
   },
   define: {
