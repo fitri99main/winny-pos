@@ -24,21 +24,64 @@ class FingerprintService {
     private initialized: boolean = false;
     private devicesModule: any = null;
     private currentRequestId: number = 0;
+    private initializationPromise: Promise<any> | null = null;
 
     private async loadDevicesModule() {
         if (this.devicesModule) return this.devicesModule;
+        if (this.initializationPromise) return this.initializationPromise;
+
+        this.initializationPromise = (async () => {
+            const win = window as any;
+            // Check if globals from index.html are already there
+            if (win.dp && win.dp.devices) {
+                this.devicesModule = win.dp.devices;
+                return this.devicesModule;
+            }
+
+            console.log('[Fp Service] Waiting for DigitalPersona SDK globals...');
+            
+            // Verification step: check if scripts are even present in head
+            const scriptTags = Array.from(document.querySelectorAll('script[src*="digitalpersona"]'));
+            if (scriptTags.length === 0) {
+                console.warn('[Fp Service] No DigitalPersona script tags found in index.html!');
+            }
+
+            for (let i = 0; i < 15; i++) {
+                await new Promise(resolve => setTimeout(resolve, 300));
+                if (win.dp && win.dp.devices) {
+                    this.devicesModule = win.dp.devices;
+                    return this.devicesModule;
+                }
+            }
+
+            const isVercel = window.location.hostname.includes('vercel.app');
+            let errorMsg = "SDK Fingerprint (dp.devices) tidak ditemukan.";
+            if (isVercel) {
+                errorMsg += " File library (.js) mungkin tidak ditemukan di server Vercel. Pastikan folder 'public/lib/digitalpersona' telah di-push ke Git dan ter-deploy.";
+            }
+
+            throw new Error(errorMsg);
+        })();
+
         try {
-            // Dynamic import — keeps WebSdk out of the initial bundle
-            this.devicesModule = await import('@digitalpersona/devices');
-            return this.devicesModule;
-        } catch (err) {
-            console.error('Failed to load @digitalpersona/devices:', err);
-            throw new Error('Modul fingerprint tidak dapat dimuat.');
+            return await this.initializationPromise;
+        } finally {
+            this.initializationPromise = null;
         }
     }
 
+    private getDpModule(moduleName: 'devices' | 'core' | 'services') {
+        const win = window as any;
+        const mod = win.dp?.[moduleName];
+        if (!mod) {
+            console.error(`[Fp Service] Library @digitalpersona/${moduleName} not found in global scope.`);
+            throw new Error(`Modul fingerprint (${moduleName}) tidak dapat dimuat.`);
+        }
+        return mod;
+    }
+
     private async initReader(port: number) {
-        const { FingerprintReader } = await this.loadDevicesModule();
+        const { FingerprintReader } = this.getDpModule('devices');
         this.reader = new FingerprintReader({ port });
         this.currentPort = port;
 
@@ -171,6 +214,7 @@ class FingerprintService {
     async checkServiceAvailability(): Promise<{ available: boolean; error?: string; errorType?: string }> {
         try {
             if (!this.initialized) {
+                await this.loadDevicesModule();
                 const isHttps = window.location.protocol === 'https:';
                 const portsToTry = isHttps ? [52182, 52181] : [52181, 52182];
                 let success = false;
@@ -304,7 +348,7 @@ class FingerprintService {
 
             if (this.currentRequestId !== requestId) return;
 
-            const { SampleFormat } = await this.loadDevicesModule();
+            const { SampleFormat } = this.getDpModule('devices');
             safeOnStatusUpdate('Menyiapkan Scanner...');
             await this.withTimeout(
                 this.reader.startAcquisition(SampleFormat.Intermediate, device),
