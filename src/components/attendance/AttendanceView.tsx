@@ -231,16 +231,19 @@ export function AttendanceView({ logs, setLogs, employees, onLogAttendance, sett
                 const secondBest = matches[1];
                 const THRESHOLD = 10; // Slightly lower to accommodate noise
 
-                console.log('Fp Match Profile:', matches.slice(0, 3).map(m => `${m.emp.name}: ${m.score.toFixed(1)}%`));
-
                 // Detect boilerplate matching: if different people have exactly the same score
                 const isNoiseFloor = secondBest && (Math.abs(bestMatch.score - secondBest.score) < 0.1) && bestMatch.score < 25;
 
-                if (bestMatch && bestMatch.score >= THRESHOLD && !isNoiseFloor) {
+                const registeredCount = currentEmployees.filter(e => e.fingerprint_template).length;
+                console.log(`[Fp Match] Comparing against ${registeredCount} registered employees...`);
+
+                if (registeredCount === 0) {
+                    toast.error("Tidak ada data sidik jari karyawan terdaftar di sistem ini. Silakan daftar ulang di Manajemen Karyawan.");
+                } else if (bestMatch && bestMatch.score >= THRESHOLD && !isNoiseFloor) {
                     handleScan(bestMatch.emp.barcode || `EMP-${bestMatch.emp.id}`);
                 } else {
-                    const errorSuffix = isNoiseFloor ? '(Banyak kemiripan terdeteksi - Noise)' : `(Skor: ${bestMatch?.score.toFixed(0) || 0}%)`;
-                    toast.error(`Sidik jari tidak dikenali ${errorSuffix}.`);
+                    const errorSuffix = isNoiseFloor ? '(Banyak kemiripan terdeteksi - Noise)' : `(Skor terbaik: ${bestMatch?.score.toFixed(0) || 0}%)`;
+                    toast.error(`Sidik jari tidak dikenali ${errorSuffix}. Coba daftar ulang jika masalah berlanjut.`);
                 }
 
                 // Restart capture after a short delay for next person
