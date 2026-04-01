@@ -23,6 +23,7 @@ class FingerprintService {
     private currentPort: number = 52181;
     private initialized: boolean = false;
     private devicesModule: any = null;
+    private currentRequestId: number = 0;
 
     private async loadDevicesModule() {
         if (this.devicesModule) return this.devicesModule;
@@ -69,8 +70,8 @@ class FingerprintService {
         }
     };
 
-    private onAcquisitionStarted = (_event: any) => {
-        console.log('DigitalPersona: Acquisition Started');
+    private onAcquisitionStarted = (event: any) => {
+        console.log('DigitalPersona: Acquisition Started Event', event);
         if (this.scanCallback) this.scanCallback('WAITING_FOR_FINGER');
     };
 
@@ -228,16 +229,7 @@ class FingerprintService {
             return [];
         }
     }
-
     async startCapture(onStatusUpdate: FingerprintCallback, mode: 'CAPTURE' | 'ENROLL' = 'CAPTURE') {
-        if (this.isCapturing) return;
-        this.scanCallback = onStatusUpdate;
-        this.currentMode = mode;
-        if (this.isBusy) {
-            if (!this.busyTimeout) this.isBusy = false;
-            else { onStatusUpdate('ERROR', { success: false, message: 'Alat sedang sibuk.', errorType: 'UNKNOWN' }); return; }
-        }
-
         const globalTimeout = setTimeout(() => {
             if (this.isBusy && !this.isCapturing) {
                 this.isBusy = false;
@@ -247,11 +239,25 @@ class FingerprintService {
                     errorType: 'SERVICE_NOT_RUNNING'
                 });
             }
-        }, 10000); // Reduced to 10s
+        }, 10000); 
+
+        // New request ID to ignore late callbacks from previous attempts
+        const requestId = ++this.currentRequestId;
+        const safeOnStatusUpdate: FingerprintCallback = (status, result) => {
+            if (this.currentRequestId !== requestId) {
+                console.warn(`[Fp Service] Ignoring callback for old request ${requestId} (Current: ${this.currentRequestId})`);
+                return;
+            }
+            onStatusUpdate(status, result);
+        };
 
         try {
+            await this.stopCapture(); // Force clean previous state
+            this.scanCallback = safeOnStatusUpdate;
             this.isBusy = true;
-            onStatusUpdate('Menghubungkan...');
+            this.currentMode = mode;
+            let device = this.cachedDevice;
+            safeOnStatusUpdate('Menghubungkan...');
 
             if (!this.initialized) {
                 const modules = await this.loadDevicesModule();
@@ -263,7 +269,7 @@ class FingerprintService {
 
                 for (const port of portsToTry) {
                     try {
-                        onStatusUpdate(`Menghubungkan ke Layanan (Port ${port})...`);
+                        safeOnStatusUpdate(`Menghubungkan ke Layanan (Port ${port})...`);
                         await this.initReader(port);
                         await this.withTimeout(this.reader.enumerateDevices() as Promise<any[]>, 3000, `Timeout di Port ${port}`);
                         success = true;
@@ -282,12 +288,13 @@ class FingerprintService {
                 this.initialized = true;
             }
 
-            let device = this.cachedDevice;
+            if (this.currentRequestId !== requestId) return;
+
             if (!device) {
-                onStatusUpdate('Mencari Alat...');
+                safeOnStatusUpdate('Mencari Alat...');
                 const devices = await this.withTimeout(this.reader.enumerateDevices() as Promise<any[]>, 10000, 'Gagal mendeteksi alat');
                 if (!devices || (devices as any[]).length === 0) {
-                    onStatusUpdate('ERROR', { success: false, message: 'Alat fingerprint tidak terdeteksi.', errorType: 'NO_DEVICE' });
+                    safeOnStatusUpdate('ERROR', { success: false, message: 'Alat fingerprint tidak terdeteksi.', errorType: 'NO_DEVICE' });
                     this.isBusy = false;
                     return;
                 }
@@ -295,23 +302,43 @@ class FingerprintService {
                 this.cachedDevice = device;
             }
 
+            if (this.currentRequestId !== requestId) return;
+
             const { SampleFormat } = await this.loadDevicesModule();
-            onStatusUpdate('Menyiapkan Scanner...');
+            safeOnStatusUpdate('Menyiapkan Scanner...');
             await this.withTimeout(
                 this.reader.startAcquisition(SampleFormat.Intermediate, device),
                 10000, 'Gagal memulai pemindaian (Timeout).'
             );
+            
+            console.log('[Fp Service] Acquisition started successfully');
             clearTimeout(globalTimeout);
+            
+            if (this.currentRequestId !== requestId) {
+                console.warn('[Fp Service] Request ID changed after startAcquisition, stopping.');
+                await this.reader.stopAcquisition();
+                return;
+            }
+
             this.isCapturing = true;
             this.isBusy = false;
+            // Force status update to be sure
+            safeOnStatusUpdate('WAITING_FOR_FINGER');
 
         } catch (err: any) {
             clearTimeout(globalTimeout);
             this.isBusy = false;
             this.isCapturing = false;
-            onStatusUpdate('ERROR', {
+
+            // Handle 0x80070057 specifically
+            let finalMessage = err.message || 'Gagal inisialisasi hardware.';
+            if (finalMessage.includes('80070057')) {
+                finalMessage = 'Alat sedang sibuk atau digunakan di tab lain (Error 0x80070057). Mohon tutup tab lain atau cabut-pasang USB scanner.';
+            }
+
+            safeOnStatusUpdate('ERROR', {
                 success: false,
-                message: err.message || 'Gagal inisialisasi hardware.',
+                message: finalMessage,
                 errorType: 'SERVICE_NOT_RUNNING'
             });
         }
