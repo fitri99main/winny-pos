@@ -19,6 +19,7 @@ export interface Employee {
     system_role?: string; // NEW: System Role (Admin, Cashier, etc.)
     barcode?: string; // NEW: Barcode for Attendance
     fingerprint_template?: string; // NEW: Fingerprint Template (Base64)
+    base_salary?: number; // NEW: Base Salary (Gaji Pokok)
 }
 
 export interface Department {
@@ -82,7 +83,8 @@ export function EmployeesView({
                     status: formData.status || 'Active',
                     joinDate: formData.joinDate || new Date().toISOString().split('T')[0],
                     offDays: formData.offDays || [],
-                    pin: formData.pin || '123456' // Default PIN if not set
+                    pin: formData.pin || '123456', // Default PIN if not set
+                    base_salary: formData.base_salary || 0
                 };
                 await onEmployeeCRUD('create', newEmp);
             }
@@ -382,6 +384,19 @@ export function EmployeesView({
                                                 <option value="On Leave">Cuti</option>
                                                 <option value="Terminated">Berhenti</option>
                                             </select>
+                                        </div>
+                                        <div className="space-y-1.5 col-span-2">
+                                            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-tight pl-1">Gaji Pokok (Base Salary)</label>
+                                            <div className="relative">
+                                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-sm">Rp</span>
+                                                <input 
+                                                    type="number"
+                                                    className="w-full pl-12 p-2.5 md:p-3 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold text-gray-800" 
+                                                    value={formData.base_salary || ''} 
+                                                    onChange={e => setFormData({ ...formData, base_salary: Number(e.target.value) })} 
+                                                    placeholder="0"
+                                                />
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

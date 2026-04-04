@@ -59,6 +59,9 @@ export default function ReceiptPreviewModal({ visible, onClose, orderData, onPri
             text = text.replace('<b>', '').replace('</b>', '');
         }
 
+        // Handle Notes (detecting '  (' format from PrinterManager)
+        const isNote = text.trim().startsWith('(');
+        
         // Split by [R] for right-aligned parts in the middle
         const parts = text.split('[R]');
         
@@ -66,13 +69,14 @@ export default function ReceiptPreviewModal({ visible, onClose, orderData, onPri
             <View key={index} style={[styles.lineWrapper, { justifyContent: alignment === 'center' ? 'center' : 'space-between' }]}>
                 {parts.length > 1 ? (
                     <>
-                        <Text style={[styles.receiptText, isBold && styles.boldText]}>{parts[0]}</Text>
-                        <Text style={[styles.receiptText, isBold && styles.boldText]}>{parts[1]}</Text>
+                        <Text style={[styles.receiptText, isBold && styles.boldText, isNote && styles.noteText]}>{parts[0]}</Text>
+                        <Text style={[styles.receiptText, isBold && styles.boldText, isNote && styles.noteText]}>{parts[1]}</Text>
                     </>
                 ) : (
                     <Text style={[
                         styles.receiptText, 
                         isBold && styles.boldText,
+                        isNote && styles.noteText,
                         { textAlign: alignment, width: '100%' }
                     ]}>
                         {text}
@@ -211,6 +215,11 @@ const styles = StyleSheet.create({
     boldText: {
         fontWeight: 'bold',
         color: '#0f172a',
+    },
+    noteText: {
+        color: '#ea580c',
+        fontStyle: 'italic',
+        fontSize: 10,
     },
     jaggedEdge: {
         height: 10,

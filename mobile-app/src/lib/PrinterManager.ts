@@ -252,14 +252,21 @@ export class PrinterManager {
         const displayCustomerName = customer_name || customerName || '';
         
         const isWifiEnabled = orderData.enable_wifi_vouchers || false;
-        const minAmount = orderData.wifi_voucher_min_amount || 0;
-        const saleTotal = total || orderData.total_amount || 0;
+        const minAmount = Number(orderData.wifi_voucher_min_amount) || 0;
+        const multiplier = Number(orderData.wifi_voucher_multiplier) || 0;
+        const saleTotal = Number(total || orderData.total_amount) || 0;
         
         let displayWifiVoucher = wifi_voucher || wifiVoucher || '';
         
-        // [NEW] Placeholder logic for Preview
+        // [NEW] Placeholder logic for Preview - Matches POSScreen logic for count
         if (!displayWifiVoucher && isPreview && isWifiEnabled && saleTotal >= minAmount) {
-            displayWifiVoucher = 'XXXX-XXXX';
+            const effectiveMultiplier = multiplier > 0 ? multiplier : minAmount;
+            let count = 1;
+            if (effectiveMultiplier > 0) {
+                count = Math.floor(saleTotal / effectiveMultiplier);
+            }
+            // Generate multiple placeholders joined by comma
+            displayWifiVoucher = Array(Math.max(1, count)).fill('XXXX-XXXX').join(', ');
         }
 
         const displayWifiNotice = (wifi_voucher_notice || wifiNotice || wifi_notice || 'Gunakan kode ini untuk akses WiFi').trim();
@@ -344,6 +351,14 @@ export class PrinterManager {
                     receiptText += itemLine.padEnd(labelWidth) + price.padStart(valWidth) + '\n';
                 }
             }
+
+            if (item.notes) {
+                if (isPreview) {
+                    receiptText += `[L]  (${item.notes})\n`;
+                } else {
+                    receiptText += `  (${item.notes})\n`;
+                }
+            }
         });
   
         const safeItemsForSummary = items || [];
@@ -426,8 +441,13 @@ export class PrinterManager {
         if (displayWifiVoucher) {
             receiptText += CENTER;
             receiptText += displayWifiNotice + '\n';
-            // Use Double Height for voucher code to match web exactly
-            receiptText += BOLD_ON + DOUBLE_ON + displayWifiVoucher + DOUBLE_OFF + BOLD_OFF + '\n';
+            
+            // Handle multiple vouchers
+            const vouchers = displayWifiVoucher.split(',').map((v: string) => v.trim()).filter((v: string) => v.length > 0);
+            vouchers.forEach((voucher: string) => {
+                // Use Double Height for each voucher code
+                receiptText += BOLD_ON + DOUBLE_ON + voucher + DOUBLE_OFF + BOLD_OFF + '\n';
+            });
             receiptText += LINE;
         }
 

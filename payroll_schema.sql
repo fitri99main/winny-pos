@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS public.payrolls (
     period TEXT NOT NULL, -- e.g., 'Januari 2026'
     basic_salary NUMERIC DEFAULT 0,
     allowance NUMERIC DEFAULT 0,
+    overtime NUMERIC DEFAULT 0, -- NEW: Lembur
     deduction NUMERIC DEFAULT 0,
     status TEXT DEFAULT 'Pending' CHECK (status IN ('Pending', 'Paid')),
     payment_date DATE,

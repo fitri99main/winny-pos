@@ -107,7 +107,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             }
 
             // Process Settings
-            if (settingsRes.data) setStoreSettings(settingsRes.data);
+            if (settingsRes.data) {
+                console.log('[SessionContext] Global Store Settings Loaded:', {
+                    enable_wifi_vouchers: settingsRes.data.enable_wifi_vouchers,
+                    multiplier: settingsRes.data.wifi_voucher_multiplier,
+                    min_amount: settingsRes.data.wifi_voucher_min_amount
+                });
+                setStoreSettings(settingsRes.data);
+            }
 
             // 3. Role Permissions (Conditional but fast)
             let roleName = profileData?.role || user.user_metadata?.role;

@@ -28,6 +28,7 @@ export interface OrderItem {
   quantity: number;
   modifiers?: string[];
   selectedAddons?: Addon[];
+  notes?: string;
   discount?: {
     type: 'percentage' | 'fixed';
     value: number;
@@ -79,6 +80,8 @@ export interface Promo {
   min_spend: number;
   start_date: string | null;
   end_date: string | null;
+  start_time: string | null;
+  end_time: string | null;
   is_active: boolean;
   branch_id: number | null;
   created_at?: string;

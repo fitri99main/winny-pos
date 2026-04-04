@@ -61,19 +61,19 @@ class PrinterService {
         logoUrl: '',
         receipt_footer_feed: 4,
         // Kitchen Specifics
-        kitchenHeader: 'DAPUR',
-        kitchenFooter: '',
-        kitchenShowTable: true,
-        kitchenShowWaiter: true,
-        kitchenShowDate: true,
-        kitchenShowCashier: true,
+        kitchen_header: 'DAPUR',
+        kitchen_footer: '',
+        kitchen_show_table: true,
+        kitchen_show_waiter: true,
+        kitchen_show_date: true,
+        kitchen_show_cashier: true,
         // Bar Specifics
-        barHeader: 'BAR',
-        barFooter: '',
-        barShowTable: true,
-        barShowWaiter: true,
-        barShowDate: true,
-        barShowCashier: true
+        bar_header: 'BAR',
+        bar_footer: '',
+        bar_show_table: true,
+        bar_show_waiter: true,
+        bar_show_date: true,
+        bar_show_cashier: true
     };
 
     // ESC/POS Commands
@@ -145,12 +145,12 @@ class PrinterService {
 
         // Specific settings based on type
         const isKitchen = type === 'Kitchen';
-        const header = isKitchen ? (this.template.kitchenHeader || this.template.receipt_header || 'PESANAN') : (this.template.barHeader || this.template.receipt_header || 'PESANAN');
-        const footer = isKitchen ? (this.template.kitchenFooter || '') : (this.template.barFooter || '');
-        const showTable = isKitchen ? (this.template.kitchenShowTable ?? this.template.showTable ?? true) : (this.template.barShowTable ?? this.template.showTable ?? true);
-        const showWaiter = isKitchen ? (this.template.kitchenShowWaiter ?? this.template.showWaiter ?? true) : (this.template.barShowWaiter ?? this.template.showWaiter ?? true);
-        const showCashier = isKitchen ? (this.template.kitchenShowCashier ?? this.template.showCashierName ?? true) : (this.template.barShowCashier ?? this.template.showCashierName ?? true);
-        const showDate = isKitchen ? (this.template.kitchenShowDate ?? this.template.showDate ?? true) : (this.template.barShowDate ?? this.template.showDate ?? true);
+        const header = isKitchen ? (this.template.kitchen_header || this.template.receipt_header || 'PESANAN') : (this.template.bar_header || this.template.receipt_header || 'PESANAN');
+        const footer = isKitchen ? (this.template.kitchen_footer || '') : (this.template.bar_footer || '');
+        const showTable = isKitchen ? (this.template.kitchen_show_table ?? this.template.show_table ?? true) : (this.template.bar_show_table ?? this.template.show_table ?? true);
+        const showWaiter = isKitchen ? (this.template.kitchen_show_waiter ?? this.template.show_waiter ?? true) : (this.template.bar_show_waiter ?? this.template.show_waiter ?? true);
+        const showCashier = isKitchen ? (this.template.kitchen_show_cashier ?? this.template.show_cashier_name ?? true) : (this.template.bar_show_cashier ?? this.template.show_cashier_name ?? true);
+        const showDate = isKitchen ? (this.template.kitchen_show_date ?? this.template.show_date ?? true) : (this.template.bar_show_date ?? this.template.show_date ?? true);
         const showCustomer = this.template.showCustomerName ?? true;
         const doubleHeightItems = true; // Match mobile's default
 
@@ -160,9 +160,7 @@ class PrinterService {
         // Header (Double Size + Bold)
         commands.push(new Uint8Array([this.GS, 0x21, 0x11])); // Double width & height
         commands.push(new Uint8Array([this.ESC, 0x45, 0x01])); // Bold ON
-        commands.push(new Uint8Array([this.ESC, 0x61, 0x01])); // Center align
-        const targetLabel = isKitchen ? 'DAPUR' : 'BAR';
-        commands.push(encoder.encode(`${header.toUpperCase()} ${targetLabel}\n`));
+        commands.push(encoder.encode(`${header.toUpperCase()}\n`));
         commands.push(new Uint8Array([this.ESC, 0x45, 0x00])); // Bold OFF
 
         // Reset size
@@ -254,7 +252,9 @@ class PrinterService {
         customerLevel?: string;
         cashierName?: string;
         wifiVoucher?: string;
+        wifi_voucher?: string;
         wifiNotice?: string;
+        wifi_notice?: string;
     }) {
         const printer = this.cashierPrinter;
         if (!printer || !printer.characteristic) {
@@ -304,6 +304,9 @@ class PrinterService {
             const valWidth = 12;
             const labelWidth = lineWidth - valWidth;
             commands.push(encoder.encode(`${itemLine.slice(0, labelWidth).padEnd(labelWidth)}${priceLine.padStart(valWidth)}\n`));
+            if (item.notes || (item as any).note) {
+                commands.push(encoder.encode(`  (${item.notes || (item as any).note})\n`));
+            }
         });
         commands.push(encoder.encode(line));
 
@@ -335,14 +338,22 @@ class PrinterService {
         commands.push(encoder.encode(line));
 
         // WiFi Voucher
-        if (data.wifiVoucher) {
+        const displayVoucher = data.wifiVoucher || data.wifi_voucher;
+        const displayNotice = data.wifiNotice || data.wifi_notice;
+
+        if (displayVoucher) {
             commands.push(encoder.encode(line));
             commands.push(new Uint8Array([this.ESC, 0x61, 0x01])); // Center
-            if (data.wifiNotice) {
-                commands.push(encoder.encode(`${data.wifiNotice}\n`));
+            if (displayNotice) {
+                commands.push(encoder.encode(`${displayNotice}\n`));
             }
+            
+            // Handle multiple vouchers
+            const vouchers = displayVoucher.split(',').map(v => v.trim()).filter(v => v.length > 0);
             commands.push(new Uint8Array([this.GS, 0x21, 0x11])); // Double Size
-            commands.push(encoder.encode(`\n${data.wifiVoucher}\n\n`));
+            vouchers.forEach(voucher => {
+                commands.push(encoder.encode(`\n${voucher}\n`));
+            });
             commands.push(new Uint8Array([this.GS, 0x21, 0x00])); // Reset
         }
 

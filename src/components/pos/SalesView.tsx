@@ -16,7 +16,7 @@ export interface SalesOrder {
     order_no?: string;
     date: string;
     items: number;
-    productDetails: { name: string; quantity: number; price: number; isManual?: boolean; target?: 'Kitchen' | 'Bar' | 'Waitress'; category?: string }[];
+    productDetails: { name: string; quantity: number; price: number; isManual?: boolean; target?: 'Kitchen' | 'Bar' | 'Waitress'; category?: string; notes?: string }[];
     subtotal?: number;
     discount?: number;
     tax?: number;
@@ -409,8 +409,26 @@ export function SalesView({
         const printReceiptData = async () => {
             let wifiVoucher = undefined;
             if (settings?.enable_wifi_vouchers) {
-                const { WifiVoucherService } = await import('../../lib/WifiVoucherService');
-                wifiVoucher = await WifiVoucherService.getVoucherForSale(sale.id, sale.branchId || 'default') || undefined;
+                const minAmount = settings.wifi_voucher_min_amount || 0;
+                const multiplier = settings.wifi_voucher_multiplier || 0;
+                const total = sale.totalAmount || 0;
+
+                console.log(`[SalesView] Reprint Logic: total=${total}, min=${minAmount}, multiplier=${multiplier}`);
+
+                if (total >= minAmount) {
+                    let count = 1;
+                    if (multiplier > 0) {
+                        count = Math.floor(total / multiplier);
+                    }
+                    
+                    console.log(`[SalesView] Calculated voucher count: ${count}`);
+                    
+                    if (count > 0) {
+                        const { WifiVoucherService } = await import('../../lib/WifiVoucherService');
+                        wifiVoucher = await WifiVoucherService.getVoucherForSale(sale.id, sale.branchId || 'default', count) || undefined;
+                        console.log(`[SalesView] Reprint WiFi Voucher Result: ${wifiVoucher}`);
+                    }
+                }
             }
 
             try {
@@ -1043,13 +1061,20 @@ export function SalesView({
                                     <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Item Pesanan</p>
                                     <div className="space-y-2 border-y border-gray-50 py-3">
                                         {selectedOrderDetails.productDetails.map((item, idx) => (
-                                            <div key={idx} className="flex justify-between text-sm">
-                                                <div className="flex gap-2">
-                                                    <span className="text-gray-500">{item.quantity}x</span>
-                                                    <span className="font-medium text-gray-800">{item.name}</span>
+                                                <div className="flex flex-col flex-1 border-b border-gray-50 pb-2">
+                                                    <div className="flex justify-between items-center text-sm">
+                                                        <div className="flex gap-2">
+                                                            <span className="text-gray-500">{item.quantity}x</span>
+                                                            <span className="font-medium text-gray-800">{item.name}</span>
+                                                        </div>
+                                                        <span className="text-gray-600">Rp {(item.price * item.quantity).toLocaleString()}</span>
+                                                    </div>
+                                                    {item.notes && (
+                                                        <div className="text-[11px] text-orange-600 font-medium italic mt-1 bg-orange-50/50 px-2 py-1 rounded border border-orange-100/50 w-fit">
+                                                            Catatan: {item.notes}
+                                                        </div>
+                                                    )}
                                                 </div>
-                                                <span className="text-gray-600">Rp {(item.price * item.quantity).toLocaleString()}</span>
-                                            </div>
                                         ))}
                                     </div>
                                 </div>

@@ -16,8 +16,16 @@ CREATE TABLE IF NOT EXISTS public.employees (
     join_date DATE DEFAULT CURRENT_DATE,
     status TEXT DEFAULT 'Active' CHECK (status IN ('Active', 'On Leave', 'Terminated')),
     off_days JSONB DEFAULT '[]'::jsonb, -- Array of integers [0,1,2...]
+    base_salary NUMERIC NOT NULL DEFAULT 0, -- NEW: Base Salary (Gaji Pokok)
+    pin TEXT DEFAULT '123456', -- NEW: Kiosk Access PIN
+    system_role TEXT DEFAULT NULL, -- NEW: System Access Role (Admin, Cashier, etc.)
+    barcode TEXT UNIQUE, -- NEW: Attendance Barcode
+    fingerprint_template TEXT, -- NEW: Biometric Template
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Index for barcode
+CREATE INDEX IF NOT EXISTS idx_employees_barcode ON public.employees(barcode);
 
 -- Enable Row Level Security (RLS)
 ALTER TABLE public.departments ENABLE ROW LEVEL SECURITY;

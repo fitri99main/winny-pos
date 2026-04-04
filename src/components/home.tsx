@@ -188,6 +188,60 @@ function Home() {
     }
   };
 
+  const formatPeriod = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      const months = [
+        'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+      ];
+      return `${months[date.getMonth()]} ${date.getFullYear()}`;
+    } catch (e) {
+      return '';
+    }
+  };
+
+  const syncPerformanceToPayroll = async (data: any, employeeId: number) => {
+    try {
+      const allowanceAmount = Math.round(data.base_salary * (data.total_score / 100));
+      const period = formatPeriod(data.evaluation_date);
+      const emp = employees.find(e => e.id === Number(employeeId));
+      
+      if (emp && period) {
+        const { data: existingPayroll } = await supabase
+          .from('payrolls')
+          .select('id, status')
+          .eq('employee_name', emp.name)
+          .eq('period', period)
+          .maybeSingle();
+
+        if (existingPayroll) {
+          if (existingPayroll.status === 'Pending') {
+            await supabase.from('payrolls').update({ allowance: allowanceAmount }).eq('id', existingPayroll.id);
+            toast.info(`Payroll ${emp.name} (${period}) diperbarui otomatis`);
+          } else {
+            toast.warning(`Payroll ${emp.name} (${period}) sudah berstatus PAID. Tunjangan kinerja tidak diubah.`);
+          }
+        } else {
+          await supabase.from('payrolls').insert([{
+            employee_name: emp.name,
+            employee_id: emp.id,
+            position: emp.position || '-',
+            basic_salary: data.base_salary,
+            allowance: allowanceAmount,
+            deduction: 0,
+            status: 'Pending',
+            period: period,
+            branch_id: currentBranchId ? Number(currentBranchId) : null
+          }]);
+          toast.success(`Draft Payroll ${emp.name} (${period}) dibuat otomatis`);
+        }
+      }
+    } catch (syncErr: any) {
+      console.error('Payroll sync error:', syncErr);
+    }
+  };
+
   // --- END HANDLERS ---
 
   // Inventory Handlers
@@ -908,10 +962,29 @@ function Home() {
     return () => { sub.unsubscribe(); };
   }, []);
 
+  // --- Performance Evaluations Integration ---
+  const fetchPerformanceEvaluations = async () => {
+    if (!currentBranchId) return;
+    const { data } = await supabase
+      .from('performance_evaluations')
+      .select('*')
+      .eq('branch_id', Number(currentBranchId))
+      .order('evaluation_date', { ascending: false });
+    if (data) setPerformanceEvaluations(data);
+  };
+
+  useEffect(() => {
+    fetchPerformanceEvaluations();
+    const sub = supabase.channel('performance_eval_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'performance_evaluations' }, fetchPerformanceEvaluations)
+      .subscribe();
+    return () => { sub.unsubscribe(); };
+  }, [currentBranchId]);
+
   const handlePayrollAction = async (action: 'create' | 'update' | 'delete', data: any) => {
     try {
       if (action === 'create') {
-        const { id, employeeName, basicSalary, paymentDate, ...rest } = data;
+        const { id, employeeName, basicSalary, paymentDate, receipt_header, receipt_logo, ...rest } = data;
         const emp = employees.find(e => e.name === employeeName);
         const payload = {
           ...rest,
@@ -926,7 +999,10 @@ function Home() {
 
         // [NEW] Accounting Integration for Create
         if (payload.status === 'Paid') {
-          const totalAmount = Number(basicSalary) + Number(rest.allowance || 0) - Number(rest.deduction || 0);
+          // Check for existing journal to avoid duplicates (Optional but recommended)
+          // For now, simpler: Just insert.
+          const totalAmount = Number(basicSalary) + Number(rest.allowance || 0) + Number(rest.overtime || 0) - Number(rest.deduction || 0);
+
           await supabase.from('journal_entries').insert([{
             date: new Date().toISOString(),
             description: `Gaji Karyawan: ${employeeName} (${rest.period || ''})`,
@@ -954,7 +1030,7 @@ function Home() {
         }
 
       } else if (action === 'update') {
-        const { id, employeeName, basicSalary, paymentDate, ...rest } = data;
+        const { id, employeeName, basicSalary, paymentDate, receipt_header, receipt_logo, ...rest } = data;
         const payload = {
           ...rest,
           employee_name: employeeName,
@@ -2338,6 +2414,7 @@ function Home() {
   useEffect(() => {
     if (storeSettings) {
       printerService.setTemplate({
+        ...storeSettings, // Spread all settings to ensure kitchen/bar keys are included
         header: storeSettings.receipt_header,
         address: storeSettings.address,
         footer: storeSettings.receipt_footer,
@@ -2347,10 +2424,7 @@ function Home() {
         showTable: storeSettings.show_table,
         showCustomerName: storeSettings.show_customer_name,
         showLogo: storeSettings.show_logo,
-        logoUrl: storeSettings.receipt_logo_url,
-        barcodeHeight: storeSettings.barcodeHeight,
-        barcodeWidth: storeSettings.barcodeWidth,
-        showBarcodeText: storeSettings.showBarcodeText
+        logoUrl: storeSettings.receipt_logo_url
       });
     }
   }, [storeSettings]);
@@ -2570,7 +2644,36 @@ function Home() {
                   const { error: detailsError } = await supabase.from('performance_evaluation_details').insert(detailsPayload);
                   if (detailsError) throw detailsError;
                 }
+                
+                // --- [NEW] Automatic Payroll Synchronization ---
+                await syncPerformanceToPayroll(data, Number(employeeId));
+
                 toast.success('Perhitungan nilai berhasil disimpan');
+              } else if (action === 'update') {
+                const { id, details, employeeId, ...rest } = data;
+                
+                // 1. Update main record
+                const { error: evalError } = await supabase.from('performance_evaluations').update({
+                  ...rest,
+                  employee_id: Number(employeeId)
+                }).eq('id', id);
+                if (evalError) throw evalError;
+
+                // 2. Refresh Details
+                if (details && Array.isArray(details)) {
+                  await supabase.from('performance_evaluation_details').delete().eq('evaluation_id', id);
+                  const detailsPayload = details.map((d: any) => ({
+                    ...d,
+                    evaluation_id: id
+                  }));
+                  const { error: detailsError } = await supabase.from('performance_evaluation_details').insert(detailsPayload);
+                  if (detailsError) throw detailsError;
+                }
+
+                // 3. Sync to Payroll
+                await syncPerformanceToPayroll(data, Number(employeeId));
+
+                toast.success('Perhitungan nilai berhasil diperbarui');
               } else if (action === 'delete') {
                 const { error } = await supabase.from('performance_evaluations').delete().eq('id', data.id);
                 if (error) throw error;
@@ -2598,6 +2701,7 @@ function Home() {
             payroll={filteredPayroll}
             setPayroll={setPayrollData}
             employees={employees} // Pass real employees for dropdown
+            evaluations={performanceEvaluations} // Pass evaluations for auto-sync
             onPayrollAction={handlePayrollAction}
             settings={storeSettings}
           />

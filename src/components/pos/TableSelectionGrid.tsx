@@ -46,15 +46,47 @@ export function TableSelectionGrid({
                     </div>
                 </div>
 
-                {/* Legend */}
-                <div className="flex items-center gap-6 text-sm font-medium">
-                    <div className="flex items-center gap-2">
-                        <div className="w-4 h-4 rounded-full bg-white border-2 border-green-500 shadow-sm" />
-                        <span className="text-gray-600">Kosong</span>
+                {/* Manual & Legend */}
+                <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-xl border border-gray-200">
+                        <input
+                            id="manual-table-input"
+                            type="text"
+                            placeholder="Nomor Meja Manual..."
+                            className="bg-transparent border-none focus:ring-0 text-sm px-2 w-32"
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    const val = (e.target as HTMLInputElement).value;
+                                    if (val.trim()) {
+                                        onSelectTable({ id: Date.now(), number: val.trim().toUpperCase(), status: 'Available' });
+                                    }
+                                }
+                            }}
+                        />
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 rounded-lg bg-white shadow-sm hover:bg-gray-100"
+                            onClick={() => {
+                                const input = document.getElementById('manual-table-input') as HTMLInputElement;
+                                if (input && input.value.trim()) {
+                                    onSelectTable({ id: Date.now(), number: input.value.trim().toUpperCase(), status: 'Available' });
+                                }
+                            }}
+                        >
+                            Pilih
+                        </Button>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <div className="w-4 h-4 rounded-full bg-red-50 border-2 border-red-500 shadow-sm" />
-                        <span className="text-gray-600">Terisi</span>
+
+                    <div className="flex items-center gap-6 text-sm font-medium">
+                        <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 rounded-full bg-white border-2 border-green-500 shadow-sm" />
+                            <span className="text-gray-600">Kosong</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 rounded-full bg-red-50 border-2 border-red-500 shadow-sm" />
+                            <span className="text-gray-600">Terisi</span>
+                        </div>
                     </div>
                 </div>
             </div>

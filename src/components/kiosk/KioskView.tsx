@@ -1,9 +1,10 @@
-import { Component, useEffect, useRef, useState } from 'react';
-import { ShoppingCart, User, ChevronRight, Minus, Plus, X, Coffee, CheckCircle, Scan, Phone, CreditCard } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ShoppingCart, User, ChevronRight, Minus, Plus, X, Coffee, CheckCircle, Scan, Phone, CreditCard, QrCode } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
 import { PWAInstallButton } from '../ui/PWAInstallButton';
+import { QRCodeCanvas } from 'qrcode.react';
 
 
 // Types
@@ -90,6 +91,20 @@ export function KioskView() {
 
         // Set Kiosk Mode Flag
         localStorage.setItem('app_mode', 'kiosk');
+
+        // Check for URL Parameters (Deep Linking)
+        const urlParams = new URLSearchParams(window.location.search);
+        const branchParam = urlParams.get('branch_id');
+        const tableParam = urlParams.get('table_no');
+
+        if (branchParam) {
+            handleSetBranch(branchParam);
+        }
+
+        if (tableParam) {
+            setSelectedTable({ id: 0, number: tableParam, status: 'Available' });
+            setStep('menu');
+        }
 
         window.addEventListener('online', handleOnline);
         window.addEventListener('offline', handleOffline);
@@ -521,6 +536,47 @@ export function KioskView() {
                     </div>
 
                     <p className="text-gray-500 mb-8 md:mb-12 text-sm md:text-lg">Silakan pilih meja Anda untuk memulai pesanan</p>
+                    
+                    {/* Scan to Order QR Card */}
+                    <div className="flex flex-col md:flex-row items-center justify-center gap-8 mb-12">
+                        <div className="bg-white p-6 rounded-3xl border-2 border-primary/10 shadow-xl shadow-primary/5 flex flex-col items-center gap-4 max-w-sm w-full">
+                            <div className="text-center">
+                                <h3 className="font-bold text-gray-800">Antri Panjang?</h3>
+                                <p className="text-[10px] text-gray-500">Scan QR ini untuk pesan langsung dari HP Anda</p>
+                            </div>
+                            <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                                <QRCodeCanvas 
+                                    value={`${window.location.origin}/kiosk?branch_id=${selectedBranchId}`}
+                                    size={140}
+                                    level="H"
+                                />
+                            </div>
+                            <div className="flex items-center gap-2 text-primary font-bold text-xs">
+                                <Scan className="w-4 h-4" />
+                                <span>Scan & Pesan Mandiri</span>
+                            </div>
+                        </div>
+
+                        <div className="hidden md:block h-32 w-[1px] bg-gray-200" />
+
+                        <div className="text-left hidden md:block max-w-xs">
+                            <h4 className="font-bold text-gray-700 mb-2">Cara Pesan:</h4>
+                            <ul className="text-xs text-gray-500 space-y-2">
+                                <li className="flex items-start gap-2">
+                                    <span className="w-4 h-4 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">1</span>
+                                    <span>Pilih nomor meja di bawah ini atau scan QR di samping.</span>
+                                </li>
+                                <li className="flex items-start gap-2">
+                                    <span className="w-4 h-4 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">2</span>
+                                    <span>Pilih menu favorit Anda dan tambahkan ke keranjang.</span>
+                                </li>
+                                <li className="flex items-start gap-2">
+                                    <span className="w-4 h-4 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">3</span>
+                                    <span>Klik Checkout dan bayar di kasir saat pesanan tiba.</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
 
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 md:gap-6 pb-20">
                         {tables.map(table => {
@@ -605,6 +661,9 @@ export function KioskView() {
         );
     }
 
+    const isDisplayOnly = storeSettings?.kiosk_display_mode;
+    const selfOrderUrl = `${window.location.origin}/kiosk?branch_id=${selectedBranchId}&table_no=${selectedTable?.number}`;
+
     // MENU STEP
     // Safety check: if no table selected, go back
     if (step === 'menu' && !selectedTable) {
@@ -621,6 +680,8 @@ export function KioskView() {
     const cartTotal = subTotal - discountAmount;
 
     const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+
+    const showCart = cart.length > 0 && !isDisplayOnly;
 
     return (
         // Layout: Fixed Fullscreen for Mobile Scrolling
@@ -732,8 +793,8 @@ export function KioskView() {
                                         </div>
                                     )}
                                     <button
-                                        onClick={() => handleAddToCart(product)}
-                                        className="absolute bottom-1.5 right-1.5 md:bottom-2 md:right-2 w-7 h-7 md:w-9 md:h-9 lg:w-10 lg:h-10 bg-white rounded-full shadow-lg flex items-center justify-center text-gray-800 hover:bg-primary hover:text-white transition-colors border border-gray-100"
+                                        onClick={() => !isDisplayOnly && handleAddToCart(product)}
+                                        className={`absolute bottom-1.5 right-1.5 md:bottom-2 md:right-2 w-7 h-7 md:w-9 md:h-9 lg:w-10 lg:h-10 bg-white rounded-full shadow-lg flex items-center justify-center text-gray-800 transition-colors border border-gray-100 ${isDisplayOnly ? 'opacity-0 scale-0 pointer-events-none' : 'hover:bg-primary hover:text-white'}`}
                                     >
                                         <Plus className="w-4 h-4 md:w-5 h-5" />
                                     </button>
@@ -746,10 +807,38 @@ export function KioskView() {
                         ))}
                     </div>
 
+                    {isDisplayOnly && (
+                        <div className="absolute bottom-8 right-8 z-50 bg-white p-6 rounded-3xl shadow-2xl border border-indigo-100 flex flex-col items-center gap-4 animate-in fade-in slide-in-from-bottom-8 duration-500 max-w-[280px]">
+                            <div className="bg-indigo-50 p-4 rounded-2xl w-full flex flex-col items-center gap-3">
+                                <QRCodeCanvas 
+                                    value={selfOrderUrl} 
+                                    size={180}
+                                    level="H"
+                                    includeMargin={true}
+                                    imageSettings={{
+                                        src: storeSettings?.receipt_logo_url || '',
+                                        x: undefined,
+                                        y: undefined,
+                                        height: 30,
+                                        width: 30,
+                                        excavate: true,
+                                    }}
+                                />
+                                <div className="text-center">
+                                    <p className="font-bold text-indigo-900 text-sm">Scan untuk Pesan</p>
+                                    <p className="text-[10px] text-indigo-500">Pesan dari HP Anda lebih praktis!</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 bg-indigo-50/50 px-4 py-2 rounded-full w-full justify-center">
+                                <Scan className="w-4 h-4" />
+                                Meja {selectedTable?.number}
+                            </div>
+                        </div>
+                    )}
                 </main>
 
                 {/* Cart Sidebar (Fixed Bottom Sheet on Mobile/Tablet, Sidebar on Desktop) */}
-                {cart.length > 0 && (
+                {showCart && (
                     <div className="w-full md:w-[300px] lg:w-[400px] xl:w-[450px] bg-white border-t md:border-t-0 md:border-l border-gray-100 shadow-[0_-5px_25px_-5px_rgba(0,0,0,0.1)] lg:shadow-2xl flex flex-col z-50 animate-in slide-in-from-bottom md:slide-in-from-right duration-300 max-h-[85vh] md:max-h-full">
                         <div className="p-3 lg:p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50 cursor-pointer md:cursor-default"
                             onClick={(e) => {

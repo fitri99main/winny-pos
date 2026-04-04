@@ -261,6 +261,13 @@ export default function KDSScreen() {
                                 ]}>
                                     {item.product_name}
                                 </Text>
+                                {item.notes ? (
+                                    <View style={{ marginLeft: 32, marginTop: 1 }}>
+                                        <Text style={{ fontSize: 10, color: '#ea580c', fontStyle: 'italic' }}>
+                                            • {item.notes}
+                                        </Text>
+                                    </View>
+                                ) : null}
                             </View>
                             {item.status !== 'Ready' && (
                                 <TouchableOpacity 

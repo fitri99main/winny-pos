@@ -142,6 +142,10 @@ export default function POSScreen() {
     const [isSplitPayment, setIsSplitPayment] = useState(false);
     const [splitItemsToPay, setSplitItemsToPay] = useState<any[]>([]);
     const [showReceiptPreview, setShowReceiptPreview] = useState(false);
+    const [showTableManualModal, setShowTableManualModal] = useState(false);
+    const [showWaiterModal, setShowWaiterModal] = useState(false);
+    const [waiterSearchQuery, setWaiterSearchQuery] = useState('');
+    const [manualTableInput, setManualTableInput] = useState('');
     const [previewOrderData, setPreviewOrderData] = useState<any>(null);
     const [isPrinting, setIsPrinting] = useState(false);
     const [isPartialSplit, setIsPartialSplit] = useState(false);
@@ -369,28 +373,36 @@ export default function POSScreen() {
 
         // WiFi Voucher Fetching
         let wifiVoucher = null;
-        const minAmount = storeSettings?.wifi_voucher_min_amount || 0;
-        const multiplier = storeSettings?.wifi_voucher_multiplier || 0;
-        
-        if (storeSettings?.enable_wifi_vouchers && sale.total_amount >= minAmount) {
-            try {
-                let count = 1;
-                if (multiplier > 0) {
-                    count = Math.floor(sale.total_amount / multiplier);
-                }
+        if (storeSettings?.enable_wifi_vouchers) {
+            const minAmount = Number(storeSettings?.wifi_voucher_min_amount) || 0;
+            const multiplier = Number(storeSettings?.wifi_voucher_multiplier) || 0;
+            const totalAmount = Number(sale.total_amount) || 0;
+            
+            if (totalAmount >= minAmount) {
+                try {
+                    // [IMPROVED] Use multiplier if set, otherwise fallback to minAmount for per-voucher calculation
+                    const effectiveMultiplier = multiplier > 0 ? multiplier : minAmount;
+                    let count = 1;
+                    
+                    if (effectiveMultiplier > 0) {
+                        count = Math.floor(totalAmount / effectiveMultiplier);
+                    }
+
+                    console.log(`[POSScreen] WiFi Voucher Logic: total=${totalAmount}, min=${minAmount}, mult=${multiplier}, effective=${effectiveMultiplier}, count=${count}`);
 
                 if (count > 0) {
                     wifiVoucher = await WifiVoucherService.getVoucherForSale(sale.id, currentBranchId || '1', count);
                     if (wifiVoucher) {
-                        console.log('[POSScreen] WiFi Vouchers fetched successfully:', wifiVoucher);
+                        console.log('[POSScreen] WiFi Vouchers result:', wifiVoucher);
                     } else {
-                        console.warn('[POSScreen] WiFi Voucher pool is EMPTY or fetch failed.');
+                        console.warn('[POSScreen] WiFi Voucher fetch returned null/empty.');
                     }
                 }
             } catch (e) {
                 console.error('[POSScreen] Failed to fetch WiFi voucher:', e);
             }
         }
+    }
 
         return {
             order_no: sale.order_no,
@@ -418,6 +430,7 @@ export default function POSScreen() {
             show_customer_name: storeSettings?.show_customer_name,
             enable_wifi_vouchers: storeSettings?.enable_wifi_vouchers,
             wifi_voucher_min_amount: storeSettings?.wifi_voucher_min_amount,
+            wifi_voucher_multiplier: storeSettings?.wifi_voucher_multiplier,
             wifi_voucher: wifiVoucher,
             wifi_voucher_notice: storeSettings?.wifi_voucher_notice,
             payment_method: sale.payment_method,
@@ -432,7 +445,8 @@ export default function POSScreen() {
                 quantity: si.quantity,
                 target: si.target || 'Kitchen',
                 category: si.product?.category || '',
-                is_taxed: si.is_taxed || false
+                is_taxed: si.is_taxed || false,
+                notes: si.notes
             }))
         };
     };
@@ -675,7 +689,8 @@ export default function POSScreen() {
                     name: si.product_name || si.product?.name,
                     price: si.price,
                     quantity: si.quantity,
-                    target: si.target
+                    target: si.target,
+                    notes: si.notes || ''
                 }));
                 setCart(items);
                 console.log('POSScreen: Order loaded successfully');
@@ -699,14 +714,23 @@ export default function POSScreen() {
             const authorizedRoles = ['Manager', 'Manajer', 'Owner', 'Administrator', 'Admin', 'Supervisor'];
             
             // Parallelize all master data fetches
-            const [custRes, pmRes, managerRes] = await Promise.all([
+            const [custRes, pmRes, managerRes, allEmpRes] = await Promise.all([
                 supabase.from('customers').select('id, name, phone').limit(50),
                 supabase.from('payment_methods').select('*').eq('is_active', true),
                 supabase.from('employees')
                     .select('name, pin, position, system_role')
                     .not('pin', 'is', null)
-                    .or(`position.in.(${authorizedRoles.join(',')}),system_role.in.(${authorizedRoles.join(',')})`)
+                    .or(`position.in.(${authorizedRoles.join(',')}),system_role.in.(${authorizedRoles.join(',')})`),
+                supabase.from('employees')
+                    .select('id, name, position')
+                    .eq('branch_id', currentBranchId)
+                    .order('name', { ascending: true })
             ]);
+            
+            // Handle All Employees for Waiter Selection
+            if (!allEmpRes.error && allEmpRes.data) {
+                setWaiters(allEmpRes.data);
+            }
             // Handle Customers
             if (!custRes.error && custRes.data) {
                 setCustomers(custRes.data);
@@ -915,7 +939,7 @@ export default function POSScreen() {
                     item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
                 );
             }
-            return [...prevCart, { ...product, quantity: 1, target }];
+            return [...prevCart, { ...product, quantity: 1, target, notes: '' }];
         });
     }, []);
 
@@ -1094,6 +1118,22 @@ export default function POSScreen() {
         setShowCartModal(true);
     };
 
+    const handleTablePress = () => {
+        // [RESTRICTED] Only allow manual table entry for cashiers
+        if (isDisplayOnly || !cashierMode) {
+            console.log('[POSScreen] Manual table entry is restricted for non-cashier users.');
+            return;
+        }
+        setManualTableInput(selectedTable === 'Tanpa Meja' ? '' : selectedTable);
+        setShowTableManualModal(true);
+    };
+
+    const updateNote = (productId: string | number, note: string) => {
+        setCart(prev => prev.map(item => 
+            item.id === productId ? { ...item, notes: note } : item
+        ));
+    };
+
     const handleDeleteHeldOrder = (id: string) => {
         setHeldOrders(prev => prev.filter(h => h.id !== id));
     };
@@ -1203,7 +1243,8 @@ export default function POSScreen() {
                     cost: 0,
                     target: item.target || 'Waitress',
                     status: 'Pending',
-                    is_taxed: item.is_taxed || false
+                    is_taxed: item.is_taxed || false,
+                    notes: item.notes || ''
                 }));
 
                 const { error: itemsError } = await supabase.from('sale_items').insert(itemsToInsert);
@@ -1251,7 +1292,8 @@ export default function POSScreen() {
                     cost: 0,
                     target: item.target || 'Waitress',
                     status: 'Pending',
-                    is_taxed: item.is_taxed || false
+                    is_taxed: item.is_taxed || false,
+                    notes: item.notes || ''
                 }));
 
                 const { error: itemsError } = await supabase.from('sale_items').insert(itemsToInsert);
@@ -1377,7 +1419,7 @@ export default function POSScreen() {
                         customer_name: customerName,
                         customer_id: selectedCustomerId,
                         table_no: selectedTable || 'Tanpa Meja',
-                        waiter_name: userName || selectedWaiter, // [UPDATED] Use current cashier name
+                        waiter_name: selectedWaiter || userName, // [FIXED]
                         total_amount: finalTotal,
                         discount: currentDiscount,
                         tax: currentTax,
@@ -1412,7 +1454,7 @@ export default function POSScreen() {
                             customer_name: customerName,
                             customer_id: selectedCustomerId,
                             table_no: selectedTable || 'Tanpa Meja',
-                            waiter_name: userName || selectedWaiter,
+                            waiter_name: selectedWaiter || userName, // [FIXED]
                             total_amount: finalTotal,
                             discount: currentDiscount,
                             tax: currentTax,
@@ -1488,7 +1530,8 @@ export default function POSScreen() {
                 cost: 0,
                 target: item.target || 'Waitress',
                 status: 'Pending',
-                is_taxed: item.is_taxed || false
+                is_taxed: item.is_taxed || false,
+                notes: item.notes || ''
             }));
 
             const { error: itemsError } = await supabase
@@ -1704,7 +1747,13 @@ export default function POSScreen() {
 
                 {/* Info Bar (Meja, Pelanggan, Pelayan) */}
                 <View style={[styles.headerInfoBar, { paddingVertical: 2, justifyContent: 'space-around' }]}>
-                    <TouchableOpacity style={[styles.infoBarItem, { flex: 1 }]} onPress={() => setShowMemberLoginModal(true)}>
+                    <View style={[styles.infoBarItem, { flex: 2, borderRightWidth: 1, borderRightColor: '#f3f4f6' }]}>
+                        <Text style={[styles.infoBarLabel, { fontSize: 8 }]}>MEJA</Text>
+                        <Text style={[styles.infoBarValue, { fontSize: 11, color: '#111827' }]} numberOfLines={1}>
+                            {selectedTable}
+                        </Text>
+                    </View>
+                    <TouchableOpacity style={[styles.infoBarItem, { flex: 2 }]} onPress={() => setShowMemberLoginModal(true)}>
                         <Text style={[styles.infoBarLabel, { fontSize: 8 }]}>Pelanggan</Text>
                         <Text style={[styles.infoBarValue, { fontSize: 11 }]} numberOfLines={1}>{customerName}</Text>
                     </TouchableOpacity>
@@ -2294,6 +2343,47 @@ export default function POSScreen() {
                                     </View>
                                 )}
                             </View>
+                            
+                            {/* NEW: Table & Waiter Row inside Cart Modal for Cashiers */}
+                            {!isDisplayOnly && (
+                                <View style={{ flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 12, gap: 12, borderBottomWidth: 1, borderBottomColor: '#f3f4f6', backgroundColor: '#fafafa' }}>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#6b7280', marginBottom: 4 }}>NOMOR MEJA</Text>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0', paddingHorizontal: 8 }}>
+                                            <Text style={{ fontSize: 12 }}>📝</Text>
+                                            <TextInput
+                                                style={{ flex: 1, paddingVertical: 8, paddingHorizontal: 4, fontSize: 14, fontWeight: 'bold', color: '#111827' }}
+                                                placeholder="Contoh: A1"
+                                                value={selectedTable === 'Tanpa Meja' ? '' : selectedTable}
+                                                onChangeText={(text) => setSelectedTable(text || 'Tanpa Meja')}
+                                                autoCapitalize="characters"
+                                            />
+                                        </View>
+                                    </View>
+                                    <TouchableOpacity 
+                                        style={{ flex: 1.5 }}
+                                        onPress={() => setShowWaiterModal(true)}
+                                    >
+                                        <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#6b7280', marginBottom: 4 }}>PELAYAN (WAITER)</Text>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0', paddingHorizontal: 8, height: 42 }}>
+                                            <Text style={{ fontSize: 12 }}>👨‍🍳</Text>
+                                            <Text style={{ flex: 1, paddingHorizontal: 4, fontSize: 14, color: selectedWaiter ? '#111827' : '#94a3b8' }}>
+                                                {selectedWaiter || 'Pilih Pelayan...'}
+                                            </Text>
+                                            <Text style={{ fontSize: 12, color: '#94a3b8' }}>▼</Text>
+                                        </View>
+                                    </TouchableOpacity>
+                                </View>
+                            )}
+
+                            {/* Info-only Row for Customers in Cart Modal */}
+                            {isDisplayOnly && (
+                                <View style={{ flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 8, backgroundColor: '#f9fafb', borderBottomWidth: 1, borderBottomColor: '#f3f4f6' }}>
+                                    <Text style={{ fontSize: 12, color: '#4b5563' }}>Meja: <Text style={{ fontWeight: 'bold' }}>{selectedTable}</Text></Text>
+                                    <Text style={{ fontSize: 12, color: '#4b5563', marginLeft: 16 }}>Waiter: <Text style={{ fontWeight: 'bold' }}>{selectedWaiter || '-'}</Text></Text>
+                                </View>
+                            )}
+
 
                             <ScrollView style={styles.cartItemList}>
                                 {cart.map((item) => (
@@ -2304,6 +2394,27 @@ export default function POSScreen() {
                                                 <Text style={{ fontSize: 10, color: '#6b7280', fontStyle: 'italic', marginTop: 1 }}>• {item.notes}</Text>
                                             ) : null}
                                             <Text style={styles.cartItemPrice}>{formatCurrency(item.price)}</Text>
+                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                                                <Text style={{ fontSize: 10 }}>✍️</Text>
+                                                <TextInput
+                                                    style={{ 
+                                                        flex: 1,
+                                                        fontSize: 11, 
+                                                        color: '#ea580c', 
+                                                        backgroundColor: '#fff7ed',
+                                                        paddingHorizontal: 10,
+                                                        paddingVertical: 6,
+                                                        borderRadius: 8,
+                                                        borderWidth: 1,
+                                                        borderColor: '#ffedd5',
+                                                        fontWeight: '500'
+                                                    }}
+                                                    placeholder="Catatan (contoh: Pedas, Tanpa MSG)..."
+                                                    placeholderTextColor="#fdba74"
+                                                    value={item.notes}
+                                                    onChangeText={(text) => updateNote(item.id, text)}
+                                                />
+                                            </View>
                                         </View>
                                         <View style={styles.quantityControls}>
                                             <TouchableOpacity style={styles.qtyButton} onPress={() => removeFromCart(item.id)}>
@@ -2411,6 +2522,141 @@ export default function POSScreen() {
                     handlePrintReceipt();
                 }}
             />
+
+            {/* Waiter Selection Modal */}
+            <Modal
+                visible={showWaiterModal}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setShowWaiterModal(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, { maxHeight: '80%' }]}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Pilih Pelayan (Waiter)</Text>
+                            <TouchableOpacity onPress={() => setShowWaiterModal(false)}>
+                                <Text style={{ fontSize: 24, color: '#6b7280' }}>&times;</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        <View style={{ paddingHorizontal: 16, marginBottom: 8 }}>
+                            <TextInput
+                                style={{
+                                    backgroundColor: '#f3f4f6',
+                                    borderRadius: 8,
+                                    paddingHorizontal: 12,
+                                    paddingVertical: 10,
+                                    fontSize: 14,
+                                    borderWidth: 1,
+                                    borderColor: '#e5e7eb'
+                                }}
+                                placeholder="Cari nama karyawan..."
+                                value={waiterSearchQuery}
+                                onChangeText={setWaiterSearchQuery}
+                            />
+                        </View>
+
+                        <ScrollView style={{ paddingHorizontal: 16 }}>
+                            <TouchableOpacity 
+                                style={{ 
+                                    paddingVertical: 12, 
+                                    borderBottomWidth: 1, 
+                                    borderBottomColor: '#f3f4f6',
+                                    backgroundColor: selectedWaiter === '' ? '#fff7ed' : 'transparent'
+                                }}
+                                onPress={() => { setSelectedWaiter(''); setShowWaiterModal(false); }}
+                            >
+                                <Text style={{ fontSize: 15, color: '#6b7280' }}>-- Tanpa Pelayan --</Text>
+                            </TouchableOpacity>
+                            {waiters
+                                .filter(w => (w.name || '').toLowerCase().includes(waiterSearchQuery.toLowerCase()))
+                                .map((w) => (
+                                    <TouchableOpacity 
+                                        key={w.id} 
+                                        style={{ 
+                                            paddingVertical: 14, 
+                                            borderBottomWidth: 1, 
+                                            borderBottomColor: '#f3f4f6',
+                                            backgroundColor: selectedWaiter === w.name ? '#fff7ed' : 'transparent'
+                                        }}
+                                        onPress={() => {
+                                            setSelectedWaiter(w.name);
+                                            setShowWaiterModal(false);
+                                            setWaiterSearchQuery('');
+                                        }}
+                                    >
+                                        <Text style={{ fontSize: 16, color: '#111827', fontWeight: selectedWaiter === w.name ? 'bold' : 'normal' }}>{w.name}</Text>
+                                        {w.position && <Text style={{ fontSize: 12, color: '#6b7280' }}>{w.position}</Text>}
+                                    </TouchableOpacity>
+                                ))}
+                            {waiters.length === 0 && (
+                                <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                                    <Text style={{ color: '#94a3b8' }}>Daftar karyawan tidak ditemukan</Text>
+                                </View>
+                            )}
+                        </ScrollView>
+
+                        <TouchableOpacity 
+                            style={[styles.modalButton, styles.cancelButton, { margin: 16 }]} 
+                            onPress={() => setShowWaiterModal(false)}
+                        >
+                            <Text style={styles.cancelButtonText}>Batal</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Manual Table Modal */}
+            <Modal
+                visible={showTableManualModal}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowTableManualModal(false)}
+            >
+                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}>
+                    <View style={{ backgroundColor: 'white', width: '85%', borderRadius: 20, padding: 24, elevation: 5 }}>
+                        <Text style={{ fontSize: 18, fontWeight: 'bold', mb: 8, color: '#111827' }}>Nomor Meja</Text>
+                        <Text style={{ fontSize: 14, color: '#6b7280', marginBottom: 16 }}>Masukkan nomor meja secara manual:</Text>
+                        
+                        <TextInput
+                            style={{ 
+                                backgroundColor: '#f3f4f6', 
+                                borderRadius: 12, 
+                                padding: 16, 
+                                fontSize: 18, 
+                                fontWeight: 'bold',
+                                color: '#111827',
+                                textAlign: 'center',
+                                borderWidth: 1,
+                                borderColor: '#e5e7eb'
+                            }}
+                            placeholder="Contoh: A1"
+                            autoFocus
+                            value={manualTableInput}
+                            onChangeText={setManualTableInput}
+                            autoCapitalize="characters"
+                        />
+
+                        <View style={{ flexDirection: 'row', gap: 12, marginTop: 24 }}>
+                            <TouchableOpacity 
+                                style={{ flex: 1, padding: 16, borderRadius: 12, backgroundColor: '#f3f4f6', alignItems: 'center' }}
+                                onPress={() => setShowTableManualModal(false)}
+                            >
+                                <Text style={{ fontWeight: 'bold', color: '#4b5563' }}>Batal</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={{ flex: 1, padding: 16, borderRadius: 12, backgroundColor: '#ea580c', alignItems: 'center' }}
+                                onPress={() => {
+                                    setSelectedTable(manualTableInput.trim().toUpperCase() || 'Tanpa Meja');
+                                    setShowTableManualModal(false);
+                                }}
+                            >
+                                <Text style={{ fontWeight: 'bold', color: 'white' }}>Simpan</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
 
             </View>
             {/* Debug Role Banner (Sangat berguna untuk pemecahan masalah) */}

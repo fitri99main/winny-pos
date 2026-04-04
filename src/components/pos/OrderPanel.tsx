@@ -12,6 +12,7 @@ interface OrderPanelProps {
   service?: number;
   onQuantityChange: (itemId: string, newQuantity: number) => void;
   onRemoveItem: (itemId: string) => void;
+  onNotesChange?: (itemId: string, notes: string) => void;
 }
 
 export function OrderPanel({
@@ -23,6 +24,7 @@ export function OrderPanel({
   service = 0,
   onQuantityChange,
   onRemoveItem,
+  onNotesChange,
 }: OrderPanelProps) {
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('id-ID', {
@@ -88,6 +90,13 @@ export function OrderPanel({
                       <p className="text-xs text-gray-500">
                         {formatPrice(item.product.price + (item.selectedAddons?.reduce((sum, a) => sum + a.price, 0) || 0))} × {item.quantity}
                       </p>
+                      <textarea
+                        placeholder="Tambahkan catatan (cth: Pedas)..."
+                        className="w-full mt-2 text-[10px] bg-gray-50 border border-gray-100 rounded-lg p-1.5 focus:ring-0 focus:border-orange-200 resize-none"
+                        rows={1}
+                        value={item.notes || ''}
+                        onChange={(e) => onNotesChange?.(item.id, e.target.value)}
+                      />
                     </div>
                     <button
                       onClick={() => onRemoveItem(item.id)}

@@ -2,7 +2,7 @@ import * as React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, ScrollView, TextInput, ActivityIndicator, Alert, Switch } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
-import { ChevronLeft, Store, MapPin, Phone, Save, Shield, Layout, CheckCircle2, Clock, Calendar, Lock, Monitor, Percent, Printer } from 'lucide-react-native';
+import { ChevronLeft, Store, MapPin, Phone, Save, Shield, Layout, CheckCircle2, Clock, Calendar, Lock, Monitor, Percent, Printer, Wifi } from 'lucide-react-native';
 import { Modal } from 'react-native';
 import { useSession } from '../context/SessionContext';
 
@@ -227,6 +227,67 @@ export default function StoreSettingsScreen() {
                                 </>
                             )}
                         </TouchableOpacity>
+                    </View>
+                </View>
+
+                {/* WiFi Voucher Section */}
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>WiFi Voucher</Text>
+                    <View style={styles.card}>
+                        <View style={styles.switchItem}>
+                            <View style={styles.switchContent}>
+                                <View style={styles.switchLabelRow}>
+                                    <Wifi size={18} color="#2563eb" />
+                                    <Text style={[styles.switchLabel, { color: '#1e40af' }]}>Aktifkan WiFi Voucher</Text>
+                                </View>
+                                <Text style={styles.switchSubtitle}>Cetak kode voucher otomatis pada struk</Text>
+                            </View>
+                            <Switch
+                                value={storeSettings?.enable_wifi_vouchers ?? false}
+                                onValueChange={(val) => toggleSetting('enable_wifi_vouchers', val)}
+                                trackColor={{ false: '#e2e8f0', true: '#2563eb' }}
+                            />
+                        </View>
+
+                        {storeSettings?.enable_wifi_vouchers && (
+                            <View style={{ marginTop: 12, gap: 16 }}>
+                                <View style={styles.divider} />
+                                <View style={{ flexDirection: 'row', gap: 12 }}>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.inputLabel}>Minimal Belanja (Rp)</Text>
+                                        <TextInput
+                                            style={[styles.input, { marginTop: 8 }]}
+                                            value={String(storeSettings?.wifi_voucher_min_amount || 0)}
+                                            onChangeText={(text) => setStoreSettings({ ...storeSettings, wifi_voucher_min_amount: parseInt(text) || 0 })}
+                                            onBlur={() => toggleSetting('wifi_voucher_min_amount', storeSettings.wifi_voucher_min_amount)}
+                                            placeholder="50000"
+                                            keyboardType="numeric"
+                                        />
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.inputLabel}>Kelipatan (Rp)</Text>
+                                        <TextInput
+                                            style={[styles.input, { marginTop: 8 }]}
+                                            value={String(storeSettings?.wifi_voucher_multiplier || 0)}
+                                            onChangeText={(text) => setStoreSettings({ ...storeSettings, wifi_voucher_multiplier: parseInt(text) || 0 })}
+                                            onBlur={() => toggleSetting('wifi_voucher_multiplier', storeSettings.wifi_voucher_multiplier)}
+                                            placeholder="20000"
+                                            keyboardType="numeric"
+                                        />
+                                    </View>
+                                </View>
+                                <View>
+                                    <Text style={styles.inputLabel}>Pesan Header Voucher</Text>
+                                    <TextInput
+                                        style={[styles.input, { marginTop: 8 }]}
+                                        value={storeSettings?.wifi_voucher_notice || ''}
+                                        onChangeText={(text) => setStoreSettings({ ...storeSettings, wifi_voucher_notice: text })}
+                                        onBlur={() => toggleSetting('wifi_voucher_notice', storeSettings.wifi_voucher_notice)}
+                                        placeholder="Gunakan kode ini untuk WiFi"
+                                    />
+                                </View>
+                            </View>
+                        )}
                     </View>
                 </View>
 

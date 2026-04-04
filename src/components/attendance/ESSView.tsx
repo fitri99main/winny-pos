@@ -282,30 +282,30 @@ function IdleScreen({ onLogin }: { onLogin: (emp: Employee) => void }) {
     };
 
     return (
-        <div className="min-h-[100dvh] flex flex-col bg-gray-900 text-white font-sans items-center justify-center relative overflow-hidden pb-12">
-            <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-gray-800 z-0" />
+        <div className="min-h-[100dvh] flex flex-col bg-slate-50 text-slate-900 font-sans items-center justify-center relative overflow-hidden pb-12">
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-50 to-indigo-50/30 z-0" />
             <div className="relative z-10 w-full max-w-md p-6 flex flex-col items-center">
                 <div className="mb-6 text-center animate-in zoom-in duration-500">
-                    <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-4 backdrop-blur-md shadow-2xl border border-white/10">
+                    <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-xl shadow-blue-100 border border-white">
                         <Clock className="w-8 h-8 text-primary animate-pulse" />
                     </div>
-                    <ClockDisplay className="text-4xl font-black tabular-nums tracking-tighter mb-1" />
-                    <p className="text-gray-400 font-medium text-xs">Waktu Indonesia Barat</p>
+                    <ClockDisplay className="text-4xl font-black tabular-nums tracking-tighter mb-1 text-slate-800" />
+                    <p className="text-slate-500 font-bold text-[10px] uppercase tracking-widest">Waktu Indonesia Barat</p>
                 </div>
 
-                <div className="w-full bg-white/5 backdrop-blur-xl border border-white/10 rounded-[28px] p-6 shadow-2xl animate-in slide-in-from-bottom duration-500 max-w-[320px] mx-auto">
-                    <h3 className="text-lg font-bold text-center mb-1">Login Karyawan</h3>
-                    <p className="text-gray-400 text-center text-[10px] mb-5">Masukkan 6-digit PIN Anda</p>
+                <div className="w-full bg-white/80 backdrop-blur-xl border border-white rounded-[40px] p-8 shadow-2xl shadow-blue-900/5 animate-in slide-in-from-bottom duration-500 max-w-[340px] mx-auto">
+                    <h3 className="text-xl font-black text-center mb-1 text-slate-800 tracking-tight">Login Karyawan</h3>
+                    <p className="text-slate-400 text-center text-[11px] font-medium mb-6">Masukkan 6-digit PIN Absensi</p>
 
                     {/* PIN Display */}
-                    <div className="bg-black/30 rounded-xl h-12 mb-5 flex items-center justify-center border border-white/5">
-                        <div className="flex gap-2.5">
+                    <div className="bg-slate-50/50 rounded-2xl h-14 mb-6 flex items-center justify-center border border-slate-100 shadow-inner">
+                        <div className="flex gap-3">
                             {Array.from({ length: 6 }).map((_, i) => (
                                 <div
                                     key={i}
-                                    className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${i < pinDisplay.length
-                                        ? 'bg-primary shadow-[0_0_8px_rgba(59,130,246,0.8)] scale-110'
-                                        : 'bg-white/20'
+                                    className={`w-3 h-3 rounded-full transition-all duration-300 ${i < pinDisplay.length
+                                        ? 'bg-primary shadow-[0_0_12px_rgba(59,130,246,0.4)] scale-110'
+                                        : 'bg-slate-200'
                                         }`}
                                 />
                             ))}
@@ -313,49 +313,52 @@ function IdleScreen({ onLogin }: { onLogin: (emp: Employee) => void }) {
                     </div>
 
                     {/* Numpad */}
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-3 gap-4">
                         {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
                             <button
                                 key={num}
                                 onClick={() => handlePinPress(String(num))}
-                                className="aspect-square rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 text-xl font-bold transition-all active:scale-90 flex items-center justify-center shadow-lg group"
+                                className="aspect-square rounded-2xl bg-white hover:bg-slate-50 border border-slate-100 text-xl font-black text-slate-700 transition-all active:scale-90 flex items-center justify-center shadow-sm hover:shadow-md group"
                             >
                                 <span className="group-hover:scale-110 transition-transform">{num}</span>
                             </button>
                         ))}
-                        <button onClick={() => handlePinPress('C')} className="aspect-square rounded-xl bg-red-500/10 text-red-400 font-bold hover:bg-red-500/20 flex items-center justify-center transition-all active:scale-90 border border-red-500/10 text-lg">C</button>
-                        <button onClick={() => handlePinPress('0')} className="aspect-square rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 text-xl font-bold flex items-center justify-center transition-all active:scale-90">0</button>
-                        <button onClick={handlePinSubmit} className="aspect-square rounded-xl bg-primary text-white shadow-lg shadow-primary/25 flex items-center justify-center transition-all active:scale-90 hover:bg-primary/90">
-                            <ChevronRight className="w-6 h-6" />
+                        <button onClick={() => handlePinPress('C')} className="aspect-square rounded-2xl bg-red-50 text-red-500 font-black hover:bg-red-100 flex items-center justify-center transition-all active:scale-90 border border-red-100 text-lg shadow-sm">C</button>
+                        <button onClick={() => handlePinPress('0')} className="aspect-square rounded-2xl bg-white hover:bg-slate-50 border border-slate-100 text-xl font-black text-slate-700 flex items-center justify-center transition-all active:scale-90 shadow-sm">0</button>
+                        <button onClick={handlePinSubmit} className="aspect-square rounded-2xl bg-primary text-white shadow-lg shadow-primary/30 flex items-center justify-center transition-all active:scale-95 hover:bg-primary/90">
+                            <ChevronRight className="w-8 h-8" />
                         </button>
                     </div>
                 </div>
 
                 {/* Fingerprint Scanner Button */}
-                <div className="mt-6 w-full max-w-[320px] mx-auto">
+                <div className="mt-8 w-full max-w-[340px] mx-auto">
                     <button
                         onClick={() => handleFingerprintScan(false)}
-                        className={`w-full py-4 rounded-2xl flex items-center justify-center gap-3 transition-all duration-300 font-bold ${isScanning
-                            ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                            : 'bg-white/5 hover:bg-white/10 text-white border border-white/10'
+                        className={`w-full py-5 rounded-[28px] flex items-center justify-center gap-3 transition-all duration-300 font-black text-sm uppercase tracking-wider ${isScanning
+                            ? 'bg-blue-600 text-white shadow-xl shadow-blue-200 ring-4 ring-blue-50'
+                            : 'bg-white hover:bg-slate-50 text-blue-600 border border-blue-100 shadow-lg shadow-blue-900/5'
                             }`}
                     >
                         {isScanning ? (
                             <>
-                                <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                                 <span>{fpStatus || 'Memproses...'}</span>
                             </>
                         ) : (
                             <>
-                                <QrCode className="w-5 h-5" /> {/* Ganti QrCode dengan icon Fingerprint jika tersedia, QrCode sbg placeholder */}
-                                <span>Gunakan Sidik Jari (4500 USB)</span>
+                                <div className="p-2 bg-blue-50 rounded-xl">
+                                    <QrCode className="w-5 h-5 text-blue-600" />
+                                </div>
+                                <span>Gunakan Sidik Jari</span>
                             </>
                         )}
                     </button>
                 </div>
 
-                <p className="mt-8 text-xs text-gray-500 text-center max-w-xs">
-                    Jika belum memiliki PIN, silakan hubungi Manager atau Admin untuk pengaturan akses.
+                <p className="mt-10 text-[10px] text-slate-400 text-center max-w-xs font-bold uppercase tracking-widest leading-relaxed">
+                    © {new Date().getFullYear()} WinPOS System<br/>
+                    Hubungi Manager jika lupa PIN
                 </p>
             </div>
         </div>

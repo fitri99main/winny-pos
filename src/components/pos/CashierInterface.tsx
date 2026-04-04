@@ -316,6 +316,24 @@ export function CashierInterface({
       const now = new Date();
       if (p.start_date && new Date(p.start_date) > now) return false;
       if (p.end_date && new Date(p.end_date) < now) return false;
+      
+      // Time check
+      if (p.start_time || p.end_time) {
+        const currentTime = now.getHours() * 60 + now.getMinutes();
+        
+        if (p.start_time) {
+          const [h, m] = p.start_time.split(':').map(Number);
+          const startTime = h * 60 + m;
+          if (currentTime < startTime) return false;
+        }
+        
+        if (p.end_time) {
+          const [h, m] = p.end_time.split(':').map(Number);
+          const endTime = h * 60 + m;
+          if (currentTime > endTime) return false;
+        }
+      }
+
       return true;
     });
 
@@ -639,7 +657,8 @@ export function CashierInterface({
           name: item.product.name,
           quantity: item.quantity,
           price: item.product.price,
-          isManual: String(item.product.id).startsWith('manual-')
+          isManual: String(item.product.id).startsWith('manual-'),
+          notes: item.notes
         })),
         tableNo: selectedTable,
         customerName: customerName,
@@ -695,7 +714,8 @@ export function CashierInterface({
           name: item.product.name,
           quantity: item.quantity,
           price: item.product.price,
-          target: item.product.target // Pass the target attribute
+          target: item.product.target, // Pass the target attribute
+          notes: item.notes
         }))
       });
     }
@@ -741,6 +761,10 @@ export function CashierInterface({
   // Scan barcode
   const handleScan = () => {
     toast.info('Pemindai barcode - Fitur segera hadir');
+  };
+
+  const handleNotesChange = (itemId: string, notes: string) => {
+    setOrderItems(prev => prev.map(item => item.id === itemId ? { ...item, notes } : item));
   };
 
   return (
@@ -798,15 +822,24 @@ export function CashierInterface({
                     <div className="relative">
                       <select
                         value={selectedTable}
-                        onChange={(e) => setSelectedTable(e.target.value)}
-                        className="bg-transparent font-bold text-pos-charcoal text-xs appearance-none pr-4 focus:outline-none cursor-pointer min-w-[60px]"
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === 'MANUAL') {
+                            const custom = prompt('Masukkan Nomor Meja Manual:');
+                            if (custom) setSelectedTable(custom.toUpperCase());
+                          } else {
+                            setSelectedTable(val);
+                          }
+                        }}
+                        className="bg-transparent border-none p-0 pr-6 text-xs font-bold text-gray-700 focus:ring-0 cursor-pointer appearance-none min-w-[60px]"
                       >
                         <option value="">Pilih</option>
-                        {(tables || []).map(t => (
-                          <option key={t.id} value={t.number}>{t.number} ({t.capacity})</option>
+                        {Array.from(new Set([...(tables || []).map(t => t.number), selectedTable])).filter(Boolean).map(no => (
+                          <option key={no} value={no}>{no}</option>
                         ))}
+                        <option value="MANUAL">+ Manual</option>
                       </select>
-                      <ChevronDown className="w-3 h-3 text-gray-400 pointer-events-none absolute right-0 top-0.5" />
+                      <ChevronDown className="w-3 h-3 text-gray-400 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>
                   </div>
                 </div>
@@ -917,6 +950,7 @@ export function CashierInterface({
             service={serviceAmount}
             onQuantityChange={handleQuantityChange}
             onRemoveItem={handleRemoveItem}
+            onNotesChange={handleNotesChange}
           />
         </div>
       </div>
@@ -1053,7 +1087,30 @@ export function CashierInterface({
         onOpenChange={setDiscountModalOpen}
         onApplyDiscount={handleApplyDiscount}
         currentTotal={subtotal}
-        availablePromos={promos.filter(p => p.type === 'manual')}
+        availablePromos={promos.filter(p => {
+          if (p.type !== 'manual') return false;
+          if (!p.is_active) return false;
+          
+          const now = new Date();
+          if (p.start_date && new Date(p.start_date) > now) return false;
+          if (p.end_date && new Date(p.end_date) < now) return false;
+          
+          // Time check
+          if (p.start_time || p.end_time) {
+            const currentTime = now.getHours() * 60 + now.getMinutes();
+            if (p.start_time) {
+              const [h, m] = p.start_time.split(':').map(Number);
+              const startTime = h * 60 + m;
+              if (currentTime < startTime) return false;
+            }
+            if (p.end_time) {
+              const [h, m] = p.end_time.split(':').map(Number);
+              const endTime = h * 60 + m;
+              if (currentTime > endTime) return false;
+            }
+          }
+          return true;
+        })}
       />
 
       <PaymentModal

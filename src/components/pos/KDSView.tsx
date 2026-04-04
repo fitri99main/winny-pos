@@ -45,7 +45,8 @@ export function KDSView({ orders = [], onUpdateStatus }: KDSViewProps) {
             name: productDetailsToName(item),
             quantity: item.quantity,
             status: item.status || 'Pending',
-            target: item.target || determineTarget(item) // Use existing target if available
+            target: item.target || determineTarget(item), // Use existing target if available
+            notes: item.notes
         })),
         rawSale: sale
     })).filter(o => o.items.length > 0);
@@ -133,9 +134,16 @@ export function KDSView({ orders = [], onUpdateStatus }: KDSViewProps) {
                                     }`}>
                                     {item.quantity}
                                 </div>
-                                <span className={`font-bold text-sm ${item.status === 'Ready' ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
-                                    {item.name}
-                                </span>
+                                <div className="flex flex-col">
+                                    <span className={`font-bold text-sm ${item.status === 'Ready' ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
+                                        {item.name}
+                                    </span>
+                                    {item.notes && (
+                                        <span className="text-[10px] text-orange-600 font-medium italic">
+                                            Catatan: {item.notes}
+                                        </span>
+                                    )}
+                                </div>
                             </div>
                             {item.status !== 'Ready' && (
                                 <button

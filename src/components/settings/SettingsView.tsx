@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Settings, User, Monitor, Globe, Bell, Shield, Save, Clock, Calendar, Printer, FileText, LayoutGrid, Plus, Trash2, Edit, CreditCard, CheckCircle2, XCircle, Database, Upload, Download, AlertTriangle, Loader2, Calculator, RotateCcw, Zap, Info, ExternalLink } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { TableQRPrintView } from './TableQRPrintView';
 import { printerService } from '../../lib/PrinterService';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -18,6 +19,7 @@ interface SettingsViewProps {
     onTableAction?: (action: 'create' | 'update' | 'delete', data: any) => void;
     paymentMethods?: any[];
     onPaymentMethodAction?: (action: 'create' | 'update' | 'delete', data: any) => void;
+    branchId?: string;
 }
 
 export function SettingsView({
@@ -26,7 +28,8 @@ export function SettingsView({
     tables = [],
     onTableAction,
     paymentMethods = [],
-    onPaymentMethodAction
+    onPaymentMethodAction,
+    branchId = '7'
 }: SettingsViewProps) {
     const [activeTab, setActiveTab] = useState('general');
     const [localSettings, setLocalSettings] = useState(settings);
@@ -57,6 +60,7 @@ export function SettingsView({
     const [updatingProfile, setUpdatingProfile] = useState(false);
     const [uploadingLogo, setUploadingLogo] = useState(false);
     const [sdkStatus, setSdkStatus] = useState<'idle' | 'checking' | 'active' | 'error'>('idle');
+    const [isPrintingTableQRs, setIsPrintingTableQRs] = useState(false);
 
     useEffect(() => {
         if (user) {
@@ -866,9 +870,19 @@ export function SettingsView({
                                 <h3 className="text-lg font-bold text-gray-800">Manajemen Meja</h3>
                                 <p className="text-sm text-gray-500">Atur layout dan kapasitas meja restoran.</p>
                             </div>
-                            <Button onClick={() => handleOpenTableModal()}>
-                                <Plus className="w-4 h-4 mr-2" /> Tambah Meja
-                            </Button>
+                            <div className="flex gap-3">
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setIsPrintingTableQRs(true)}
+                                    className="border-primary/20 text-primary hover:bg-primary/5"
+                                >
+                                    <QrCode className="w-4 h-4 mr-2" />
+                                    Cetak QR Meja
+                                </Button>
+                                <Button onClick={() => handleOpenTableModal()}>
+                                    <Plus className="w-4 h-4 mr-2" /> Tambah Meja
+                                </Button>
+                            </div>
                         </div>
 
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
@@ -903,6 +917,18 @@ export function SettingsView({
                                 <span className="text-xs font-bold">Tambah</span>
                             </button>
                         </div>
+
+                        <AnimatePresence>
+                            {isPrintingTableQRs && (
+                                <div className="fixed inset-0 z-[100] bg-white animate-in fade-in duration-300 overflow-hidden flex flex-col">
+                                    <TableQRPrintView 
+                                        tables={tables} 
+                                        branchId={branchId} 
+                                        onBack={() => setIsPrintingTableQRs(false)} 
+                                    />
+                                </div>
+                            )}
+                        </AnimatePresence>
                     </div>
                 )}
 
@@ -2172,7 +2198,7 @@ export function SettingsView({
                                 />
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                 <div className="space-y-2">
                                     <Label className="text-sm font-medium text-gray-700">Minimal Belanja (Rp)</Label>
                                     <input
@@ -2182,6 +2208,18 @@ export function SettingsView({
                                         className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                                         placeholder="50000"
                                     />
+                                    <p className="text-[10px] text-gray-400">Voucher hanya muncul jika total belanja mencapai nilai ini.</p>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label className="text-sm font-medium text-gray-700">Kelipatan Belanja (Rp)</Label>
+                                    <input
+                                        type="number"
+                                        value={localSettings.wifi_voucher_multiplier || 0}
+                                        onChange={e => handleLocalChange({ ...localSettings, wifi_voucher_multiplier: parseInt(e.target.value) || 0 })}
+                                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                        placeholder="20000"
+                                    />
+                                    <p className="text-[10px] text-gray-400">Setiap kelipatan jumlah ini akan mendapatkan 1 voucher tambahan (0 = hanya 1 voucher).</p>
                                 </div>
                                 <div className="space-y-2">
                                     <Label className="text-sm font-medium text-gray-700">Pesan Header Voucher</Label>

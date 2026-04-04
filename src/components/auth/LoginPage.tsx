@@ -95,9 +95,9 @@ export default function LoginPage() {
     return (
         <div className="min-h-screen w-full flex bg-gray-50">
             {/* Left Side - Brand / Image */}
-            <div className="hidden lg:flex lg:w-1/2 bg-gray-900 relative overflow-hidden items-center justify-center">
-                <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-gray-900 z-10" />
-                <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1556742049-0cfed4f7a07d?q=80&w=2070&auto=format&fit=crop')] bg-cover bg-center opacity-40 grayscale" />
+            <div className="hidden lg:flex lg:w-1/2 bg-blue-600 relative overflow-hidden items-center justify-center">
+                <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-indigo-700 z-10" />
+                <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1556742049-0cfed4f7a07d?q=80&w=2070&auto=format&fit=crop')] bg-cover bg-center opacity-30 mix-blend-overlay" />
 
                 <div className="relative z-20 text-center p-12">
                     <div className="w-24 h-24 bg-primary/20 backdrop-blur-md rounded-3xl flex items-center justify-center mx-auto mb-8 shadow-2xl shadow-primary/20 border border-white/10">
@@ -193,7 +193,7 @@ export default function LoginPage() {
                         <Button
                             type="submit"
                             disabled={loading}
-                            className="w-full h-12 bg-gray-900 hover:bg-black text-white text-base font-semibold rounded-xl shadow-xl shadow-gray-200 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                            className="w-full h-12 bg-primary hover:bg-primary/90 text-white text-base font-bold rounded-xl shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
                         >
                             {loading ? (
                                 <>

@@ -20,6 +20,8 @@ interface Promo {
   min_spend: number;
   start_date: string | null;
   end_date: string | null;
+  start_time: string | null;
+  end_time: string | null;
   is_active: boolean;
 }
 
@@ -45,6 +47,8 @@ export function PromosView({ currentBranchId, products }: { currentBranchId: str
     discount_type: 'percentage',
     value: 0,
     min_spend: 0,
+    start_time: '00:00',
+    end_time: '23:59',
     is_active: true,
   });
 
@@ -95,6 +99,8 @@ export function PromosView({ currentBranchId, products }: { currentBranchId: str
         discount_type: 'percentage',
         value: 0,
         min_spend: 0,
+        start_time: '00:00',
+        end_time: '23:59',
         is_active: true,
       });
       setSelectedProductIds([]);
@@ -275,6 +281,11 @@ export function PromosView({ currentBranchId, products }: { currentBranchId: str
                     </span>
                   </div>
 
+                  <div className="flex items-center gap-2 text-[10px] text-gray-400 font-bold uppercase tracking-tight">
+                    <Tag className="w-3.5 h-3.5" />
+                    <span>Jam: {promo.start_time?.slice(0, 5) || '00:00'} - {promo.end_time?.slice(0, 5) || '23:59'}</span>
+                  </div>
+
                   {/* Actions */}
                   <div className="flex items-center gap-2 pt-2 border-t border-gray-50 dark:border-gray-700 mt-4">
                     <Button 
@@ -414,6 +425,26 @@ export function PromosView({ currentBranchId, products }: { currentBranchId: str
                        className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border-none rounded-2xl focus:ring-2 focus:ring-orange-500 transition-all font-bold text-gray-800 dark:text-white"
                        value={formData.end_date ? formData.end_date.slice(0, 16) : ''}
                        onChange={(e) => setFormData({...formData, end_date: e.target.value})}
+                     />
+                  </div>
+
+                  <div className="space-y-2">
+                     <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">Mulai Jam</label>
+                     <input
+                       type="time"
+                       className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border-none rounded-2xl focus:ring-2 focus:ring-orange-500 transition-all font-bold text-gray-800 dark:text-white"
+                       value={formData.start_time || '00:00'}
+                       onChange={(e) => setFormData({...formData, start_time: e.target.value})}
+                     />
+                  </div>
+
+                  <div className="space-y-2">
+                     <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">Sampai Jam</label>
+                     <input
+                       type="time"
+                       className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border-none rounded-2xl focus:ring-2 focus:ring-orange-500 transition-all font-bold text-gray-800 dark:text-white"
+                       value={formData.end_time || '23:59'}
+                       onChange={(e) => setFormData({...formData, end_time: e.target.value})}
                      />
                   </div>
 

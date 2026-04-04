@@ -9,6 +9,7 @@ interface PayrollItem {
     position: string;
     basicSalary: number;
     allowance: number;
+    overtime: number;
     deduction: number;
     status: 'Pending' | 'Paid';
     period: string;
@@ -20,22 +21,51 @@ const INITIAL_PAYROLL: PayrollItem[] = [
     { id: 2, employeeName: 'Siti Aminah', position: 'Cashier', basicSalary: 3200000, allowance: 400000, deduction: 100000, status: 'Pending', period: 'Januari 2026' },
 ];
 
+export interface PayrollViewProps {
+    payroll: PayrollItem[];
+    setPayroll: any;
+    employees?: any[];
+    evaluations?: any[];
+    onPayrollAction?: (action: 'create' | 'update' | 'delete', data: any) => Promise<void>;
+    settings?: any;
+}
+
 export function PayrollView({
     payroll: payrollData,
     setPayroll: setPayrollData,
-    employees = [], // Receive from Home
+    employees = [],
+    evaluations = [],
     onPayrollAction = async () => { },
     settings
-}: {
-    payroll: PayrollItem[],
-    setPayroll: any,
-    employees?: any[],
-    onPayrollAction?: (action: 'create' | 'update' | 'delete', data: any) => Promise<void>,
-    settings?: any
-}) {
+}: PayrollViewProps) {
+    const getCurrentPeriod = () => {
+        const date = new Date();
+        const months = [
+            'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+            'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+        ];
+        return `${months[date.getMonth()]} ${date.getFullYear()}`;
+    };
+
+    const getPeriodOptions = () => {
+        const options = [];
+        const date = new Date();
+        const months = [
+            'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+            'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+        ];
+        
+        // Generate options for last 6 months and next 6 months
+        for (let i = -6; i <= 6; i++) {
+            const d = new Date(date.getFullYear(), date.getMonth() + i, 1);
+            options.push(`${months[d.getMonth()]} ${d.getFullYear()}`);
+        }
+        return [...new Set(options)];
+    };
+
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [formData, setFormData] = useState<Partial<PayrollItem>>({});
-    const [filterPeriod, setFilterPeriod] = useState('Januari 2026');
+    const [filterPeriod, setFilterPeriod] = useState(getCurrentPeriod());
     const [searchQuery, setSearchQuery] = useState('');
     const [previewItem, setPreviewItem] = useState<PayrollItem | null>(null);
 
@@ -47,7 +77,7 @@ export function PayrollView({
         if (item) {
             onPayrollAction('update', {
                 ...item,
-                receipt_header: 'Winny Pangeran Natakusuma',
+                status: 'Paid',
                 paymentDate: new Date().toISOString().split('T')[0]
             });
         }
@@ -91,6 +121,7 @@ export function PayrollView({
                 status: 'Pending',
                 period: filterPeriod,
                 allowance: formData.allowance || 0,
+                overtime: formData.overtime || 0,
                 deduction: formData.deduction || 0
             };
             onPayrollAction('create', newItem);
@@ -99,10 +130,47 @@ export function PayrollView({
         setFormData({});
     };
 
+    const formatPeriod = (dateString: string) => {
+        try {
+            const date = new Date(dateString);
+            const months = [
+                'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+                'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+            ];
+            return `${months[date.getMonth()]} ${date.getFullYear()}`;
+        } catch (e) {
+            return '';
+        }
+    };
+
     const handleEmployeeSelect = (name: string) => {
         const emp = employees.find(e => e.name === name);
         if (emp) {
-            setFormData({ ...formData, employeeName: emp.name, position: emp.position });
+            let baseSalary = 0;
+            let allowance = 0;
+
+            // [NEW] Sync with Performance Evaluations
+            if (evaluations) {
+                const evalItem = evaluations.find((ev: any) => {
+                    const evPeriod = formatPeriod(ev.evaluation_date);
+                    // Match by employee_id or name
+                    return (ev.employee_id === emp.id || ev.employee_name === emp.name) && evPeriod === filterPeriod;
+                });
+
+                if (evalItem) {
+                    baseSalary = evalItem.base_salary || 0;
+                    allowance = Math.round(baseSalary * (evalItem.total_score / 100));
+                    toast.success(`Data sinkron dari Evaluasi Kinerja ${filterPeriod}`);
+                }
+            }
+
+            setFormData({ 
+                ...formData, 
+                employeeName: emp.name, 
+                position: emp.position,
+                basicSalary: baseSalary || 0,
+                allowance: allowance || 0
+            });
         }
     };
 
@@ -118,7 +186,7 @@ export function PayrollView({
     );
 
     const periodData = payrollData.filter(item => item.period === filterPeriod);
-    const totalPayroll = periodData.reduce((acc, curr) => acc + curr.basicSalary + curr.allowance - curr.deduction, 0);
+    const totalPayroll = periodData.reduce((acc, curr) => acc + curr.basicSalary + curr.allowance + (curr.overtime || 0) - curr.deduction, 0);
 
     return (
         <div className="flex h-full bg-gray-50/50 relative">
@@ -133,9 +201,9 @@ export function PayrollView({
                                 value={filterPeriod}
                                 onChange={(e) => setFilterPeriod(e.target.value)}
                             >
-                                <option value="Januari 2026">Januari 2026</option>
-                                <option value="Februari 2026">Februari 2026</option>
-                                <option value="Maret 2026">Maret 2026</option>
+                                {getPeriodOptions().map(p => (
+                                    <option key={p} value={p}>{p}</option>
+                                ))}
                             </select>
                         </div>
                     </div>
@@ -176,6 +244,7 @@ export function PayrollView({
                                         <th className="px-4 py-2 font-medium">Karyawan</th>
                                         <th className="px-4 py-2 font-medium text-right">Gaji Pokok</th>
                                         <th className="px-4 py-2 font-medium text-right">Tunjangan</th>
+                                        <th className="px-4 py-2 font-medium text-right">Lembur</th>
                                         <th className="px-4 py-2 font-medium text-right text-red-600">Potongan</th>
                                         <th className="px-4 py-2 font-medium text-right">Total Terima</th>
                                         <th className="px-4 py-2 font-medium text-center">Status</th>
@@ -193,8 +262,9 @@ export function PayrollView({
                                                 </td>
                                                 <td className="px-4 py-2 text-right">Rp {item.basicSalary.toLocaleString()}</td>
                                                 <td className="px-4 py-2 text-right text-green-600">+ Rp {item.allowance.toLocaleString()}</td>
+                                                <td className="px-4 py-2 text-right text-blue-600">+ Rp {(item.overtime || 0).toLocaleString()}</td>
                                                 <td className="px-4 py-2 text-right text-red-600">- Rp {item.deduction.toLocaleString()}</td>
-                                                <td className="px-4 py-2 text-right font-bold text-gray-800">Rp {total.toLocaleString()}</td>
+                                                <td className="px-4 py-2 text-right font-bold text-gray-800">Rp {(item.basicSalary + item.allowance + (item.overtime || 0) - item.deduction).toLocaleString()}</td>
                                                 <td className="px-4 py-2 text-center">
                                                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${item.status === 'Paid' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-orange-50 text-orange-700 border-orange-200'
                                                         }`}>
@@ -302,6 +372,13 @@ export function PayrollView({
                                         <input type="number" className="w-full pl-10 p-2 border rounded-lg" value={formData.deduction || ''} onChange={e => setFormData({ ...formData, deduction: parseInt(e.target.value) })} />
                                     </div>
                                 </div>
+                                <div className="col-span-2">
+                                    <label className="block text-sm font-medium text-blue-700 mb-1">Lembur (+)</label>
+                                    <div className="relative">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">Rp</span>
+                                        <input type="number" className="w-full pl-10 p-2 border rounded-lg" value={formData.overtime || ''} onChange={e => setFormData({ ...formData, overtime: parseInt(e.target.value) })} />
+                                    </div>
+                                </div>
                             </div>
 
                             <div className="pt-4 flex justify-end gap-3 border-t border-gray-100 mt-4">
@@ -364,6 +441,10 @@ export function PayrollView({
                                             <span>Tunjangan & Bonus</span>
                                             <span className="font-medium">+ Rp {previewItem.allowance.toLocaleString()}</span>
                                         </div>
+                                        <div className="flex justify-between text-blue-700">
+                                            <span>Lembur</span>
+                                            <span className="font-medium">+ Rp {(previewItem.overtime || 0).toLocaleString()}</span>
+                                        </div>
                                         <div className="flex justify-between text-red-600">
                                             <span>Potongan</span>
                                             <span className="font-medium">- Rp {previewItem.deduction.toLocaleString()}</span>
@@ -373,7 +454,7 @@ export function PayrollView({
                                     <div className="flex justify-between items-center bg-gray-100 p-3 rounded-lg mb-8">
                                         <span className="font-bold text-gray-800">TOTAL DITERIMA</span>
                                         <span className="font-bold text-lg text-primary">
-                                            Rp {(previewItem.basicSalary + previewItem.allowance - previewItem.deduction).toLocaleString()}
+                                            Rp {(previewItem.basicSalary + previewItem.allowance + (previewItem.overtime || 0) - previewItem.deduction).toLocaleString()}
                                         </span>
                                     </div>
 
@@ -433,6 +514,10 @@ export function PayrollView({
                                 <span className="font-medium">+ Rp {previewItem.allowance.toLocaleString()}</span>
                             </div>
                             <div className="flex justify-between">
+                                <span>Lembur</span>
+                                <span className="font-medium">+ Rp {(previewItem.overtime || 0).toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between">
                                 <span>Potongan</span>
                                 <span className="font-medium">- Rp {previewItem.deduction.toLocaleString()}</span>
                             </div>
@@ -441,7 +526,7 @@ export function PayrollView({
                         <div className="flex justify-between items-center border border-gray-300 p-4 rounded mb-12">
                             <span className="font-bold text-lg">TOTAL DITERIMA</span>
                             <span className="font-bold text-2xl">
-                                Rp {(previewItem.basicSalary + previewItem.allowance - previewItem.deduction).toLocaleString()}
+                                Rp {(previewItem.basicSalary + previewItem.allowance + (previewItem.overtime || 0) - previewItem.deduction).toLocaleString()}
                             </span>
                         </div>
 

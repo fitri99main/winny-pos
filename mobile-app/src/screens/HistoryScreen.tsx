@@ -211,7 +211,8 @@ export default function HistoryScreen() {
                     price: itemPrice,
                     target: item.target || '',
                     category: item.product?.category || '',
-                    isManual: !!item.isManual
+                    isManual: !!item.isManual,
+                    notes: item.notes
                 };
             }),
         };
@@ -246,17 +247,22 @@ export default function HistoryScreen() {
             // WiFi Voucher Fetching
             let wifiVoucher = null;
             const minAmount = storeSettings?.wifi_voucher_min_amount || 0;
+            const totalStr = String(selectedSale.total_amount || '0');
+            const total = Number(totalStr);
             
-            if (storeSettings?.enable_wifi_vouchers && Number(selectedSale.total_amount) >= minAmount) {
+            if (storeSettings?.enable_wifi_vouchers && total >= minAmount) {
                 try {
                     const multiplier = storeSettings?.wifi_voucher_multiplier || 0;
                     let count = 1;
                     if (multiplier > 0) {
-                        count = Math.floor(Number(selectedSale.total_amount) / multiplier);
+                        count = Math.floor(total / multiplier);
                     }
+
+                    console.log(`[HistoryScreen] Reprint Logic: total=${total}, min=${minAmount}, multiplier=${multiplier}, calculatedCount=${count}`);
 
                     if (count > 0) {
                         wifiVoucher = await WifiVoucherService.getVoucherForSale(selectedSale.id, currentBranchId || 'default', count);
+                        console.log(`[HistoryScreen] Reprint WiFi Voucher Result: ${wifiVoucher}`);
                     }
                 } catch (e) {
                     console.warn('[HistoryScreen] Failed to fetch WiFi voucher:', e);
@@ -288,7 +294,8 @@ export default function HistoryScreen() {
                         price: itemPrice,
                         target: item.target || '',
                         category: item.product?.category || '',
-                        isManual: !!item.isManual
+                        isManual: !!item.isManual,
+                        notes: item.notes
                     };
                 }),
             };
@@ -613,6 +620,14 @@ export default function HistoryScreen() {
                             <View key={item.id || idx} style={[styles.detailItemRow, { marginBottom: 6 }]}>
                                 <View style={{ flex: 1 }}>
                                     <Text style={[styles.detailItemName, { fontSize: 13 }]}>{item.product_name || (item.product?.name || 'Produk')}</Text>
+                                    {item.notes ? (
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2, backgroundColor: '#fff7ed', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, alignSelf: 'flex-start' }}>
+                                            <Text style={{ fontSize: 10 }}>✍️</Text>
+                                            <Text style={{ fontSize: 11, color: '#ea580c', fontWeight: '600', fontStyle: 'italic' }}>
+                                                {item.notes}
+                                            </Text>
+                                        </View>
+                                    ) : null}
                                     <Text style={styles.detailItemSub}>{item.quantity} x {formatCurrency(item.price)}</Text>
                                 </View>
                                 <Text style={[styles.detailItemTotal, { fontSize: 13 }]}>{formatCurrency(item.quantity * item.price)}</Text>

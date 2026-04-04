@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS public.performance_evaluations (
     employee_name TEXT NOT NULL,
     evaluation_date DATE NOT NULL DEFAULT CURRENT_DATE,
     total_score NUMERIC NOT NULL DEFAULT 0,
+    base_salary NUMERIC NOT NULL DEFAULT 0, -- [NEW]
     branch_id BIGINT REFERENCES public.branches(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()

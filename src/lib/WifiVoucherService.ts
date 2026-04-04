@@ -14,37 +14,47 @@ export class WifiVoucherService {
      * Fetches one or more unused WiFi vouchers from the pool and marks them as used for the given sale.
      * Returns a comma-separated string of codes.
      */
-    static async getVoucherForSale(saleId: number, branchId: string = 'default', count: number = 1): Promise<string | null> {
+    static async getVoucherForSale(saleId: number | string, branchId: string = 'default', count: number = 1): Promise<string | null> {
         try {
+            const numericSaleId = Number(saleId);
+            const strBranchId = String(branchId || 'default');
+            const targetCount = Math.max(1, Math.floor(Number(count) || 1));
+
+            console.log(`[WifiVoucherService] Fetching vouchers: saleId=${numericSaleId}, branchId=${strBranchId}, count=${targetCount}`);
+
             // 1. Check if this sale already has vouchers assigned
-            const { data: existingVouchers } = await supabase
+            const { data: existingVouchers, error: fetchError } = await supabase
                 .from('wifi_vouchers')
                 .select('code')
-                .eq('sale_id', saleId);
+                .eq('sale_id', numericSaleId);
 
-            if (existingVouchers && existingVouchers.length > 0) {
-                // If the count matches or exceeds what we need, return existing
-                if (existingVouchers.length >= count) {
-                    return existingVouchers.map(v => v.code).join(', ');
-                }
-                // If we need more, we continue to fetch additional vouchers (handle below)
+            if (fetchError) {
+                console.error('[WifiVoucherService] Error checking existing vouchers:', fetchError);
             }
 
-            const neededCount = count - (existingVouchers?.length || 0);
-            if (neededCount <= 0) return existingVouchers?.map(v => v.code).join(', ') || null;
+            if (existingVouchers && existingVouchers.length > 0) {
+                console.log(`[WifiVoucherService] Found ${existingVouchers.length} existing vouchers for sale ${numericSaleId}`);
+                // If we already have enough (or more), return them
+                if (existingVouchers.length >= targetCount) {
+                    return existingVouchers.map(v => v.code).join(', ');
+                }
+            }
+
+            const neededCount = targetCount - (existingVouchers?.length || 0);
+            console.log(`[WifiVoucherService] Need ${neededCount} more vouchers.`);
 
             // 2. Fetch unused vouchers for specific branch
             let { data: vouchers, error } = await supabase
                 .from('wifi_vouchers')
                 .select('id, code')
                 .eq('is_used', false)
-                .eq('branch_id', branchId)
+                .eq('branch_id', strBranchId)
                 .order('created_at', { ascending: true })
                 .limit(neededCount);
 
             // 3. Fallback to 'default' branch if not enough found
-            if ((!vouchers || vouchers.length < neededCount) && branchId !== 'default') {
-                console.log(`[WifiVoucherService] Not enough vouchers for branch ${branchId}, trying 'default'...`);
+            if ((!vouchers || vouchers.length < neededCount) && strBranchId !== 'default') {
+                console.log(`[WifiVoucherService] Not enough in branch ${strBranchId}, trying 'default'...`);
                 const remainingNeeded = neededCount - (vouchers?.length || 0);
                 const { data: defaultVouchers } = await supabase
                     .from('wifi_vouchers')
@@ -60,14 +70,16 @@ export class WifiVoucherService {
             }
 
             if (error) {
-                console.error('Error fetching WiFi vouchers:', error);
+                console.error('[WifiVoucherService] Error fetching unused vouchers:', error);
                 return existingVouchers?.map(v => v.code).join(', ') || null;
             }
 
             if (!vouchers || vouchers.length === 0) {
-                console.warn(`No unused WiFi vouchers available in pool.`);
+                console.warn(`[WifiVoucherService] No unused WiFi vouchers available in pool.`);
                 return existingVouchers?.map(v => v.code).join(', ') || null;
             }
+
+            console.log(`[WifiVoucherService] Assigning ${vouchers.length} new vouchers to sale ${numericSaleId}`);
 
             // 4. Mark as used
             const ids = vouchers.map(v => v.id);
@@ -76,19 +88,26 @@ export class WifiVoucherService {
                 .update({
                     is_used: true,
                     used_at: new Date().toISOString(),
-                    sale_id: saleId
+                    sale_id: numericSaleId
                 })
                 .in('id', ids);
 
             if (updateError) {
-                console.error('Error marking WiFi vouchers as used:', updateError);
+                console.error('[WifiVoucherService] Error marking vouchers as used:', updateError);
                 return existingVouchers?.map(v => v.code).join(', ') || null;
             }
 
             const allCodes = [...(existingVouchers?.map(v => v.code) || []), ...vouchers.map(v => v.code)];
-            return allCodes.join(', ');
+            const result = allCodes.join(', ');
+            console.log(`[WifiVoucherService] SUCCESS. Final Total Vouchers: ${allCodes.length}. Codes: ${result}`);
+            
+            if (allCodes.length < targetCount) {
+                console.warn(`[WifiVoucherService] WARNING: Could only provide ${allCodes.length} out of ${targetCount} requested vouchers.`);
+            }
+
+            return result;
         } catch (error) {
-            console.error('WifiVoucherService Error:', error);
+            console.error('[WifiVoucherService] Unexpected error:', error);
             return null;
         }
     }
