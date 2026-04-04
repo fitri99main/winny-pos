@@ -811,34 +811,6 @@ export function KioskView() {
                         ))}
                     </div>
 
-                    {isDisplayOnly && (
-                        <div className="absolute bottom-8 right-8 z-50 bg-white p-6 rounded-3xl shadow-2xl border border-indigo-100 flex flex-col items-center gap-4 animate-in fade-in slide-in-from-bottom-8 duration-500 max-w-[280px]">
-                            <div className="bg-indigo-50 p-4 rounded-2xl w-full flex flex-col items-center gap-3">
-                                <QRCodeCanvas 
-                                    value={selfOrderUrl} 
-                                    size={180}
-                                    level="H"
-                                    includeMargin={true}
-                                    imageSettings={{
-                                        src: storeSettings?.receipt_logo_url || '',
-                                        x: undefined,
-                                        y: undefined,
-                                        height: 30,
-                                        width: 30,
-                                        excavate: true,
-                                    }}
-                                />
-                                <div className="text-center">
-                                    <p className="font-bold text-indigo-900 text-sm">Scan untuk Pesan</p>
-                                    <p className="text-[10px] text-indigo-500">Pesan dari HP Anda lebih praktis!</p>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 bg-indigo-50/50 px-4 py-2 rounded-full w-full justify-center">
-                                <Scan className="w-4 h-4" />
-                                Meja {selectedTable?.number}
-                            </div>
-                        </div>
-                    )}
                 </main>
 
                 {/* Cart Sidebar (Fixed Bottom Sheet on Mobile/Tablet, Sidebar on Desktop) */}
