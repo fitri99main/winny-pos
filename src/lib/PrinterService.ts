@@ -239,7 +239,7 @@ class PrinterService {
         tableNo: string;
         waiterName: string;
         time: string;
-        items: { name: string; quantity: number; price: number }[];
+        items: { name: string; quantity: number; price: number; note?: string; notes?: string }[];
         subtotal: number;
         discount: number;
         tax: number;

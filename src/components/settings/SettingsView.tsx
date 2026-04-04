@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, User, Monitor, Globe, Bell, Shield, Save, Clock, Calendar, Printer, FileText, LayoutGrid, Plus, Trash2, Edit, CreditCard, CheckCircle2, XCircle, Database, Upload, Download, AlertTriangle, Loader2, Calculator, RotateCcw, Zap, Info, ExternalLink } from 'lucide-react';
+import { Settings, User, Monitor, Globe, Bell, Shield, Save, Clock, Calendar, Printer, FileText, LayoutGrid, Plus, Trash2, Edit, CreditCard, CheckCircle2, XCircle, Database, Upload, Download, AlertTriangle, Loader2, Calculator, RotateCcw, Zap, Info, ExternalLink, QrCode } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TableQRPrintView } from './TableQRPrintView';
 import { printerService } from '../../lib/PrinterService';

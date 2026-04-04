@@ -17,8 +17,8 @@ interface PayrollItem {
 }
 
 const INITIAL_PAYROLL: PayrollItem[] = [
-    { id: 1, employeeName: 'Budi Santoso', position: 'Barista', basicSalary: 3500000, allowance: 500000, deduction: 0, status: 'Paid', period: 'Januari 2026', paymentDate: '2026-01-25' },
-    { id: 2, employeeName: 'Siti Aminah', position: 'Cashier', basicSalary: 3200000, allowance: 400000, deduction: 100000, status: 'Pending', period: 'Januari 2026' },
+    { id: 1, employeeName: 'Budi Santoso', position: 'Barista', basicSalary: 3500000, allowance: 500000, overtime: 0, deduction: 0, status: 'Paid', period: 'Januari 2026', paymentDate: '2026-01-25' },
+    { id: 2, employeeName: 'Siti Aminah', position: 'Cashier', basicSalary: 3200000, allowance: 400000, overtime: 0, deduction: 100000, status: 'Pending', period: 'Januari 2026' },
 ];
 
 export interface PayrollViewProps {
