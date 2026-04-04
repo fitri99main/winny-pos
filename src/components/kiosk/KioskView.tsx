@@ -54,6 +54,7 @@ export function KioskView() {
     const [branches, setBranches] = useState<any[]>([]);
     const [selectedBranchId, setSelectedBranchId] = useState<string | null>(localStorage.getItem('kiosk_branch_id'));
     const [successCountdown, setSuccessCountdown] = useState(2);
+    const [isUrlForcedDisplay, setIsUrlForcedDisplay] = useState(false);
 
     // --- OFFLINE & SYNC LOGIC ---
     const [isOnline, setIsOnline] = useState(() => {
@@ -101,7 +102,10 @@ export function KioskView() {
             handleSetBranch(branchParam);
         }
 
-        if (tableParam) {
+        if (urlParams.get('mode') === 'display') {
+            setIsUrlForcedDisplay(true);
+            setStep('menu');
+        } else if (tableParam) {
             setSelectedTable({ id: 0, number: tableParam, status: 'Available' });
             setStep('menu');
         }
@@ -661,12 +665,12 @@ export function KioskView() {
         );
     }
 
-    const isDisplayOnly = storeSettings?.kiosk_display_mode;
+    const isDisplayOnly = storeSettings?.kiosk_display_mode || isUrlForcedDisplay;
     const selfOrderUrl = `${window.location.origin}/kiosk?branch_id=${selectedBranchId}&table_no=${selectedTable?.number}`;
 
     // MENU STEP
-    // Safety check: if no table selected, go back
-    if (step === 'menu' && !selectedTable) {
+    // Safety check: if no table selected, go back (unless in display-only mode)
+    if (step === 'menu' && !selectedTable && !isDisplayOnly) {
         setStep('table');
         return null;
     }

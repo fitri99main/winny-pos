@@ -49,6 +49,33 @@ export function TableQRPrintView({ tables, branchId, onBack }: TableQRPrintViewP
             {/* Print Layout */}
             <div className="flex-1 overflow-y-auto p-8 print:p-0">
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8 print:grid-cols-3 print:gap-4 max-w-5xl mx-auto">
+                    {/* Static QR for Display Only */}
+                    <div 
+                        className="flex flex-col items-center p-6 border-4 border-dashed border-primary/30 rounded-3xl bg-primary/5 print:border-gray-300 print:rounded-none print:p-4 print:break-inside-avoid print:bg-white"
+                    >
+                        <div className="mb-4 text-center">
+                            <p className="text-[10px] font-black text-primary uppercase tracking-widest mb-1">Winny Pangeran Natakusuma</p>
+                            <h2 className="text-xl font-black text-gray-900">MENU DIGITAL</h2>
+                            <p className="text-[10px] font-bold text-orange-600 uppercase">(HANYA LIHAT)</p>
+                        </div>
+                        
+                        <div className="bg-white p-3 rounded-2xl border border-gray-50 shadow-sm print:shadow-none print:border-gray-200">
+                            <QRCodeSVG 
+                                value={`${baseUrl}/kiosk?branch_id=${branchId}&mode=display`} 
+                                size={160}
+                                level="H"
+                                includeMargin={false}
+                            />
+                        </div>
+                        
+                        <div className="mt-4 text-center space-y-1">
+                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">Scan untuk Lihat Menu</p>
+                            <p className="text-[8px] text-gray-300 font-mono break-all max-w-[150px] mx-auto opacity-50">
+                                mode=display
+                            </p>
+                        </div>
+                    </div>
+
                     {tables.map((table) => {
                         const qrUrl = `${baseUrl}/kiosk?branch_id=${branchId}&table_no=${table.number}`;
                         
