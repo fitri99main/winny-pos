@@ -122,6 +122,7 @@ interface SalesViewProps {
     onAddReturn: (ret: Omit<SalesReturn, 'id' | 'returnNo' | 'date' | 'status'>) => void;
     onUpdateSale?: (sale: SalesOrder) => void;
     onDeleteSale?: (saleId: number) => void;
+    onDeleteSales?: (saleIds: number[]) => void;
     contacts: ContactData[];
     employees: any[];
     onOpenCashier?: () => void;
@@ -129,6 +130,7 @@ interface SalesViewProps {
     tables?: any[];
     onClearTableStatus?: (tableNo: string) => void;
     settings?: any;
+    userRole?: string;
 }
 
 export function SalesView({
@@ -142,13 +144,15 @@ export function SalesView({
     onAddReturn,
     onUpdateSale,
     onDeleteSale,
+    onDeleteSales,
     contacts,
     employees,
     onOpenCashier,
     paymentMethods = [],
     tables = [],
     onClearTableStatus,
-    settings = {}
+    settings = {},
+    userRole
 }: SalesViewProps) {
     const [activeTab, setActiveTab] = useState<'history' | 'returns'>(initialTab);
     // Date Filter State
@@ -530,7 +534,9 @@ export function SalesView({
             }
         };
 
-        if (settings?.enable_manager_auth) {
+        const isAdmin = ['administrator', 'admin', 'owner', 'superadmin'].includes(userRole?.toLowerCase() || '');
+
+        if (settings?.enable_manager_auth && !isAdmin) {
             setPendingDeleteAction(() => processDelete);
             setIsManagerAuthOpen(true);
         } else {
@@ -540,11 +546,55 @@ export function SalesView({
         }
     };
 
+    const handleBulkDeleteClick = () => {
+        if (filteredSales.length === 0) {
+            toast.info('Tidak ada transaksi yang bisa dihapus pada filter ini.');
+            return;
+        }
+
+        const processBulkDelete = () => {
+            if (onDeleteSales) {
+                const ids = filteredSales.map(s => s.id);
+                onDeleteSales(ids);
+            }
+        };
+
+        const isAdmin = ['administrator', 'admin', 'owner', 'superadmin'].includes(userRole?.toLowerCase() || '');
+
+        // [MODIFIED] Enforce manager auth for Cashiers (non-admins) even if global setting is off
+        // Filtered/Bulk delete is a high-risk action.
+        if (!isAdmin) {
+            setPendingDeleteAction(() => processBulkDelete);
+            setIsManagerAuthOpen(true);
+        } else if (settings?.enable_manager_auth) {
+            setPendingDeleteAction(() => processBulkDelete);
+            setIsManagerAuthOpen(true);
+        } else {
+            if (window.confirm(`Apakah Anda yakin ingin menghapus SEMUA (${filteredSales.length}) transaksi yang muncul di filter ini? Tindakan ini tidak dapat dibatalkan.`)) {
+                processBulkDelete();
+            }
+        }
+    };
+
 
     // --- Renderers ---
 
     const renderHistory = () => (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden h-full flex flex-col">
+            <div className="p-3 border-b bg-gray-50/50 flex justify-between items-center">
+                <div className="text-xs text-gray-500 font-medium">
+                    Menampilkan <span className="text-blue-600 font-bold">{filteredSales.length}</span> transaksi terfilter
+                </div>
+                {onDeleteSales && (
+                    <button
+                        onClick={handleBulkDeleteClick}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg text-xs font-bold transition-colors border border-red-200"
+                    >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Hapus Terfilter
+                    </button>
+                )}
+            </div>
             <div className="flex-1 overflow-y-auto">
                 <table className="w-full text-[13px]">
                     <thead className="bg-gray-50 text-gray-500 text-left sticky top-0">

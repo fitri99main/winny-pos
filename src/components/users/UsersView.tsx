@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, Shield, Plus, Search, MoreVertical, X, Edit } from 'lucide-react';
+import { Users, Shield, Plus, Search, MoreVertical, X, Edit, Info } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -11,8 +11,12 @@ import { supabase } from '../../lib/supabase';
 // But UsersView signature is currently empty argument. To minimize refactor impact, let's fetch branches internally if not passed, or just accept prop.
 
 
-export function UsersView({ branches = [] }: { branches?: any[] }) {
+export function UsersView({ branches: propsBranches = [] }: { branches?: any[] }) {
     const { user } = useAuth();
+    const [internalBranches, setInternalBranches] = useState<any[]>([]);
+    
+    // Combine props branches and internal branches
+    const allBranches = propsBranches.length > 0 ? propsBranches : internalBranches;
     // DEFINISI HAK AKSES (PERMISSIONS) - Disinkronkan dengan Home.tsx
     const AVAILABLE_PERMISSIONS = [
         // Utama
@@ -53,11 +57,18 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
         description: '',
         permissions: []
     });
-    const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: '', branchId: 'b1' });
+    const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: '', branchId: '' });
     const [userSearchQuery, setUserSearchQuery] = useState('');
     const [roleSearchQuery, setRoleSearchQuery] = useState('');
     const [editingRole, setEditingRole] = useState<any>(null);
     const [editingUser, setEditingUser] = useState<any>(null);
+
+    // Auto-select first branch when loaded
+    useEffect(() => {
+        if (allBranches.length > 0 && !newUser.branchId && !editingUser) {
+            setNewUser(prev => ({ ...prev, branchId: allBranches[0].id.toString() }));
+        }
+    }, [allBranches, editingUser, newUser.branchId]);
 
     const [users, setUsers] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -87,11 +98,14 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
             safeData = [mockAdmin, ...safeData];
 
             // Try to auto-fix in background
-            // Note: DB doesn't have email column
-            const { email, ...dbPayload } = mockAdmin;
-            supabase.from('profiles').insert(dbPayload).then(({ error }) => {
-                if (!error) toast.success('Profil Admin dipulihkan otomatis');
-                else console.error('Auto-fix failed:', error.message);
+            // Use UPSERT so it works whether the profile exists or not
+            supabase.from('profiles').upsert(mockAdmin).then(({ error }) => {
+                if (!error) {
+                    console.log('[UsersView] Admin profile synced/recovered');
+                    // We don't toast success here to keep UI clean, but log it.
+                } else {
+                    console.error('[UsersView] Admin auto-fix failed:', error.message);
+                }
             });
         }
 
@@ -100,6 +114,21 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
     };
 
     const [roles, setRoles] = useState<any[]>([]);
+
+    // FETCH BRANCHES (Internal)
+    const fetchBranches = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('branches')
+                .select('*')
+                .order('name', { ascending: true });
+
+            if (error) throw error;
+            setInternalBranches(data || []);
+        } catch (err: any) {
+            console.warn('[UsersView] Gagal ambil data cabang:', err.message);
+        }
+    };
 
     // FETCH ROLES
     const fetchRoles = async () => {
@@ -122,6 +151,7 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
     useEffect(() => {
         fetchUsers();
         fetchRoles();
+        fetchBranches(); // Always fetch internally as backup
     }, []);
 
     const handleAddRole = async (e: React.FormEvent) => {
@@ -250,7 +280,7 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
             email: user.email || '',
             password: '', // Password empty means don't change
             role: user.role || (roles.length > 0 ? roles[0].name : ''),
-            branchId: user.branchId || user.branch_id || 'b1'
+            branchId: user.branchId || user.branch_id || '7'
         });
         setIsAddUserModalOpen(true);
     };
@@ -278,6 +308,9 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
                 }
             });
 
+            // DEBUG: Konfirmasi role sebelum pendaftaran
+            console.log('[UsersView] MEMULAI PENDAFTARAN. Role terpilih:', newUser.role);
+
             // 2. CREATE AUTH USER (Pass COMPLETE metadata)
             // We pass ALL likely fields so the Database Trigger (if any) can populate the profile automatically
             // This bypasses RLS issues because Triggers run as System.
@@ -286,18 +319,24 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
                 password: newUser.password,
                 options: {
                     data: {
-                        name: newUser.name,           // Common
-                        full_name: newUser.name,      // Alternative
-                        username: newUser.email.split('@')[0], // Derived
-                        role: newUser.role,
-                        branch_id: newUser.branchId || 'b1'
+                        name: newUser.name,
+                        full_name: newUser.name,
+                        username: newUser.email.split('@')[0],
+                        role: newUser.role || 'Kasir',
+                        branch_id: newUser.branchId || allBranches[0]?.id?.toString() || '7'
                     }
                 }
             });
 
-            if (authError) throw authError;
+            console.log('[UsersView] SignUp attempted with payload:', { email: newUser.email, role: newUser.role, branch_id: newUser.branchId });
+
+            if (authError) {
+                console.error('[UsersView] signUp error:', authError);
+                throw new Error(`Auth Error: ${authError.message}`);
+            }
 
             if (!authData.user) {
+                console.error('[UsersView] No user data returned');
                 throw new Error('Gagal membuat user (Tidak ada data user dikembalikan).');
             }
 
@@ -305,40 +344,52 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
 
             // 3. OPTIONAL: UPDATE PROFILE (Best Effort)
             // If a Trigger already created the profile, we try to update it to ensure data is correct.
-            // If RLS (Permissions) blocks us, we IGNORE it because we hope the Trigger did the job via metadata.
+            // PRO FIX: Wait for trigger to complete and then use explicit update() to override defaults like 'Kasir'.
+            await new Promise(r => setTimeout(r, 1000)); // Increased delay to 1s for consistency
+
             try {
+                // Ensure role is exactly what was selected
+                const finalRole = newUser.role || (roles.length > 0 ? roles[0].name : 'Administrator');
+                
                 const payload: any = {
-                    id: newUserId,
                     status: 'Aktif',
                     name: newUser.name,
-                    role: newUser.role,
+                    role: finalRole,
                     username: newUser.email.split('@')[0],
                     email: newUser.email,
                     full_name: newUser.name,
-                    branch_id: newUser.branchId || 'b1'
+                    branch_id: newUser.branchId || allBranches[0]?.id?.toString() || '7'
                 };
 
-                // Use UPSERT. If it fails (RLS), we catch it below.
-                const { error: profileError } = await supabase.from('profiles').upsert(payload);
+                console.log('[UsersView] FORCING Profile update payload:', payload);
+
+                console.log('[UsersView] FORCING Profile update with role:', finalRole);
+                
+                // Use UPDATE instead of UPSERT to specifically override the trigger's result
+                const { error: profileError } = await supabase
+                    .from('profiles')
+                    .update(payload)
+                    .eq('id', newUserId);
 
                 if (profileError) {
-                    console.warn('Manual Profile Update prevented (likely RLS or Trigger conflict). Relying on Auth Metadata.', profileError);
-                    // We do NOT throw here. We assume Auth Metadata handled it.
+                    console.warn('[UsersView] Manual Profile Update prevented (likely RLS). Relying on Auth Metadata.', profileError.message);
+                } else {
+                    console.log('[UsersView] Profile FORCED successfully with role:', finalRole);
                 }
             } catch (profileErr) {
-                console.warn('Profile step skipped:', profileErr);
+                console.warn('[UsersView] Profile step error:', profileErr);
             }
 
-            toast.success('Pengguna berhasil dibuat! (Email Confirmation mungkin dikirim)');
+            toast.success('Pengguna berhasil dibuat! Data profil sinkron.');
 
             // 4. CLEANUP & REFRESH
-            setNewUser({ name: '', email: '', password: '', role: 'Kasir', branchId: 'b1' });
+            setNewUser({ name: '', email: '', password: '', role: (roles.length > 0 ? roles[0].name : 'Kasir'), branchId: allBranches[0]?.id || '7' });
             setIsAddUserModalOpen(false);
             fetchUsers(); // Refresh list
 
         } catch (err: any) {
-            console.error('Add User Error:', err);
-            alert(`GAGAL MENAMBAH PENGGUNA:\n${err.message}`);
+            console.error('[UsersView] CRITICAL Add User Error:', err);
+            toast.error(`GAGAL MENAMBAH PENGGUNA: ${err.message || 'Error tidak dikenal'}`);
         }
     };
 
@@ -349,24 +400,41 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
         if (editingUser) {
             // --- UPDATE LOGIC ---
             try {
+                // 1. Update Profile (Name, Role, Branch)
                 const payload: any = {
                     name: newUser.name,
                     full_name: newUser.name, // Keep synced
+                    email: newUser.email,    // Now allowing email update
                     role: newUser.role,
                     branch_id: newUser.branchId,
-                    // We don't update email or password here to avoid breaking Auth linkage
                 };
 
-                const { error } = await supabase
+                const { error: profileError } = await supabase
                     .from('profiles')
                     .update(payload)
                     .eq('id', editingUser.id);
 
-                if (error) throw error;
+                if (profileError) throw profileError;
+
+                // 2. Update Password (IF PROVIDED)
+                if (newUser.password && newUser.password.trim() !== '') {
+                    const { data: resetResult, error: resetError } = await supabase.rpc('admin_reset_password', {
+                        target_user_id: editingUser.id,
+                        new_password: newUser.password
+                    });
+
+                    if (resetError) {
+                        toast.error(`Profil diperbarui, tapi GAGAL reset password: ${resetError.message}`);
+                    } else if (resetResult && resetResult.success === false) {
+                        toast.error(`Profil diperbarui, tapi GAGAL reset password: ${resetResult.message}`);
+                    } else {
+                        toast.success('Password berhasil diperbarui');
+                    }
+                }
 
                 toast.success('Data pengguna berhasil diperbarui');
                 setEditingUser(null);
-                setNewUser({ name: '', email: '', password: '', role: (roles.length > 0 ? roles[0].name : ''), branchId: 'b1' });
+                setNewUser({ name: '', email: '', password: '', role: (roles.length > 0 ? roles[0].name : 'Administrator'), branchId: allBranches[0]?.id || '7' });
                 setIsAddUserModalOpen(false);
                 fetchUsers();
 
@@ -385,7 +453,7 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
             setIsAddRoleModalOpen(true);
         } else {
             // Set default role for new user
-            setNewUser(prev => ({ ...prev, role: prev.role || (roles.length > 0 ? roles[0].name : '') }));
+            setNewUser(prev => ({ ...prev, role: prev.role || (roles.length > 0 ? roles[0].name : 'Administrator') }));
             setIsAddUserModalOpen(true);
         }
     };
@@ -651,7 +719,6 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                     <input
                                         type="text"
-                                        placeholder="Cari pengguna..."
                                         value={userSearchQuery}
                                         onChange={(e) => setUserSearchQuery(e.target.value)}
                                         className="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
@@ -687,8 +754,8 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4">
-                                                    <span className="text-gray-600 text-xs">
-                                                        {branches.find(b => b.id == branchId)?.name || 'N/A'}
+                                                    <span className="text-gray-600 text-xs text-nowrap">
+                                                        {allBranches.find(b => b.id == branchId)?.name || `ID: ${branchId}` || 'N/A'}
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4">
@@ -735,7 +802,6 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                     <input
                                         type="text"
-                                        placeholder="Cari wewenang..."
                                         value={roleSearchQuery}
                                         onChange={(e) => setRoleSearchQuery(e.target.value)}
                                         className="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
@@ -845,7 +911,6 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
                                     required
                                     value={newRole.name}
                                     onChange={(e) => setNewRole({ ...newRole, name: e.target.value })}
-                                    placeholder="e.g. Supervisor"
                                     className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
                                 />
                             </div>
@@ -856,7 +921,6 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
                                     required
                                     value={newRole.description}
                                     onChange={(e) => setNewRole({ ...newRole, description: e.target.value })}
-                                    placeholder="Jelaskan apa yang bisa dilakukan peran ini..."
                                     rows={2}
                                     className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all resize-none"
                                 />
@@ -938,9 +1002,19 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
                             <h3 className="font-bold text-lg text-gray-800">{editingUser ? 'Edit Pengguna' : 'Tambah Pengguna Baru'}</h3>
                             <button
                                 onClick={() => {
-                                    setIsAddUserModalOpen(false);
+                                    setIsAddUserModalOpen(true);
                                     setEditingUser(null);
-                                    setNewUser({ name: '', email: '', password: '', role: (roles.length > 0 ? roles[0].name : ''), branchId: 'b1' });
+                                    // Robust initialization: Find Administrator role or first in list
+                                    const defaultRoleObj = roles.find(r => r.name === 'Administrator') || roles[0];
+                                    const defaultBranch = allBranches[0];
+                                    
+                                    setNewUser({ 
+                                        name: '', 
+                                        email: '', 
+                                        password: '', 
+                                        role: defaultRoleObj?.name || 'Administrator', 
+                                        branchId: defaultBranch?.id || '7' 
+                                    });
                                 }}
                                 className="p-1 hover:bg-gray-200 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
                             >
@@ -956,7 +1030,6 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
                                     required
                                     value={newUser.name}
                                     onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
-                                    placeholder="misal: Jaka Sembung"
                                     className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
                                 />
                             </div>
@@ -966,13 +1039,19 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
                                 <input
                                     type="email"
                                     required
-                                    disabled={!!editingUser} // Disable email edit
+                                    autoComplete="off"
                                     value={newUser.email}
                                     onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                                    placeholder="john@example.com"
-                                    className={`w-full px-4 py-2 border border-gray-200 rounded-xl outline-none transition-all ${editingUser ? 'bg-gray-100 text-gray-500' : 'focus:ring-2 focus:ring-primary/20 focus:border-primary'}`}
+                                    className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
                                 />
-                                {editingUser && <p className="text-[10px] text-gray-400">*Email tidak dapat diubah</p>}
+                                {editingUser && (
+                                    <div className="flex items-start gap-2 p-2 bg-blue-50/50 border border-blue-100 rounded-lg animate-in fade-in slide-in-from-top-1">
+                                        <Info className="w-4 h-4 text-blue-500 mt-0.5" />
+                                        <p className="text-[10px] text-blue-700 leading-tight">
+                                            <b>Catatan:</b> Email ini untuk data profil. Untuk mengganti email <b>Login</b>, silakan hapus akun ini dan buat yang baru.
+                                        </p>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="space-y-2">
@@ -982,9 +1061,9 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
                                 <input
                                     type="password"
                                     required={!editingUser} // Required only for new users
+                                    autoComplete="new-password"
                                     value={newUser.password}
                                     onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                                    placeholder="••••••••"
                                     className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
                                 />
                             </div>
@@ -1009,7 +1088,7 @@ export function UsersView({ branches = [] }: { branches?: any[] }) {
                                     onChange={(e) => setNewUser({ ...newUser, branchId: e.target.value })}
                                     className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all bg-white"
                                 >
-                                    {(branches || []).map(branch => (
+                                    {(allBranches || []).map(branch => (
                                         <option key={branch.id} value={branch.id}>{branch.name}</option>
                                     ))}
                                 </select>

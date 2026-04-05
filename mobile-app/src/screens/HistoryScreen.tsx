@@ -17,7 +17,7 @@ export default function HistoryScreen() {
     const { width, height } = useWindowDimensions();
     const isLandscape = width > height;
     const isSmallDevice = width < 380;
-    const { currentBranchId, branchName, branchAddress, branchPhone, userName, storeSettings } = useSession();
+    const { currentBranchId, branchName, branchAddress, branchPhone, userName, storeSettings, isAdmin } = useSession();
 
     const [loading, setLoading] = useState(true);
     const [history, setHistory] = useState<any[]>([]);
@@ -333,7 +333,10 @@ export default function HistoryScreen() {
 
     const handleDeleteSale = async () => {
         if (!selectedSale) return;
+        handleQuickDelete(selectedSale);
+    };
 
+    const handleQuickDelete = async (sale: any) => {
         const processDelete = async () => {
             try {
                 setLoading(true);
@@ -341,7 +344,7 @@ export default function HistoryScreen() {
                 const { error: itemsError } = await supabase
                     .from('sale_items')
                     .delete()
-                    .eq('sale_id', selectedSale.id);
+                    .eq('sale_id', sale.id);
                 
                 if (itemsError) throw itemsError;
 
@@ -349,16 +352,16 @@ export default function HistoryScreen() {
                 const { error: saleError } = await supabase
                     .from('sales')
                     .delete()
-                    .eq('id', selectedSale.id);
+                    .eq('id', sale.id);
 
                 if (saleError) throw saleError;
 
                 // 3. Free up table if needed
-                if (selectedSale.table_no && selectedSale.table_no !== 'Tanpa Meja') {
+                if (sale.table_no && sale.table_no !== 'Tanpa Meja') {
                     await supabase
                         .from('tables')
                         .update({ status: 'Available' })
-                        .eq('number', selectedSale.table_no);
+                        .eq('number', sale.table_no);
                 }
 
                 setShowDetailModal(false);
@@ -375,7 +378,7 @@ export default function HistoryScreen() {
         const confirmDelete = () => {
             Alert.alert(
                 'Konfirmasi Hapus',
-                'Apakah Anda yakin ingin menghapus transaksi ini? Tindakan ini tidak dapat dibatalkan.',
+                `Apakah Anda yakin ingin menghapus transaksi ${sale.order_no}? Tindakan ini tidak dapat dibatalkan.`,
                 [
                     { text: 'Batal', style: 'cancel' },
                     { 
@@ -393,6 +396,81 @@ export default function HistoryScreen() {
         } else {
             confirmDelete();
         }
+    };
+
+    const handleBulkDelete = async () => {
+        if (filteredHistory.length === 0) {
+            Alert.alert('Info', 'Tidak ada transaksi yang bisa dihapus pada filter ini.');
+            return;
+        }
+
+        const processBulkDelete = async () => {
+            try {
+                setLoading(true);
+                const ids = filteredHistory.map(h => h.id);
+                
+                // 1. Delete sale_items
+                const { error: itemsError } = await supabase
+                    .from('sale_items')
+                    .delete()
+                    .in('sale_id', ids);
+                
+                if (itemsError) throw itemsError;
+
+                // 2. Delete sales
+                const { error: saleError } = await supabase
+                    .from('sales')
+                    .delete()
+                    .in('id', ids);
+
+                if (saleError) throw saleError;
+
+                // 3. Reset tables status if these sales were active (though history usually means finished)
+                const tableNumbers = filteredHistory
+                    .map(h => h.table_no)
+                    .filter(t => t && t !== 'Tanpa Meja');
+                
+                if (tableNumbers.length > 0) {
+                    await supabase
+                        .from('tables')
+                        .update({ status: 'Available' })
+                        .in('number', tableNumbers);
+                }
+
+                fetchHistory();
+                Alert.alert('Sukses', `${ids.length} transaksi berhasil dihapus.`);
+            } catch (error: any) {
+                console.error('Bulk Delete Error:', error);
+                Alert.alert('Error', 'Gagal menghapus beberapa transaksi: ' + error.message);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        Alert.alert(
+            'Konfirmasi Hapus Semua',
+            `Anda akan menghapus SEMUA (${filteredHistory.length}) transaksi yang muncul di filter ini. Tindakan ini tidak dapat dibatalkan.\n\nLanjutkan?`,
+            [
+                { text: 'Batal', style: 'cancel' },
+                { 
+                    text: 'Hapus Semua', 
+                    style: 'destructive',
+                    onPress: () => {
+                        // [MODIFIED] Enforce manager auth for Cashiers (non-admins) even if global setting is off
+                        // Filtered/Bulk delete is a high-risk action.
+                        if (!isAdmin) {
+                            setPendingAction(() => processBulkDelete);
+                            setShowManagerAuth(true);
+                        } else if (storeSettings?.enable_manager_auth) {
+                            setPendingAction(() => processBulkDelete);
+                            setShowManagerAuth(true);
+                        } else {
+                            processBulkDelete();
+                        }
+                    }
+                }
+            ]
+        );
     };
 
     const handleOpenEdit = () => {
@@ -842,12 +920,18 @@ export default function HistoryScreen() {
                     <ChevronLeft size={32} color="#1e293b" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Riwayat Transaksi</Text>
-                <View style={{ flexDirection: 'row', gap: 12 }}>
+                <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
                     <TouchableOpacity 
-                        style={{ backgroundColor: '#fff7ed', padding: 6, borderRadius: 8, borderWidth: 1, borderColor: '#ffedd5' }} 
+                        style={{ backgroundColor: '#fff7ed', padding: 6, paddingHorizontal: 10, borderRadius: 8, borderWidth: 1, borderColor: '#ffedd5' }} 
                         onPress={() => setShowCreateModal(true)}
                     >
                         <Text style={{ color: '#ea580c', fontWeight: 'bold', fontSize: 12 }}>+ Manual</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                        style={{ backgroundColor: '#fef2f2', padding: 6, borderRadius: 8, borderWidth: 1, borderColor: '#fee2e2' }} 
+                        onPress={handleBulkDelete}
+                    >
+                        <Trash2 size={18} color="#ef4444" />
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.refreshBtn} onPress={fetchHistory} disabled={loading}>
                         <RefreshCw size={20} color={loading ? "#94a3b8" : "#ea580c"} />
@@ -976,24 +1060,34 @@ export default function HistoryScreen() {
                                 </View>
 
                                 <View style={styles.slimRight}>
-                                    <Text style={styles.slimAmount}>{formatCurrency(item.total_amount).replace('Rp', '').trim()}</Text>
-                                    <View style={[
-                                        styles.miniStatus,
-                                        (item.status === 'Paid' || item.status === 'Completed' || item.status === 'Served' || item.status === 'Ready') ? styles.statusPaid : 
-                                        (item.status === 'Preparing') ? styles.statusPreparing : styles.statusPending
-                                    ]}>
-                                        <Text style={[
-                                            styles.miniStatusText,
-                                            (item.status === 'Paid' || item.status === 'Completed' || item.status === 'Served' || item.status === 'Ready') ? styles.statusTextPaid : 
-                                            (item.status === 'Preparing') ? styles.statusTextPreparing : styles.statusTextPending
-                                        ]}>
-                                            {item.status === 'Paid' ? 'LUNAS' : 
-                                             item.status === 'Completed' ? 'SELESAI' :
-                                             item.status === 'Served' ? 'TERSAJI' :
-                                             item.status === 'Preparing' ? 'DIPROSES' :
-                                             item.status === 'Ready' ? 'SIAP' : 
-                                             item.status === 'Unpaid' ? 'PENDING' : 'PENDING'}
-                                        </Text>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                        <View style={{ alignItems: 'flex-end' }}>
+                                            <Text style={styles.slimAmount}>{formatCurrency(item.total_amount).replace('Rp', '').trim()}</Text>
+                                            <View style={[
+                                                styles.miniStatus,
+                                                (item.status === 'Paid' || item.status === 'Completed' || item.status === 'Served' || item.status === 'Ready') ? styles.statusPaid : 
+                                                (item.status === 'Preparing') ? styles.statusPreparing : styles.statusPending
+                                            ]}>
+                                                <Text style={[
+                                                    styles.miniStatusText,
+                                                    (item.status === 'Paid' || item.status === 'Completed' || item.status === 'Served' || item.status === 'Ready') ? styles.statusTextPaid : 
+                                                    (item.status === 'Preparing') ? styles.statusTextPreparing : styles.statusTextPending
+                                                ]}>
+                                                    {item.status === 'Paid' ? 'LUNAS' : 
+                                                     item.status === 'Completed' ? 'SELESAI' :
+                                                     item.status === 'Served' ? 'TERSAJI' :
+                                                     item.status === 'Preparing' ? 'DIPROSES' :
+                                                     item.status === 'Ready' ? 'SIAP' : 
+                                                     item.status === 'Unpaid' ? 'PENDING' : 'PENDING'}
+                                                </Text>
+                                            </View>
+                                        </View>
+                                        <TouchableOpacity 
+                                            onPress={() => handleQuickDelete(item)}
+                                            style={{ backgroundColor: '#fef2f2', padding: 6, borderRadius: 8, marginLeft: 4 }}
+                                        >
+                                            <Trash2 size={16} color="#ef4444" />
+                                        </TouchableOpacity>
                                     </View>
                                 </View>
                             </View>

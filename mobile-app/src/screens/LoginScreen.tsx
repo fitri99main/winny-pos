@@ -59,8 +59,9 @@ export default function LoginScreen() {
             if (isMounted.current) {
                 if (error) {
                     setLoading(false);
-                    console.error('[Login] Error:', error.message);
-                    Alert.alert('Autentikasi Gagal', error.message);
+                    // Gunakan console.warn saja agar tidak memicu layar merah (LogBox) di Expo (Development)
+                    console.warn('[Login] Gagal:', error.message);
+                    Alert.alert('Gagal Masuk', 'Cek email atau password anda salah!!!');
                 } else {
                     console.log('[Login] Sign-in successful, navigating to Main...');
                     navigation.navigate('Main');
@@ -69,10 +70,10 @@ export default function LoginScreen() {
             }
         } catch (err: any) {
             clearTimeout(timeoutId);
-            console.error('[Login] Unexpected system error:', err);
+            console.warn('[Login] Unexpected system error:', err.message);
             if (isMounted.current) {
                 setLoading(false);
-                Alert.alert('Eror Sistem', `Terjadi kesalahan saat login: ${err.message || 'Unknown error'}`);
+                Alert.alert('Eror Sistem', `Terjadi kesalahan saat login!!!`);
             }
         }
     };
@@ -134,12 +135,12 @@ export default function LoginScreen() {
                                         styles.input,
                                         isSmallDevice && { paddingVertical: 12, fontSize: 14 }
                                     ]}
-                                    placeholder="Enter your email"
                                     value={email}
                                     onChangeText={setEmail}
                                     autoCapitalize="none"
                                     keyboardType="email-address"
-                                    placeholderTextColor="#94a3b8"
+                                    autoComplete="email"
+                                    textContentType="emailAddress"
                                 />
                             </View>
                         </View>
@@ -153,11 +154,11 @@ export default function LoginScreen() {
                                         styles.input,
                                         isSmallDevice && { paddingVertical: 12, fontSize: 14 }
                                     ]}
-                                    placeholder="Enter your password"
                                     value={password}
                                     onChangeText={setPassword}
                                     secureTextEntry
-                                    placeholderTextColor="#94a3b8"
+                                    autoComplete="password"
+                                    textContentType="password"
                                 />
                             </View>
                         </View>

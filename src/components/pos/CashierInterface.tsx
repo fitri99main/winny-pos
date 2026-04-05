@@ -250,8 +250,8 @@ export function CashierInterface({
       currentProducts = currentProducts.filter((p) => p.category === activeCategory);
     }
 
-    // Filter by sellable status
-    currentProducts = currentProducts.filter((p) => p.is_sellable !== false);
+    // Filter by sellable status and stock readiness
+    currentProducts = currentProducts.filter((p) => p.is_sellable !== false && p.is_stock_ready !== false);
 
     if (searchQuery) {
       currentProducts = currentProducts.filter((p) =>
@@ -914,7 +914,7 @@ export function CashierInterface({
 
           {/* Product Grid */}
           <div className="flex-1 overflow-y-auto">
-            <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 md:gap-3 pb-6">
+            <div className="grid grid-cols-4 gap-2 md:gap-3 pb-6">
               {filteredProducts.filter(p => p && p.id).map((product) => (
                 <ProductTile
                   key={product.id}

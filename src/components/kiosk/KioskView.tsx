@@ -582,7 +582,7 @@ export function KioskView() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 md:gap-6 pb-20">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6 pb-20">
                         {tables.map(table => {
                             const isOccupied = occupiedTables.has(table.number) || table.status === 'Occupied';
                             return (
@@ -783,7 +783,7 @@ export function KioskView() {
                         ))}
                     </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 md:gap-3 lg:gap-4 pb-24 lg:pb-0">
+                    <div className="grid grid-cols-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-1 md:gap-3 lg:gap-4 pb-24 lg:pb-0">
                         {filteredProducts.map(product => (
                             <div key={product.id} className="bg-white rounded-lg md:rounded-xl p-1.5 md:p-2 shadow-sm hover:shadow-md transition-all border border-transparent hover:border-primary/20 flex flex-col gap-1.5 group">
                                 <div className="aspect-[4/3] rounded-lg md:rounded-xl bg-gray-100 overflow-hidden relative">

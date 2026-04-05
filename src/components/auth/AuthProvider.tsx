@@ -10,6 +10,8 @@ interface AuthContextType {
     loading: boolean;
     permissions: string[];
     role: string | null;
+    profileEmail: string | null;
+    profileName: string | null;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -18,6 +20,8 @@ const AuthContext = createContext<AuthContextType>({
     loading: true,
     permissions: [],
     role: null,
+    profileEmail: null,
+    profileName: null,
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -28,14 +32,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [loading, setLoading] = useState(true);
     const [permissions, setPermissions] = useState<string[]>([]);
     const [role, setRole] = useState<string | null>(null);
+    const [profileEmail, setProfileEmail] = useState<string | null>(null);
+    const [profileName, setProfileName] = useState<string | null>(null);
 
-    // Helper to fetch extended profile data
     const fetchProfileAndPermissions = async (uid: string) => {
         try {
-            // 1. Get Profile (to get role name)
+            // 1. Get Profile (to get role, name, and profile email)
             const { data: profile, error: profileError } = await supabase
                 .from('profiles')
-                .select('role')
+                .select('role, name, full_name, email')
                 .eq('id', uid)
                 .single();
 
@@ -45,6 +50,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
 
             setRole(profile.role);
+            setProfileName(profile.name || profile.full_name || '');
+            setProfileEmail(profile.email);
 
             // 2. Get Permissions (from roles table)
             // Use ilike for case-insensitive matching to be safer
@@ -118,6 +125,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else {
             setRole(null);
             setPermissions([]);
+            setProfileName(null);
+            setProfileEmail(null);
         }
     }, [user]);
 
@@ -273,7 +282,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, []);
 
     return (
-        <AuthContext.Provider value={{ user, session, loading, permissions, role }}>
+        <AuthContext.Provider value={{ user, session, loading, permissions, role, profileEmail, profileName }}>
             {!loading ? children : (
                 <div className="h-screen w-full flex flex-col items-center justify-center bg-gray-50 gap-4">
                     <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />

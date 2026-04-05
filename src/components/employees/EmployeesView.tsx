@@ -222,7 +222,6 @@ export function EmployeesView({
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                         <input
                             type="text"
-                            placeholder="Cari karyawan atau departemen..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             className="w-full pl-12 pr-4 py-3 text-sm bg-white border border-gray-200 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all"
@@ -349,12 +348,12 @@ export function EmployeesView({
                                 <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
                                     <div className="space-y-1.5">
                                         <label className="text-[10px] font-bold text-gray-500 uppercase tracking-tight pl-1">Nama Lengkap Karyawan</label>
-                                        <input className="w-full p-2.5 md:p-3 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-semibold text-gray-800 text-sm md:text-base shadow-sm" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} required placeholder="Nama Lengkap" />
+                                        <input className="w-full p-2.5 md:p-3 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-semibold text-gray-800 text-sm md:text-base shadow-sm" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} required />
                                     </div>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className="space-y-1.5">
                                             <label className="text-[10px] font-bold text-gray-500 uppercase tracking-tight pl-1">Jabatan / Role</label>
-                                            <input className="w-full p-2.5 md:p-3 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-semibold" value={formData.position || ''} onChange={e => setFormData({ ...formData, position: e.target.value })} placeholder="misal: Barista" required />
+                                            <input className="w-full p-2.5 md:p-3 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-semibold" value={formData.position || ''} onChange={e => setFormData({ ...formData, position: e.target.value })} required />
                                         </div>
                                         <div className="space-y-1.5">
                                             <label className="text-[10px] font-bold text-gray-500 uppercase tracking-tight pl-1">Departemen</label>
@@ -367,11 +366,11 @@ export function EmployeesView({
                                         </div>
                                         <div className="space-y-1.5">
                                             <label className="text-[10px] font-bold text-gray-500 uppercase tracking-tight pl-1">Email (Login ID)</label>
-                                            <input type="email" className="w-full p-2.5 md:p-3 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-semibold" value={formData.email || ''} onChange={e => setFormData({ ...formData, email: e.target.value })} placeholder="email@karyawan.com" />
+                                            <input type="email" className="w-full p-2.5 md:p-3 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-semibold" value={formData.email || ''} onChange={e => setFormData({ ...formData, email: e.target.value })} />
                                         </div>
                                         <div className="space-y-1.5">
                                             <label className="text-[10px] font-bold text-gray-500 uppercase tracking-tight pl-1">Nomor WhatsApp</label>
-                                            <input className="w-full p-2.5 md:p-3 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-medium" value={formData.phone || ''} onChange={e => setFormData({ ...formData, phone: e.target.value })} placeholder="08xx-xxxx-xxxx" />
+                                            <input className="w-full p-2.5 md:p-3 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-medium" value={formData.phone || ''} onChange={e => setFormData({ ...formData, phone: e.target.value })} />
                                         </div>
                                         <div className="space-y-1.5">
                                             <label className="text-[10px] font-bold text-gray-500 uppercase tracking-tight pl-1">Tanggal Bergabung</label>
@@ -394,7 +393,6 @@ export function EmployeesView({
                                                     className="w-full pl-12 p-2.5 md:p-3 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold text-gray-800" 
                                                     value={formData.base_salary || ''} 
                                                     onChange={e => setFormData({ ...formData, base_salary: Number(e.target.value) })} 
-                                                    placeholder="0"
                                                 />
                                             </div>
                                         </div>
@@ -413,7 +411,6 @@ export function EmployeesView({
                                                 className="w-full p-2.5 md:p-3 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold tracking-widest"
                                                 value={formData.pin || ''}
                                                 onChange={e => setFormData({ ...formData, pin: e.target.value })}
-                                                placeholder="123456"
                                             />
                                         </div>
                                         <div className="space-y-1.5">
@@ -422,7 +419,6 @@ export function EmployeesView({
                                                 className="w-full p-2.5 md:p-3 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-semibold"
                                                 value={formData.barcode || ''}
                                                 onChange={e => setFormData({ ...formData, barcode: e.target.value })}
-                                                placeholder="ID-12345"
                                             />
                                         </div>
                                     </div>
@@ -436,7 +432,6 @@ export function EmployeesView({
                                                         className="w-full pl-10 p-2.5 bg-blue-50/30 border border-blue-100 rounded-xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all text-[9px] font-mono tracking-tight font-semibold truncate"
                                                         value={formData.fingerprint_template ? 'REGISTERED' : ''}
                                                         readOnly
-                                                        placeholder="Belum ada..."
                                                     />
                                                     <div className="absolute left-3 top-1/2 -translate-y-1/2">
                                                         <Zap className={`w-4 h-4 ${formData.fingerprint_template ? 'text-emerald-500' : 'text-blue-400'}`} />
@@ -552,7 +547,6 @@ export function EmployeesView({
                             <form onSubmit={handleAddDept} className="flex gap-3">
                                 <input
                                     className="flex-1 p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all text-sm font-bold"
-                                    placeholder="Nama Departemen Baru..."
                                     value={newDeptName}
                                     onChange={e => setNewDeptName(e.target.value)}
                                 />

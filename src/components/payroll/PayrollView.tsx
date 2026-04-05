@@ -143,14 +143,22 @@ export function PayrollView({
         }
     };
 
+    // Helper to get grade and multiplier (matched with PerformanceIndicatorMasterView)
+    const getPerformanceGrade = (score: number) => {
+        if (score >= 90) return { label: 'Sangat Baik', multiplier: 1.0 };
+        if (score >= 80) return { label: 'Baik', multiplier: 0.8 };
+        if (score >= 70) return { label: 'Cukup', multiplier: 0.6 };
+        return { label: 'Kurang', multiplier: 0.4 };
+    };
+
     const handleEmployeeSelect = (name: string) => {
         const emp = employees.find(e => e.name === name);
         if (emp) {
-            let baseSalary = 0;
+            let baseSalary = emp.base_salary || 0;
             let allowance = 0;
 
             // [NEW] Sync with Performance Evaluations
-            if (evaluations) {
+            if (evaluations && evaluations.length > 0) {
                 const evalItem = evaluations.find((ev: any) => {
                     const evPeriod = formatPeriod(ev.evaluation_date);
                     // Match by employee_id or name
@@ -158,9 +166,12 @@ export function PayrollView({
                 });
 
                 if (evalItem) {
-                    baseSalary = evalItem.base_salary || 0;
-                    allowance = Math.round(baseSalary * (evalItem.total_score / 100));
-                    toast.success(`Data sinkron dari Evaluasi Kinerja ${filterPeriod}`);
+                    // Use the basis from evaluation if available, otherwise use employee master
+                    const calcBasis = evalItem.base_salary || baseSalary;
+                    const grade = getPerformanceGrade(evalItem.total_score);
+                    allowance = Math.round(calcBasis * grade.multiplier);
+                    
+                    toast.success(`Sinkron: Grade ${grade.label} (${grade.multiplier * 100}%) untuk periode ${filterPeriod}`);
                 }
             }
 
@@ -168,8 +179,8 @@ export function PayrollView({
                 ...formData, 
                 employeeName: emp.name, 
                 position: emp.position,
-                basicSalary: baseSalary || 0,
-                allowance: allowance || 0
+                basicSalary: baseSalary,
+                allowance: allowance
             });
         }
     };

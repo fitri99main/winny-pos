@@ -442,12 +442,9 @@ export class PrinterManager {
             receiptText += CENTER;
             receiptText += displayWifiNotice + '\n';
             
-            // Handle multiple vouchers
+            // [MODIFIED] Print vouchers horizontally to save paper
             const vouchers = displayWifiVoucher.split(',').map((v: string) => v.trim()).filter((v: string) => v.length > 0);
-            vouchers.forEach((voucher: string) => {
-                // Use Double Height for each voucher code
-                receiptText += BOLD_ON + DOUBLE_ON + voucher + DOUBLE_OFF + BOLD_OFF + '\n';
-            });
+            receiptText += BOLD_ON + DOUBLE_ON + vouchers.join('  ') + DOUBLE_OFF + BOLD_OFF + '\n';
             receiptText += LINE;
         }
 

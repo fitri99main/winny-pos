@@ -9,7 +9,7 @@ begin
     new.id, 
     new.email, 
     coalesce(new.raw_user_meta_data->>'name', 'New User'),
-    coalesce(new.raw_user_meta_data->>'branch_id', 'b1'),
+    coalesce(new.raw_user_meta_data->>'branch_id', '7'), -- UPDATED: '7' is the first valid branch ID
     coalesce(new.raw_user_meta_data->>'role', 'Kasir'), -- CRITICAL FIX: Use metadata role!
     'Aktif'
   );

@@ -80,11 +80,14 @@ export default function LoginPage() {
                 toast.success('Selamat datang kembali!');
 
                 // Force reload to ensure clean auth state
-                navigate('/');
+                navigate({
+                    pathname: '/',
+                    search: window.location.search
+                });
             }
         } catch (error: any) {
-            console.error(error);
-            toast.error(error.message || 'Autentikasi gagal');
+            // Tampilkan pesan kustom sesuai permintaan user - Tanpa console.error agar tidak muncul layar merah
+            toast.error('Cek email atau password anda salah!!!');
         } finally {
             clearTimeout(timeout);
             setLoading(false);
@@ -141,7 +144,6 @@ export default function LoginPage() {
                                         value={name}
                                         onChange={(e) => setName(e.target.value)}
                                         className="w-full pl-11 pr-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm"
-                                        placeholder="Nama Anda"
                                     />
                                 </div>
                             </div>
@@ -153,10 +155,10 @@ export default function LoginPage() {
                                 <input
                                     type="email"
                                     required
+                                    autoComplete="on"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     className="w-full pl-11 pr-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm"
-                                    placeholder="name@company.com"
                                 />
                             </div>
                         </div>
@@ -169,10 +171,10 @@ export default function LoginPage() {
                                     type={showPassword ? "text" : "password"}
                                     required
                                     minLength={6}
+                                    autoComplete="on"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     className="w-full pl-11 pr-12 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm"
-                                    placeholder="••••••••"
                                 />
                                 <button
                                     type="button"

@@ -155,7 +155,6 @@ export default function EmployeeSettingsScreen() {
                         <Text style={styles.modalTitle}>{editingWaiter ? 'Edit Pelayan' : 'Tambah Pelayan'}</Text>
                         <TextInput
                             style={styles.input}
-                            placeholder="Nama Pelayan"
                             value={newWaiterName}
                             onChangeText={setNewWaiterName}
                             autoFocus

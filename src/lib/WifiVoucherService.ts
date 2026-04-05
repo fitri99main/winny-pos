@@ -102,21 +102,27 @@ export class WifiVoucherService {
             console.log(`[WifiVoucherService] SUCCESS. Final Total Vouchers: ${allCodes.length}. Codes: ${result}`);
             
             if (allCodes.length < targetCount) {
-                console.warn(`[WifiVoucherService] WARNING: Could only provide ${allCodes.length} out of ${targetCount} requested vouchers.`);
+                console.warn(`[WifiVoucherService] WARNING: Could only provide ${allCodes.length} out of ${targetCount} requested vouchers for Sale #${numericSaleId}.`);
             }
 
             return result;
         } catch (error) {
-            console.error('[WifiVoucherService] Unexpected error:', error);
+            console.error('[WifiVoucherService] Unexpected error while fetching vouchers:', error);
             return null;
         }
     }
 
     /**
      * Bulk import voucher codes into the pool.
+     * Deduplicates codes before inserting.
      */
     static async importVouchers(codes: string[], branchId: string = 'default'): Promise<number> {
-        const vouchers = codes.map(code => ({
+        // Essential: Deduplicate codes at the application level to avoid Postgres "ON CONFLICT" errors
+        const uniqueCodes = Array.from(new Set(codes.map(c => c.trim()).filter(c => c.length > 0)));
+        
+        if (uniqueCodes.length === 0) return 0;
+
+        const vouchers = uniqueCodes.map(code => ({
             code,
             branch_id: branchId,
             is_used: false
@@ -236,17 +242,41 @@ export class WifiVoucherService {
 
     /**
      * Delete all unused vouchers for a branch
+     * Returns the number of deleted vouchers
      */
-    static async deleteUnusedVouchers(branchId: string = 'default'): Promise<void> {
-        const { error } = await supabase
+    static async deleteUnusedVouchers(branchId: string = 'default'): Promise<number> {
+        const { data, error } = await supabase
             .from('wifi_vouchers')
             .delete()
             .eq('branch_id', branchId)
-            .eq('is_used', false);
+            .eq('is_used', false)
+            .select();
 
         if (error) {
             console.error('Error deleting unused vouchers:', error);
             throw error;
         }
+
+        return data?.length || 0;
+    }
+
+    /**
+     * Delete all used vouchers for a branch
+     * Returns the number of deleted vouchers
+     */
+    static async deleteUsedVouchers(branchId: string = 'default'): Promise<number> {
+        const { data, error } = await supabase
+            .from('wifi_vouchers')
+            .delete()
+            .eq('branch_id', branchId)
+            .eq('is_used', true)
+            .select();
+
+        if (error) {
+            console.error('Error deleting used vouchers:', error);
+            throw error;
+        }
+
+        return data?.length || 0;
     }
 }

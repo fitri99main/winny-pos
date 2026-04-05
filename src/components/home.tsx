@@ -42,13 +42,7 @@ type ModuleType = 'dashboard' | 'users' | 'contacts' | 'products' | 'purchases' 
 
 
 function Home() {
-  // [DEBUG] Log URL on component load
-  console.log('[Home] Component loaded V2.1, URL:', window.location.href);
-  console.log('[Home] URL Search Params:', window.location.search);
-  const urlParams = new URLSearchParams(window.location.search);
-  console.log('[Home] Table param:', urlParams.get('table'));
-
-  const { user, role, permissions, loading } = useAuth(); // Retrieve actual user data
+  const { user, role, permissions, loading, profileEmail, profileName } = useAuth(); // Retrieve actual user data
   const { canLogout, currentSession, requireMandatorySession } = useSessionGuard();
 
   const [activeModule, setActiveModule] = useState<ModuleType>(
@@ -2002,6 +1996,55 @@ function Home() {
     }
   };
 
+  const handleDeleteSales = async (saleIds: number[]) => {
+    if (saleIds.length === 0) return;
+
+    try {
+      const toastId = toast.loading(`Menghapus ${saleIds.length} transaksi...`);
+
+      // 1. Get all sale details for table clearing and journal matching
+      const { data: salesList } = await supabase
+        .from('sales')
+        .select('id, table_no, order_no')
+        .in('id', saleIds);
+
+      // 2. Cascade Deletes
+      await supabase.from('sale_items').delete().in('sale_id', saleIds);
+      await supabase.from('sales_returns').delete().in('sale_id', saleIds);
+      
+      // Journal entries matching by order_no patterns
+      if (salesList && salesList.length > 0) {
+        for (const s of salesList) {
+          if (s.order_no) {
+            await supabase.from('journal_entries').delete().ilike('description', `%${s.order_no}%`);
+          }
+        }
+      }
+
+      // WiFi Vouchers unlink
+      await supabase.from('wifi_vouchers').update({ is_used: false, used_at: null, sale_id: null }).in('sale_id', saleIds);
+
+      // 3. Delete Sales
+      const { error } = await supabase.from('sales').delete().in('id', saleIds);
+      if (error) throw error;
+
+      // 4. Batch Clear Tables
+      if (salesList) {
+        const uniqueTables = Array.from(new Set(salesList.map(s => s.table_no).filter(Boolean)));
+        if (uniqueTables.length > 0) {
+          await supabase.from('tables').update({ status: 'Empty' }).in('number', uniqueTables);
+          if (currentBranchId) fetchBranchData(currentBranchId);
+        }
+      }
+
+      toast.success(`${saleIds.length} transaksi berhasil dihapus`, { id: toastId });
+      fetchTransactions();
+    } catch (err: any) {
+      console.error('Bulk delete failed', err);
+      toast.error('Gagal menghapus beberapa transaksi: ' + (err.message || 'Unknown error'));
+    }
+  };
+
 
   /* OLD ROLE-BASED LOGIC DEPRECATED
   const modules = [
@@ -2438,7 +2481,10 @@ function Home() {
           returns={returns}
           products={products}
           ingredients={inventoryIngredients}
-          onNavigate={(module) => setActiveModule(module as ModuleType)}
+          onNavigate={(module, tab) => {
+            setActiveModule(module as ModuleType);
+            if (tab) setSalesViewTab(tab);
+          }}
         />
       );
       case 'users': return (
@@ -2555,6 +2601,7 @@ function Home() {
             paymentMethods={paymentMethods}
             tables={tables} // Pass tables for occupancy check
             onDeleteSale={handleDeleteSale}
+            onDeleteSales={handleDeleteSales}
             onOpenCashier={() => setIsCashierOpen(true)}
             onClearTableStatus={handleClearTableStatus}
             initialTab={salesViewTab}
@@ -2562,6 +2609,7 @@ function Home() {
             onModeChange={(mode) => setSalesViewTab(mode)}
             onExit={() => setActiveModule('dashboard')}
             settings={storeSettings}
+            userRole={role || ''}
           />
         );
       case 'reports': return <ReportsView sales={sales} returns={returns} paymentMethods={paymentMethods} />;
@@ -2845,13 +2893,22 @@ function Home() {
         {/* PROFILE FOOTER */}
         <div className="px-3 mt-auto">
           <div className={`flex items-center gap-3 p-2 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 ${isSidebarCollapsed ? 'justify-center' : ''}`}>
-            <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-primary to-blue-500 flex items-center justify-center text-white font-bold flex-shrink-0 shadow-sm">
-              {user?.user_metadata?.name?.charAt(0) || 'U'}
+            <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-primary to-blue-500 flex items-center justify-center text-white font-bold flex-shrink-0 shadow-sm uppercase">
+               {(profileName || user?.user_metadata?.name || 'U').charAt(0)}
             </div>
             {!isSidebarCollapsed && (
               <div className="flex-1 min-w-0 overflow-hidden">
-                <p className="text-xs font-bold text-gray-700 dark:text-gray-200 truncate">{user?.user_metadata?.name || 'User'}</p>
-                <p className="text-[10px] text-gray-400 font-medium truncate uppercase">{role || 'Staff'}</p>
+                <p className="text-xs font-bold text-gray-700 dark:text-gray-200 truncate">
+                  {profileName || user?.user_metadata?.name || 'User'}
+                </p>
+                <p className="text-[10px] text-gray-400 font-medium truncate uppercase">
+                  {role || 'Staff'}
+                </p>
+                {profileEmail && (
+                  <p className="text-[9px] text-gray-400 truncate lowercase mt-0.5 italic">
+                    {profileEmail}
+                  </p>
+                )}
               </div>
             )}
             {!isSidebarCollapsed && (

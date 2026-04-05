@@ -348,12 +348,10 @@ class PrinterService {
                 commands.push(encoder.encode(`${displayNotice}\n`));
             }
             
-            // Handle multiple vouchers
-            const vouchers = displayVoucher.split(',').map(v => v.trim()).filter(v => v.length > 0);
+            // [MODIFIED] Print vouchers horizontally to save paper
+            const vouchers = displayVoucher.split(',').map((v: string) => v.trim()).filter((v: string) => v.length > 0);
             commands.push(new Uint8Array([this.GS, 0x21, 0x11])); // Double Size
-            vouchers.forEach(voucher => {
-                commands.push(encoder.encode(`\n${voucher}\n`));
-            });
+            commands.push(encoder.encode(`\n${vouchers.join('  ')}\n`));
             commands.push(new Uint8Array([this.GS, 0x21, 0x00])); // Reset
         }
 

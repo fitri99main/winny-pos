@@ -170,6 +170,14 @@ export function PerformanceIndicatorMasterView({
         }));
     };
 
+    // Helper to get grade and color based on score
+    const getPerformanceGrade = (score: number) => {
+        if (score >= 90) return { label: 'Sangat Baik', color: 'text-emerald-600 bg-emerald-50 border-emerald-100', multiplier: 1.0 };
+        if (score >= 80) return { label: 'Baik', color: 'text-blue-600 bg-blue-50 border-blue-100', multiplier: 0.8 };
+        if (score >= 70) return { label: 'Cukup', color: 'text-amber-600 bg-amber-50 border-amber-100', multiplier: 0.6 };
+        return { label: 'Kurang', color: 'text-rose-600 bg-rose-50 border-rose-100', multiplier: 0.4 };
+    };
+
     const handleEditIndicator = (ind: Indicator) => {
         setIsEditing(ind);
         setFormData({ label: ind.label, weight: ind.weight });
@@ -243,7 +251,7 @@ export function PerformanceIndicatorMasterView({
                                 <tr className="bg-gray-50/50 border-b border-gray-100">
                                     <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center w-16">No</th>
                                     <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Indikator Kinerja</th>
-                                    <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center w-32">Bobot (%)</th>
+                                    <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center w-32">Bobot</th>
                                     <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center w-32">Aksi</th>
                                 </tr>
                             </thead>
@@ -256,7 +264,7 @@ export function PerformanceIndicatorMasterView({
                                         </td>
                                         <td className="px-8 py-6 text-center">
                                             <div className="inline-flex items-center justify-center px-4 py-1.5 rounded-full bg-primary/10 text-primary font-black text-sm">
-                                                {ind.weight}%
+                                                {ind.weight}
                                             </div>
                                         </td>
                                         <td className="px-8 py-6">
@@ -306,7 +314,12 @@ export function PerformanceIndicatorMasterView({
                                         <td className="px-8 py-6 font-bold text-gray-600">{new Date(ev.evaluation_date).toLocaleDateString()}</td>
                                         <td className="px-8 py-6 font-black text-gray-900">{ev.employee_name}</td>
                                         <td className="px-8 py-6 text-center">
-                                            <div className="text-lg font-black text-primary">{ev.total_score.toFixed(1)}</div>
+                                            <div className="flex flex-col items-center gap-1">
+                                                <div className="text-lg font-black text-primary">{ev.total_score.toFixed(1)}</div>
+                                                <div className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${getPerformanceGrade(ev.total_score).color}`}>
+                                                    {getPerformanceGrade(ev.total_score).label}
+                                                </div>
+                                            </div>
                                         </td>
                                         <td className="px-8 py-6 flex justify-center gap-2">
                                             <button onClick={() => handleViewEval(ev)} className="p-2.5 bg-gray-50 text-gray-400 hover:bg-blue-50 hover:text-blue-600 rounded-xl transition-all" title="Lihat Detail"><Eye className="w-4 h-4" /></button>
@@ -422,39 +435,45 @@ export function PerformanceIndicatorMasterView({
                                     </tbody>
                                     <tfoot>
                                         {/* Total Score % */}
-                                        <tr className="bg-emerald-50 text-emerald-700 font-bold text-xs uppercase border-t border-emerald-100">
-                                            <td colSpan={4} className="px-6 py-4 text-right tracking-widest">Total Skor Penilaian (%)</td>
-                                            <td className="px-6 py-4 text-center text-lg font-black">{evalFormData.details.reduce((acc, c) => acc + c.total, 0).toFixed(1)}%</td>
+                                        <tr className="bg-white text-gray-700 font-bold text-xs uppercase border-t border-gray-100">
+                                            <td colSpan={3} className="px-6 py-4 text-right tracking-widest bg-white">Total Skor Penilaian</td>
+                                            <td colSpan={2} className="px-6 py-4 text-center">
+                                                <div className="flex flex-col items-center">
+                                                    <div className="text-xl font-black text-gray-900">{evalFormData.details.reduce((acc, c) => acc + c.total, 0).toFixed(1)}</div>
+                                                    <div className={`mt-1 px-3 py-1 rounded-full text-[10px] font-black border ${getPerformanceGrade(evalFormData.details.reduce((acc, c) => acc + c.total, 0)).color}`}>
+                                                        HASIL: {getPerformanceGrade(evalFormData.details.reduce((acc, c) => acc + c.total, 0)).label.toUpperCase()}
+                                                    </div>
+                                                </div>
+                                            </td>
                                         </tr>
-                                        {/* Gaji Pokok Dasar (Multiplier) */}
-                                        <tr className="bg-emerald-50 text-emerald-700 font-bold text-xs uppercase border-t border-emerald-100">
-                                            <td colSpan={4} className="px-6 py-4 text-right tracking-widest">Gaji Pokok Dasar (x)</td>
-                                            <td className="px-6 py-4 text-center">
+                                        {/* Tunjangan Kinerja Dasar (Manual Input) */}
+                                        <tr className="bg-white text-gray-400 font-bold text-[10px] uppercase border-t border-gray-50">
+                                            <td colSpan={3} className="px-6 py-4 text-right tracking-widest font-black">Tunjangan Kinerja Maksimal (Sesuai Jabatan)</td>
+                                            <td colSpan={2} className="px-6 py-4 text-center">
                                                 <div className="flex items-center justify-center gap-2">
-                                                    <span className="text-emerald-700 font-bold">Rp</span>
+                                                    <span className="text-gray-400 font-bold">Rp</span>
                                                     <input 
                                                         type="number"
                                                         value={evalFormData.base_salary || ''}
                                                         disabled={viewMode}
                                                         onChange={(e) => setEvalFormData({ ...evalFormData, base_salary: Number(e.target.value) })}
-                                                        className="w-40 h-10 bg-white border border-emerald-200 rounded-xl text-center font-black text-emerald-700 outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all font-mono"
+                                                        className="w-40 h-10 bg-gray-50 border border-gray-100 rounded-xl text-center font-black text-gray-800 outline-none focus:ring-2 focus:ring-primary/10 transition-all font-mono"
                                                         placeholder="0"
                                                     />
                                                 </div>
                                             </td>
                                         </tr>
-                                        {/* Tunjangan Kinerja (Result) */}
-                                        <tr className="bg-emerald-100 text-emerald-800 font-bold text-xs uppercase border-t border-emerald-200">
-                                            <td colSpan={4} className="px-6 py-4 text-right tracking-widest text-emerald-900 text-sm">Nilai Tunjangan Kinerja (=)</td>
-                                            <td className="px-6 py-4 text-center text-xl font-black">
-                                                Rp {Math.round(evalFormData.base_salary * (evalFormData.details.reduce((acc, c) => acc + c.total, 0) / 100)).toLocaleString()}
+                                        {/* Multiplication Rule Logic Info */}
+                                        <tr className="bg-gray-50 text-[9px] text-gray-400 font-bold uppercase border-t border-gray-100">
+                                            <td colSpan={5} className="px-6 py-2 text-center tracking-widest">
+                                                Aturan: Sangat Baik (100%), Baik (80%), Cukup (60%), Kurang (40%) dari Tunjangan Maksimal
                                             </td>
                                         </tr>
-                                        {/* Total Payout */}
-                                        <tr className="bg-primary text-white font-black text-sm uppercase">
-                                            <td colSpan={4} className="px-6 py-5 text-right tracking-widest">Total Yang Diterima (Gaji + Tunjangan)</td>
-                                            <td className="px-6 py-5 text-center text-xl font-black">
-                                                Rp {(evalFormData.base_salary + Math.round(evalFormData.base_salary * (evalFormData.details.reduce((acc, c) => acc + c.total, 0) / 100))).toLocaleString()}
+                                        {/* Tunjangan Kinerja Terhitung (Fixed Grade Multiplier) */}
+                                        <tr className="bg-primary/5 text-primary font-bold text-xs uppercase border-t border-primary/20">
+                                            <td colSpan={3} className="px-6 py-4 text-right tracking-widest text-primary/80 font-black">Tunjangan Kinerja Yang Diterima</td>
+                                            <td colSpan={2} className="px-6 py-4 text-center text-2xl font-black text-primary">
+                                                Rp {Math.round(evalFormData.base_salary * getPerformanceGrade(evalFormData.details.reduce((acc, c) => acc + c.total, 0)).multiplier).toLocaleString()}
                                             </td>
                                         </tr>
                                     </tfoot>

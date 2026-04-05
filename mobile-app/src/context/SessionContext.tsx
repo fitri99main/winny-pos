@@ -162,6 +162,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     };
 
     const fetchBranchDetails = async () => {
+        if (!currentBranchId || isNaN(Number(currentBranchId))) return; // Prevent SQL error 22P02 for string IDs like 'b1'
         try {
             const { data, error } = await supabase
                 .from('branches')

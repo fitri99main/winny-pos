@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Switch, ActivityIndicator, ScrollView, Alert, Platform, useWindowDimensions, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Switch, ActivityIndicator, ScrollView, Alert, Platform, useWindowDimensions, Animated, Modal, TextInput } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PrinterManager } from '../lib/PrinterManager';
@@ -100,6 +100,9 @@ export default function SettingsScreen() {
     const [showSessionModal, setShowSessionModal] = React.useState(false);
     const [sessionMode, setSessionMode] = React.useState<'open' | 'close'>('open');
     const [showLogoutModal, setShowLogoutModal] = React.useState(false);
+    const [showPasswordModal, setShowPasswordModal] = React.useState(false);
+    const [passwordData, setPasswordData] = React.useState({ new: '', confirm: '' });
+    const [updatingPassword, setUpdatingPassword] = React.useState(false);
     const [showShiftWarningModal, setShowShiftWarningModal] = React.useState({ visible: false, message: '' });
     const [preparationDuration, setPreparationDuration] = React.useState<number>(15);
     const [offlineQueueCount, setOfflineQueueCount] = React.useState<number>(0);
@@ -537,30 +540,31 @@ export default function SettingsScreen() {
         );
     };
 
-    // Remove full-screen loading block to ensure "Instant Open"
-    /*
-    if (loading) {
-        return (
-            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', gap: 20 }]}>
-                <ActivityIndicator size="large" color="#ea580c" />
-                <Text style={{ color: '#64748b' }}>Memuat Pengaturan...</Text>
-                <TouchableOpacity 
-                    onPress={() => navigation.goBack()}
-                    style={{ 
-                        marginTop: 40,
-                        paddingVertical: 10,
-                        paddingHorizontal: 20,
-                        borderRadius: 12,
-                        backgroundColor: '#f1f5f9'
-                    }}
-                >
-                    <Text style={{ color: '#64748b', fontWeight: 'bold' }}>Batal / Kembali</Text>
-                </TouchableOpacity>
-            </View>
-        );
-    }
-    */
+    const handleUpdatePassword = async () => {
+        if (!passwordData.new || passwordData.new !== passwordData.confirm) {
+            Alert.alert('Error', 'Password baru tidak cocok atau kosong');
+            return;
+        }
 
+        if (passwordData.new.length < 6) {
+            Alert.alert('Error', 'Password minimal 6 karakter');
+            return;
+        }
+
+        setUpdatingPassword(true);
+        try {
+            const { error } = await supabase.auth.updateUser({ password: passwordData.new });
+            if (error) throw error;
+            
+            showToast('Password Berhasil', 'Password Anda telah diperbarui', 'success');
+            setShowPasswordModal(false);
+            setPasswordData({ new: '', confirm: '' });
+        } catch (e: any) {
+            Alert.alert('Gagal Update', e.message);
+        } finally {
+            setUpdatingPassword(false);
+        }
+    };
 
     return (
         <SafeAreaView style={styles.container}>
@@ -679,7 +683,7 @@ export default function SettingsScreen() {
 
                 {/* Mode Aplikasi */}
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Preferensi Aplikasi</Text>
+                    <Text style={styles.sectionTitle}>Mode & Keamanan</Text>
                     <View style={styles.card}>
                         <SettingItem 
                             icon={LayoutDashboard} 
@@ -688,6 +692,14 @@ export default function SettingsScreen() {
                             type="switch"
                             value={cashierMode}
                             onToggle={toggleCashierMode}
+                            isSmallDevice={isSmallDevice}
+                        />
+                        <View style={styles.divider} />
+                        <SettingItem 
+                            icon={Lock} 
+                            label="Ubah Password" 
+                            subtitle="Ganti password akun Anda"
+                            onPress={() => setShowPasswordModal(true)} 
                             isSmallDevice={isSmallDevice}
                         />
                     </View>
@@ -998,7 +1010,66 @@ export default function SettingsScreen() {
                 </Animated.View>
             )}
 
-            {/* Shift Warning Modal */}
+            {/* Password Modal */}
+            <Modal visible={showPasswordModal} transparent animationType="fade">
+                <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.7)' }]}>
+                    <View style={[styles.modalContent, { maxWidth: 400, alignSelf: 'center' }]}>
+                        <View style={{ marginBottom: 20 }}>
+                            <Text style={styles.modalTitle}>Ubah Password</Text>
+                            <Text style={{ color: '#6b7280', fontSize: 13, marginTop: 4 }}>Gunakan password minimal 6 karakter</Text>
+                        </View>
+                        
+                        <View style={{ gap: 12 }}>
+                            <View>
+                                <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#64748b', marginBottom: 6 }}>Password Baru</Text>
+                                <TextInput
+                                    style={[styles.input, { marginBottom: 0 }]}
+                                    placeholder="Masukkan password baru"
+                                    secureTextEntry
+                                    value={passwordData.new}
+                                    onChangeText={(text) => setPasswordData(prev => ({ ...prev, new: text }))}
+                                />
+                            </View>
+                            
+                            <View>
+                                <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#64748b', marginBottom: 6 }}>Konfirmasi Password</Text>
+                                <TextInput
+                                    style={[styles.input, { marginBottom: 0 }]}
+                                    placeholder="Ulangi password baru"
+                                    secureTextEntry
+                                    value={passwordData.confirm}
+                                    onChangeText={(text) => setPasswordData(prev => ({ ...prev, confirm: text }))}
+                                />
+                            </View>
+                        </View>
+
+                        <View style={[styles.modalButtons, { marginTop: 24 }]}>
+                            <TouchableOpacity
+                                style={[styles.modalBtn, styles.cancelBtn]}
+                                onPress={() => {
+                                    setShowPasswordModal(false);
+                                    setPasswordData({ new: '', confirm: '' });
+                                }}
+                                disabled={updatingPassword}
+                            >
+                                <Text style={styles.cancelBtnText}>Batal</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.modalBtn, styles.saveBtn, { backgroundColor: '#ea580c' }]}
+                                onPress={handleUpdatePassword}
+                                disabled={updatingPassword}
+                            >
+                                {updatingPassword ? (
+                                    <ActivityIndicator size="small" color="#fff" />
+                                ) : (
+                                    <Text style={styles.saveBtnText}>Update Password</Text>
+                                )}
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
             <ConfirmExitModal
                 visible={showShiftWarningModal.visible}
                 onClose={() => setShowShiftWarningModal({ visible: false, message: '' })}
@@ -1421,5 +1492,63 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: '#64748b',
         marginTop: 1,
+    },
+    // Modal Styles
+    modalOverlay: {
+        flex: 1,
+        justifyContent: 'center',
+        padding: 20,
+    },
+    modalContent: {
+        backgroundColor: 'white',
+        borderRadius: 20,
+        padding: 24,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.1,
+        shadowRadius: 20,
+        elevation: 10,
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#1e293b',
+        marginBottom: 8,
+    },
+    input: {
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        borderRadius: 12,
+        padding: 12,
+        fontSize: 16,
+        color: '#1e293b',
+        backgroundColor: '#f8fafc',
+    },
+    modalButtons: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    modalBtn: {
+        flex: 1,
+        paddingVertical: 14,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    cancelBtn: {
+        backgroundColor: '#f1f5f9',
+    },
+    saveBtn: {
+        backgroundColor: '#ea580c',
+    },
+    cancelBtnText: {
+        color: '#64748b',
+        fontWeight: 'bold',
+        fontSize: 14,
+    },
+    saveBtnText: {
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: 14,
     },
 });

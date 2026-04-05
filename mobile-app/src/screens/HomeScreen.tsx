@@ -89,7 +89,7 @@ export default function HomeScreen() {
     }, [isSessionActive, requireMandatorySession, isDisplayOnly, sessionLoading, currentBranchId]);
 
     const fetchPendingOrders = React.useCallback(async () => {
-        if (!currentBranchId) return;
+        if (!currentBranchId || isNaN(Number(currentBranchId))) return; // Prevent SQL error 22P02 for string IDs like 'b1'
         try {
             setFetchingPending(true);
             const { data, error } = await supabase

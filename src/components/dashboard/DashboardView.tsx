@@ -22,10 +22,18 @@ export interface DashboardViewProps {
     products: any[];
     ingredients: any[];
     voucherStats?: { total: number; used: number; available: number };
-    onNavigate: (module: string) => void;
+    onNavigate: (module: string, tab?: any) => void;
 }
 
-export function DashboardView({ contacts = [], sales = [], returns = [], products = [], ingredients = [], voucherStats = { total: 0, used: 0, available: 0 }, onNavigate }: DashboardViewProps) {
+export function DashboardView({ 
+    contacts = [], 
+    sales = [], 
+    returns = [], 
+    products = [], 
+    ingredients = [], 
+    voucherStats = { total: 0, used: 0, available: 0 }, 
+    onNavigate 
+}: DashboardViewProps) {
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
 
@@ -103,7 +111,9 @@ export function DashboardView({ contacts = [], sales = [], returns = [], product
             trend: '+12.5%', // Needs historical data for real trend
             trendUp: true,
             gradient: 'from-green-500 to-emerald-600',
-            shadow: 'shadow-green-500/20'
+            shadow: 'shadow-green-500/20',
+            module: 'pos',
+            tab: 'history'
         },
         {
             label: 'Total Transaksi',
@@ -112,7 +122,9 @@ export function DashboardView({ contacts = [], sales = [], returns = [], product
             trend: '+8.2%',
             trendUp: true,
             gradient: 'from-blue-500 to-indigo-600',
-            shadow: 'shadow-blue-500/20'
+            shadow: 'shadow-blue-500/20',
+            module: 'pos',
+            tab: 'history'
         },
         {
             label: 'Total Pelanggan',
@@ -121,7 +133,8 @@ export function DashboardView({ contacts = [], sales = [], returns = [], product
             trend: '+2',
             trendUp: true,
             gradient: 'from-orange-500 to-pink-600',
-            shadow: 'shadow-orange-500/20'
+            shadow: 'shadow-orange-500/20',
+            module: 'contacts'
         },
         {
             label: 'Stok Menipis',
@@ -130,7 +143,8 @@ export function DashboardView({ contacts = [], sales = [], returns = [], product
             trend: lowStockItems.length > 0 ? 'Perlu Restock' : 'Aman',
             trendUp: lowStockItems.length === 0,
             gradient: 'from-red-500 to-rose-600',
-            shadow: 'shadow-red-500/20'
+            shadow: 'shadow-red-500/20',
+            module: 'inventory'
         },
         {
             label: 'Voucher WiFi',
@@ -139,7 +153,8 @@ export function DashboardView({ contacts = [], sales = [], returns = [], product
             trend: (voucherStats?.available || 0) < 10 ? 'Segera Import' : 'Cukup',
             trendUp: (voucherStats?.available || 0) >= 10,
             gradient: (voucherStats?.available || 0) < 10 ? 'from-orange-600 to-red-700' : 'from-emerald-500 to-teal-600',
-            shadow: 'shadow-orange-500/20'
+            shadow: 'shadow-orange-500/20',
+            module: 'settings'
         },
     ];
 
@@ -175,8 +190,12 @@ export function DashboardView({ contacts = [], sales = [], returns = [], product
             {/* 2. Stats Grid - Fixed Height */}
             <div className="grid grid-cols-5 gap-3 shrink-0">
                 {stats.map((stat, index) => (
-                    <div key={index} className="bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${stat.gradient} flex items-center justify-center text-white shadow-sm shrink-0`}>
+                    <div 
+                        key={index} 
+                        onClick={() => stat.module && onNavigate(stat.module, stat.tab)}
+                        className="bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex items-center gap-3 cursor-pointer hover:shadow-md hover:border-blue-200 transition-all group"
+                    >
+                        <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${stat.gradient} flex items-center justify-center text-white shadow-sm shrink-0 group-hover:scale-110 transition-transform`}>
                             <stat.icon className="w-5 h-5" />
                         </div>
                         <div className="min-w-0">
@@ -217,8 +236,11 @@ export function DashboardView({ contacts = [], sales = [], returns = [], product
 
                 {/* Best Sellers */}
                 <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col h-full overflow-hidden">
-                    <div className="mb-2 shrink-0">
+                    <div className="mb-2 shrink-0 flex items-center justify-between">
                         <h3 className="text-sm font-bold text-gray-800">Top Produk</h3>
+                        <button onClick={() => onNavigate('products')} className="text-[9px] font-bold text-primary flex items-center gap-0.5 hover:underline">
+                            Lihat Semua <ChevronRight className="w-2.5 h-2.5" />
+                        </button>
                     </div>
                     <div className="flex-1 min-h-0 w-full overflow-y-auto space-y-4">
                         {/* Kopi Chart */}
@@ -258,7 +280,7 @@ export function DashboardView({ contacts = [], sales = [], returns = [], product
             <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-100 shrink-0 h-[130px] flex flex-col">
                 <div className="flex items-center justify-between mb-2 shrink-0">
                     <h3 className="text-sm font-bold text-gray-800">Transaksi Terkini</h3>
-                    <button onClick={() => onNavigate('pos')} className="text-xs font-bold text-primary flex items-center gap-1">
+                    <button onClick={() => onNavigate('pos', 'history')} className="text-xs font-bold text-primary flex items-center gap-1 hover:underline">
                         Lihat Semua <ChevronRight className="w-3 h-3" />
                     </button>
                 </div>

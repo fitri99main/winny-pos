@@ -193,20 +193,29 @@ export function ProductsView({
     };
 
     const handleMoveCategory = async (category: Category, direction: 'up' | 'down') => {
-        const currentIndex = categories.findIndex(c => c.id === category.id);
+        const sortedCategories = [...categories].sort((a, b) => (a.sort_order ?? a.id) - (b.sort_order ?? b.id));
+        const currentIndex = sortedCategories.findIndex(c => c.id === category.id);
+        
         if (direction === 'up' && currentIndex === 0) return;
-        if (direction === 'down' && currentIndex === categories.length - 1) return;
+        if (direction === 'down' && currentIndex === sortedCategories.length - 1) return;
 
         const neighborIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
-        const neighbor = categories[neighborIndex];
+        const neighbor = sortedCategories[neighborIndex];
 
         // Swap sort_order values
-        // If sort_order is null/undefined, use the temporary ID as fallback logic
-        const currentOrder = category.sort_order ?? category.id;
-        const neighborOrder = neighbor.sort_order ?? neighbor.id;
+        let currentOrder = (category.sort_order === null || category.sort_order === undefined) ? category.id : category.sort_order;
+        let neighborOrder = (neighbor.sort_order === null || neighbor.sort_order === undefined) ? neighbor.id : neighbor.sort_order;
+
+        // Force uniqueness if they happen to be the same (unsticking)
+        if (currentOrder === neighborOrder) {
+            if (direction === 'up') {
+                neighborOrder = Math.max(0, currentOrder - 1);
+            } else {
+                neighborOrder = currentOrder + 1;
+            }
+        }
 
         try {
-            // Transactional update (sequential for simplicity as Supabase JS doesn't support complex transactions easily without RPC)
             const { error: err1 } = await supabase
                 .from('categories')
                 .update({ sort_order: neighborOrder })
@@ -227,9 +236,10 @@ export function ProductsView({
     };
 
     const handleMoveProduct = async (product: Product, direction: 'up' | 'down') => {
-        // Find visible products based on current filters to match what the user sees
+        // Find visible products and sort them to match potential UI sorting
         const visibleProducts = products
-            .filter(p => !currentBranchId || String(p.branch_id) === String(currentBranchId) || !p.branch_id);
+            .filter(p => !currentBranchId || String(p.branch_id) === String(currentBranchId) || !p.branch_id)
+            .sort((a, b) => (a.sort_order ?? a.id) - (b.sort_order ?? b.id));
             
         const currentIndex = visibleProducts.findIndex(p => p.id === product.id);
         if (direction === 'up' && currentIndex === 0) return;
@@ -238,8 +248,17 @@ export function ProductsView({
         const neighborIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
         const neighbor = visibleProducts[neighborIndex];
 
-        const currentOrder = product.sort_order ?? product.id;
-        const neighborOrder = neighbor.sort_order ?? neighbor.id;
+        let currentOrder = (product.sort_order === null || product.sort_order === undefined) ? product.id : product.sort_order;
+        let neighborOrder = (neighbor.sort_order === null || neighbor.sort_order === undefined) ? neighbor.id : neighbor.sort_order;
+
+        // Force uniqueness if stuck
+        if (currentOrder === neighborOrder) {
+            if (direction === 'up') {
+                neighborOrder = Math.max(0, currentOrder - 1);
+            } else {
+                neighborOrder = currentOrder + 1;
+            }
+        }
 
         try {
             const { error: err1 } = await supabase
@@ -408,6 +427,7 @@ export function ProductsView({
                     <tbody className="divide-y divide-gray-50">
                         {products
                             .filter(p => !currentBranchId || String(p.branch_id) === String(currentBranchId) || !p.branch_id)
+                            .sort((a, b) => (a.sort_order ?? a.id) - (b.sort_order ?? b.id))
                             .map((p, idx, filtered) => {
                                 const currentHPP = calculateHPP(p.recipe);
                                 const margin = p.price - currentHPP;
@@ -509,7 +529,7 @@ export function ProductsView({
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                    {data.map((item, idx) => (
+                    {[...data].sort((a, b) => (a.sort_order ?? a.id) - (b.sort_order ?? b.id)).map((item, idx) => (
                         <tr key={item.id} className="group hover:bg-gray-50/50 transition-all">
                             <td className="px-8 py-5 font-bold text-gray-700">
                                 <div className="flex items-center gap-3">

@@ -367,8 +367,20 @@ export function SettingsView({
         if (!confirm('Hapus semua voucher yang belum terpakai?')) return;
         try {
             const { WifiVoucherService } = await import('../../lib/WifiVoucherService');
-            await WifiVoucherService.deleteUnusedVouchers(localSettings.branch_id || 'default');
-            toast.success('Semua voucher belum terpakai berhasil dihapus');
+            const count = await WifiVoucherService.deleteUnusedVouchers(localSettings.branch_id || 'default');
+            toast.success(`${count} voucher belum terpakai berhasil dihapus`);
+            loadVoucherStats();
+        } catch (err: any) {
+            toast.error('Gagal menghapus voucher: ' + err.message);
+        }
+    };
+
+    const handleDeleteUsedVouchers = async () => {
+        if (!confirm('Hapus semua voucher yang sudah terpakai?')) return;
+        try {
+            const { WifiVoucherService } = await import('../../lib/WifiVoucherService');
+            const count = await WifiVoucherService.deleteUsedVouchers(localSettings.branch_id || 'default');
+            toast.success(`${count} voucher sudah terpakai berhasil dihapus`);
             loadVoucherStats();
         } catch (err: any) {
             toast.error('Gagal menghapus voucher: ' + err.message);
@@ -2283,12 +2295,18 @@ export function SettingsView({
                                 <Button
                                     onClick={async () => {
                                         const area = document.getElementById('wifi-import-area') as HTMLTextAreaElement;
-                                        const codes = area.value.split('\n').map(c => c.trim()).filter(c => c.length > 0);
-                                        if (codes.length === 0) return toast.error('Masukkan setidaknya satu kode!');
+                                        const rawCodes = area.value.split('\n').map(c => c.trim()).filter(c => c.length > 0);
+                                        const uniqueCodes = Array.from(new Set(rawCodes));
+                                        
+                                        if (uniqueCodes.length === 0) return toast.error('Masukkan setidaknya satu kode!');
+                                        
+                                        if (uniqueCodes.length < rawCodes.length) {
+                                            console.log(`[SettingsView] Found ${rawCodes.length - uniqueCodes.length} duplicates in import text. Filtering.`);
+                                        }
 
                                         try {
                                             const { WifiVoucherService } = await import('../../lib/WifiVoucherService');
-                                            const count = await WifiVoucherService.importVouchers(codes, localSettings.branch_id || 'default');
+                                            const count = await WifiVoucherService.importVouchers(uniqueCodes, localSettings.branch_id || 'default');
                                             toast.success(`${count} voucher berhasil diimport!`);
                                             area.value = '';
                                             loadVoucherStats(); // Refresh stats
@@ -2339,6 +2357,14 @@ export function SettingsView({
                                         onClick={handleDeleteUnusedVouchers}
                                     >
                                         <Trash2 className="w-3 h-3 mr-1" /> Hapus Belum Terpakai
+                                    </Button>
+                                    <Button 
+                                        variant="outline" 
+                                        size="sm" 
+                                        className="h-8 text-[10px] text-red-600 border-red-100 hover:bg-red-50"
+                                        onClick={handleDeleteUsedVouchers}
+                                    >
+                                        <Trash2 className="w-3 h-3 mr-1" /> Hapus Sudah Terpakai
                                     </Button>
                                 </div>
                             </div>

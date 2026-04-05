@@ -29,7 +29,7 @@ const ProductCard = memo(({ item, isTablet, onAdd, formatCurrency }: any) => {
         <TouchableOpacity
             style={[
                 styles.productCard,
-                { width: '100%', margin: 0, borderRadius: isTablet ? 12 : 8, overflow: 'hidden', backgroundColor: '#f3f4f6', height: isTablet ? 150 : 100 }
+                { width: '100%', margin: 0, borderRadius: isTablet ? 12 : 8, overflow: 'hidden', backgroundColor: '#f3f4f6', height: isTablet ? 150 : 90 }
             ]}
             onPress={() => onAdd(item)}
         >
@@ -832,7 +832,7 @@ export default function POSScreen() {
             // Speed optimization: Select only required columns instead of '*'
             const { data, error } = await supabase
                 .from('products')
-                .select('id, name, price, image_url, category, target, stock, is_taxed, branch_id, sort_order')
+                .select('id, name, price, image_url, category, target, stock, is_taxed, branch_id, sort_order, is_sellable, is_stock_ready')
                 .eq('branch_id', currentBranchId)
                 .order('sort_order', { ascending: true });
 
@@ -853,6 +853,10 @@ export default function POSScreen() {
     // Filter Logic
     const filteredProducts = useMemo(() => {
         let result = products;
+
+        // [NEW] Filter out products that are NOT sellable or NOT ready (Kosong)
+        result = result.filter(p => p.is_sellable !== false && p.is_stock_ready !== false);
+
         if (selectedCategory !== 'Semua') {
             const lowerSelected = selectedCategory.toLowerCase();
             result = result.filter(p => {
@@ -1821,8 +1825,8 @@ export default function POSScreen() {
                     ) : (
                         <FlatList
                             data={filteredProducts}
-                            key={isTablet ? "tablet-vertical" : "mobile-vertical"}
-                            numColumns={isTablet ? 5 : 3}
+                            key={isTablet ? "tablet-4col-rev" : "mobile-4col-rev"}
+                            numColumns={4}
                             keyExtractor={(item) => item.id.toString()}
                             showsVerticalScrollIndicator={true}
                             windowSize={5}
