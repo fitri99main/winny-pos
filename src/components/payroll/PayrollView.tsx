@@ -68,6 +68,7 @@ export function PayrollView({
     const [filterPeriod, setFilterPeriod] = useState(getCurrentPeriod());
     const [searchQuery, setSearchQuery] = useState('');
     const [previewItem, setPreviewItem] = useState<PayrollItem | null>(null);
+    const [waMessage, setWaMessage] = useState(''); // NEW: Editable WhatsApp Message
 
     // --- Mock Employees Removed, using props ---
 
@@ -84,7 +85,48 @@ export function PayrollView({
     };
 
     const handlePrintSlip = (item: PayrollItem) => {
+        // [NEW] Generate Initial WA Message
+        const total = item.basicSalary + item.allowance + (item.overtime || 0) - item.deduction;
+        const msg = `*SLIP GAJI - WINNY COFFE PNK*\n` +
+                   `---------------------------\n` +
+                   `Nama: ${item.employeeName}\n` +
+                   `Periode: ${item.period}\n\n` +
+                   `Gaji Pokok: Rp ${item.basicSalary.toLocaleString()}\n` +
+                   `Tunjangan: Rp ${item.allowance.toLocaleString()}\n` +
+                   `Lembur: Rp ${(item.overtime || 0).toLocaleString()}\n` +
+                   `Potongan: Rp ${item.deduction.toLocaleString()}\n` +
+                   `---------------------------\n` +
+                   `*TOTAL DITERIMA: Rp ${total.toLocaleString()}*\n\n` +
+                   `Terima kasih atas kerja keras Anda!`;
+        
+        setWaMessage(msg);
         setPreviewItem(item);
+    };
+
+    const handleSendWhatsApp = () => {
+        if (!previewItem) return;
+        
+        // [IMPROVED] Case-insensitive and trimmed matching
+        const targetName = previewItem.employeeName.trim().toLowerCase();
+        const emp = employees.find(e => e.name.trim().toLowerCase() === targetName);
+        
+        if (!emp) {
+            toast.error(`Karyawan "${previewItem.employeeName}" tidak ditemukan di data Master Karyawan.`);
+            return;
+        }
+
+        if (!emp.phone) {
+            toast.error(`Nomor WA tidak ditemukan untuk "${emp.name}". Harap isi di menu Karyawan.`);
+            return;
+        }
+
+        // Clean phone number (remove leading 0 and non-digits)
+        let phone = emp.phone.replace(/\D/g, '');
+        if (phone.startsWith('0')) phone = '62' + phone.substring(1);
+        if (!phone.startsWith('62')) phone = '62' + phone;
+
+        const url = `https://wa.me/${phone}?text=${encodeURIComponent(waMessage)}`;
+        window.open(url, '_blank');
     };
 
     const handlePrintBrowser = () => {
@@ -191,6 +233,15 @@ export function PayrollView({
         }
     };
 
+    const handlePreviewFromForm = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!formData.employeeName || !formData.basicSalary) {
+            toast.error('Lengkapi data sebelum pratinjau');
+            return;
+        }
+        handlePrintSlip(formData as PayrollItem);
+    };
+
     const filteredItems = payrollData.filter(item =>
         item.period === filterPeriod &&
         item.employeeName.toLowerCase().includes(searchQuery.toLowerCase())
@@ -284,12 +335,15 @@ export function PayrollView({
                                                     {item.status === 'Paid' && <div className="text-[10px] text-gray-400 mt-1">{item.paymentDate}</div>}
                                                 </td>
                                                 <td className="px-4 py-2 flex justify-center gap-1 items-center">
+                                                    <Button size="sm" variant="outline" onClick={() => handlePrintSlip(item)} className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg border-none" title="Pratinjau Slip">
+                                                        <Printer className="w-4 h-4" />
+                                                    </Button>
                                                     {item.status === 'Pending' ? (
                                                         <>
-                                                            <button onClick={() => { setFormData(item); setIsFormOpen(true); }} className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg" title="Edit">
+                                                            <button onClick={() => { setFormData(item); setIsFormOpen(true); }} className="p-2 hover:bg-gray-50 text-gray-400 rounded-lg" title="Edit">
                                                                 <Edit className="w-4 h-4" />
                                                             </button>
-                                                            <Button size="sm" onClick={() => handleProcessPayment(item.id)} className="bg-green-600 hover:bg-green-700 text-white gap-1 h-8 text-xs px-3">
+                                                            <Button size="sm" onClick={() => handleProcessPayment(item.id)} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1 h-8 text-[10px] px-3 font-bold uppercase tracking-wider">
                                                                 <DollarSign className="w-3 h-3" /> Bayar
                                                             </Button>
                                                             <button onClick={() => handleDelete(item.id)} className="p-2 hover:bg-red-50 text-red-600 rounded-lg" title="Hapus">
@@ -298,10 +352,6 @@ export function PayrollView({
                                                         </>
                                                     ) : (
                                                         <>
-                                                            <Button size="sm" variant="outline" onClick={() => handlePrintSlip(item)} className="gap-2 h-8 text-xs text-gray-600 mr-2">
-                                                                <Printer className="w-3 h-3" /> Slip
-                                                            </Button>
-                                                            {/* Allow deleting Paid items (will reverse Journal ideally, or just delete) */}
                                                             <button onClick={() => handleDelete(item.id)} className="p-2 hover:bg-red-50 text-red-600 rounded-lg" title="Hapus (Batalkan)">
                                                                 <Trash2 className="w-4 h-4" />
                                                             </button>
@@ -392,9 +442,14 @@ export function PayrollView({
                                 </div>
                             </div>
 
-                            <div className="pt-4 flex justify-end gap-3 border-t border-gray-100 mt-4">
-                                <Button type="button" variant="outline" onClick={() => setIsFormOpen(false)}>Batal</Button>
-                                <Button type="submit">Simpan Data</Button>
+                             <div className="pt-4 flex justify-between gap-3 border-t border-gray-100 mt-4">
+                                <Button type="button" variant="outline" onClick={handlePreviewFromForm} className="gap-2 text-primary border-primary/20 hover:bg-primary/5">
+                                    <Printer className="w-4 h-4" /> Pratinjau Slip
+                                </Button>
+                                <div className="flex gap-2">
+                                    <Button type="button" variant="outline" onClick={() => setIsFormOpen(false)} className="border-none">Batal</Button>
+                                    <Button type="submit" className="px-8 font-bold uppercase tracking-wider h-11">Simpan Data</Button>
+                                </div>
                             </div>
                         </form>
                     </div>
@@ -403,160 +458,138 @@ export function PayrollView({
 
             {/* Payslip Preview Modal - Only Visible when previewItem is set */}
             {previewItem && (
-                <>
-                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 print:hidden">
-                        <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col animate-in zoom-in-95">
-                            <div className="flex justify-between items-center p-4 border-b border-gray-200">
-                                <h3 className="font-bold text-lg text-gray-800">Preview Slip Gaji</h3>
-                                <button onClick={() => setPreviewItem(null)} className="p-2 hover:bg-gray-100 rounded-full">
-                                    <X className="w-5 h-5 text-gray-500" />
-                                </button>
-                            </div>
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 print:hidden">
+                    <div className="bg-white rounded-lg shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col animate-in zoom-in-95 overflow-hidden">
+                        <div className="flex justify-between items-center p-4 border-b border-gray-200 bg-white sticky top-0 z-10 font-bold uppercase tracking-widest text-xs text-gray-500">
+                            <h3 className="flex items-center gap-2">
+                                <Printer className="w-4 h-4" /> Pratinjau Slip Gaji
+                            </h3>
+                            <button onClick={() => setPreviewItem(null)} className="p-2 hover:bg-gray-100 rounded-full transition-all">
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
 
-                            <div className="flex-1 overflow-y-auto p-8 bg-gray-50" id="payslip-preview">
-                                <div className="bg-white p-8 shadow-sm border border-gray-200 mx-auto max-w-xl">
+                        <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-gray-50 flex flex-col md:flex-row gap-8" id="payslip-preview">
+                            <div className="flex-1">
+                                <div className="bg-white p-6 sm:p-10 shadow-xl border border-gray-100 mx-auto max-w-xl rounded-sm print:shadow-none print:border-none print:p-0">
                                     {/* SLIP CONTENT */}
-                                    <div className="text-center mb-6">
-                                        <h2 className="text-xl font-bold uppercase tracking-wider">{settings?.name || 'WINNY PANGERAN NATAKUSUMA'}</h2>
-                                        <p className="text-xs text-gray-500">{settings?.address || 'Jl. Contoh Alamat No. 123'}</p>
-                                        <div className="w-full h-px bg-gray-300 my-4"></div>
-                                        <h3 className="text-lg font-bold uppercase underline">SLIP GAJI KARYAWAN</h3>
-                                        <p className="text-sm text-gray-600 mb-4">Periode: {previewItem.period}</p>
+                                    <div className="text-center mb-8">
+                                        <h2 className="text-2xl font-black uppercase tracking-widest text-gray-900">{settings?.name || 'WINNY COFFE PNK'}</h2>
+                                        <p className="text-[10px] sm:text-xs text-gray-500 font-bold uppercase tracking-widest mt-1">{settings?.address || 'Pontiak, Indonesia'}</p>
+                                        <div className="w-full h-1 bg-gray-900 my-6"></div>
+                                        <h3 className="text-lg font-black uppercase tracking-[0.2em] underline underline-offset-8 mb-4">SLIP GAJI KARYAWAN</h3>
+                                        <p className="text-xs font-bold text-gray-400">Periode: {previewItem.period}</p>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-4 text-sm mb-6">
-                                        <div>
-                                            <p className="text-gray-500">Nama Karyawan</p>
-                                            <p className="font-bold">{previewItem.employeeName}</p>
+                                    <div className="grid grid-cols-2 gap-6 text-[10px] sm:text-xs mb-8 border-b border-gray-100 pb-8 uppercase font-bold tracking-wider">
+                                        <div className="space-y-4">
+                                            <div>
+                                                <p className="text-gray-400 mb-1">Nama Karyawan</p>
+                                                <p className="text-gray-900 border-l-4 border-primary pl-3">{previewItem.employeeName}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-gray-400 mb-1">Tanggal Bayar</p>
+                                                <p className="text-gray-900 border-l-4 border-primary pl-3">{previewItem.paymentDate || '-'}</p>
+                                            </div>
                                         </div>
-                                        <div className="text-right">
-                                            <p className="text-gray-500">Jabatan</p>
-                                            <p className="font-bold">{previewItem.position}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-gray-500">Tanggal Bayar</p>
-                                            <p className="font-bold">{previewItem.paymentDate || '-'}</p>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-gray-500">ID Referensi</p>
-                                            <p className="font-mono text-xs">PAY-{previewItem.id}</p>
-                                        </div>
-                                    </div>
-
-                                    <div className="border-t border-b border-gray-200 py-4 mb-6 space-y-2 text-sm">
-                                        <div className="flex justify-between">
-                                            <span>Gaji Pokok</span>
-                                            <span className="font-medium">Rp {previewItem.basicSalary.toLocaleString()}</span>
-                                        </div>
-                                        <div className="flex justify-between text-green-700">
-                                            <span>Tunjangan & Bonus</span>
-                                            <span className="font-medium">+ Rp {previewItem.allowance.toLocaleString()}</span>
-                                        </div>
-                                        <div className="flex justify-between text-blue-700">
-                                            <span>Lembur</span>
-                                            <span className="font-medium">+ Rp {(previewItem.overtime || 0).toLocaleString()}</span>
-                                        </div>
-                                        <div className="flex justify-between text-red-600">
-                                            <span>Potongan</span>
-                                            <span className="font-medium">- Rp {previewItem.deduction.toLocaleString()}</span>
+                                        <div className="space-y-4 text-right">
+                                            <div>
+                                                <p className="text-gray-400 mb-1">Jabatan</p>
+                                                <p className="text-gray-900 border-r-4 border-primary pr-3">{previewItem.position}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-gray-400 mb-1">ID Referensi</p>
+                                                <p className="text-gray-900 border-r-4 border-primary pr-3 font-mono">PAY-{previewItem.id || 'TEMP'}</p>
+                                            </div>
                                         </div>
                                     </div>
 
-                                    <div className="flex justify-between items-center bg-gray-100 p-3 rounded-lg mb-8">
-                                        <span className="font-bold text-gray-800">TOTAL DITERIMA</span>
-                                        <span className="font-bold text-lg text-primary">
+                                    <div className="space-y-4 mb-10 text-[11px] sm:text-sm">
+                                        <div className="flex justify-between items-center text-gray-600 group">
+                                            <span className="font-bold border-b border-transparent group-hover:border-gray-200 transition-all">GAJI POKOK</span>
+                                            <span className="font-mono">Rp {previewItem.basicSalary.toLocaleString()}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-emerald-600 font-bold">
+                                            <span className="bg-emerald-50 px-2 py-0.5 rounded">TUNJANGAN & BONUS</span>
+                                            <span className="font-mono">+ Rp {previewItem.allowance.toLocaleString()}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-blue-600 font-bold">
+                                            <span className="bg-blue-50 px-2 py-0.5 rounded">LEMBUR</span>
+                                            <span className="font-mono">+ Rp {(previewItem.overtime || 0).toLocaleString()}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-rose-600 font-bold">
+                                            <span className="bg-rose-50 px-2 py-0.5 rounded">POTONGAN</span>
+                                            <span className="font-mono">- Rp {previewItem.deduction.toLocaleString()}</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex justify-between items-center bg-gray-900 p-5 rounded-sm mb-10 text-white shadow-lg shadow-gray-200">
+                                        <span className="font-black text-[10px] sm:text-xs uppercase tracking-widest">TOTAL DITERIMA</span>
+                                        <span className="font-black text-lg sm:text-2xl font-mono">
                                             Rp {(previewItem.basicSalary + previewItem.allowance + (previewItem.overtime || 0) - previewItem.deduction).toLocaleString()}
                                         </span>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-8 mt-12 text-center text-xs">
-                                        <div>
-                                            <p className="mb-16">Penerima,</p>
-                                            <p className="font-bold underline">{previewItem.employeeName}</p>
+                                    <div className="grid grid-cols-2 gap-12 mt-16 text-center text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                        <div className="space-y-16">
+                                            <p>Penerima,</p>
+                                            <p className="text-gray-900 border-t-2 border-gray-900 pt-3">{previewItem.employeeName}</p>
                                         </div>
-                                        <div>
-                                            <p className="mb-16">Manager / HRD,</p>
-                                            <p className="font-bold underline">Admin</p>
+                                        <div className="space-y-16">
+                                            <p>Manager / HRD,</p>
+                                            <p className="text-gray-900 border-t-2 border-gray-900 pt-3">Admin</p>
                                         </div>
                                     </div>
-                                    <div className="mt-8 text-[10px] text-center text-gray-400 italic">
-                                        Dicetak pada: {new Date().toLocaleString()}
+                                    <div className="mt-12 text-[8px] sm:text-[9px] text-center text-gray-300 italic font-medium uppercase tracking-tighter">
+                                        Dicetak via WINPOS pada: {new Date().toLocaleString()}
                                     </div>
                                 </div>
                             </div>
 
-                            <div className="p-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
-                                <Button variant="outline" onClick={() => setPreviewItem(null)}>Tutup</Button>
-                                <Button onClick={handlePrintBrowser} className="gap-2">
-                                    <Printer className="w-4 h-4" /> Cetak Slip
-                                </Button>
+                            <div className="w-full md:w-80 space-y-6 print:hidden">
+                                <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center">
+                                            <svg className="w-4 h-4 text-white fill-current" viewBox="0 0 24 24"><path d="M12.031 6.172c-2.277 0-4.148 1.871-4.148 4.148s1.871 4.148 4.148 4.148c2.277 0 4.148-1.871 4.148-4.148s-1.871-4.148-4.148-4.148zm0-1c2.833 0 5.148 2.315 5.148 5.148s-2.315 5.148-5.148 5.148-5.148-2.315-5.148-5.148 2.315-5.148 5.148-5.148zm0-1c3.39 0 6.148 2.758 6.148 6.148s-2.758 6.148-6.148 6.148-6.148-2.758-6.148-6.148 2.758-6.148 6.148-6.148z"/></svg> 
+                                        </div>
+                                        <p className="font-black text-xs uppercase tracking-widest text-emerald-600">WhatsApp Message</p>
+                                    </div>
+                                    <p className="text-[10px] text-gray-500 mb-3 font-bold uppercase tracking-widest">Pesan Slip Gaji (Edit Manual):</p>
+                                    <textarea 
+                                        value={waMessage}
+                                        onChange={(e) => setWaMessage(e.target.value)}
+                                        className="w-full h-64 p-4 bg-gray-50 border border-gray-100 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-emerald-100 resize-none"
+                                        placeholder="Tulis pesan tambahan..."
+                                    />
+                                    <Button 
+                                        onClick={handleSendWhatsApp}
+                                        className="w-full mt-4 bg-emerald-600 hover:bg-emerald-700 h-14 rounded-xl flex items-center justify-center gap-3 font-black uppercase tracking-widest"
+                                    >
+                                        <svg className="w-5 h-5 text-white fill-current" viewBox="0 0 24 24"><path d="M12.031 6.172c-2.277 0-4.148 1.871-4.148 4.148 0 2.277 1.871 4.148 4.148 4.148 2.277 0 4.148-1.871 4.148-4.148s-1.871-4.148-4.148-4.148zm0-1c2.833 0 5.148 2.315 5.148 5.148s-2.315 5.148-5.148 5.148-5.148-2.315-5.148-5.148 2.315-5.148 5.148-5.148zm0-1c3.39 0 6.148 2.758 6.148 6.148s-2.758 6.148-6.148 6.148-6.148-2.758-6.148-6.148 2.758-6.148 6.148-6.148zm.032 18.006l-.033.494v-.494zm0 .494c-5.514 0-10-4.486-10-10s4.486-10 10-10 10 4.486 10 10-4.486 10-10 10zm-9-10c0 4.962 4.037 9 9 9s9-4.038 9-9-4.037-9-9-9-9 4.038-9 9z"/></svg> 
+                                        Kirim Ke WA
+                                    </Button>
+                                </div>
+
+                                <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100">
+                                    <div className="flex items-start gap-3">
+                                        <Printer className="w-5 h-5 text-blue-600 mt-1" />
+                                        <div>
+                                            <p className="font-bold text-blue-800 text-sm mb-1">Cetak Fisik</p>
+                                            <p className="text-[10px] text-blue-600 font-medium">Gunakan tombol print browser jika ingin mencetak ke kertas fisik / PDF.</p>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
+                        </div>
+
+                        <div className="p-4 border-t border-gray-200 bg-white flex justify-end gap-3 sticky bottom-0 z-10 print:hidden">
+                            <Button variant="outline" onClick={() => setPreviewItem(null)} className="h-12 px-8 rounded-xl font-bold border-none bg-gray-50 text-gray-500 hover:text-gray-900 transition-all">Tutup</Button>
+                            <Button onClick={handlePrintBrowser} className="gap-2 h-12 px-8 rounded-xl bg-gray-900 hover:bg-black font-black uppercase tracking-widest text-xs">
+                                <Printer className="w-4 h-4" /> Cetak Sekarang
+                            </Button>
                         </div>
                     </div>
-
-                    {/* Hidden Print Area - Only visible when printing */}
-                    <div className="hidden print:block fixed inset-0 bg-white z-[100] p-8">
-                        <div className="text-center mb-6">
-                            <h2 className="text-2xl font-bold uppercase tracking-wider">{settings?.name || 'WINNY PANGERAN NATAKUSUMA'}</h2>
-                            <p className="text-sm text-gray-500">{settings?.address || 'Jl. Contoh Alamat No. 123'}</p>
-                            <div className="w-full h-px bg-black my-4"></div>
-                            <h3 className="text-xl font-bold uppercase underline mb-1">SLIP GAJI KARYAWAN</h3>
-                            <p className="text-base text-gray-600 mb-6">Periode: {previewItem.period}</p>
-                        </div>
-
-                        <div className="flex justify-between text-base mb-6">
-                            <div className="space-y-1">
-                                <div><span className="text-gray-500 inline-block w-32">Nama</span> <span className="font-bold">: {previewItem.employeeName}</span></div>
-                                <div><span className="text-gray-500 inline-block w-32">Jabatan</span> <span className="font-bold">: {previewItem.position}</span></div>
-                            </div>
-                            <div className="space-y-1 text-right">
-                                <div><span className="text-gray-500">Tanggal Bayar :</span> <span className="font-bold">{previewItem.paymentDate || '-'}</span></div>
-                                <div><span className="text-gray-500">No. Ref :</span> <span className="font-mono">PAY-{previewItem.id}</span></div>
-                            </div>
-                        </div>
-
-                        <div className="border-t-2 border-b-2 border-gray-200 py-4 mb-6 space-y-3 text-base">
-                            <div className="flex justify-between">
-                                <span>Gaji Pokok</span>
-                                <span className="font-medium">Rp {previewItem.basicSalary.toLocaleString()}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span>Tunjangan & Bonus</span>
-                                <span className="font-medium">+ Rp {previewItem.allowance.toLocaleString()}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span>Lembur</span>
-                                <span className="font-medium">+ Rp {(previewItem.overtime || 0).toLocaleString()}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span>Potongan</span>
-                                <span className="font-medium">- Rp {previewItem.deduction.toLocaleString()}</span>
-                            </div>
-                        </div>
-
-                        <div className="flex justify-between items-center border border-gray-300 p-4 rounded mb-12">
-                            <span className="font-bold text-lg">TOTAL DITERIMA</span>
-                            <span className="font-bold text-2xl">
-                                Rp {(previewItem.basicSalary + previewItem.allowance + (previewItem.overtime || 0) - previewItem.deduction).toLocaleString()}
-                            </span>
-                        </div>
-
-                        <div className="flex justify-between mt-16 text-center">
-                            <div className="w-40">
-                                <p className="mb-20">Penerima,</p>
-                                <p className="font-bold underline">{previewItem.employeeName}</p>
-                            </div>
-                            <div className="w-40">
-                                <p className="mb-20">Disetujui Oleh,</p>
-                                <p className="font-bold underline">Manager / HRD</p>
-                            </div>
-                        </div>
-
-                        <div className="mt-12 text-xs text-center text-gray-400">
-                            Dicetak otomatis oleh Sistem WinPOS pada {new Date().toLocaleString()}
-                        </div>
-                    </div>
-                </>
+                </div>
             )}
         </div>
     );
