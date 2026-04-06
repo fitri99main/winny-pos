@@ -277,6 +277,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         currentBranchId
     }), [
         currentSession,
+        authSession,
         loading,
         requireMandatorySession,
         storeSettings,
