@@ -124,12 +124,20 @@ export default function CashierSessionModal({ visible, onClose, mode, session, o
                 notes: notes
             };
 
-            const { error } = await supabase
+            if (!session?.id) {
+                throw new Error('ID sesi tidak ditemukan. Sesi mungkin sudah tertutup atau belum dibuat.');
+            }
+
+            const { data, error } = await supabase
                 .from('cashier_sessions')
                 .update(updateData)
-                .eq('id', session.id);
+                .eq('id', session.id)
+                .select(); // Select to verify it actually updated something
 
             if (error) throw error;
+            if (!data || data.length === 0) {
+                throw new Error('Gagal memperbarui shift di database. Sesi tidak ditemukan.');
+            }
 
             Alert.alert(
                 'Shift Ditutup', 
