@@ -314,13 +314,20 @@ export default function HomeScreen() {
         setShowLogoutModal(true);
     };
 
-    const confirmLogout = () => {
+    const confirmLogout = async () => {
         setShowLogoutModal(false);
-        // @ts-ignore
-        navigation.reset({
-            index: 0,
-            routes: [{ name: 'Login' } as never],
-        });
+        try {
+            await supabase.auth.signOut();
+            // AppNavigator will handle redirection automatically thanks to authSession guard
+        } catch (err: any) {
+            console.error('[HomeScreen] Error during sign out:', err);
+            // Fallback: reset navigation if signout fails
+            // @ts-ignore
+            navigation.reset({
+                index: 0,
+                routes: [{ name: 'Login' } as never],
+            });
+        }
     };
 
     const handleDirectMenu = () => {

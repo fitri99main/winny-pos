@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface SessionContextType {
     currentSession: any | null;
+    authSession: any | null;
     isSessionActive: boolean;
     loading: boolean;
     checkSession: (showLoading?: boolean, force?: boolean) => Promise<void>;
@@ -22,6 +23,7 @@ interface SessionContextType {
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
+    const [authSession, setAuthSession] = useState<any | null>(null);
     const [currentSession, setCurrentSession] = useState<any | null>(null);
     const [requireMandatorySession, setRequireMandatorySession] = useState(true);
     const [storeSettings, setStoreSettings] = useState<any>(null);
@@ -66,6 +68,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             
             // 1. Silent Session Check
             const { data: { session } } = await supabase.auth.getSession();
+            setAuthSession(session);
             if (!session) {
                 console.log('[SessionContext] No active session found.');
                 setCurrentSession(null);
@@ -258,6 +261,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
     const contextValue = React.useMemo(() => ({
         currentSession,
+        authSession,
         isSessionActive: !!currentSession,
         loading,
         checkSession,

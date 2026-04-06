@@ -13,24 +13,41 @@ import EmployeeSettingsScreen from '../screens/EmployeeSettingsScreen';
 
 import CashierSessionHistoryScreen from '../screens/CashierSessionHistoryScreen';
 import KDSScreen from '../screens/KDSScreen';
+import { useSession } from '../context/SessionContext';
+import { View, ActivityIndicator } from 'react-native';
 
 const Stack = createNativeStackNavigator();
 
 export default function AppNavigator() {
+    const { authSession, loading } = useSession();
+
+    if (loading) {
+        return (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'white' }}>
+                <ActivityIndicator size="large" color="#ea580c" />
+            </View>
+        );
+    }
+
     return (
         <NavigationContainer>
-            <Stack.Navigator initialRouteName="Login" screenOptions={{ headerShown: false }}>
-                <Stack.Screen name="Login" component={LoginScreen} />
-                <Stack.Screen name="Main" component={HomeScreen} />
-                <Stack.Screen name="POS" component={POSScreen} />
-                <Stack.Screen name="History" component={HistoryScreen} />
-                <Stack.Screen name="CashierSessionHistory" component={CashierSessionHistoryScreen} />
-                <Stack.Screen name="Products" component={ProductScreen} />
-                <Stack.Screen name="Settings" component={SettingsScreen} />
-                <Stack.Screen name="Accounting" component={AccountingScreen} />
-                <Stack.Screen name="StoreSettings" component={StoreSettingsScreen} />
-                <Stack.Screen name="EmployeeSettings" component={EmployeeSettingsScreen} />
-                <Stack.Screen name="KDS" component={KDSScreen} />
+            <Stack.Navigator screenOptions={{ headerShown: false }}>
+                {!authSession ? (
+                    <Stack.Screen name="Login" component={LoginScreen} />
+                ) : (
+                    <>
+                        <Stack.Screen name="Main" component={HomeScreen} />
+                        <Stack.Screen name="POS" component={POSScreen} />
+                        <Stack.Screen name="History" component={HistoryScreen} />
+                        <Stack.Screen name="CashierSessionHistory" component={CashierSessionHistoryScreen} />
+                        <Stack.Screen name="Products" component={ProductScreen} />
+                        <Stack.Screen name="Settings" component={SettingsScreen} />
+                        <Stack.Screen name="Accounting" component={AccountingScreen} />
+                        <Stack.Screen name="StoreSettings" component={StoreSettingsScreen} />
+                        <Stack.Screen name="EmployeeSettings" component={EmployeeSettingsScreen} />
+                        <Stack.Screen name="KDS" component={KDSScreen} />
+                    </>
+                )}
             </Stack.Navigator>
         </NavigationContainer>
     );

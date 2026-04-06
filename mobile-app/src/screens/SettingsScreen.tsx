@@ -488,9 +488,15 @@ export default function SettingsScreen() {
         );
     };
 
-    const confirmLogout = () => {
+    const confirmLogout = async () => {
         setShowLogoutModal(false);
-        navigation.reset({ index: 0, routes: [{ name: 'Login' } as any] });
+        try {
+            await supabase.auth.signOut();
+            // AppNavigator will handle redirection automatically
+        } catch (err: any) {
+            console.error('[SettingsScreen] Error during sign out:', err);
+            navigation.reset({ index: 0, routes: [{ name: 'Login' } as any] });
+        }
     };
 
     const handleSyncOffline = async () => {
