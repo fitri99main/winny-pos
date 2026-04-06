@@ -169,14 +169,16 @@ export function CashierSessionModal({
             if (error) throw error;
 
             toast.success('Shift Ditutup', {
-                description: `Selisih: ${new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(difference)}`
+                description: `Selisih: ${new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(difference)}`,
+                duration: 3000
             });
 
-            // Auto Sign Out as requested
-            await supabase.auth.signOut();
-            
-            onSessionComplete(null); // Clear session
-            onOpenChange(false);
+            // Delay sign out slightly to allow toast to be seen
+            setTimeout(async () => {
+                await supabase.auth.signOut();
+                onSessionComplete(null);
+                onOpenChange(false);
+            }, 1500);
 
         } catch (err: any) {
             toast.error('Gagal menutup shift: ' + err.message);

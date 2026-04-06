@@ -131,13 +131,21 @@ export default function CashierSessionModal({ visible, onClose, mode, session, o
 
             if (error) throw error;
 
-            Alert.alert('Shift Ditutup', `Selisih: ${formatCurrency(difference)}`);
-            
-            // Auto Sign Out as requested: "saat kasir tutup shift aplikasi otomatis langsung keluar masuk menu login"
-            await supabase.auth.signOut();
-            
-            onComplete();
-            onClose();
+            Alert.alert(
+                'Shift Ditutup', 
+                `Selisih: ${formatCurrency(difference)}`,
+                [
+                    { 
+                        text: 'OK', 
+                        onPress: async () => {
+                            // Auto Sign Out after user acknowledges
+                            await supabase.auth.signOut();
+                            onComplete();
+                            onClose();
+                        }
+                    }
+                ]
+            );
         } catch (err: any) {
             Alert.alert('Error', 'Gagal menutup shift: ' + err.message);
         } finally {
