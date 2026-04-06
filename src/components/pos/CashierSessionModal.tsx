@@ -171,6 +171,10 @@ export function CashierSessionModal({
             toast.success('Shift Ditutup', {
                 description: `Selisih: ${new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(difference)}`
             });
+
+            // Auto Sign Out as requested
+            await supabase.auth.signOut();
+            
             onSessionComplete(null); // Clear session
             onOpenChange(false);
 
