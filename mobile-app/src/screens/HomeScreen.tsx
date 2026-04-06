@@ -24,6 +24,7 @@ export default function HomeScreen() {
     const [posFlow, setPosFlow] = React.useState<'direct'>('direct');
     const { currentSession, isSessionActive, requireMandatorySession, checkSession, isDisplayOnly, loading: sessionLoading, branchName, userName, currentBranchId, storeSettings } = useSession();
     const [showSessionModal, setShowSessionModal] = React.useState(false);
+    const [sessionMode, setSessionMode] = React.useState<'open' | 'close'>('open');
     const [showExitModal, setShowExitModal] = React.useState(false);
     const [showLogoutModal, setShowLogoutModal] = React.useState(false);
     const [showShiftWarningModal, setShowShiftWarningModal] = React.useState({ visible: false, message: '' });
@@ -79,7 +80,8 @@ export default function HomeScreen() {
             });
 
             // Only show modal if session is not active AND it's required AND it's NOT a display-only role
-            if (!isSessionActive && requireMandatorySession && !isDisplayOnly) {
+            if (!isSessionActive && requireMandatorySession && !isDisplayOnly && !showSessionModal) {
+                setSessionMode('open');
                 setShowSessionModal(true);
             }
             if (!isDisplayOnly && currentBranchId) {
@@ -300,6 +302,11 @@ export default function HomeScreen() {
         };
     }, [currentBranchId, isDisplayOnly, fetchPendingOrders, debouncedFetchPending]);
 
+    const handleShiftAction = () => {
+        setSessionMode(isSessionActive ? 'close' : 'open');
+        setShowSessionModal(true);
+    };
+
     const openNewOrder = (orderId: number) => {
         setNewOrderNotif(prev => ({ ...prev, visible: false }));
         // @ts-ignore
@@ -428,13 +435,19 @@ export default function HomeScreen() {
                     </View>
 
                     {/* Session Status Banner */}
-                    <View style={[styles.sessionBanner, isSmallDevice && { marginTop: 8 }]}>
+                    <TouchableOpacity 
+                        style={[styles.sessionBanner, isSmallDevice && { marginTop: 8 }]}
+                        onPress={handleShiftAction}
+                    >
                         <View style={[styles.statusDot, { backgroundColor: isSessionActive ? '#22c55e' : '#ef4444' }]} />
                         <Text style={styles.sessionStatusText}>
                             {isSessionActive ? `Shift Aktif: ${userName}` : 'Shift Tutup'}
                             {isSmallDevice ? '' : (requireMandatorySession ? ' (Wajib)' : ' (Opsional)')}
                         </Text>
-                    </View>
+                        <Text style={{ fontSize: 10, color: '#f97316', marginLeft: 4, fontWeight: 'bold' }}>
+                            | Klik untuk {isSessionActive ? 'Tutup' : 'Buka'} Shift
+                        </Text>
+                    </TouchableOpacity>
                 </View>
 
                 {/* Utility Buttons Row */}
@@ -442,6 +455,16 @@ export default function HomeScreen() {
                     { flexDirection: 'row', gap: isSmallDevice ? 8 : 12 },
                     isSmallDevice && { width: '100%', justifyContent: 'space-between' }
                 ]}>
+                    <TouchableOpacity
+                        style={[
+                            styles.logoutButton,
+                            { backgroundColor: isSessionActive ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)' },
+                            isSmallDevice && { width: 42, height: 42, borderRadius: 12 }
+                        ]}
+                        onPress={handleShiftAction}
+                    >
+                        <Text style={[styles.logoutButtonIcon, isSmallDevice && { fontSize: 18 }]}>💼</Text>
+                    </TouchableOpacity>
                     {!isDisplayOnly && (
                         <>
                             <TouchableOpacity
@@ -737,7 +760,8 @@ export default function HomeScreen() {
             <CashierSessionModal
                 visible={showSessionModal}
                 onClose={() => setShowSessionModal(false)}
-                mode="open"
+                mode={sessionMode}
+                session={currentSession}
                 onComplete={checkSession}
                 currentBranchId={currentBranchId}
             />

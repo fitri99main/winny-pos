@@ -1096,6 +1096,36 @@ export default function SettingsScreen() {
                 confirmText="Keluar"
                 iconType="logout"
             />
+            {/* Session Modals */}
+            <CashierSessionModal
+                visible={showSessionModal}
+                onClose={() => setShowSessionModal(false)}
+                mode={sessionMode}
+                session={currentSession}
+                onComplete={checkSession}
+                currentBranchId={currentBranchId}
+            />
+
+            <ConfirmExitModal
+                visible={showShiftWarningModal.visible}
+                onClose={() => setShowShiftWarningModal({ visible: false, message: '' })}
+                onConfirm={() => setShowShiftWarningModal({ visible: false, message: '' })}
+                title="Shift Wajib"
+                message={showShiftWarningModal.message}
+                confirmText="Mengerti"
+                iconType="alert"
+                showCancel={false}
+            />
+
+            <ConfirmExitModal
+                visible={showLogoutModal}
+                onClose={() => setShowLogoutModal(false)}
+                onConfirm={confirmLogout}
+                title="Keluar Akun"
+                message="Apakah Anda yakin ingin keluar dari akun?"
+                confirmText="Keluar"
+                iconType="logout"
+            />
         </SafeAreaView>
     );
 }
@@ -1407,6 +1437,33 @@ const styles = StyleSheet.create({
         fontSize: 13,
         fontWeight: 'bold',
         color: '#64748b',
+    },
+    // Shift Styles
+    sessionBox: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f8fafc',
+        padding: 16,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        marginTop: 8,
+    },
+    statusIndicator: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        marginRight: 12,
+    },
+    sessionStatusText: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: '#1e293b',
+    },
+    sessionActionText: {
+        fontSize: 12,
+        color: '#64748b',
+        marginTop: 2,
     },
     logoutBtn: {
         flexDirection: 'row',
