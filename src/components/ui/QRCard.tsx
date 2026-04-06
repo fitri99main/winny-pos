@@ -61,21 +61,21 @@ export function QRCard({ type, name, id, roleOrTier, joinDateOrBirthday }: QRCar
                 </div>
 
                 {/* Right Side: QR Code Area */}
-                <div className="w-[120px] bg-white flex flex-col items-center justify-center p-3 gap-2 relative">
+                <div className="w-[120px] flex-shrink-0 bg-white flex flex-col items-center justify-center p-4 gap-2 relative">
                     <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/5 pointer-events-none" />
-                    <div className="relative group">
+                    <div className="relative group flex items-center justify-center">
                         <QRCodeSVG
                             value={id}
-                            size={100}
+                            size={75}
                             level="H"
                             includeMargin={false}
                             className="relative z-10"
                         />
                         {/* Corner Accents */}
-                        <div className="absolute -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-primary/40 rounded-tl-sm" />
-                        <div className="absolute -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-primary/40 rounded-br-sm" />
+                        <div className="absolute -top-2 -left-2 w-4 h-4 border-t-2 border-l-2 border-indigo-600/20 rounded-tl-sm pointer-events-none" />
+                        <div className="absolute -bottom-2 -right-2 w-4 h-4 border-b-2 border-r-2 border-indigo-600/20 rounded-br-sm pointer-events-none" />
                     </div>
-                    <span className="text-[8px] font-black text-gray-400 tracking-widest uppercase">Scan for Access</span>
+                    <span className="text-[7px] font-black text-gray-400 tracking-widest uppercase mt-1">Scan for Access</span>
                 </div>
             </div>
 
@@ -84,7 +84,7 @@ export function QRCard({ type, name, id, roleOrTier, joinDateOrBirthday }: QRCar
           body * { visibility: hidden; }
           .id-card-container, .id-card-container * { visibility: visible; }
           .id-card-container {
-            position: absolute;
+            position: fixed;
             left: 0;
             top: 0;
             margin: 0;
@@ -93,6 +93,7 @@ export function QRCard({ type, name, id, roleOrTier, joinDateOrBirthday }: QRCar
           }
           .id-card-container > div {
              box-shadow: none !important;
+             border: 1px solid #e2e8f0 !important;
              print-color-adjust: exact;
              -webkit-print-color-adjust: exact;
           }

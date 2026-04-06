@@ -749,18 +749,92 @@ function Home() {
 
   // --- Accounting Integration ---
   const fetchAccounting = async () => {
+    // 1. Fetch Master Data
     const { data: accData } = await supabase.from('accounts').select('*').order('code');
     if (accData) setAccounts(accData);
 
     const { data: journalData } = await supabase.from('journal_entries').select('*').order('date', { ascending: false });
-    if (journalData) {
-      setJournalEntries(journalData.map(j => ({
-        ...j,
-        debitAccount: j.debit_account,
-        creditAccount: j.credit_account,
-        amount: Number(j.amount)
-      })));
-    }
+    
+    // [NEW] Automated 'Ghost Hunter' Cleanup (Part 26 - Fix)
+    const cleanupOrphans = async () => {
+      if (!journalData) return;
+      
+      const orphanedIds: number[] = [];
+      
+      // 1. Precise Sync (via reference_id)
+      const payrollReferenced = journalData.filter(j => j.source_type === 'payroll' && j.reference_id);
+      const salesReferenced = journalData.filter(j => j.source_type === 'sale' && j.reference_id);
+
+      if (payrollReferenced.length > 0) {
+        const { data: activePayrolls } = await supabase.from('payrolls').select('id');
+        const activeIds = new Set((activePayrolls || []).map(p => String(p.id)));
+        payrollReferenced.forEach(j => {
+          if (!activeIds.has(String(j.reference_id))) orphanedIds.push(j.id);
+        });
+      }
+
+      if (salesReferenced.length > 0) {
+        const { data: activeSales } = await supabase.from('sales').select('id');
+        const activeIds = new Set((activeSales || []).map(s => String(s.id)));
+        salesReferenced.forEach(j => {
+          if (!activeIds.has(String(j.reference_id))) orphanedIds.push(j.id);
+        });
+      }
+
+      // 2. Fuzzy Sync (via description - for OLD records without reference_id)
+      const oldPayrollJournals = journalData.filter(j => !j.reference_id && (j.description?.startsWith('Gaji Karyawan:') || j.description?.startsWith('Potongan Gaji:')));
+      if (oldPayrollJournals.length > 0) {
+        const { data: currentPayrolls } = await supabase.from('payrolls').select('employee_name, period');
+        const activeKeys = new Set((currentPayrolls || []).map(p => `${p.employee_name}|${p.period}`));
+        
+        oldPayrollJournals.forEach(j => {
+          // Parse: "Gaji Karyawan: Name (Period)" or similar
+          const match = j.description.match(/(?:Gaji Karyawan:|Potongan Gaji:) (.*) \((.*)\)/);
+          if (match) {
+            const [, name, period] = match;
+            if (!activeKeys.has(`${name.trim()}|${period.trim()}`)) orphanedIds.push(j.id);
+          }
+        });
+      }
+
+      const oldSalesJournals = journalData.filter(j => !j.reference_id && (j.description?.startsWith('Penjualan INV-') || j.description?.startsWith('HPP Penjualan INV-')));
+      if (oldSalesJournals.length > 0) {
+        const { data: currentSales } = await supabase.from('sales').select('order_no');
+        const activeOrders = new Set((currentSales || []).map(s => s.order_no));
+        
+        oldSalesJournals.forEach(j => {
+          const match = j.description.match(/(?:Penjualan|HPP Penjualan) (INV-\d+)/);
+          if (match) {
+            const [, orderNo] = match;
+            if (!activeOrders.has(orderNo)) orphanedIds.push(j.id);
+          }
+        });
+      }
+
+      if (orphanedIds.length > 0) {
+        console.log(`Cleaning up ${orphanedIds.length} orphaned/persistent ghost journal entries...`);
+        const { error: delError } = await supabase.from('journal_entries').delete().in('id', orphanedIds);
+        if (!delError) {
+          // Re-fetch clean data and update state
+          const { data: cleanData } = await supabase.from('journal_entries').select('*').order('date', { ascending: false });
+          processJournalData(cleanData);
+        }
+      }
+    };
+
+    const processJournalData = (data: any[] | null) => {
+      if (data) {
+        setJournalEntries(data.map(j => ({
+          ...j,
+          debitAccount: j.debit_account,
+          creditAccount: j.credit_account,
+          amount: Number(j.amount)
+        })));
+      }
+    };
+
+    processJournalData(journalData);
+    cleanupOrphans(); // Run in background after initial render
   };
 
   useEffect(() => {
@@ -777,7 +851,8 @@ function Home() {
   // --- Employees Integration ---
   const fetchEmployees = async () => {
     if (!currentBranchId) return;
-    const { data: empData } = await supabase.from('employees').select('*').eq('branch_id', currentBranchId).order('name');
+    const branchIdNum = Number(currentBranchId); // [FIX] Ensure numeric comparison
+    const { data: empData } = await supabase.from('employees').select('*').eq('branch_id', branchIdNum).order('name');
     if (empData) {
       setEmployees(empData.map(e => ({
         ...e,
@@ -911,33 +986,54 @@ function Home() {
   }, [currentBranchId, loading, role]);
 
   // --- Attendance Integration ---
-  useEffect(() => {
-    const fetchAttendance = async () => {
-      const { data } = await supabase.from('attendance_logs').select('*').order('created_at', { ascending: false });
-      if (data) {
-        setAttendanceLogs(data.map(log => ({
-          ...log,
-          employeeName: log.employee_name,
-          checkIn: log.check_in,
-          checkOut: log.check_out
-        })));
+  const fetchAttendance = async () => {
+    try {
+      // 1. Fetch raw attendance logs first (Independence)
+      const { data, error } = await supabase.from('attendance_logs').select('*').order('created_at', { ascending: false });
+      if (error) {
+        console.error('Core Attendance Fetch Failed:', error);
+        return;
       }
-    };
 
+      // 2. Fetch branch names for metadata (Optional failure)
+      const { data: bData } = await supabase.from('branches').select('id, name');
+      
+      console.log(`[DEBUG] SUPABASE URL: ${import.meta.env.VITE_SUPABASE_URL}`);
+      console.log(`[DEBUG] RAW ATTENDANCE COUNT: ${data?.length || 0}`);
+
+      if (data) {
+        setAttendanceLogs(data.map(log => {
+          const branch = bData?.find(b => b.id === log.branch_id);
+          return {
+            ...log,
+            employeeName: log.employee_name,
+            checkIn: log.check_in,
+            checkOut: log.check_out,
+            branchName: branch?.name || `Branch ${log.branch_id || '?'}`
+          };
+        }));
+      }
+    } catch (err: any) {
+      console.error('Critical Fetch Error:', err);
+    }
+  };
+
+  useEffect(() => {
     fetchAttendance();
     const subscription = supabase.channel('attendance_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_logs' }, fetchAttendance)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_logs' }, () => {
+        fetchAttendance();
+      })
       .subscribe();
 
-    return () => {
-      subscription.unsubscribe();
-    };
+    return () => { subscription.unsubscribe(); };
   }, []);
 
   // --- Payroll Integration ---
-  useEffect(() => {
-    const fetchPayroll = async () => {
-      const { data } = await supabase.from('payrolls').select('*').order('created_at', { ascending: false });
+  const fetchPayroll = async () => {
+    try {
+      const { data, error } = await supabase.from('payrolls').select('*').order('created_at', { ascending: false });
+      if (error) throw error;
       if (data) {
         setPayrollData(data.map(p => ({
           ...p,
@@ -946,8 +1042,12 @@ function Home() {
           paymentDate: p.payment_date,
         })));
       }
-    };
+    } catch (err: any) {
+      console.error('Fetch Payroll Error:', err);
+    }
+  };
 
+  useEffect(() => {
     fetchPayroll();
     const sub = supabase.channel('payroll_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'payrolls' }, fetchPayroll)
@@ -987,22 +1087,21 @@ function Home() {
           basic_salary: basicSalary,
           payment_date: paymentDate
         };
-        // Remove id if it's dummy
-        const { error } = await supabase.from('payrolls').insert([payload]);
-        if (error) throw error;
-
         // [NEW] Accounting Integration for Create
         if (payload.status === 'Paid') {
-          // Check for existing journal to avoid duplicates (Optional but recommended)
-          // For now, simpler: Just insert.
+          const { data: inserted, error: insertError } = await supabase.from('payrolls').insert([payload]).select().single();
+          if (insertError) throw insertError;
+
           const totalAmount = Number(basicSalary) + Number(rest.allowance || 0) + Number(rest.overtime || 0) - Number(rest.deduction || 0);
 
           await supabase.from('journal_entries').insert([{
             date: new Date().toISOString(),
             description: `Gaji Karyawan: ${employeeName} (${rest.period || ''})`,
-            debit_account: '502', // Beban Gaji
-            credit_account: '101', // Kas
-            amount: totalAmount
+            debit_account: '502',
+            credit_account: '101',
+            amount: totalAmount,
+            reference_id: String(inserted.id),
+            source_type: 'payroll'
           }]);
 
           const deductionAmount = Number(rest.deduction || 0);
@@ -1012,9 +1111,16 @@ function Home() {
               description: `Potongan Gaji: ${employeeName}`,
               debit_account: '502',
               credit_account: '402',
-              amount: deductionAmount
+              amount: deductionAmount,
+              reference_id: String(inserted.id),
+              source_type: 'payroll'
             }]);
           }
+          toast.success('Gaji berhasil dibuat & dicatat');
+        } else {
+            const { error } = await supabase.from('payrolls').insert([payload]);
+            if (error) throw error;
+            toast.success('Gaji berhasil dibuat');
         }
         toast.success('Gaji berhasil dibuat');
 
@@ -1069,38 +1175,64 @@ function Home() {
         }
 
       } else if (action === 'delete') {
+        // [NEW] Sync Deletion to Accounting
+        // 1. Primary delete via reference_id
+        const { error: refError } = await supabase.from('journal_entries').delete().eq('reference_id', String(data.id)).eq('source_type', 'payroll');
+        if (refError) console.warn('Ref delete error:', refError);
+        
+        // 2. Fallback delete for older records via description (Aggressive cleaning)
+        if (data.employee_name || data.employeeName) {
+          const name = data.employee_name || data.employeeName;
+          // Clean both salary and deduction entries
+          await supabase.from('journal_entries').delete().ilike('description', `%Gaji%${name}%`);
+          await supabase.from('journal_entries').delete().ilike('description', `%Potongan%${name}%`);
+        }
+
         const { error } = await supabase.from('payrolls').delete().eq('id', data.id);
         if (error) throw error;
-        toast.success('Gaji berhasil dihapus');
+        toast.success('Gaji berhasil dihapus & catatan akuntansi dibersihkan');
+        fetchAccounting(); // Ensure UI updates
       }
     } catch (err: any) {
       toast.error('Error Payroll: ' + err.message);
     }
   };
 
-  const handleAttendanceLog = async (logData: any) => {
+  const handleAttendanceLog = async (logData: any, action: 'create' | 'update' | 'delete' = 'create') => {
     try {
-      if (logData.id && logData.checkOut && !logData.isNew) {
-        // This is an update (Checkout)
-        const { error } = await supabase.from('attendance_logs').update({
-          check_out: logData.checkOut
-        }).eq('id', logData.id);
+      if (action === 'delete') {
+        const { error } = await supabase.from('attendance_logs').delete().eq('id', logData.id);
         if (error) throw error;
-        toast.success(`Check-Out berhasil`);
+        toast.success('Riwayat absensi dihapus');
+        return;
+      }
+
+      const employee = employees.find(e => e.name === logData.employeeName);
+      const payload = {
+        employee_id: employee?.id || logData.employee_id,
+        employee_name: logData.employeeName || logData.employee_name,
+        branch_id: currentBranchId ? Number(currentBranchId) : (employee?.branch_id || logData.branch_id),
+        date: logData.date,
+        check_in: logData.checkIn || logData.check_in,
+        check_out: logData.checkOut || logData.check_out,
+        status: logData.status || 'Present'
+      };
+
+      if (action === 'update' || (logData.id && !logData.isNew)) {
+        const { error } = await supabase.from('attendance_logs')
+          .update(payload)
+          .eq('id', logData.id);
+        if (error) throw error;
+        toast.success(`Data absensi diperbarui`);
       } else {
-        // This is a new Check-in
-        const { id, ...rest } = logData; // Remove dummy ID if present
-        const payload = {
-          employee_id: employees.find(e => e.name === rest.employeeName)?.id, // Try to find linked ID
-          employee_name: rest.employeeName,
-          date: rest.date,
-          check_in: rest.checkIn,
-          check_out: null,
-          status: rest.status
-        };
-        const { error } = await supabase.from('attendance_logs').insert([payload]);
+        // [Part 22] Verify persistence with .select()
+        const { data, error } = await supabase.from('attendance_logs').insert([payload]).select();
         if (error) throw error;
-        toast.success(`Check-In berhasil`);
+        if (!data || data.length === 0) {
+          throw new Error('Database menerima data tapi gagal menyimpannya ke tabel permanen.');
+        }
+        toast.success(`Absensi berhasil dicatat (DB ID: ${data[0].id}, Branch: ${data[0].branch_id})`);
+        fetchAttendance(); // Immediate re-fetch to sync
       }
     } catch (err: any) {
       console.error('Attendance error:', err);
@@ -1129,8 +1261,32 @@ function Home() {
       } else if (action === 'update') {
         const { error } = await supabase.from(table).update(data).eq('id', data.id);
         if (error) throw error;
+
+        // [NEW] Accounting Integration for Purchases
+        if (table === 'purchases' && data.status === 'Completed') {
+          // Fetch full purchase data for journaling
+          const { data: po } = await supabase.from('purchases').select('*').eq('id', data.id).single();
+          if (po) {
+            await supabase.from('journal_entries').insert([{
+              date: po.date || new Date().toISOString().split('T')[0],
+              description: `Pembelian Bahan: ${po.purchase_no || ''} (${po.supplier_name || ''})`,
+              debit_account: '501', // Beban Pembelian
+              credit_account: '101', // Kas
+              amount: po.total_amount,
+              reference_id: String(po.id),
+              source_type: 'purchase'
+            }]);
+            toast.success('Pembelian dicatat ke Akuntansi');
+          }
+        }
+        
         toast.success(`Data berhasil diperbarui`);
       } else if (action === 'delete') {
+        // [NEW] Sync Deletion to Accounting
+        if (table === 'purchases') {
+          await supabase.from('journal_entries').delete().eq('reference_id', String(data.id)).eq('source_type', 'purchase');
+        }
+
         // [MODIFIED] Archive fallback for products to prevent FK conflicts
         const { error } = await supabase.from(table).delete().eq('id', data.id);
         
@@ -1398,6 +1554,11 @@ function Home() {
           const { error: itemsError } = await supabase.from('sale_items').insert(itemsPayload);
           if (itemsError) throw itemsError;
 
+          // [NEW] Accounting Sync for Offline Orders
+          if (sale.status === 'Paid') {
+            await recordAccountingEntry(sale, itemsPayload);
+          }
+
           // Update local state to synced
           const index = newSales.findIndex(s => s.id === sale.id);
           if (index !== -1) {
@@ -1442,16 +1603,19 @@ function Home() {
       
       if (!orderNo || !totalAmount) return false;
 
-      // Check if entry already exists to prevent duplicates
-      const { data: existing } = await supabase
-        .from('journal_entries')
-        .select('id')
-        .ilike('description', `Penjualan ${orderNo}`)
-        .maybeSingle();
+      // [MODIFIED] Check by reference_id AND source_type instead of fuzzy description
+      if (sale.id) {
+        const { data: existing } = await supabase
+          .from('journal_entries')
+          .select('id')
+          .eq('reference_id', String(sale.id))
+          .eq('source_type', 'sale')
+          .maybeSingle();
 
-      if (existing) {
-        console.log('Accounting entry already exists for:', orderNo);
-        return true;
+        if (existing) {
+          console.log('Accounting entry already exists for Sale ID:', sale.id);
+          return true;
+        }
       }
 
       const isCash =
@@ -1463,32 +1627,42 @@ function Home() {
 
       const debitAcc = isCash ? '101' : '102';
 
-      // 1. Revenue Entry
-      const { error: revError } = await supabase.from('journal_entries').insert([{
-        date: new Date().toISOString().split('T')[0],
-        description: `Penjualan ${orderNo}`,
-        debit_account: debitAcc,
-        credit_account: '401', // Pendapatan Penjualan
-        amount: totalAmount
-      }]);
-
-      if (revError) {
-        console.error('Revenue Sync Failed:', revError);
-        return false;
-      }
-
-      // 2. COGS (HPP) Entry
-      const totalCost = items.reduce((acc, item) => acc + ((item.cost || 0) * (item.quantity || 0)), 0);
-      if (totalCost > 0) {
-        const { error: hppError } = await supabase.from('journal_entries').insert([{
+        // 1. Revenue Entry
+        const { error: revError } = await supabase.from('journal_entries').insert([{
           date: new Date().toISOString().split('T')[0],
-          description: `HPP Penjualan ${orderNo}`,
-          debit_account: '501', // Beban Pembelian / HPP
-          credit_account: '104', // Persediaan
-          amount: totalCost
+          description: `Penjualan ${orderNo}`,
+          debit_account: debitAcc,
+          credit_account: '401', // Pendapatan Penjualan
+          amount: totalAmount,
+          reference_id: String(sale.id),
+          source_type: 'sale'
         }]);
-        if (hppError) console.error('HPP Sync Failed:', hppError);
-      }
+
+        if (revError) {
+          console.error('Revenue Sync Failed:', revError);
+          // [DIAGNOSTIC] Show explicit error to user if columns are missing
+          if (revError.code === '42703') {
+            toast.error('Gagal Sinkron: Kolom reference_id belum ada di Database. Harap jalankan SQL script.');
+          } else {
+            toast.error('Gagal Sinkron Akuntansi: ' + revError.message);
+          }
+          return false;
+        }
+
+        // 2. COGS (HPP) Entry
+        const totalCost = items.reduce((acc, item) => acc + ((item.cost || 0) * (item.quantity || 0)), 0);
+        if (totalCost > 0) {
+          const { error: hppError } = await supabase.from('journal_entries').insert([{
+            date: new Date().toISOString().split('T')[0],
+            description: `HPP Penjualan ${orderNo}`,
+            debit_account: '501', // Beban Pembelian / HPP
+            credit_account: '104', // Persediaan
+            amount: totalCost,
+            reference_id: String(sale.id),
+            source_type: 'sale'
+          }]);
+          if (hppError) toast.error('HPP Gagal Sinkron: ' + hppError.message);
+        }
       
       // Refresh the local accounting data after successful sync
       fetchAccounting();
@@ -1664,6 +1838,11 @@ function Home() {
       if (isOnline && sale.syncStatus !== 'pending') {
          const { error: itemsError } = await supabase.from('sale_items').insert(saleItems);
          if (itemsError) console.error('Sale items insert failed:', itemsError);
+
+         // [NEW] Post to Accounting immediately for online sales
+         if (saleData.totalAmount > 0) {
+           await recordAccountingEntry(sale, saleItems, saleData.paymentMethod);
+         }
       }
 
       toast.success(`Transaksi ${orderNo} berhasil disimpan`);
@@ -1961,15 +2140,12 @@ function Home() {
       const { error: returnsError } = await supabase.from('sales_returns').delete().eq('sale_id', saleId);
       if (returnsError) console.warn('Failed to delete associated returns:', returnsError);
 
-      // [FIX] Manual Cascade Delete: Delete associated Journal Entry (Accounting)
-      // Since we don't have a direct link, we match by Description pattern used in creation
-      if (sale?.order_no) {
-        const { error: journalError } = await supabase
-          .from('journal_entries')
-          .delete()
-          .ilike('description', `%${sale.order_no}%`); // Match "Penjualan INV-..." or "HPP Penjualan INV-..."
+      // [NEW] Sync Deletion to Accounting (Precise reference mapping)
+      await supabase.from('journal_entries').delete().eq('reference_id', String(saleId)).eq('source_type', 'sale');
 
-        if (journalError) console.warn('Failed to delete associated journal entries:', journalError);
+      // [OLD-BACKUP] Manual Cascade Delete: Delete associated Journal Entry via description if reference cleanup misses anything
+      if (sale?.order_no) {
+        await supabase.from('journal_entries').delete().ilike('description', `%${sale.order_no}%`);
       }
 
       // [FIX] Manual Cascade Delete: Unlink WiFi Vouchers (so they can be sold again)
@@ -2617,6 +2793,7 @@ function Home() {
         <AccountingView
           accounts={accounts}
           transactions={journalEntries}
+          sales={sales}
           onAddAccount={handleAddAccount}
           onUpdateAccount={handleUpdateAccount}
           onDeleteAccount={handleDeleteAccount}
@@ -2738,12 +2915,32 @@ function Home() {
       );
 
       case 'attendance':
-        // Filter logs to match employees in current branch
-        const filteredLogs = attendanceLogs.filter(log => employees.some(e => e.id === log.employee_id || e.name === log.employeeName));
-        return <AttendanceView logs={filteredLogs} setLogs={setAttendanceLogs} employees={employees} settings={storeSettings} />;
+        // [FINAL ALIGNMENT] Show logs from ALL branches in the Admin context
+        // This ensures localhost and IP see the same 2 logs regardless of active branch
+        const filteredLogs = attendanceLogs.filter(log => 
+          employees.length === 0 || // Fallback
+          employees.some(e => String(e.id) === String(log.employee_id) || e.name === log.employeeName) ||
+          true // Always show in Admin view for consistency
+        );
+        
+        return (
+          <AttendanceView 
+            logs={filteredLogs} 
+            setLogs={setAttendanceLogs} 
+            employees={employees} 
+            onLogAttendance={handleAttendanceLog}
+            settings={storeSettings} 
+            userRole={role} 
+            onRefresh={fetchAttendance}
+            dbInfo={{ url: import.meta.env.VITE_SUPABASE_URL || 'Unknown', error: null }} 
+            branchId={currentBranchId}
+          />
+        );
       case 'payroll':
-        // Filter payroll to match employees in current branch
-        const filteredPayroll = payrollData.filter(p => employees.some(e => e.id === p.employee_id || e.name === p.employeeName));
+        // [FIX] Robust ID Matching: Use String(id) to prevent Number/BigInt mismatch after refresh 
+        const filteredPayroll = payrollData.filter(p => 
+          employees.some(e => String(e.id) === String(p.employee_id) || e.name === p.employeeName)
+        );
         return (
           <PayrollView
             payroll={filteredPayroll}

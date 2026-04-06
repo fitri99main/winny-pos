@@ -121,7 +121,7 @@ export default function POSScreen() {
 
     // Transaction Data
     const [cart, setCart] = useState<any[]>([]);
-    const [selectedTable, setSelectedTable] = useState('Tanpa Meja');
+    const [selectedTable, setSelectedTable] = useState('-');
     const [customerName, setCustomerName] = useState('Guest');
     const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
     const [selectedWaiter, setSelectedWaiter] = useState(initialWaiter || '');
@@ -593,7 +593,7 @@ export default function POSScreen() {
                 discount: sale.discount || 0,
                 total: sale.total_amount || 0,
                 createdAt: new Date(sale.date),
-                tableNo: sale.table_no || 'Tanpa Meja',
+                tableNo: sale.table_no || '-',
                 note: sale.notes || '',
                 isRemote: true
             }));
@@ -680,7 +680,7 @@ export default function POSScreen() {
                 setCustomerName(sale.customer_name || 'Guest');
                 setSelectedCustomerId(sale.customer_id);
                 setSelectedWaiter(sale.waiter_name || '');
-                setSelectedTable(sale.table_no || 'Tanpa Meja');
+                setSelectedTable(sale.table_no || '-');
                 
                 // Map items to cart format
                 const items = sale.sale_items.map((si: any) => ({
@@ -963,7 +963,7 @@ export default function POSScreen() {
         setCart([]);
         setCustomerName('Guest');
         setSelectedCustomerId(null);
-        setSelectedTable('Tanpa Meja');
+        setSelectedTable('-');
         setOrderDiscount(0);
         setExistingSaleId(null);
         // Drafts will be overwritten by useEffect
@@ -1111,7 +1111,7 @@ export default function POSScreen() {
 
         setCart(order.items);
         setOrderDiscount(order.discount || 0);
-        setSelectedTable(order.tableNo || 'Tanpa Meja');
+        setSelectedTable(order.tableNo || '-');
         setCustomerName(order.customerName || 'Guest');
         setSelectedCustomerId(order.selectedCustomerId || null);
         setSelectedWaiter(order.selectedWaiter || '');
@@ -1128,7 +1128,7 @@ export default function POSScreen() {
             console.log('[POSScreen] Manual table entry is restricted for non-cashier users.');
             return;
         }
-        setManualTableInput(selectedTable === 'Tanpa Meja' ? '' : selectedTable);
+        setManualTableInput(selectedTable === '-' ? '' : selectedTable);
         setShowTableManualModal(true);
     };
 
@@ -1422,7 +1422,7 @@ export default function POSScreen() {
                     .update({
                         customer_name: customerName,
                         customer_id: selectedCustomerId,
-                        table_no: selectedTable || 'Tanpa Meja',
+                        table_no: selectedTable || '-',
                         waiter_name: selectedWaiter || userName, // [FIXED]
                         total_amount: finalTotal,
                         discount: currentDiscount,
@@ -1457,7 +1457,7 @@ export default function POSScreen() {
                             branch_id: currentBranchId,
                             customer_name: customerName,
                             customer_id: selectedCustomerId,
-                            table_no: selectedTable || 'Tanpa Meja',
+                            table_no: selectedTable || '-',
                             waiter_name: selectedWaiter || userName, // [FIXED]
                             total_amount: finalTotal,
                             discount: currentDiscount,
@@ -1494,7 +1494,7 @@ export default function POSScreen() {
                         branch_id: currentBranchId,
                         customer_name: customerName,
                         customer_id: selectedCustomerId,
-                        table_no: selectedTable || 'Tanpa Meja',
+                        table_no: selectedTable || '-',
                         waiter_name: userName || selectedWaiter,
                         total_amount: finalTotal,
                         discount: currentDiscount,
@@ -1655,7 +1655,7 @@ export default function POSScreen() {
                     branch_id: currentBranchId,
                     customer_name: customerName,
                     customer_id: selectedCustomerId,
-                    table_no: selectedTable || 'Tanpa Meja',
+                    table_no: selectedTable || '-',
                     waiter_name: userName || selectedWaiter,
                     total_amount: finalTotal,
                     discount: orderDiscount,
@@ -2358,8 +2358,8 @@ export default function POSScreen() {
                                             <TextInput
                                                 style={{ flex: 1, paddingVertical: 8, paddingHorizontal: 4, fontSize: 14, fontWeight: 'bold', color: '#111827' }}
                                                 placeholder="Contoh: A1"
-                                                value={selectedTable === 'Tanpa Meja' ? '' : selectedTable}
-                                                onChangeText={(text) => setSelectedTable(text || 'Tanpa Meja')}
+                                                value={selectedTable === '-' ? '' : selectedTable}
+                                                onChangeText={(text) => setSelectedTable(text || '-')}
                                                 autoCapitalize="characters"
                                             />
                                         </View>
@@ -2651,7 +2651,7 @@ export default function POSScreen() {
                             <TouchableOpacity 
                                 style={{ flex: 1, padding: 16, borderRadius: 12, backgroundColor: '#ea580c', alignItems: 'center' }}
                                 onPress={() => {
-                                    setSelectedTable(manualTableInput.trim().toUpperCase() || 'Tanpa Meja');
+                                    setSelectedTable(manualTableInput.trim().toUpperCase() || '-');
                                     setShowTableManualModal(false);
                                 }}
                             >

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
     Clock, User, Calendar, Award, LogOut, FileText,
     ChevronRight, Bell, ShieldCheck, MapPin, QrCode,
-    Briefcase, AlertCircle, CheckCircle, XCircle, PlayCircle, StopCircle
+    Briefcase, AlertCircle, CheckCircle, XCircle, PlayCircle, StopCircle, History
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
@@ -25,7 +25,7 @@ interface LeaveRequest {
 export function ESSView() {
     const [mode, setMode] = useState<'IDLE' | 'DASHBOARD'>('IDLE');
     const [currentUser, setCurrentUser] = useState<Employee | null>(null);
-    const [activeTab, setActiveTab] = useState<'PROFILE' | 'ATTENDANCE' | 'SHIFT' | 'REWARD'>('PROFILE'); // Removed LEAVE
+    const [activeTab, setActiveTab] = useState<'PROFILE' | 'ATTENDANCE' | 'SHIFT' | 'REWARD'>('PROFILE');
 
     // Auto Logout Logic
     const logoutTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -53,7 +53,7 @@ export function ESSView() {
     const handleLogin = (employee: Employee) => {
         setCurrentUser(employee);
         setMode('DASHBOARD');
-        setActiveTab('ATTENDANCE'); // Default to attendance after login as it's the primary action
+        setActiveTab('ATTENDANCE'); 
         toast.success(`Selamat Datang, ${employee.name}`);
     };
 
@@ -68,7 +68,7 @@ export function ESSView() {
 
     return (
         <div className="h-[100dvh] w-full bg-gray-50 font-sans text-gray-800 flex flex-col overflow-hidden">
-            {/* Header - Fixed at Top */}
+            {/* Header */}
             <div className="bg-white shadow-sm border-b border-gray-100 p-4 md:p-6 flex justify-between items-center shrink-0 z-40">
                 <div className="flex items-center gap-3 md:gap-4">
                     <div className="w-10 h-10 md:w-12 md:h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary font-bold text-lg md:text-xl shrink-0">
@@ -95,277 +95,104 @@ export function ESSView() {
                 </div>
             </div>
 
-            {/* Main Content Area - Scrollable */}
             <div className="flex-1 flex overflow-hidden relative">
-                {/* Desktop Sidebar Navigation (Hidden on Mobile) */}
-                <div className="hidden md:flex w-80 bg-white border-r border-gray-100 p-4 flex-col gap-2 shrink-0 overflow-y-auto">
-                    <NavButton
-                        active={activeTab === 'ATTENDANCE'}
-                        icon={<CheckCircle className="w-5 h-5" />}
-                        label="Absensi (Presensi)"
-                        onClick={() => setActiveTab('ATTENDANCE')}
-                    />
-                    <NavButton
-                        active={activeTab === 'PROFILE'}
-                        icon={<User className="w-5 h-5" />}
-                        label="Profil Saya"
-                        onClick={() => setActiveTab('PROFILE')}
-                    />
-                    <NavButton
-                        active={activeTab === 'SHIFT'}
-                        icon={<Calendar className="w-5 h-5" />}
-                        label="Jadwal Shift"
-                        onClick={() => setActiveTab('SHIFT')}
-                    />
-                    <NavButton
-                        active={activeTab === 'REWARD'}
-                        icon={<Award className="w-5 h-5" />}
-                        label="Reward & Performa"
-                        onClick={() => setActiveTab('REWARD')}
-                    />
-                </div>
+                {/* Desktop Sidebar */}
+                <aside className="hidden md:flex flex-col w-64 lg:w-72 bg-white border-r border-gray-100 p-6 gap-2 shrink-0 overflow-y-auto">
+                    <NavButton active={activeTab === 'PROFILE'} icon={<User className="w-5 h-5" />} label="Profil Saya" onClick={() => setActiveTab('PROFILE')} />
+                    <NavButton active={activeTab === 'ATTENDANCE'} icon={<ShieldCheck className="w-5 h-5" />} label="Absensi" onClick={() => setActiveTab('ATTENDANCE')} />
+                    <NavButton active={activeTab === 'SHIFT'} icon={<Calendar className="w-5 h-5" />} label="Jadwal Kerja" onClick={() => setActiveTab('SHIFT')} />
+                    <NavButton active={activeTab === 'REWARD'} icon={<Award className="w-5 h-5" />} label="Reward & Performa" onClick={() => setActiveTab('REWARD')} />
+                </aside>
 
-                {/* Content - Document Scroll */}
-                <div className="flex-1 w-full p-4 md:p-8 overflow-y-auto pb-32">
-                    <div className="max-w-4xl mx-auto space-y-6">
-                        {/* Mobile Clock Display */}
-                        <div className="md:hidden bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
-                            <div className="flex items-center gap-2 text-gray-500">
-                                <Clock className="w-4 h-4" />
-                                <span className="text-xs font-bold uppercase">Waktu Server</span>
-                            </div>
-                            <ClockDisplay className="text-lg font-black text-primary" />
-                        </div>
-
-                        {activeTab === 'ATTENDANCE' && currentUser && <AttendanceTab employee={currentUser} />}
-                        {activeTab === 'PROFILE' && currentUser && <ProfileTab employee={currentUser} />}
-                        {activeTab === 'SHIFT' && currentUser && <ShiftTab employeeId={currentUser.id} />}
-                        {/* Removed LeaveTab Render */}
-                        {activeTab === 'REWARD' && currentUser && <RewardTab employee={currentUser} />}
-                    </div>
-                </div>
+                <main className="flex-1 overflow-y-auto p-4 md:p-8 lg:p-12 pb-24 md:pb-8">
+                    {activeTab === 'PROFILE' && currentUser && <ProfileTab employee={currentUser} />}
+                    {activeTab === 'ATTENDANCE' && currentUser && <AttendanceTab employee={currentUser} />}
+                    {activeTab === 'SHIFT' && currentUser && <ShiftTab employeeId={currentUser.id} />}
+                    {activeTab === 'REWARD' && currentUser && <RewardTab employee={currentUser} />}
+                </main>
             </div>
 
-            {/* Mobile Bottom Navigation (Fixed) */}
-            <div className="md:hidden fixed bottom-6 left-4 right-4 bg-white/90 backdrop-blur-lg border border-gray-200 shadow-2xl rounded-3xl p-2 z-50 flex justify-around items-center">
-                <MobileNavBtn active={activeTab === 'ATTENDANCE'} icon={<CheckCircle className="w-5 h-5" />} label="Absen" onClick={() => setActiveTab('ATTENDANCE')} />
-                <MobileNavBtn active={activeTab === 'SHIFT'} icon={<Calendar className="w-5 h-5" />} label="Shift" onClick={() => setActiveTab('SHIFT')} />
-                <MobileNavBtn active={activeTab === 'REWARD'} icon={<Award className="w-5 h-5" />} label="Reward" onClick={() => setActiveTab('REWARD')} />
-                <MobileNavBtn active={activeTab === 'PROFILE'} icon={<User className="w-5 h-5" />} label="Profil" onClick={() => setActiveTab('PROFILE')} />
+            {/* Mobile Bottom Navigation */}
+            <div className="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-gray-100 p-2 flex justify-around items-center z-50">
+                <MobileNavItem active={activeTab === 'PROFILE'} icon={<User />} label="Profil" onClick={() => setActiveTab('PROFILE')} />
+                <MobileNavItem active={activeTab === 'ATTENDANCE'} icon={<ShieldCheck />} label="Absen" onClick={() => setActiveTab('ATTENDANCE')} />
+                <MobileNavItem active={activeTab === 'SHIFT'} icon={<Calendar />} label="Shift" onClick={() => setActiveTab('SHIFT')} />
+                <MobileNavItem active={activeTab === 'REWARD'} icon={<Award />} label="Reward" onClick={() => setActiveTab('REWARD')} />
             </div>
         </div>
     );
 }
 
-// --- Mobile Components ---
-const MobileNavBtn = ({ active, icon, label, onClick }: any) => (
-    <button
-        onClick={onClick}
-        className={`flex flex-col items-center justify-center p-3 rounded-2xl transition-all w-16 ${active ? 'bg-primary text-white shadow-lg shadow-primary/30 -translate-y-2' : 'text-gray-400 hover:bg-gray-50'
-            }`}
-    >
-        {icon}
-        {active && <span className="text-[10px] font-bold mt-1">{label}</span>}
-    </button>
-);
-
-import { fingerprint, FingerprintResult } from '../../lib/fingerprint';
-
-// --- Sub-Screens ---
+// --- Sub-Components ---
 
 function IdleScreen({ onLogin }: { onLogin: (emp: Employee) => void }) {
-    const [employees, setEmployees] = useState<Employee[]>([]);
     const [pinDisplay, setPinDisplay] = useState('');
-    const [fpStatus, setFpStatus] = useState<string>('');
-    const [isScanning, setIsScanning] = useState(false);
+    const [employees, setEmployees] = useState<Employee[]>([]);
 
     useEffect(() => {
         const fetchData = async () => {
             const { data } = await supabase.from('employees').select('*');
-            if (data) setEmployees(data.map(e => ({ ...e, joinDate: e.join_date, offDays: e.off_days || [] })));
+            if (data) setEmployees(data);
         };
         fetchData();
     }, []);
 
-    const handlePinSubmit = () => {
-        // Validate against Employee PIN
+    const handleNumberClick = (num: string) => {
+        if (pinDisplay.length < 6) setPinDisplay(prev => prev + num);
+    };
+
+    const handleClear = () => setPinDisplay('');
+    const handleDelete = () => setPinDisplay(prev => prev.slice(0, -1));
+
+    const handleSubmit = () => {
         const emp = employees.find(e => (e.pin || String(e.id)) === pinDisplay);
         if (emp) {
             onLogin(emp);
             setPinDisplay('');
         } else {
-            toast.error('PIN tidak valid. Silakan coba lagi.');
+            toast.error('PIN Salah');
             setPinDisplay('');
         }
     };
 
-    const handlePinPress = (num: string) => {
-        if (num === 'C') setPinDisplay('');
-        else if (num === 'BS') setPinDisplay(prev => prev.slice(0, -1));
-        else if (pinDisplay.length < 6) setPinDisplay(prev => prev + num);
-    };
-
-    const handleFingerprintScan = async (useMock: boolean = false) => {
-        if (isScanning) {
-            await fingerprint.stopCapture();
-            setIsScanning(false);
-            setFpStatus('');
-            return;
-        }
-
-        setIsScanning(true);
-        setFpStatus(useMock ? 'Simulasi: Memindai Jari...' : 'Menghubungkan ke Pemindai...');
-
-        const callback = (status: string, result?: FingerprintResult) => {
-            if (status === 'SUCCESS' && result?.success && result.template) {
-                setFpStatus('Mencocokkan Sidik Jari...');
-
-                const matches = employees
-                    .filter(e => e.fingerprint_template)
-                    .map(e => ({
-                        emp: e,
-                        score: fingerprint.calculateSimilarity(e.fingerprint_template!, result.template!)
-                    }))
-                    .sort((a, b) => b.score - a.score);
-
-                const bestMatch = matches[0];
-                const registeredCount = employees.filter(e => e.fingerprint_template).length;
-                console.log(`[ESS Fp Match] Comparing against ${registeredCount} registered employees...`);
-
-                if (registeredCount === 0) {
-                    setFpStatus('Tidak ada sidik jari terdaftar.');
-                    toast.error("Tidak ada data sidik jari karyawan terdaftar di sistem ini. Silakan hubungi Admin.");
-                    setIsScanning(false);
-                } else if (bestMatch && bestMatch.score >= 10) {
-                    const matchedEmp = bestMatch.emp;
-                    setFpStatus(`Selamat Datang, ${matchedEmp.name}!`);
-                    setTimeout(() => {
-                        onLogin(matchedEmp);
-                        setIsScanning(false);
-                        setFpStatus('');
-                    }, 1000);
-                } else {
-                    const scoreText = bestMatch ? `(Skor terbaik: ${bestMatch.score.toFixed(0)}%)` : '';
-                    setFpStatus('Sidik jari tidak dikenali.');
-                    toast.error(`Sidik jari tidak dikenali ${scoreText}.`);
-                    setIsScanning(false);
-                }
-            } else if (status === 'ERROR') {
-                if (!useMock && result?.errorType === 'SERVICE_NOT_RUNNING') {
-                    if (confirm('Aplikasi Bridge tidak jalan. Gunakan SIMULASI untuk tes?')) {
-                        handleFingerprintScan(true);
-                        return;
-                    }
-                }
-                setFpStatus(result?.message || 'Gagal membaca sidik jari');
-                setIsScanning(false);
-                toast.error(result?.message || 'Gagal membaca sidik jari');
-            } else {
-                setFpStatus(status === 'WAITING_FOR_FINGER' ? 'Silakan Tempel Jari Anda' : status);
-            }
-        };
-
-        if (useMock) {
-            // Kita gunakan first employee template agar simulasi login berhasil
-            const firstEmpTemplate = employees.find(e => e.fingerprint_template)?.fingerprint_template;
-
-            fingerprint.mockCapture((status, result) => {
-                if (status === 'SUCCESS' && result && firstEmpTemplate) {
-                    // Paksa template cocok dengan yang ada di DB untuk simulasi
-                    result.template = firstEmpTemplate;
-                }
-                callback(status, result);
-            });
-        } else {
-            await fingerprint.startCapture(callback);
-        }
-    };
-
     return (
-        <div className="min-h-[100dvh] flex flex-col bg-slate-50 text-slate-900 font-sans items-center justify-center relative overflow-hidden pb-12">
-            <div className="absolute inset-0 bg-gradient-to-br from-blue-50 to-indigo-50/30 z-0" />
-            <div className="relative z-10 w-full max-w-md p-6 flex flex-col items-center">
-                <div className="mb-6 text-center animate-in zoom-in duration-500">
-                    <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-xl shadow-blue-100 border border-white">
-                        <Clock className="w-8 h-8 text-primary animate-pulse" />
-                    </div>
-                    <ClockDisplay className="text-4xl font-black tabular-nums tracking-tighter mb-1 text-slate-800" />
-                    <p className="text-slate-500 font-bold text-[10px] uppercase tracking-widest">Waktu Indonesia Barat</p>
+        <div className="h-[100dvh] w-full bg-slate-900 flex flex-col items-center justify-center p-6 text-white font-sans overflow-hidden">
+            <div className="text-center mb-8 animate-in fade-in zoom-in duration-700">
+                <div className="w-20 h-20 bg-primary rounded-[30%] mx-auto mb-6 flex items-center justify-center shadow-2xl shadow-primary/20 rotate-12">
+                    <QrCode className="w-10 h-10 -rotate-12" />
+                </div>
+                <h1 className="text-3xl font-black mb-2 tracking-tight">WUDkopi ESS</h1>
+                <p className="text-slate-400 font-medium">System Layanan Mandiri Karyawan</p>
+                <div className="mt-4"><ClockDisplay className="text-2xl font-mono text-primary font-bold" /></div>
+            </div>
+
+            <div className="w-full max-w-sm space-y-8">
+                <div className="h-16 flex justify-center items-center gap-3">
+                    {[...Array(6)].map((_, i) => (
+                        <div key={i} className={`w-4 h-4 rounded-full border-2 transition-all duration-300 ${i < pinDisplay.length ? 'bg-primary border-primary scale-125' : 'border-slate-700 bg-slate-800'}`} />
+                    ))}
                 </div>
 
-                <div className="w-full bg-white/80 backdrop-blur-xl border border-white rounded-[40px] p-8 shadow-2xl shadow-blue-900/5 animate-in slide-in-from-bottom duration-500 max-w-[340px] mx-auto">
-                    <h3 className="text-xl font-black text-center mb-1 text-slate-800 tracking-tight">Login Karyawan</h3>
-                    <p className="text-slate-400 text-center text-[11px] font-medium mb-6">Masukkan 6-digit PIN Absensi</p>
-
-                    {/* PIN Display */}
-                    <div className="bg-slate-50/50 rounded-2xl h-14 mb-6 flex items-center justify-center border border-slate-100 shadow-inner">
-                        <div className="flex gap-3">
-                            {Array.from({ length: 6 }).map((_, i) => (
-                                <div
-                                    key={i}
-                                    className={`w-3 h-3 rounded-full transition-all duration-300 ${i < pinDisplay.length
-                                        ? 'bg-primary shadow-[0_0_12px_rgba(59,130,246,0.4)] scale-110'
-                                        : 'bg-slate-200'
-                                        }`}
-                                />
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Numpad */}
-                    <div className="grid grid-cols-3 gap-4">
-                        {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
-                            <button
-                                key={num}
-                                onClick={() => handlePinPress(String(num))}
-                                className="aspect-square rounded-2xl bg-white hover:bg-slate-50 border border-slate-100 text-xl font-black text-slate-700 transition-all active:scale-90 flex items-center justify-center shadow-sm hover:shadow-md group"
-                            >
-                                <span className="group-hover:scale-110 transition-transform">{num}</span>
-                            </button>
-                        ))}
-                        <button onClick={() => handlePinPress('C')} className="aspect-square rounded-2xl bg-red-50 text-red-500 font-black hover:bg-red-100 flex items-center justify-center transition-all active:scale-90 border border-red-100 text-lg shadow-sm">C</button>
-                        <button onClick={() => handlePinPress('0')} className="aspect-square rounded-2xl bg-white hover:bg-slate-50 border border-slate-100 text-xl font-black text-slate-700 flex items-center justify-center transition-all active:scale-90 shadow-sm">0</button>
-                        <button onClick={handlePinSubmit} className="aspect-square rounded-2xl bg-primary text-white shadow-lg shadow-primary/30 flex items-center justify-center transition-all active:scale-95 hover:bg-primary/90">
-                            <ChevronRight className="w-8 h-8" />
-                        </button>
-                    </div>
+                <div className="grid grid-cols-3 gap-4">
+                    {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(num => (
+                        <button key={num} onClick={() => handleNumberClick(num)} className="h-16 bg-slate-800/50 hover:bg-slate-700 rounded-2xl text-2xl font-black transition-all active:scale-90 border border-slate-700/50">{num}</button>
+                    ))}
+                    <button onClick={handleClear} className="h-16 text-slate-400 font-bold hover:text-white uppercase text-xs">Clear</button>
+                    <button onClick={() => handleNumberClick('0')} className="h-16 bg-slate-800/50 hover:bg-slate-700 rounded-2xl text-2xl font-black transition-all active:scale-90 border border-slate-700/50">0</button>
+                    <button onClick={handleDelete} className="h-16 text-slate-400 font-bold hover:text-white uppercase text-xs flex items-center justify-center"><XCircle className="w-6 h-6" /></button>
                 </div>
 
-                {/* Fingerprint Scanner Button */}
-                <div className="mt-8 w-full max-w-[340px] mx-auto">
-                    <button
-                        onClick={() => handleFingerprintScan(false)}
-                        className={`w-full py-5 rounded-[28px] flex items-center justify-center gap-3 transition-all duration-300 font-black text-sm uppercase tracking-wider ${isScanning
-                            ? 'bg-blue-600 text-white shadow-xl shadow-blue-200 ring-4 ring-blue-50'
-                            : 'bg-white hover:bg-slate-50 text-blue-600 border border-blue-100 shadow-lg shadow-blue-900/5'
-                            }`}
-                    >
-                        {isScanning ? (
-                            <>
-                                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                <span>{fpStatus || 'Memproses...'}</span>
-                            </>
-                        ) : (
-                            <>
-                                <div className="p-2 bg-blue-50 rounded-xl">
-                                    <QrCode className="w-5 h-5 text-blue-600" />
-                                </div>
-                                <span>Gunakan Sidik Jari</span>
-                            </>
-                        )}
-                    </button>
-                </div>
-
-                <p className="mt-10 text-[10px] text-slate-400 text-center max-w-xs font-bold uppercase tracking-widest leading-relaxed">
-                    © {new Date().getFullYear()} WinPOS System<br/>
-                    Hubungi Manager jika lupa PIN
-                </p>
+                <button
+                    onClick={handleSubmit}
+                    disabled={pinDisplay.length < 1}
+                    className="w-full py-5 bg-primary text-white rounded-2xl font-black text-xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:grayscale"
+                >
+                    MASUK KE DASHBOARD
+                </button>
             </div>
         </div>
     );
 }
-
-// --- Tabs ---
 
 function AttendanceTab({ employee }: { employee: Employee }) {
     const [status, setStatus] = useState<'NONE' | 'CHECKED_IN' | 'CHECKED_OUT'>('NONE');
@@ -373,28 +200,48 @@ function AttendanceTab({ employee }: { employee: Employee }) {
     const [history, setHistory] = useState<any[]>([]);
 
     const fetchStatus = async () => {
-        const today = new Date().toISOString().split('T')[0];
-        const { data } = await supabase.from('attendance_logs')
-            .select('*')
-            .eq('employee_id', employee.id)
-            .eq('date', today)
-            .single();
+        try {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const localDate = `${year}-${month}-${day}`;
 
-        if (data) {
-            setTodayLog(data);
-            if (data.check_out) setStatus('CHECKED_OUT');
-            else setStatus('CHECKED_IN');
-        } else {
-            setStatus('NONE');
+            const { data, error } = await supabase.from('attendance_logs')
+                .select('*')
+                .eq('employee_id', employee.id)
+                .eq('date', localDate)
+                .order('created_at', { ascending: false })
+                .limit(1);
+
+            if (error) {
+                console.error('Fetch Status Error:', error);
+                toast.error('Gagal mengambil status: ' + error.message);
+                return;
+            }
+
+            if (data && data.length > 0) {
+                const log = data[0];
+                setTodayLog(log);
+                if (log.check_out) setStatus('CHECKED_OUT');
+                else setStatus('CHECKED_IN');
+            } else {
+                setTodayLog(null);
+                setStatus('NONE');
+            }
+
+            // Fetch history
+            const { data: hist, error: histErr } = await supabase.from('attendance_logs')
+                .select('*')
+                .eq('employee_id', employee.id)
+                .order('created_at', { ascending: false })
+                .limit(5);
+            
+            if (histErr) console.error('Fetch History Error:', histErr);
+            if (hist) setHistory(hist);
+        } catch (err: any) {
+            console.error('Fetch Status Exception:', err);
         }
-
-        // Fetch history
-        const { data: hist } = await supabase.from('attendance_logs')
-            .select('*')
-            .eq('employee_id', employee.id)
-            .order('date', { ascending: false })
-            .limit(5);
-        if (hist) setHistory(hist);
     };
 
     useEffect(() => {
@@ -402,338 +249,131 @@ function AttendanceTab({ employee }: { employee: Employee }) {
     }, [employee]);
 
     const handleCheckIn = async () => {
-        const now = new Date();
-        const time = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        try {
+            const now = new Date();
+            const time = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+            
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const localDate = `${year}-${month}-${day}`;
 
-        // Simple logic: Late if after 8 AM (Example)
-        const isLate = now.getHours() >= 8 && now.getMinutes() > 0;
+            const isLate = now.getHours() >= 9; // Example 9 AM
 
-        const payload = {
-            employee_id: employee.id,
-            employee_name: employee.name,
-            date: now.toISOString().split('T')[0],
-            check_in: time,
-            status: isLate ? 'Late' : 'Present'
-        };
+            const payload = {
+                employee_id: employee.id,
+                employee_name: employee.name || `Employee ${employee.id}`,
+                branch_id: (employee as any).branch_id || null, // Capture branch_id if table has it
+                date: localDate,
+                check_in: time,
+                status: isLate ? 'Late' : 'Present'
+            };
 
-        const { error } = await supabase.from('attendance_logs').insert([payload]);
-        if (error) toast.error('Check-In Gagal');
-        else {
-            toast.success('Berhasil Check-In! Selamat Bekerja.');
-            fetchStatus();
+            const { data, error } = await supabase.from('attendance_logs').insert([payload]).select();
+            
+            if (error) {
+                console.error('Check-in error technical details:', error);
+                toast.error(`Check-In Gagal (${error.code}): ${error.message}`);
+            } else {
+                toast.success('Berhasil Check-In!');
+                fetchStatus();
+            }
+        } catch (err: any) {
+            toast.error('Gagal memproses absensi keluar: ' + err.message);
         }
     };
 
     const handleCheckOut = async () => {
         if (!todayLog) return;
-        const time = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        try {
+            const now = new Date();
+            const time = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
-        const { error } = await supabase.from('attendance_logs')
-            .update({ check_out: time })
-            .eq('id', todayLog.id);
+            const { error } = await supabase.from('attendance_logs')
+                .update({ check_out: time })
+                .eq('id', todayLog.id);
 
-        if (error) toast.error('Check-Out Gagal');
-        else {
-            toast.success('Berhasil Check-Out! Hati-hati di jalan.');
-            fetchStatus();
+            if (error) {
+                toast.error(`Check-Out Gagal: ${error.message}`);
+            } else {
+                toast.success('Berhasil Check-Out!');
+                fetchStatus();
+            }
+        } catch (err: any) {
+            toast.error('Gagal memproses absensi keluar');
         }
     };
 
     return (
-        <div className="space-y-6 animate-in slide-in-from-right duration-500">
-            {/* Status Card */}
+        <div className="space-y-6">
             <div className="bg-white rounded-[32px] p-8 shadow-sm border border-gray-100 text-center relative overflow-hidden">
-                <div className={`absolute top-0 inset-x-0 h-2 ${status === 'NONE' ? 'bg-gray-200' :
-                    status === 'CHECKED_IN' ? 'bg-green-500' : 'bg-blue-500'
-                    }`} />
-
+                <div className={`absolute top-0 inset-x-0 h-2 ${status === 'NONE' ? 'bg-slate-200' : status === 'CHECKED_IN' ? 'bg-green-500' : 'bg-blue-500'}`} />
                 <h2 className="text-2xl font-bold mb-2">Halo, {employee.name}!</h2>
-                <p className="text-gray-500 mb-8 max-w-md mx-auto">
-                    {status === 'NONE' ? 'Anda belum melakukan absensi hari ini. Silakan Check-In untuk mulai bekerja.' :
-                        status === 'CHECKED_IN' ? 'Anda sedang bekerja (On Duty). Jangan lupa Check-Out sebelum pulang.' :
-                            'Terima kasih! Anda sudah menyelesaikan shift hari ini.'}
-                </p>
-
-                <div className="flex justify-center gap-6">
+                <div className="flex justify-center gap-6 mt-8">
                     {status === 'NONE' && (
-                        <button
-                            onClick={handleCheckIn}
-                            className="bg-green-600 hover:bg-green-700 text-white px-10 py-6 rounded-3xl font-black text-xl shadow-xl shadow-green-200 flex flex-col items-center gap-2 transition-transform active:scale-95 w-full md:w-auto"
-                        >
-                            <PlayCircle className="w-8 h-8" />
-                            MASUK (CHECK-IN)
-                        </button>
+                        <button onClick={handleCheckIn} className="bg-green-600 hover:bg-green-700 text-white px-10 py-6 rounded-3xl font-black text-xl shadow-xl flex items-center gap-2"><PlayCircle /> CHECK-IN</button>
                     )}
-
                     {status === 'CHECKED_IN' && (
-                        <button
-                            onClick={handleCheckOut}
-                            className="bg-red-600 hover:bg-red-700 text-white px-10 py-6 rounded-3xl font-black text-xl shadow-xl shadow-red-200 flex flex-col items-center gap-2 transition-transform active:scale-95 w-full md:w-auto"
-                        >
-                            <StopCircle className="w-8 h-8" />
-                            PULANG (CHECK-OUT)
-                        </button>
+                        <button onClick={handleCheckOut} className="bg-red-600 hover:bg-red-700 text-white px-10 py-6 rounded-3xl font-black text-xl shadow-xl flex items-center gap-2"><StopCircle /> CHECK-OUT</button>
                     )}
-
                     {status === 'CHECKED_OUT' && (
-                        <div className="bg-blue-50 text-blue-800 px-8 py-4 rounded-2xl font-bold flex items-center gap-3">
-                            <CheckCircle className="w-6 h-6" />
-                            Absensi Hari Ini Selesai
-                        </div>
+                        <div className="bg-blue-50 text-blue-800 px-8 py-4 rounded-2xl font-bold">Shift Selesai</div>
                     )}
                 </div>
-
                 {todayLog && (
                     <div className="mt-8 pt-8 border-t border-gray-100 grid grid-cols-2 divide-x">
-                        <div>
-                            <p className="text-xs font-bold text-gray-400 uppercase">Jam Masuk</p>
-                            <p className="text-2xl font-black text-gray-800">{todayLog.check_in}</p>
-                        </div>
-                        <div>
-                            <p className="text-xs font-bold text-gray-400 uppercase">Jam Pulang</p>
-                            <p className="text-2xl font-black text-gray-800">{todayLog.check_out || '--:--'}</p>
-                        </div>
+                        <div><p className="text-xs font-bold text-gray-400">Jam Masuk</p><p className="text-2xl font-black">{todayLog.check_in}</p></div>
+                        <div><p className="text-xs font-bold text-gray-400">Jam Pulang</p><p className="text-2xl font-black">{todayLog.check_out || '--:--'}</p></div>
                     </div>
                 )}
             </div>
 
-            {/* History List */}
             <div className="bg-white rounded-[32px] p-6 shadow-sm border border-gray-100">
-                <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
-                    <HistoryIcon className="w-5 h-5 text-gray-400" /> Riwayat Terakhir
-                </h3>
+                <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><History className="w-5 h-5 text-gray-400" /> Riwayat Terakhir</h3>
                 <div className="space-y-3">
                     {history.map((h: any) => (
                         <div key={h.id} className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl">
-                            <div>
-                                <p className="font-bold text-sm">{h.date}</p>
-                                <p className="text-xs text-gray-400">{h.status}</p>
-                            </div>
-                            <div className="text-right">
-                                <p className="font-bold text-sm">{h.check_in} - {h.check_out || '?'}</p>
-                            </div>
+                            <div><p className="font-bold text-sm">{h.date}</p><p className="text-xs text-gray-400">{h.status}</p></div>
+                            <div className="text-right font-bold text-sm">{h.check_in} - {h.check_out || '?'}</div>
                         </div>
                     ))}
-                    {history.length === 0 && <p className="text-center text-gray-400 text-sm py-4">Belum ada riwayat.</p>}
+                    {history.length === 0 && <p className="text-center text-gray-400 py-4">Belum ada riwayat.</p>}
                 </div>
             </div>
         </div>
     );
 }
 
-// Simple Icon wrapper to fix missing import if needed (though Lucide has History, aliasing it)
-const HistoryIcon = Calendar;
-
 function ProfileTab({ employee }: { employee: Employee }) {
-    const DAYS = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
     return (
-        <div className="space-y-6 animate-in slide-in-from-right duration-500">
-            <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100 flex flex-col md:flex-row gap-8 items-center md:items-start text-center md:text-left">
-                <div className="w-32 h-32 rounded-full bg-gray-100 flex items-center justify-center text-4xl font-black text-gray-400 border-4 border-white shadow-xl">
-                    {employee.name.charAt(0)}
-                </div>
-                <div className="flex-1 space-y-4">
-                    <div>
-                        <h2 className="text-3xl font-black text-gray-800">{employee.name}</h2>
-                        <p className="text-lg text-primary font-bold">{employee.position}</p>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                        <InfoItem icon={<Briefcase />} label="Departemen" value={employee.department} />
-                        <InfoItem icon={<MapPin />} label="Tanggal Bergabung" value={employee.joinDate} />
-                        <InfoItem icon={<AlertCircle />} label="Jadwal Libur (Off Day)" value={employee.offDays.map(d => DAYS[d]).join(', ')} />
-                    </div>
-                </div>
+        <div className="space-y-6">
+            <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100 flex gap-8 items-center">
+                <div className="w-24 h-24 rounded-full bg-primary flex items-center justify-center text-3xl font-black text-white">{employee.name.charAt(0)}</div>
+                <div><h2 className="text-3xl font-black text-gray-800">{employee.name}</h2><p className="text-lg text-primary font-bold">{employee.position}</p></div>
             </div>
         </div>
     );
 }
 
 function ShiftTab({ employeeId }: { employeeId: number }) {
-    const [schedules, setSchedules] = useState<any[]>([]);
-
-    useEffect(() => {
-        const fetchSchedules = async () => {
-            // Mock or Real
-        };
-        fetchSchedules();
-    }, [employeeId]);
-
-    return (
-        <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100 min-h-[400px] animate-in slide-in-from-right duration-500">
-            <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
-                <Calendar className="w-6 h-6 text-primary" /> Jadwal Shift Saya
-            </h2>
-            <div className="text-center py-20 text-gray-400">
-                <Calendar className="w-16 h-16 mx-auto mb-4 opacity-20" />
-                <p>Belum ada jadwal shift yang dipublikasikan.</p>
-            </div>
-        </div>
-    );
-}
-
-function LeaveTab({ employee }: { employee: Employee }) {
-    const [requests, setRequests] = useState<LeaveRequest[]>([]);
-    const [isFormOpen, setIsFormOpen] = useState(false);
-    const [formData, setFormData] = useState({ start: '', end: '', type: 'Cuti Tahunan', reason: '' });
-
-    const fetchRequests = async () => {
-        const { data } = await supabase.from('leave_requests').select('*').eq('employee_id', employee.id).order('created_at', { ascending: false });
-        if (data) setRequests(data as any);
-    };
-
-    useEffect(() => { fetchRequests(); }, []);
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        const payload = {
-            employee_id: employee.id,
-            employee_name: employee.name,
-            start_date: formData.start,
-            end_date: formData.end,
-            type: formData.type,
-            reason: formData.reason,
-            status: 'Pending'
-        };
-        const { error } = await supabase.from('leave_requests').insert([payload]);
-        if (error) toast.error(error.message);
-        else {
-            toast.success('Pengajuan cuti berhasil dikirim');
-            setIsFormOpen(false);
-            fetchRequests();
-        }
-    };
-
-    return (
-        <div className="space-y-6 animate-in slide-in-from-right duration-500">
-            <div className="flex justify-between items-center">
-                <h2 className="text-2xl font-bold flex items-center gap-2">
-                    <FileText className="w-6 h-6 text-primary" /> Pengajuan Cuti
-                </h2>
-                <button onClick={() => setIsFormOpen(true)} className="px-6 py-3 bg-primary text-white rounded-xl font-bold shadow-lg shadow-primary/20 hover:scale-105 transition-transform">
-                    + Ajukan Cuti
-                </button>
-            </div>
-
-            {isFormOpen && (
-                <div className="bg-white p-6 rounded-3xl border border-primary/20 shadow-xl mb-6 animate-in zoom-in-95">
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold text-gray-500 uppercase">Tanggal Mulai</label>
-                                <input type="date" required className="w-full p-3 bg-gray-50 rounded-xl" value={formData.start} onChange={e => setFormData({ ...formData, start: e.target.value })} />
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold text-gray-500 uppercase">Tanggal Selesai</label>
-                                <input type="date" required className="w-full p-3 bg-gray-50 rounded-xl" value={formData.end} onChange={e => setFormData({ ...formData, end: e.target.value })} />
-                            </div>
-                        </div>
-                        {/* ... rest of form (same as before) ... */}
-                        <div className="space-y-2">
-                            <label className="text-xs font-bold text-gray-500 uppercase">Jenis Cuti</label>
-                            <select className="w-full p-3 bg-gray-50 rounded-xl" value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value })}>
-                                <option>Cuti Tahunan</option>
-                                <option>Sakit</option>
-                                <option>Izin</option>
-                                <option>Lainnya</option>
-                            </select>
-                        </div>
-                        <div className="space-y-2">
-                            <label className="text-xs font-bold text-gray-500 uppercase">Alasan</label>
-                            <textarea required className="w-full p-3 bg-gray-50 rounded-xl h-24" value={formData.reason} onChange={e => setFormData({ ...formData, reason: e.target.value })} />
-                        </div>
-                        <div className="flex gap-4 pt-2">
-                            <button type="button" onClick={() => setIsFormOpen(false)} className="flex-1 py-3 bg-gray-100 rounded-xl font-bold">Batal</button>
-                            <button type="submit" className="flex-1 py-3 bg-primary text-white rounded-xl font-bold">Kirim Pengajuan</button>
-                        </div>
-                    </form>
-                </div>
-            )}
-
-            <div className="space-y-3">
-                {requests.length === 0 ? (
-                    <div className="text-center py-10 text-gray-400">Belum ada riwayat pengajuan cuti.</div>
-                ) : requests.map(req => (
-                    <div key={req.id} className="bg-white p-5 rounded-2xl border border-gray-100 flex items-center justify-between">
-                        <div>
-                            <h4 className="font-bold text-gray-800">{req.type}</h4>
-                            <p className="text-sm text-gray-500">{req.start_date} s/d {req.end_date} • {req.reason}</p>
-                        </div>
-                        <div className={`px-4 py-2 rounded-xl text-xs font-black uppercase ${req.status === 'Approved' ? 'bg-green-100 text-green-700' :
-                            req.status === 'Rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
-                            }`}>
-                            {req.status}
-                        </div>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
+    return <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100 min-h-[400px] flex items-center justify-center text-gray-400">Belum ada jadwal shift.</div>;
 }
 
 function RewardTab({ employee }: { employee: Employee }) {
-    return (
-        <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100 animate-in slide-in-from-right duration-500">
-            <div className="flex items-center gap-4 mb-8">
-                <div className="p-4 bg-yellow-50 text-yellow-600 rounded-2xl">
-                    <Award className="w-8 h-8" />
-                </div>
-                <div>
-                    <h2 className="text-2xl font-bold">Reward & Performa</h2>
-                    <p className="text-gray-500">Estimasi bonus bulan ini</p>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                <StatCard label="Total Penjualan" value="Rp 0" subtext="Target: Rp 5.000.000" />
-                <StatCard label="Kehadiran" value="0 Hari" subtext="Bonus: Rp 10.000/hari" />
-                <StatCard label="Komplain" value="0" subtext="Denda: Rp 50.000/komplain" isNegative />
-            </div>
-
-            <div className="p-6 bg-blue-50/50 rounded-2xl border border-blue-100 text-center">
-                <p className="text-sm font-bold text-blue-400 uppercase tracking-widest mb-2">Estimasi Bonus Diterima</p>
-                <div className="text-4xl font-black text-blue-600">Rp 0</div>
-            </div>
-        </div>
-    );
+    return <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100 min-h-[400px] flex items-center justify-center text-gray-400">Data reward belum tersedia.</div>;
 }
 
 // --- Helpers ---
-
 const NavButton = ({ active, icon, label, onClick }: any) => (
-    <button
-        onClick={onClick}
-        className={`flex items-center gap-3 px-6 py-4 rounded-xl font-bold transition-all text-left min-w-[200px] md:w-full ${active ? 'bg-primary text-white shadow-lg shadow-primary/25 translate-x-2' : 'bg-transparent text-gray-500 hover:bg-gray-50'
-            }`}
-    >
-        {icon}
-        <span>{label}</span>
-        {active && <ChevronRight className="w-4 h-4 ml-auto opacity-50" />}
-    </button>
+    <button onClick={onClick} className={`flex items-center gap-3 px-6 py-4 rounded-xl font-bold transition-all w-full ${active ? 'bg-primary text-white shadow-lg' : 'text-gray-500 hover:bg-gray-50'}`}>{icon}<span>{label}</span></button>
 );
 
-const ClockDisplay = ({ className = "text-xl font-bold text-gray-700" }: { className?: string }) => {
+const MobileNavItem = ({ active, icon, onClick }: any) => (
+    <button onClick={onClick} className={`p-3 rounded-xl transition-all ${active ? 'bg-primary text-white' : 'text-gray-400'}`}>{icon}</button>
+);
+
+const ClockDisplay = ({ className }: { className?: string }) => {
     const [time, setTime] = useState(new Date());
-    useEffect(() => {
-        const timer = setInterval(() => setTime(new Date()), 1000);
-        return () => clearInterval(timer);
-    }, []);
+    useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
     return <div className={className}>{time.toLocaleTimeString('id-ID')}</div>;
 };
-
-const InfoItem = ({ icon, label, value }: any) => (
-    <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl">
-        <div className="mt-1 text-gray-400">{icon}</div>
-        <div>
-            <p className="text-[10px] font-bold text-gray-400 uppercase">{label}</p>
-            <p className="font-bold text-gray-800">{value}</p>
-        </div>
-    </div>
-);
-
-const StatCard = ({ label, value, subtext, isNegative }: any) => (
-    <div className="p-5 bg-gray-50 border border-gray-100 rounded-2xl">
-        <p className="text-xs font-bold text-gray-400 uppercase mb-2">{label}</p>
-        <p className={`text-2xl font-black mb-1 ${isNegative ? 'text-red-500' : 'text-gray-800'}`}>{value}</p>
-        <p className="text-xs font-medium text-gray-500">{subtext}</p>
-    </div>
-);

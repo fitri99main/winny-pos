@@ -60,8 +60,11 @@ export function FingerprintAuthModal({
                     .sort((a, b) => b.score - a.score);
 
                 const bestMatch = matches[0];
+                const secondBest = matches[1];
+                const THRESHOLD = 18; // Optimized for Trigrams
+                const isNoiseFloor = secondBest && (Math.abs(bestMatch.score - secondBest.score) < 3.0) && bestMatch.score < 30;
 
-                if (bestMatch && bestMatch.score >= 10) {
+                if (bestMatch && bestMatch.score >= THRESHOLD && !isNoiseFloor) {
                     const manager = bestMatch.emp;
                     setFpStatus('Otorisasi Berhasil!');
                     setTimeout(() => {
@@ -70,7 +73,8 @@ export function FingerprintAuthModal({
                         setIsScanning(false);
                     }, 1000);
                 } else {
-                    setError("Otorisasi Gagal: Sidik jari tidak dikenali sebagai Manager/Admin.");
+                    const errorSuffix = isNoiseFloor ? '(Ambiguitas Terdeteksi)' : `(Skor: ${bestMatch?.score.toFixed(0) || 0}%)`;
+                    setError(`Otorisasi Gagal: Sidik jari tidak dikenali ${errorSuffix}.`);
                     setFpStatus('');
                     handleStartScanning(useMock); // Restart scanning
                 }
@@ -84,7 +88,19 @@ export function FingerprintAuthModal({
                 setError(result?.message || 'Gagal membaca sidik jari');
                 setIsScanning(false);
             } else {
-                setFpStatus(status === 'WAITING_FOR_FINGER' ? 'Silakan Tempel Jari Anda' : status);
+                if (status === 'WAITING_FOR_FINGER') {
+                    setFpStatus('Silakan Tempel Jari Anda');
+                } else if (status === 'ALAT_TERDETEKSI') {
+                    setFpStatus('Alat Terdeteksi! Menyiapkan...');
+                } else if (status.startsWith('PROBING_SERVICE')) {
+                    setFpStatus('Mencari Layanan Driver...');
+                } else if (status === 'WAITING_FOR_DEVICE') {
+                    setFpStatus('Mencari Alat Scanner...');
+                } else if (status === 'SCANNER_INIT') {
+                    setFpStatus('Menginisialisasi Scanner...');
+                } else {
+                    setFpStatus(status);
+                }
             }
         };
 

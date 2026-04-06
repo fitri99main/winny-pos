@@ -19,6 +19,30 @@ export function ReportsView({ sales, returns, paymentMethods }: ReportsViewProps
     const [endDate, setEndDate] = useState('');
     const [methodFilter, setMethodFilter] = useState('All');
     const [showFilters, setShowFilters] = useState(false);
+    
+    // [Part 25] Helper for quick date selection
+    const handlePreset = (type: 'today' | 'yesterday' | 'week' | 'month') => {
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        
+        let start = new Date(now);
+        let end = new Date(now);
+
+        if (type === 'today') {
+            // Both same
+        } else if (type === 'yesterday') {
+            start.setDate(now.getDate() - 1);
+            end.setDate(now.getDate() - 1);
+        } else if (type === 'week') {
+            start.setDate(now.getDate() - 7);
+        } else if (type === 'month') {
+            start.setMonth(now.getMonth() - 1);
+        }
+
+        const formatDate = (d: Date) => d.toISOString().split('T')[0];
+        setStartDate(formatDate(start));
+        setEndDate(formatDate(end));
+    };
 
     const filteredSales = useMemo(() => {
         return sales.filter(s => {
@@ -281,6 +305,15 @@ export function ReportsView({ sales, returns, paymentMethods }: ReportsViewProps
                             </Button>
                         </div>
                     </div>
+                    
+                    {/* [Part 25] Quick Filters Bar */}
+                    <div className="px-8 py-3 bg-gray-50 border-b border-gray-100 flex gap-2 overflow-x-auto no-scrollbar">
+                        <Button variant="outline" size="sm" onClick={() => handlePreset('today')} className="text-xs font-bold rounded-lg h-8 bg-white hover:bg-indigo-50 border-gray-200">Hari Ini</Button>
+                        <Button variant="outline" size="sm" onClick={() => handlePreset('yesterday')} className="text-xs font-bold rounded-lg h-8 bg-white hover:bg-indigo-50 border-gray-200">Kemarin</Button>
+                        <Button variant="outline" size="sm" onClick={() => handlePreset('week')} className="text-xs font-bold rounded-lg h-8 bg-white hover:bg-indigo-50 border-gray-200">7 Hari Terakhir</Button>
+                        <Button variant="outline" size="sm" onClick={() => handlePreset('month')} className="text-xs font-bold rounded-lg h-8 bg-white hover:bg-indigo-50 border-gray-200">30 Hari Terakhir</Button>
+                    </div>
+
                     <div className="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                         <div className="space-y-2">
                             <label className="text-xs font-bold text-gray-400 uppercase tracking-widest pl-1">Cari Transaksi</label>
@@ -419,7 +452,13 @@ export function ReportsView({ sales, returns, paymentMethods }: ReportsViewProps
                                         <td className="px-8 py-5 font-mono text-sm font-bold text-gray-700">{sale.orderNo}</td>
                                         <td className="px-8 py-5 text-sm text-gray-500">{sale.date.substring(0, 16)}</td>
                                         <td className="px-8 py-5">
-                                            <span className="text-xs font-bold px-2.5 py-1 bg-gray-100 text-gray-600 rounded-lg">
+                                            <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider ${
+                                                sale.paymentMethod.toLowerCase().includes('tunai') || sale.paymentMethod.toLowerCase().includes('cash')
+                                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                                : sale.paymentMethod.toLowerCase().includes('qris') || sale.paymentMethod.toLowerCase().includes('digital')
+                                                ? 'bg-indigo-50 text-indigo-700 border border-indigo-100'
+                                                : 'bg-gray-50 text-gray-400 border border-gray-100'
+                                            }`}>
                                                 {sale.paymentMethod}
                                             </span>
                                         </td>

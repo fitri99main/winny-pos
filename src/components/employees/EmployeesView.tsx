@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Search, Edit, Trash2, Mail, Phone, Briefcase, CreditCard, Printer, X, Settings2, Zap, AlertCircle, ExternalLink, RefreshCw, Shuffle } from 'lucide-react';
 import { Button } from '../ui/button';
 import { QRCard } from '../ui/QRCard';
@@ -56,7 +56,10 @@ export function EmployeesView({
     const [isScanning, setIsScanning] = useState(false);
     const [fpStatus, setFpStatus] = useState('');
     const [fpError, setFpError] = useState<string | null>(null);
+    const [enrollmentQuality, setEnrollmentQuality] = useState<number | null>(null);
     const [retryCount, setRetryCount] = useState(0);
+    const [enrollmentStage, setEnrollmentStage] = useState(0); // 0: None, 1, 2, 3: Stages
+    const [tempTemplates, setTempTemplates] = useState<string[]>([]);
 
     const handleFpRetry = () => {
         fingerprint.forceResetBusy();
@@ -152,41 +155,91 @@ export function EmployeesView({
     };
 
     const handleFingerprintEnroll = async (useMock: boolean = false) => {
-        console.log(`Memulai Enrollment Fingerprint... (${useMock ? 'SIMULASI' : 'REAL'})`);
+        console.log(`Memulai Enrollment Fingerprint Multi-Scan... (${useMock ? 'SIMULASI' : 'REAL'})`);
         setIsScanning(true);
         setFpStatus(useMock ? 'Simulasi: Tempel Jari...' : 'Menghubungkan ke Scanner...');
+        setEnrollmentStage(1);
+        setTempTemplates([]);
+    };
+
+    // Correctly handle Enrollment UI and Lifecycle via useEffect
+    useEffect(() => {
+        if (!isScanning) return;
+        
+        let isRunningSync = true;
+        const useMock = false; // Mocking is usually for testing
 
         const callback = (status: string, result?: FingerprintResult) => {
-            console.log('Fingerprint Status:', status, result);
-            if (status === 'SUCCESS' && result?.success) {
-                console.log('Enrollment Berhasil, Template:', result.template?.substring(0, 20) + '...');
-                setFormData(prev => ({ ...prev, fingerprint_template: result.template }));
-                toast.success(`Sidik jari berhasil didaftarkan! (${useMock ? 'Simulasi' : 'Real'})`);
-                setIsScanning(false);
-                setFpStatus('');
+            if (!isRunningSync) return;
+            
+            if (status === 'SUCCESS' && result?.success && result.template) {
+                const quality = Math.min(100, Math.round(((result.template?.length || 0) / 500) * 100));
+                
+                setTempTemplates(prev => {
+                    const newTemplates = [...prev, result.template!];
+                    const nextStage = newTemplates.length + 1;
+                    
+                    if (newTemplates.length < 3) {
+                        setEnrollmentStage(nextStage);
+                        setFpStatus(`Scan ke-${newTemplates.length} Sukses! Angkat Jari...`);
+                        toast.success(`Scan ${newTemplates.length}/3 Berhasil!`);
+                        
+                        setTimeout(() => {
+                            if (isRunningSync) fingerprint.startCapture(callback, 'ENROLL');
+                        }, 3000);
+                    } else {
+                        const finalTemplate = newTemplates.join('|||');
+                        setFormData(prev => ({ ...prev, fingerprint_template: finalTemplate }));
+                        setEnrollmentQuality(quality);
+                        setEnrollmentStage(0);
+                        setFpStatus('');
+                        setIsScanning(false);
+                        toast.success('Pendaftaran Sukses!');
+                    }
+                    return newTemplates;
+                });
             } else if (status === 'ERROR') {
-                console.error('Enrollment Error:', result);
-                const errorMessage = result?.message || 'Gagal mendaftarkan sidik jari';
-                setFpError(errorMessage);
-                toast.error(errorMessage);
+                setFpError(result?.message || 'Gagal mendaftar.');
                 setIsScanning(false);
-                setFpStatus('');
+                setEnrollmentStage(0);
             } else {
-                if (status === 'WAITING_FOR_FINGER') {
-                    setFpStatus('Silakan Tempel Jari Anda');
-                    setIsScanning(false);
-                } else {
-                    setFpStatus(status === 'ALAT_TERDETEKSI' ? 'Alat Terdeteksi! Menyiapkan...' : status);
-                }
-                if (status === 'ALAT_TERDETEKSI') setFpError(null);
+                const statusMap: Record<string, string> = {
+                    'WAITING_FOR_FINGER': `Tempel Jari (Scan ke-${enrollmentStage}/3)`,
+                    'ALAT_TERDETEKSI': 'Alat Terdeteksi...',
+                    'MENYIAPKAN_ALAT': 'Menyiapkan Alat...',
+                    'MEMULIHKAN_ALAT_SIBUK': 'Hardware Sibuk: Memulihkan...',
+                };
+                setFpStatus(statusMap[status] || status);
             }
         };
 
-        if (useMock) {
-            fingerprint.mockCapture(callback);
-        } else {
-            await fingerprint.startCapture(callback, 'ENROLL');
-        }
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                isRunningSync = false;
+                fingerprint.stopCapture();
+            } else {
+                isRunningSync = true;
+                fingerprint.startCapture(callback, 'ENROLL');
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        fingerprint.startCapture(callback, 'ENROLL');
+
+        return () => {
+            isRunningSync = false;
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            fingerprint.stopCapture();
+        };
+    }, [isScanning, enrollmentStage]);
+
+    const handleResetHardware = async () => {
+        setFpStatus('MEMULIHKAN_ALAT_SIBUK');
+        setFpError(null);
+        await fingerprint.hardReset();
+        await new Promise(r => setTimeout(r, 2500));
+        toast.success('Hardware scanner direset total.');
+        setFpStatus('');
     };
 
     const filteredEmployees = (employees || []).filter(emp =>
@@ -429,32 +482,113 @@ export function EmployeesView({
                                             <div className="flex gap-2">
                                                 <div className="relative flex-1">
                                                     <input
-                                                        className="w-full pl-10 p-2.5 bg-blue-50/30 border border-blue-100 rounded-xl outline-none focus:ring-4 focus:ring-blue-500/10 transition-all text-[9px] font-mono tracking-tight font-semibold truncate"
-                                                        value={formData.fingerprint_template ? 'REGISTERED' : ''}
+                                                        className={`w-full pl-10 p-2.5 border rounded-xl outline-none focus:ring-4 transition-all text-[9px] font-mono tracking-tight font-semibold truncate ${formData.fingerprint_template ? 'bg-emerald-50/50 border-emerald-100 text-emerald-700' : 'bg-blue-50/30 border-blue-100 text-blue-400'}`}
+                                                        value={formData.fingerprint_template ? 'FINGERPRINT_REGISTERED' : 'BELUM TERDAFTAR'}
                                                         readOnly
                                                     />
                                                     <div className="absolute left-3 top-1/2 -translate-y-1/2">
                                                         <Zap className={`w-4 h-4 ${formData.fingerprint_template ? 'text-emerald-500' : 'text-blue-400'}`} />
                                                     </div>
                                                 </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setFpError(null);
-                                                        handleFingerprintEnroll(false);
-                                                    }}
-                                                    disabled={isScanning}
-                                                    className={`px-3 rounded-xl font-bold text-[9px] uppercase transition-all flex items-center gap-1.5 ${isScanning
-                                                        ? 'bg-blue-100 text-blue-400'
-                                                        : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95'
-                                                        }`}
-                                                >
-                                                    {isScanning ? (
-                                                        <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-                                                    ) : <Plus className="w-3 h-3" />}
-                                                    {isScanning ? 'Scan' : 'Daftar'}
-                                                </button>
+                                                <div className="flex gap-1">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setFpError(null);
+                                                            handleFingerprintEnroll(false);
+                                                        }}
+                                                        disabled={isScanning}
+                                                        className={`px-3 rounded-xl font-bold text-[9px] uppercase transition-all flex items-center gap-1.5 ${isScanning
+                                                            ? 'bg-blue-100 text-blue-400'
+                                                            : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95'
+                                                            }`}
+                                                    >
+                                                        {isScanning ? (
+                                                            <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                                                        ) : <Zap className="w-3 h-3" />}
+                                                        {isScanning ? 'Scan...' : (formData.fingerprint_template ? 'Reset' : 'Daftar')}
+                                                    </button>
+                                                    
+                                                    {formData.fingerprint_template && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={async () => {
+                                                                if (confirm('Hapus data sidik jari ini secara PERMANEN? Karyawan tidak akan bisa absen biometrik sampai didaftarkan kembali.')) {
+                                                                    try {
+                                                                        const updatedData = { ...formData, fingerprint_template: null };
+                                                                        // Direct save to DB if employee exists
+                                                                        if (formData.id) {
+                                                                            await onEmployeeCRUD('update', updatedData);
+                                                                            toast.success('Sidik jari berhasil DIHAPUS PERMANEN.');
+                                                                        } else {
+                                                                            toast.success('Data sidik jari dikosongkan.');
+                                                                        }
+                                                                        setFormData(updatedData);
+                                                                        setEnrollmentQuality(null);
+                                                                    } catch (err) {
+                                                                        toast.error('Gagal menghapus sidik jari dari database.');
+                                                                    }
+                                                                }
+                                                            }}
+                                                            className="p-2.5 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors"
+                                                            title="Hapus Sidik Jari Permanen"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    )}
+
+                                                    {fpError && (
+                                                        <div className="flex flex-col gap-2 p-3 bg-red-50 border border-red-100 rounded-xl animate-in slide-in-from-top-1">
+                                                            <p className="text-[10px] font-bold text-red-600 leading-tight">{fpError}</p>
+                                                            <button 
+                                                                type="button"
+                                                                onClick={handleResetHardware}
+                                                                className="flex items-center justify-center gap-2 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[9px] font-black uppercase tracking-widest transition-all active:scale-95"
+                                                            >
+                                                                <RefreshCw className="w-3 h-3" /> Reset Alat
+                                                            </button>
+                                                        </div>
+                                                    )}
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleResetHardware}
+                                                        className="p-2.5 bg-gray-50 text-gray-400 rounded-xl hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                                                        title="Force Reset Hardware"
+                                                    >
+                                                        <RefreshCw className={`w-4 h-4 ${isScanning ? 'animate-spin' : ''}`} />
+                                                    </button>
+                                                </div>
                                             </div>
+
+                                            {/* Enrollment Progress & Quality Indicator */}
+                                            {(isScanning || fpStatus || enrollmentQuality !== null) && !fpError && (
+                                                <div className="mt-3 space-y-2 animate-in fade-in slide-in-from-top-1">
+                                                    {isScanning && (
+                                                        <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 text-blue-700 rounded-xl border border-blue-100 mb-2">
+                                                            <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                                                            <span className="text-[10px] font-black uppercase tracking-tight">{fpStatus}</span>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    {enrollmentQuality !== null && (
+                                                        <div className="space-y-1">
+                                                            <div className="flex justify-between items-center text-[9px] font-black uppercase text-blue-500 tracking-widest pl-1">
+                                                                <span>Kualitas Jari (Density)</span>
+                                                                <span className={enrollmentQuality > 70 ? 'text-emerald-500' : enrollmentQuality > 40 ? 'text-orange-500' : 'text-red-500'}>
+                                                                    {enrollmentQuality}% {enrollmentQuality > 80 ? 'Perfect' : enrollmentQuality > 50 ? 'Good' : 'Poor'}
+                                                                </span>
+                                                            </div>
+                                                            <div className="h-1.5 w-full bg-blue-100/50 rounded-full overflow-hidden border border-blue-50">
+                                                                <div 
+                                                                    className={`h-full transition-all duration-1000 ease-out rounded-full ${enrollmentQuality > 70 ? 'bg-emerald-500' : enrollmentQuality > 40 ? 'bg-orange-500' : 'bg-red-500'}`}
+                                                                    style={{ width: `${enrollmentQuality}%` }}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
 
                                         <div className="space-y-1.5">

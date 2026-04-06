@@ -8,11 +8,15 @@ const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 console.log('Supabase URL:', supabaseUrl ? 'Found' : 'MISSING');
 console.log('Supabase Key:', supabaseAnonKey ? 'Found' : 'MISSING');
 
+// Safety check to prevent crash if environment variables are missing
+const finalUrl = supabaseUrl || 'https://placeholder.supabase.co';
+const finalKey = supabaseAnonKey || 'placeholder';
+
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Supabase URL or Anon Key is missing! Check your .env file.');
+  console.error('[Supabase] CRITICAL: URL or Anon Key is missing! Check eas.json or .env');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+export const supabase = createClient(finalUrl, finalKey, {
   auth: {
     storage: AsyncStorage,
     autoRefreshToken: true,

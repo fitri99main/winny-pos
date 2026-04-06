@@ -327,8 +327,9 @@ function AccountManagementTab({ accounts, getBalance, onAddAccount, onUpdateAcco
 // --- Main Component ---
 
 export interface AccountingViewProps {
-    accounts?: Account[]; // Made optional to prevent crash if not passed immediately
+    accounts?: Account[];
     transactions?: JournalEntry[];
+    sales?: any[]; // [NEW] Added for direct sync
     onAddAccount?: (acc: Account) => Promise<void>;
     onUpdateAccount?: (acc: Account) => Promise<void>;
     onDeleteAccount?: (code: string) => Promise<void>;
@@ -342,6 +343,7 @@ export interface AccountingViewProps {
 export function AccountingView({
     accounts = [],
     transactions = [],
+    sales = [], // [NEW] Added for direct sync
     onAddAccount = async () => { },
     onUpdateAccount = async () => { },
     onDeleteAccount = async () => { },
@@ -416,7 +418,19 @@ export function AccountingView({
         return -raw; // Flip for Credit-normal accounts
     };
 
-    const totalRevenue = accounts.filter(a => a.type === 'Income').reduce((sum, acc) => sum + getDisplayBalance(acc.code), 0);
+    // [NEW] Calculate Revenue directly from POS Sales for accuracy
+    const posRevenueTotal = useMemo(() => {
+        return sales.filter(s => {
+            if (!s.date) return false;
+            const sDate = String(s.date).split('T')[0];
+            return sDate >= startDate && sDate <= endDate && (s.status === 'Paid' || s.status === 'Completed');
+        }).reduce((sum, s) => sum + (Number(s.total_amount || s.totalAmount || 0)), 0);
+    }, [sales, startDate, endDate]);
+
+    const totalRevenueFromJournals = accounts.filter(a => a.type === 'Income').reduce((sum, acc) => sum + getDisplayBalance(acc.code), 0);
+    
+    // [STRATEGY] Use POS Revenue as the source of truth for Sale Income, but allow other Incomes (if any)
+    const totalRevenue = posRevenueTotal || totalRevenueFromJournals; 
     const totalExpenses = accounts.filter(a => a.type === 'Expense').reduce((sum, acc) => sum + getDisplayBalance(acc.code), 0);
     const netProfit = totalRevenue - totalExpenses;
 
@@ -429,7 +443,8 @@ export function AccountingView({
 
             const data = [
                 { 'Kategori': 'PENDAPATAN', 'Kode': '', 'Nama': '', 'Jumlah': '' },
-                ...incomeAccounts.map(a => ({ 'Kategori': '', 'Kode': a.code, 'Nama': a.name, 'Jumlah': getDisplayBalance(a.code) })),
+                { 'Kategori': '', 'Kode': '401', 'Nama': 'Pendapatan Penjualan (POS)', 'Jumlah': posRevenueTotal },
+                ...incomeAccounts.filter(a => a.code !== '401').map(a => ({ 'Kategori': '', 'Kode': a.code, 'Nama': a.name, 'Jumlah': getDisplayBalance(a.code) })),
                 { 'Kategori': 'Total Pendapatan', 'Kode': '', 'Nama': '', 'Jumlah': totalRevenue },
                 { 'Kategori': '', 'Kode': '', 'Nama': '', 'Jumlah': '' },
                 { 'Kategori': 'BEBAN OPERASIONAL', 'Kode': '', 'Nama': '', 'Jumlah': '' },
@@ -634,6 +649,19 @@ export function AccountingView({
                         <Button
                             variant="outline"
                             size="sm"
+                            className="flex items-center gap-2 border-blue-200 text-blue-700 hover:bg-blue-50 group"
+                            onClick={() => {
+                                if(confirm('Sinkronkan & Bersihkan catatan hantu? (Menghapus jurnal dari transaksi yang sudah tidak ada)')) {
+                                    onRefresh?.(); 
+                                    toast.success('Pembersihan selesai');
+                                }
+                            }}
+                        >
+                            <CalendarCheck className="w-4 h-4 group-hover:rotate-12 transition-transform" /> Bersihkan Jurnal
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
                             className="flex items-center gap-2 border-green-200 text-green-700 hover:bg-green-50"
                             onClick={type === 'income' ? exportIncomeStatementToExcel : exportBalanceSheetToExcel}
                         >
@@ -654,14 +682,24 @@ export function AccountingView({
                     {type === 'income' ? (
                         <>
                             <div>
-                                <h3 className="font-bold text-gray-800 border-b pb-2 mb-3">Pendapatan</h3>
-                                {accounts.filter(a => a.type === 'Income').map(acc => (
-                                    <div key={acc.code} className="flex justify-between py-1 px-4 hover:bg-gray-50">
+                                <h3 className="font-bold text-gray-800 border-b pb-2 mb-3 flex justify-between items-center">
+                                    Pendapatan
+                                    <span className="text-[10px] font-normal text-blue-500 uppercase tracking-widest">(POS Synchronized)</span>
+                                </h3>
+                                
+                                {/* [NEW] POS Sales Injection */}
+                                <div className="flex justify-between py-1 px-4 bg-blue-50/50 rounded mb-1 text-blue-700 font-medium">
+                                    <span>401 - Pendapatan Penjualan (POS)</span>
+                                    <span>Rp {posRevenueTotal.toLocaleString()}</span>
+                                </div>
+
+                                {accounts.filter(a => a.type === 'Income' && a.code !== '401').map(acc => (
+                                    <div key={acc.code} className="flex justify-between py-1 px-4 hover:bg-gray-50 border-b border-dashed border-gray-100 last:border-0 text-gray-600">
                                         <span>{acc.code} - {acc.name}</span>
                                         <span>Rp {getDisplayBalance(acc.code).toLocaleString()}</span>
                                     </div>
                                 ))}
-                                <div className="flex justify-between font-bold text-green-700 mt-2 bg-green-50 p-2 rounded">
+                                <div className="flex justify-between font-bold text-green-700 mt-2 bg-green-50 p-2 rounded border border-green-100">
                                     <span>Total Pendapatan</span>
                                     <span>Rp {totalRevenue.toLocaleString()}</span>
                                 </div>

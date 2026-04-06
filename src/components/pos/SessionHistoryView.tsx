@@ -33,6 +33,7 @@ export function SessionHistoryView() {
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [sessionToDelete, setSessionToDelete] = useState<SessionHistory | null>(null);
     const [forceCloseOpen, setForceCloseOpen] = useState(false);
+    const [isDeletingFiltered, setIsDeletingFiltered] = useState(false);
     const { role } = useAuth();
     const isAdmin = ['admin', 'owner', 'administrator', 'superadmin'].includes(role?.toLowerCase() || '');
 
@@ -175,6 +176,34 @@ export function SessionHistoryView() {
         }
     };
 
+    const handleBulkDelete = async () => {
+        if (filteredSessions.length === 0) return;
+        
+        const count = filteredSessions.length;
+        if (!window.confirm(`Apakah Anda yakin ingin menghapus ${count} riwayat sesi yang terfilter? Tindakan ini tidak dapat dibatalkan.`)) {
+            return;
+        }
+
+        setIsDeletingFiltered(true);
+        try {
+            const ids = filteredSessions.map(s => s.id);
+            const { error } = await supabase
+                .from('cashier_sessions')
+                .delete()
+                .in('id', ids);
+
+            if (error) throw error;
+
+            toast.success(`${count} riwayat sesi berhasil dihapus`);
+            fetchSessions();
+        } catch (error: any) {
+            console.error('Error in bulk delete:', error);
+            toast.error('Gagal menghapus riwayat sesi massal: ' + error.message);
+        } finally {
+            setIsDeletingFiltered(false);
+        }
+    };
+
     return (
         <div className="p-8 space-y-6 bg-gray-50/50 dark:bg-gray-900/50 h-full overflow-auto">
             {/* Header */}
@@ -183,10 +212,23 @@ export function SessionHistoryView() {
                     <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Riwayat Session Kasir</h1>
                     <p className="text-sm text-gray-500">Pantau semua aktivitas buka/tutup shift kasir</p>
                 </div>
-                <Button onClick={exportToCSV} className="bg-green-600 hover:bg-green-700 text-white">
-                    <Download className="w-4 h-4 mr-2" />
-                    Export CSV
-                </Button>
+                <div className="flex items-center gap-3">
+                    {isAdmin && (
+                        <Button 
+                            onClick={handleBulkDelete}
+                            disabled={isDeletingFiltered || filteredSessions.length === 0}
+                            variant="destructive"
+                            className="bg-red-600 hover:bg-red-700 text-white"
+                        >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Hapus Terfilter ({filteredSessions.length})
+                        </Button>
+                    )}
+                    <Button onClick={exportToCSV} className="bg-green-600 hover:bg-green-700 text-white">
+                        <Download className="w-4 h-4 mr-2" />
+                        Export CSV
+                    </Button>
+                </div>
             </div>
 
             {/* Summary Cards */}

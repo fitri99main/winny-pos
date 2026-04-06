@@ -19,45 +19,92 @@ export default function AttendanceScreen() {
     }, []);
 
     const fetchStatus = async () => {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-            const { data: emp } = await supabase.from('employees').select('id').eq('email', user.email).single();
-            if (emp) {
-                const { data: logs } = await supabase.from('attendance_logs').select('*').eq('employee_id', emp.id).order('check_in', { ascending: false }).limit(1);
-                if (logs && logs.length > 0) {
-                    const log = logs[0];
-                    setLastLog(log);
-                    setStatus(log.check_out ? 'Out' : 'In');
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                const { data: emp, error: empErr } = await supabase.from('employees').select('id, name').eq('email', user.email).single();
+                if (empErr) {
+                    console.error('Fetch Employee Error:', empErr);
+                    return;
+                }
+                
+                if (emp) {
+                    const { data: logs, error: logErr } = await supabase.from('attendance_logs').select('*').eq('employee_id', emp.id).order('created_at', { ascending: false }).limit(1);
+                    if (logErr) {
+                        console.error('Fetch Logs Error:', logErr);
+                        return;
+                    }
+
+                    if (logs && logs.length > 0) {
+                        const log = logs[0];
+                        setLastLog(log);
+                        setStatus(log.check_out ? 'Out' : 'In');
+                    } else {
+                        setLastLog(null);
+                        setStatus('Out');
+                    }
                 }
             }
+        } catch (err: any) {
+            console.error('Fetch Status Extension:', err);
         }
     };
 
     const handleAttendance = async () => {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return Alert.alert('Error', 'Sesi berakhir, silakan login kembali.');
 
-        const { data: emp } = await supabase.from('employees').select('id').eq('email', user.email).single();
-        if (!emp) return;
+            const { data: emp, error: empError } = await supabase.from('employees').select('id, name').eq('email', user.email).single();
+            if (empError || !emp) return Alert.alert('Error', 'Data karyawan tidak ditemukan.');
 
-        if (status === 'Out') {
-            const { error } = await supabase.from('attendance_logs').insert([{
-                employee_id: emp.id,
-                check_in: new Date().toISOString(),
-                status: 'Hadir'
-            }]);
-            if (!error) {
-                Alert.alert('Sukses', 'Berhasil Check In');
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const localDate = `${year}-${month}-${day}`;
+            const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+
+            if (status === 'Out') {
+                const payload = {
+                    employee_id: emp.id,
+                    employee_name: emp.name,
+                    branch_id: emp.branch_id || null, // Standardized column
+                    date: localDate,
+                    check_in: timeStr,
+                    status: 'Hadir'
+                };
+                
+                console.log('[Attendance Mobile] Check-In Payload:', payload);
+
+                const { data, error } = await supabase.from('attendance_logs').insert([payload]).select();
+                if (error) {
+                    console.error('Check-in error technical details:', error);
+                    throw new Error(`(${error.code}) ${error.message}`);
+                }
+                
+                console.log('[Attendance Mobile] Insert Success:', data);
+                Alert.alert('Sukses', 'Berhasil Check In pada ' + timeStr);
+                fetchStatus();
+            } else {
+                if (!lastLog) return;
+                console.log('[Attendance Mobile] Updating Check-Out for ID:', lastLog.id);
+                
+                const { error } = await supabase.from('attendance_logs').update({
+                    check_out: timeStr
+                }).eq('id', lastLog.id);
+                
+                if (error) {
+                    console.error('Check-out error technical details:', error);
+                    throw new Error(`(${error.code}) ${error.message}`);
+                }
+                
+                Alert.alert('Sukses', 'Berhasil Check Out pada ' + timeStr);
                 fetchStatus();
             }
-        } else {
-            const { error } = await supabase.from('attendance_logs').update({
-                check_out: new Date().toISOString()
-            }).eq('id', lastLog.id);
-            if (!error) {
-                Alert.alert('Sukses', 'Berhasil Check Out');
-                fetchStatus();
-            }
+        } catch (error: any) {
+            console.error('Attendance Error:', error);
+            Alert.alert('Gagal Simpan', error.message || 'Terjadi kesalahan sistem.');
         }
     };
 
@@ -107,12 +154,24 @@ export default function AttendanceScreen() {
                         <View className="flex-row mt-8 space-x-12">
                             <View className="items-center">
                                 <Text className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Check In</Text>
-                                <Text className="text-slate-900 font-black text-xl">{lastLog?.check_in ? new Date(lastLog.check_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</Text>
+                                <Text className="text-slate-900 font-black text-xl">
+                                    {lastLog?.check_in 
+                                        ? (lastLog.check_in.includes('T') 
+                                            ? new Date(lastLog.check_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                            : lastLog.check_in)
+                                        : '--:--'}
+                                </Text>
                             </View>
                             <View className="w-px h-10 bg-slate-100 mx-2" />
                             <View className="items-center">
                                 <Text className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Check Out</Text>
-                                <Text className="text-slate-900 font-black text-xl">{lastLog?.check_out ? new Date(lastLog.check_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</Text>
+                                <Text className="text-slate-900 font-black text-xl">
+                                    {lastLog?.check_out 
+                                        ? (lastLog.check_out.includes('T')
+                                            ? new Date(lastLog.check_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                            : lastLog.check_out)
+                                        : '--:--'}
+                                </Text>
                             </View>
                         </View>
                     </View>
