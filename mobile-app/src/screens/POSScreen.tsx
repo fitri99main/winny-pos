@@ -81,11 +81,12 @@ export default function POSScreen() {
     const route = useRoute<any>();
     const { tableNumber, tableNo, waiterName: initialWaiter } = route.params || {};
     const { width, height } = useWindowDimensions();
-
     const isLandscape = width > height;
     const isTablet = Math.min(width, height) >= 600;
     const isLargeTablet = Math.min(width, height) >= 800;
-    const isSmallDevice = width < 380;
+    const isSmallDevice = width < 480;
+    // [FULL SCREEN FOR FOLDABLES] Heighten threshold to 900 to keep 100% menu width on Samsung Fold 3 (unfolded width ~674px)
+    const isSideBySide = width >= 900;
 
 
     const [searchQuery, setSearchQuery] = useState('');
@@ -1773,11 +1774,14 @@ export default function POSScreen() {
                     />
                 </View>
 
-                {/* Categories Top Bar */}
-                <View style={[
-                    styles.categoryContainer,
-                    { borderBottomWidth: 1, borderBottomColor: '#e5e7eb', backgroundColor: 'white', minHeight: isTablet ? 60 : 45, justifyContent: 'center' }
-                ]}>
+                {/* Main POS Row (Split View in WideScreen/Landscape) */}
+                <View style={[styles.flex1, isSideBySide && { flexDirection: 'row' }]}>
+                    <View style={[styles.flex1, isSideBySide && { flex: 0.6 }]}>
+                        {/* Categories Top Bar */}
+                        <View style={[
+                            styles.categoryContainer,
+                            { borderBottomWidth: 1, borderBottomColor: '#e5e7eb', backgroundColor: 'white', minHeight: isTablet ? 60 : 45, justifyContent: 'center' }
+                        ]}>
                     <ScrollView
                         horizontal={true}
                         showsHorizontalScrollIndicator={false}
@@ -1824,9 +1828,9 @@ export default function POSScreen() {
                         </View>
                     ) : (
                         <FlatList
-                            data={filteredProducts}
-                            key={isTablet ? "tablet-4col-rev" : "mobile-4col-rev"}
-                            numColumns={4}
+                                data={filteredProducts}
+                                key={isSideBySide ? "wide-4col" : (isSmallDevice ? "compact-3col" : "mobile-4col")}
+                                numColumns={isSideBySide ? 4 : (isSmallDevice ? 3 : 4)}
                             keyExtractor={(item) => item.id.toString()}
                             showsVerticalScrollIndicator={true}
                             windowSize={5}
@@ -1842,17 +1846,91 @@ export default function POSScreen() {
                                 styles.productListContent, 
                                 { paddingBottom: 150 }
                             ]}
-                            renderItem={({ item }) => (
-                                <View style={{ flex: 1 }}>
-                                    <ProductCard 
-                                        item={item} 
-                                        isTablet={isTablet} 
-                                        onAdd={addToCart} 
-                                        formatCurrency={formatCurrency}
-                                    />
-                                </View>
-                            )}
+                             renderItem={({ item }) => {
+                                 const numCols = isSideBySide ? 4 : (isSmallDevice ? 3 : 4);
+                                 return (
+                                     <View style={{ flex: 1, maxWidth: `${100 / numCols}%` }}>
+                                         <ProductCard 
+                                             item={item} 
+                                             isTablet={isTablet} 
+                                             onAdd={addToCart} 
+                                             formatCurrency={formatCurrency}
+                                         />
+                                     </View>
+                                 );
+                             }}
                         />
+                    )}
+                    </View>
+
+                    {/* Right Column: Mini Cart (Wide Screen Only) */}
+                    {isSideBySide && !isDisplayOnly && (
+                        <View style={{ flex: 0.4, backgroundColor: 'white', borderLeftWidth: 1, borderLeftColor: '#f3f4f6', height: '100%' }}>
+                            <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: '#f3f4f6', backgroundColor: '#f9fafb', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#1f2937' }}>🛒 Pesanan</Text>
+                                <TouchableOpacity onPress={clearCart}>
+                                    <Text style={{ fontSize: 12, color: '#ef4444', fontWeight: 'bold' }}>Bersihkan</Text>
+                                </TouchableOpacity>
+                            </View>
+                            <ScrollView style={{ flex: 1, padding: 12 }}>
+                                {cart.map((item) => (
+                                    <View key={item.id} style={{ marginBottom: 12, borderBottomWidth: 1, borderBottomColor: '#f3f4f6', paddingBottom: 12 }}>
+                                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                            <View style={{ flex: 1 }}>
+                                                <Text style={{ fontSize: 13, fontWeight: '600', color: '#111827' }} numberOfLines={1}>{item.name}</Text>
+                                                <Text style={{ fontSize: 12, color: '#ea580c', fontWeight: 'bold', marginTop: 2 }}>{formatCurrency(item.price)}</Text>
+                                            </View>
+                                            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc', borderRadius: 8, padding: 2, borderWidth: 1, borderColor: '#e2e8f0' }}>
+                                                <TouchableOpacity onPress={() => removeFromCart(item.id)} style={{ paddingHorizontal: 8, paddingVertical: 4 }}><Text style={{ fontSize: 16, fontWeight: 'bold', color: '#64748b' }}>-</Text></TouchableOpacity>
+                                                <Text style={{ fontWeight: 'bold', marginHorizontal: 4, minWidth: 20, textAlign: 'center' }}>{item.quantity}</Text>
+                                                <TouchableOpacity onPress={() => addToCart(item)} style={{ paddingHorizontal: 8, paddingVertical: 4 }}><Text style={{ fontSize: 16, fontWeight: 'bold', color: '#ea580c' }}>+</Text></TouchableOpacity>
+                                            </View>
+                                        </View>
+                                    </View>
+                                ))}
+                                {cart.length === 0 && (
+                                    <View style={{ alignItems: 'center', marginTop: 60, opacity: 0.3 }}>
+                                        <Text style={{ fontSize: 48 }}>🛒</Text>
+                                        <Text style={{ fontSize: 14, marginTop: 10, fontWeight: 'bold' }}>Keranjang Kosong</Text>
+                                    </View>
+                                )}
+                            </ScrollView>
+                            
+                            <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: '#f3f4f6', backgroundColor: '#fafafa', gap: 6 }}>
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                                    <Text style={{ color: '#64748b', fontSize: 13 }}>Subtotal</Text>
+                                    <Text style={{ fontWeight: '600', fontSize: 13 }}>{formatCurrency(calculateSubtotal())}</Text>
+                                </View>
+                                {orderDiscount > 0 && (
+                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                                        <Text style={{ color: '#ef4444', fontSize: 13 }}>Diskon</Text>
+                                        <Text style={{ color: '#ef4444', fontWeight: 'bold', fontSize: 13 }}>-{formatCurrency(orderDiscount)}</Text>
+                                    </View>
+                                )}
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#e2e8f0', paddingTop: 8, marginTop: 4 }}>
+                                    <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#1e293b' }}>Total</Text>
+                                    <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#ea580c' }}>{formatCurrency(calculateTotal())}</Text>
+                                </View>
+                                <TouchableOpacity 
+                                    style={{ 
+                                        backgroundColor: '#ea580c', 
+                                        paddingVertical: 14, 
+                                        borderRadius: 12, 
+                                        alignItems: 'center', 
+                                        marginTop: 10,
+                                        shadowColor: '#ea580c',
+                                        shadowOffset: { width: 0, height: 4 },
+                                        shadowOpacity: 0.2,
+                                        shadowRadius: 8,
+                                        elevation: 4
+                                    }}
+                                    onPress={handleCheckout}
+                                    disabled={cart.length === 0}
+                                >
+                                    <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>Bayar Sekarang &rsaquo;</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
                     )}
                 </View>
 
@@ -2216,11 +2294,11 @@ export default function POSScreen() {
                 </Modal>
 
 
-                {/* Cart Summary Bar (Automatic Appearance) */}
-                {cart.length > 0 && (
+                {/* Cart Summary Bar (Automatic Appearance) - Only show in Compact mode */}
+                {cart.length > 0 && !isSideBySide && (
                     <View style={[
                         styles.cartSummaryBar,
-                        isSmallDevice && { bottom: 12, left: 12, right: 12, padding: 8, paddingHorizontal: 14, borderRadius: 16 }
+                        isSmallDevice && { bottom: 80, left: 12, right: 12, padding: 8, paddingHorizontal: 14, borderRadius: 16 }
                     ]}>
                         <View style={styles.cartSummaryInfo}>
                             <View style={[
@@ -2357,7 +2435,6 @@ export default function POSScreen() {
                                             <Text style={{ fontSize: 12 }}>📝</Text>
                                             <TextInput
                                                 style={{ flex: 1, paddingVertical: 8, paddingHorizontal: 4, fontSize: 14, fontWeight: 'bold', color: '#111827' }}
-                                                placeholder="Contoh: A1"
                                                 value={selectedTable === '-' ? '' : selectedTable}
                                                 onChangeText={(text) => setSelectedTable(text || '-')}
                                                 autoCapitalize="characters"
@@ -2619,7 +2696,7 @@ export default function POSScreen() {
             >
                 <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}>
                     <View style={{ backgroundColor: 'white', width: '85%', borderRadius: 20, padding: 24, elevation: 5 }}>
-                        <Text style={{ fontSize: 18, fontWeight: 'bold', mb: 8, color: '#111827' }}>Nomor Meja</Text>
+                        <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 8, color: '#111827' }}>Nomor Meja</Text>
                         <Text style={{ fontSize: 14, color: '#6b7280', marginBottom: 16 }}>Masukkan nomor meja secara manual:</Text>
                         
                         <TextInput
@@ -2683,9 +2760,8 @@ export default function POSScreen() {
                 </Text>
                 {sessionLoading && <ActivityIndicator size="small" color="#ea580c" />}
             </View>
-
-
-        </SafeAreaView >
+        </View>
+    </SafeAreaView >
 
     );
 }

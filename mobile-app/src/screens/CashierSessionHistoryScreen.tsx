@@ -13,10 +13,10 @@ interface CashierSession {
     opened_at: string;
     closed_at: string | null;
     starting_cash: number;
-    ending_cash: number | null;
+    actual_cash: number | null;
     total_sales: number;
     expected_cash: number;
-    variance: number;
+    difference: number;
     status: 'Open' | 'Closed';
 }
 
@@ -34,14 +34,14 @@ export default function CashierSessionHistoryScreen() {
     
     // CRUD States
     const [showEditModal, setShowEditModal] = useState(false);
-    const [editData, setEditData] = useState({ starting_cash: '', ending_cash: '', status: 'Closed' });
+    const [editData, setEditData] = useState({ starting_cash: '', actual_cash: '', status: 'Closed' });
     const [showManualModal, setShowManualModal] = useState(false);
-    const [manualData, setManualData] = useState({ employee_name: '', starting_cash: '', ending_cash: '', opened_at: new Date().toISOString() });
+    const [manualData, setManualData] = useState({ employee_name: '', starting_cash: '', actual_cash: '', opened_at: new Date().toISOString() });
     const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
         fetchSessions();
-    }, []);
+    }, [currentBranchId]);
 
     const fetchSessions = async () => {
         try {
@@ -108,8 +108,8 @@ export default function CashierSessionHistoryScreen() {
                 .from('cashier_sessions')
                 .update({
                     starting_cash: parseFloat(editData.starting_cash) || 0,
-                    ending_cash: editData.status === 'Closed' ? (parseFloat(editData.ending_cash) || 0) : null,
-                    variance: editData.status === 'Closed' ? ((parseFloat(editData.ending_cash) || 0) - (selectedSession.total_sales + (parseFloat(editData.starting_cash) || 0))) : 0
+                    actual_cash: editData.status === 'Closed' ? (parseFloat(editData.actual_cash) || 0) : null,
+                    difference: editData.status === 'Closed' ? ((parseFloat(editData.actual_cash) || 0) - (selectedSession.total_sales + (parseFloat(editData.starting_cash) || 0))) : 0
                 })
                 .eq('id', selectedSession.id);
 
@@ -136,7 +136,7 @@ export default function CashierSessionHistoryScreen() {
         try {
             setIsSaving(true);
             const startCash = parseFloat(manualData.starting_cash) || 0;
-            const endCash = parseFloat(manualData.ending_cash) || 0;
+            const endCash = parseFloat(manualData.actual_cash) || 0;
             const totalSales = 0; // Manual entry starts with 0 sales usually
             
             const { error } = await supabase
@@ -144,10 +144,10 @@ export default function CashierSessionHistoryScreen() {
                 .insert([{
                     employee_name: manualData.employee_name,
                     starting_cash: startCash,
-                    ending_cash: endCash,
+                    actual_cash: endCash,
                     total_sales: totalSales,
                     expected_cash: startCash + totalSales,
-                    variance: endCash - (startCash + totalSales),
+                    difference: endCash - (startCash + totalSales),
                     opened_at: manualData.opened_at,
                     closed_at: new Date().toISOString(),
                     status: 'Closed', // Manual entries are usually for past closed shifts
@@ -157,7 +157,7 @@ export default function CashierSessionHistoryScreen() {
             if (error) throw error;
 
             setShowManualModal(false);
-            setManualData({ employee_name: '', starting_cash: '', ending_cash: '', opened_at: new Date().toISOString() });
+            setManualData({ employee_name: '', starting_cash: '', actual_cash: '', opened_at: new Date().toISOString() });
             fetchSessions();
             Alert.alert('Sukses', 'Shift manual berhasil ditambahkan.');
         } catch (error: any) {
@@ -189,7 +189,7 @@ export default function CashierSessionHistoryScreen() {
     };
 
     const totalSales = sessions.reduce((sum, s) => sum + (s.total_sales || 0), 0);
-    const totalVariance = sessions.filter(s => s.status === 'Closed').reduce((sum, s) => sum + (s.variance || 0), 0);
+    const totalVariance = sessions.filter(s => s.status === 'Closed').reduce((sum, s) => sum + (s.difference || 0), 0);
 
     const renderSummaryCard = (icon: any, label: string, value: string, color: string) => (
         <View style={styles.summaryCard}>
@@ -311,9 +311,9 @@ export default function CashierSessionHistoryScreen() {
                                         <Text style={styles.footerLabel}>Selisih Kas</Text>
                                         <Text style={[
                                             styles.varianceValue,
-                                            item.variance >= 0 ? styles.textSuccess : styles.textDanger
+                                            item.difference >= 0 ? styles.textSuccess : styles.textDanger
                                         ]}>
-                                            {formatCurrency(item.variance || 0)}
+                                            {formatCurrency(item.difference || 0)}
                                         </Text>
                                     </View>
                                 </View>
@@ -383,16 +383,16 @@ export default function CashierSessionHistoryScreen() {
                                 </View>
                                 <View style={styles.detailRow}>
                                     <Text style={styles.detailLabel}>UANG AKHIR (FISIK)</Text>
-                                    <Text style={styles.detailValue}>{formatCurrency(selectedSession.ending_cash || 0)}</Text>
+                                    <Text style={styles.detailValue}>{formatCurrency(selectedSession.actual_cash || 0)}</Text>
                                 </View>
                                 <View style={styles.detailRow}>
                                     <Text style={styles.detailLabel}>SELISIH (VARIANCE)</Text>
                                     <Text style={[
                                         styles.detailValue, 
                                         styles.bold,
-                                        selectedSession.variance >= 0 ? styles.textSuccess : styles.textDanger
+                                        selectedSession.difference >= 0 ? styles.textSuccess : styles.textDanger
                                     ]}>
-                                        {formatCurrency(selectedSession.variance)}
+                                        {formatCurrency(selectedSession.difference || 0)}
                                     </Text>
                                 </View>
                                 
@@ -408,7 +408,7 @@ export default function CashierSessionHistoryScreen() {
                                             onPress={() => {
                                                 setEditData({
                                                     starting_cash: selectedSession.starting_cash.toString(),
-                                                    ending_cash: (selectedSession.ending_cash || 0).toString(),
+                                                    actual_cash: (selectedSession.actual_cash || 0).toString(),
                                                     status: selectedSession.status
                                                 });
                                                 setShowEditModal(true);
@@ -496,8 +496,8 @@ export default function CashierSessionHistoryScreen() {
                             <Text style={styles.inputLabel}>Uang Fisik Akhir (Ending Cash)</Text>
                             <TextInput
                                 style={styles.textInput}
-                                value={editData.ending_cash}
-                                onChangeText={(val) => setEditData({ ...editData, ending_cash: val })}
+                                value={editData.actual_cash}
+                                onChangeText={(val) => setEditData({ ...editData, actual_cash: val })}
                                 keyboardType="numeric"
                                 placeholder="0"
                             />
@@ -568,8 +568,8 @@ export default function CashierSessionHistoryScreen() {
                             <Text style={styles.inputLabel}>Uang Fisik Akhir (Ending Cash)</Text>
                             <TextInput
                                 style={styles.textInput}
-                                value={manualData.ending_cash}
-                                onChangeText={(val) => setManualData({ ...manualData, ending_cash: val })}
+                                value={manualData.actual_cash}
+                                onChangeText={(val) => setManualData({ ...manualData, actual_cash: val })}
                                 keyboardType="numeric"
                                 placeholder="0"
                             />

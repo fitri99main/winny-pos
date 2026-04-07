@@ -522,6 +522,42 @@ export default function StoreSettingsScreen() {
                                 trackColor={{ false: '#e2e8f0', true: '#f97316' }}
                             />
                         </View>
+
+                        <View style={styles.divider} />
+                        <Text style={[styles.inputLabel, { marginBottom: 12, marginTop: 4 }]}>Opsi Laporan Penjualan</Text>
+
+                        <View style={styles.switchItem}>
+                            <View style={styles.switchContent}>
+                                <Text style={styles.switchLabel}>Detail Pajak di Laporan</Text>
+                            </View>
+                            <Switch
+                                value={storeSettings?.show_tax_on_report ?? true}
+                                onValueChange={(val) => toggleSetting('show_tax_on_report', val)}
+                                trackColor={{ false: '#e2e8f0', true: '#f97316' }}
+                            />
+                        </View>
+
+                        <View style={styles.switchItem}>
+                            <View style={styles.switchContent}>
+                                <Text style={styles.switchLabel}>Detail Diskon di Laporan</Text>
+                            </View>
+                            <Switch
+                                value={storeSettings?.show_discount_on_report ?? true}
+                                onValueChange={(val) => toggleSetting('show_discount_on_report', val)}
+                                trackColor={{ false: '#e2e8f0', true: '#f97316' }}
+                            />
+                        </View>
+
+                        <View style={styles.switchItem}>
+                            <View style={styles.switchContent}>
+                                <Text style={styles.switchLabel}>Rincian QRIS di Laporan</Text>
+                            </View>
+                            <Switch
+                                value={storeSettings?.show_qris_on_report ?? true}
+                                onValueChange={(val) => toggleSetting('show_qris_on_report', val)}
+                                trackColor={{ false: '#e2e8f0', true: '#f97316' }}
+                            />
+                        </View>
                     </View>
                 </View>
 

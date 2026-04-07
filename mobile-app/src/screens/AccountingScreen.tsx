@@ -14,6 +14,7 @@ import {
     Clock
 } from 'lucide-react-native';
 import { useSession } from '../context/SessionContext';
+import DateStepper from '../components/DateStepper';
 
 
 type FilterType = 'today' | 'week' | 'month' | 'custom';
@@ -348,24 +349,16 @@ export default function AccountingScreen() {
                                 </TouchableOpacity>
                             </View>
                             <View style={{ marginBottom: 20 }}>
-                                <View style={{ marginBottom: 16 }}>
-                                    <Text style={styles.inputLabel}>Tanggal Awal (YYYY-MM-DD)</Text>
-                                    <TextInput
-                                        style={styles.textInput}
-                                        value={startDate}
-                                        onChangeText={setStartDate}
-                                        placeholder="2024-01-01"
-                                    />
-                                </View>
-                                <View style={{ marginBottom: 16 }}>
-                                    <Text style={styles.inputLabel}>Tanggal Akhir (YYYY-MM-DD)</Text>
-                                    <TextInput
-                                        style={styles.textInput}
-                                        value={endDate}
-                                        onChangeText={setEndDate}
-                                        placeholder="2024-12-31"
-                                    />
-                                </View>
+                                <DateStepper 
+                                    label="Tanggal Awal" 
+                                    value={startDate} 
+                                    onChange={setStartDate} 
+                                />
+                                <DateStepper 
+                                    label="Tanggal Akhir" 
+                                    value={endDate} 
+                                    onChange={setEndDate} 
+                                />
                                 <TouchableOpacity
                                     style={styles.payBtnLarge}
                                     onPress={() => {

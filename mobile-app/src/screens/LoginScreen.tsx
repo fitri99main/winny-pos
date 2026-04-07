@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, SafeAreaView, Alert, ActivityIndicator, StyleSheet, Image, KeyboardAvoidingView, Platform, useWindowDimensions } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { Mail, Lock } from 'lucide-react-native';
 import { supabase } from '../lib/supabase';
@@ -18,8 +19,20 @@ export default function LoginScreen() {
 
     useEffect(() => {
         isMounted.current = true;
+        loadSavedEmail();
         return () => { isMounted.current = false; };
     }, []);
+
+    const loadSavedEmail = async () => {
+        try {
+            const savedEmail = await AsyncStorage.getItem('last_login_email');
+            if (savedEmail && isMounted.current) {
+                setEmail(savedEmail);
+            }
+        } catch (err) {
+            console.warn('[Login] Error loading saved email:', err);
+        }
+    };
 
     const handleLogin = async () => {
         if (!email || !password) {
@@ -63,9 +76,11 @@ export default function LoginScreen() {
                     console.warn('[Login] Gagal:', error.message);
                     Alert.alert('Gagal Masuk', 'Cek email atau password anda salah!!!');
                 } else {
-                    console.log('[Login] Sign-in successful, navigating to Main...');
-                    navigation.navigate('Main');
-                    // We don't setLoading(false) here because we're navigating away
+                    console.log('[Login] Sign-in successful. Saving email...');
+                    // Save email for next time (RESTORED HISTORY FEATURE)
+                    await AsyncStorage.setItem('last_login_email', email.trim());
+                    // Removed manual navigate('Main') to prevent navigator errors
+                    // with conditional rendering stacks.
                 }
             }
         } catch (err: any) {

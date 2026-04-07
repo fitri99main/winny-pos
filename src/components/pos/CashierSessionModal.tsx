@@ -7,6 +7,8 @@ import { toast } from 'sonner';
 import { Loader2, Banknote, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { printerService } from '@/lib/PrinterService';
+import { Printer } from 'lucide-react';
 
 interface CashierSessionModalProps {
     open: boolean;
@@ -94,6 +96,30 @@ export function CashierSessionModal({
             toast.error('Gagal menghitung ringkasan shift');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handlePrintSalesReport = async () => {
+        if (!closingData || !session) return;
+        
+        try {
+            const dateRange = `Shift: ${new Date(session.opened_at).toLocaleString('id-ID')} - Selesai`;
+            
+            await printerService.printSalesReport({
+                title: 'LAPORAN SHIFT KASIR',
+                dateRange,
+                totalOrders: 0, // We could count sales if needed
+                totalSales: closingData.total_sales,
+                paymentSummary: [
+                    { method: 'TUNAI', amount: closingData.cash_sales },
+                    { method: 'KARTU', amount: closingData.card_sales },
+                    { method: 'QRIS/DIGITAL', amount: closingData.qris_sales }
+                ]
+            });
+            toast.success('Laporan berhasil dicetak');
+        } catch (err) {
+            console.error('Print error:', err);
+            toast.error('Gagal mencetak laporan');
         }
     };
 
@@ -311,6 +337,16 @@ export function CashierSessionModal({
 
                 <DialogFooter>
                     <Button variant="outline" onClick={() => onOpenChange(false)}>Batal</Button>
+                    {(mode === 'close' || mode === 'force_close') && closingData && (
+                        <Button 
+                            variant="outline" 
+                            onClick={handlePrintSalesReport}
+                            className="border-primary text-primary hover:bg-primary/5"
+                        >
+                            <Printer className="w-4 h-4 mr-2" />
+                            Cetak Laporan
+                        </Button>
+                    )}
                     <Button
                         onClick={mode === 'open' ? handleOpenSession : handleCloseSession}
                         disabled={loading}

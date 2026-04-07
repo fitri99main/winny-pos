@@ -11,12 +11,14 @@ import { useSession } from '../context/SessionContext';
 import ReceiptPreviewModal from '../components/ReceiptPreviewModal';
 import { WifiVoucherService } from '../lib/WifiVoucherService';
 import ManagerAuthModal from '../components/ManagerAuthModal';
+import DateStepper from '../components/DateStepper';
 
 export default function HistoryScreen() {
     const navigation = useNavigation();
     const { width, height } = useWindowDimensions();
     const isLandscape = width > height;
-    const isSmallDevice = width < 380;
+    const useMultiColumn = width >= 600;
+    const isSmallDevice = width < 480;
     const { currentBranchId, branchName, branchAddress, branchPhone, userName, storeSettings, isAdmin } = useSession();
 
     const [loading, setLoading] = useState(true);
@@ -54,7 +56,7 @@ export default function HistoryScreen() {
     useFocusEffect(
         useCallback(() => {
             fetchHistory();
-        }, [dateFilter, startDate, endDate])
+        }, [dateFilter, startDate, endDate, currentBranchId])
     );
 
     useEffect(() => {
@@ -79,6 +81,7 @@ export default function HistoryScreen() {
     }, [searchQuery, statusFilter, history]);
 
     const fetchHistory = async () => {
+        if (!currentBranchId || isNaN(Number(currentBranchId))) return;
         try {
             setLoading(true);
             const now = new Date();
@@ -340,15 +343,22 @@ export default function HistoryScreen() {
         const processDelete = async () => {
             try {
                 setLoading(true);
-                // 1. Delete sale_items first due to foreign key
-                const { error: itemsError } = await supabase
-                    .from('sale_items')
-                    .delete()
-                    .eq('sale_id', sale.id);
+                // 1. Delete associated data first to avoid Foreign Key constraints (Error 23503)
+                await supabase.from('sale_items').delete().eq('sale_id', sale.id);
+                await supabase.from('sales_returns').delete().eq('sale_id', sale.id);
                 
-                if (itemsError) throw itemsError;
+                // Financial Sync Deletion
+                await supabase.from('journal_entries').delete().eq('reference_id', String(sale.id)).eq('source_type', 'sale');
+                if (sale.order_no) {
+                    await supabase.from('journal_entries').delete().ilike('description', `%${sale.order_no}%`);
+                }
 
-                // 2. Delete the sale
+                // Unlink WiFi Vouchers
+                await supabase.from('wifi_vouchers')
+                    .update({ is_used: false, used_at: null, sale_id: null })
+                    .eq('sale_id', sale.id);
+
+                // 2. Delete the sale record
                 const { error: saleError } = await supabase
                     .from('sales')
                     .delete()
@@ -409,15 +419,19 @@ export default function HistoryScreen() {
                 setLoading(true);
                 const ids = filteredHistory.map(h => h.id);
                 
-                // 1. Delete sale_items
-                const { error: itemsError } = await supabase
-                    .from('sale_items')
-                    .delete()
-                    .in('sale_id', ids);
+                // 1. Delete associated data for all selected IDs
+                await supabase.from('sale_items').delete().in('sale_id', ids);
+                await supabase.from('sales_returns').delete().in('sale_id', ids);
                 
-                if (itemsError) throw itemsError;
+                // Financial Sync Deletion (Bulk)
+                await supabase.from('journal_entries').delete().in('reference_id', ids.map(id => String(id))).eq('source_type', 'sale');
 
-                // 2. Delete sales
+                // Unlink WiFi Vouchers (Bulk)
+                await supabase.from('wifi_vouchers')
+                    .update({ is_used: false, used_at: null, sale_id: null })
+                    .in('sale_id', ids);
+
+                // 2. Delete sales records
                 const { error: saleError } = await supabase
                     .from('sales')
                     .delete()
@@ -1028,11 +1042,17 @@ export default function HistoryScreen() {
             ) : (
                 <FlatList
                     data={filteredHistory}
+                    key={useMultiColumn ? 'multi-col' : 'single-col'}
+                    numColumns={useMultiColumn ? 2 : 1}
                     keyExtractor={(item, index) => (item?.id ?? index).toString()}
+                    columnWrapperStyle={useMultiColumn ? { gap: 12, paddingHorizontal: 12 } : null}
                     contentContainerStyle={{ padding: 12, paddingBottom: 100 }}
                     renderItem={({ item }) => (
                         <TouchableOpacity 
-                            style={styles.slimCard}
+                            style={[
+                                styles.slimCard,
+                                useMultiColumn && { flex: 1, marginRight: 0 }
+                            ]}
                             activeOpacity={0.7}
                             onPress={() => handleOpenDetail(item)}
                         >
@@ -1124,24 +1144,16 @@ export default function HistoryScreen() {
                             </TouchableOpacity>
                         </View>
                         <View style={{ marginBottom: 20 }}>
-                            <View style={{ marginBottom: 16 }}>
-                                <Text style={styles.inputLabel}>Tanggal Awal (YYYY-MM-DD)</Text>
-                                <TextInput
-                                    style={styles.textInput}
-                                    value={startDate}
-                                    onChangeText={setStartDate}
-                                    placeholder="2024-01-01"
-                                />
-                            </View>
-                            <View style={{ marginBottom: 16 }}>
-                                <Text style={styles.inputLabel}>Tanggal Akhir (YYYY-MM-DD)</Text>
-                                <TextInput
-                                    style={styles.textInput}
-                                    value={endDate}
-                                    onChangeText={setEndDate}
-                                    placeholder="2024-12-31"
-                                />
-                            </View>
+                            <DateStepper 
+                                label="Tanggal Awal" 
+                                value={startDate} 
+                                onChange={setStartDate} 
+                            />
+                            <DateStepper 
+                                label="Tanggal Akhir" 
+                                value={endDate} 
+                                onChange={setEndDate} 
+                            />
                             <TouchableOpacity
                                 style={styles.payBtnLarge}
                                 onPress={() => {

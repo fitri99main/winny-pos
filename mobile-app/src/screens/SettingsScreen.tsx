@@ -33,8 +33,10 @@ import {
     CheckCircle2,
     XCircle,
     FileText,
-    Type
+    Type,
+    BarChart3
 } from 'lucide-react-native';
+import SalesReportModal from '../components/SalesReportModal';
 import { OfflineService } from '../lib/OfflineService';
 
 const SettingItem = React.memo(({ icon: Icon, label, subtitle, value, onToggle, onPress, type = 'navigate', isSmallDevice }: any) => (
@@ -80,7 +82,8 @@ const SettingItem = React.memo(({ icon: Icon, label, subtitle, value, onToggle, 
 
 export default function SettingsScreen() {
     const navigation = useNavigation();
-    const { width } = useWindowDimensions();
+    const { width, height } = useWindowDimensions();
+    const isLandscape = width > height;
     const isSmallDevice = width < 380;
     const [posFlow, setPosFlow] = React.useState<'table' | 'direct'>('table');
     const [cashierMode, setCashierMode] = React.useState<boolean>(false);
@@ -93,14 +96,15 @@ export default function SettingsScreen() {
     }, [loading]);
     const [isScanning, setIsScanning] = React.useState(false);
     const [discoveredDevices, setDiscoveredDevices] = React.useState<Device[]>([]);
-    const [selectedPrinters, setSelectedPrinters] = React.useState<{receipt: string | null, kitchen: string | null, bar: string | null}>({ receipt: null, kitchen: null, bar: null });
-    const [configuringPrinterType, setConfiguringPrinterType] = React.useState<'receipt' | 'kitchen' | 'bar'>('receipt');
+    const [selectedPrinters, setSelectedPrinters] = React.useState<{receipt: string | null, kitchen: string | null, bar: string | null, report: string | null}>({ receipt: null, kitchen: null, bar: null, report: null });
+    const [configuringPrinterType, setConfiguringPrinterType] = React.useState<'receipt' | 'kitchen' | 'bar' | 'report'>('receipt');
     const [autoPrint, setAutoPrint] = React.useState<boolean>(false);
-    const { currentSession, isSessionActive, checkSession, requireMandatorySession, permissions, currentBranchId, storeSettings: sessionSettings } = useSession();
+    const { currentSession, isSessionActive, checkSession, requireMandatorySession, permissions, currentBranchId, storeSettings: sessionSettings, branchName, branchAddress, branchPhone, userName } = useSession();
     const [showSessionModal, setShowSessionModal] = React.useState(false);
     const [sessionMode, setSessionMode] = React.useState<'open' | 'close'>('open');
     const [showLogoutModal, setShowLogoutModal] = React.useState(false);
     const [showPasswordModal, setShowPasswordModal] = React.useState(false);
+    const [showReportModal, setShowReportModal] = React.useState(false);
     const [passwordData, setPasswordData] = React.useState({ new: '', confirm: '' });
     const [updatingPassword, setUpdatingPassword] = React.useState(false);
     const [showShiftWarningModal, setShowShiftWarningModal] = React.useState({ visible: false, message: '' });
@@ -207,7 +211,8 @@ export default function SettingsScreen() {
                 Promise.all([
                     PrinterManager.getSelectedPrinter('receipt').catch(() => null),
                     PrinterManager.getSelectedPrinter('kitchen').catch(() => null),
-                    PrinterManager.getSelectedPrinter('bar').catch(() => null)
+                    PrinterManager.getSelectedPrinter('bar').catch(() => null),
+                    PrinterManager.getSelectedPrinter('report').catch(() => null)
                 ]),
                 OfflineService.getForcedOfflineMode().catch(() => false),
                 AsyncStorage.getItem('auto_print').catch(() => 'true'),
@@ -224,7 +229,8 @@ export default function SettingsScreen() {
             setSelectedPrinters({
                 receipt: savedPrinters[0],
                 kitchen: savedPrinters[1],
-                bar: savedPrinters[2]
+                bar: savedPrinters[2],
+                report: savedPrinters[3]
             });
             setForcedOffline(!!isForced);
             setAutoPrint(savedAutoPrint === 'true');
@@ -254,10 +260,11 @@ export default function SettingsScreen() {
 
     const updatePrinterStatuses = React.useCallback(async () => {
         const statuses: Record<string, any> = {};
-        const { receipt, kitchen, bar } = selectedPrinters;
+        const { receipt, kitchen, bar, report } = selectedPrinters;
         if (receipt) statuses[receipt] = PrinterManager.getConnectionStatus(receipt);
         if (kitchen) statuses[kitchen] = PrinterManager.getConnectionStatus(kitchen);
         if (bar) statuses[bar] = PrinterManager.getConnectionStatus(bar);
+        if (report) statuses[report] = PrinterManager.getConnectionStatus(report);
         setPrinterStatus(statuses);
     }, [selectedPrinters]);
 
@@ -273,8 +280,8 @@ export default function SettingsScreen() {
     }, []);
 
     const handleRefreshAllPrinters = async () => {
-        const { receipt, kitchen, bar } = selectedPrinters;
-        if (!receipt && !kitchen && !bar) {
+        const { receipt, kitchen, bar, report } = selectedPrinters;
+        if (!receipt && !kitchen && !bar && !report) {
             showToast('Tidak ada printer', 'Tambahkan printer terlebih dahulu', 'info');
             return;
         }
@@ -285,7 +292,8 @@ export default function SettingsScreen() {
         await Promise.allSettled([
             receipt ? PrinterManager.checkConnection(receipt) : Promise.resolve(),
             kitchen ? PrinterManager.checkConnection(kitchen) : Promise.resolve(),
-            bar ? PrinterManager.checkConnection(bar) : Promise.resolve()
+            bar ? PrinterManager.checkConnection(bar) : Promise.resolve(),
+            report ? PrinterManager.checkConnection(report) : Promise.resolve()
         ]);
         
         updatePrinterStatuses();
@@ -308,7 +316,7 @@ export default function SettingsScreen() {
         await AsyncStorage.setItem('production_settings', JSON.stringify(newSettings));
     };
 
-    const startScan = async (type: 'receipt' | 'kitchen' | 'bar') => {
+    const startScan = async (type: 'receipt' | 'kitchen' | 'bar' | 'report') => {
         setIsScanning(true);
         setConfiguringPrinterType(type);
         setDiscoveredDevices([]);
@@ -345,11 +353,14 @@ export default function SettingsScreen() {
                 if (configuringPrinterType === 'receipt') return { ...prev, receipt: device.id };
                 if (configuringPrinterType === 'kitchen') return { ...prev, kitchen: device.id };
                 if (configuringPrinterType === 'bar') return { ...prev, bar: device.id };
+                if (configuringPrinterType === 'report') return { ...prev, report: device.id };
                 return prev;
             });
             
             setDiscoveredDevices([]);
-            const typeLabel = configuringPrinterType === 'receipt' ? 'Kasir' : configuringPrinterType === 'kitchen' ? 'Dapur' : 'Bar';
+            const typeLabel = configuringPrinterType === 'receipt' ? 'Kasir' : 
+                             configuringPrinterType === 'kitchen' ? 'Dapur' : 
+                             configuringPrinterType === 'bar' ? 'Bar' : 'Laporan';
             Alert.alert(
                 'Printer Terpilih', 
                 `Printer ${typeLabel}: ${device.name || device.id} berhasil dipilih.`
@@ -359,7 +370,7 @@ export default function SettingsScreen() {
         }
     };
 
-    const handleTestPrint = async (type: 'receipt' | 'kitchen' | 'bar' = 'receipt') => {
+    const handleTestPrint = async (type: 'receipt' | 'kitchen' | 'bar' | 'report' = 'receipt') => {
         try {
             await PrinterManager.testPrint(type);
             Alert.alert('Sukses', `Test print ${type} berhasil dikirim.`);
@@ -376,8 +387,10 @@ export default function SettingsScreen() {
         }
     };
 
-    const handleForgetPrinter = async (type: 'receipt' | 'kitchen' | 'bar') => {
-        const typeLabel = type === 'receipt' ? 'Kasir' : type === 'kitchen' ? 'Dapur' : 'Bar';
+    const handleForgetPrinter = async (type: 'receipt' | 'kitchen' | 'bar' | 'report') => {
+        const typeLabel = type === 'receipt' ? 'Kasir' : 
+                         type === 'kitchen' ? 'Dapur' : 
+                         type === 'bar' ? 'Bar' : 'Laporan';
         Alert.alert(
             `Hapus Printer ${typeLabel}`,
             `Apakah Anda yakin ingin menghapus printer ${typeLabel}?`,
@@ -392,6 +405,7 @@ export default function SettingsScreen() {
                             if (type === 'receipt') return { ...prev, receipt: null };
                             if (type === 'kitchen') return { ...prev, kitchen: null };
                             if (type === 'bar') return { ...prev, bar: null };
+                            if (type === 'report') return { ...prev, report: null };
                             return prev;
                         });
                         Alert.alert('Sukses', 'Printer berhasil dihapus.');
@@ -495,7 +509,7 @@ export default function SettingsScreen() {
             // AppNavigator will handle redirection automatically
         } catch (err: any) {
             console.error('[SettingsScreen] Error during sign out:', err);
-            navigation.reset({ index: 0, routes: [{ name: 'Login' } as any] });
+            // Redirection is handled automatically by AppNavigator
         }
     };
 
@@ -588,107 +602,108 @@ export default function SettingsScreen() {
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-                {/* Toko & Profil */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Toko & Profil</Text>
-                    <View style={styles.card}>
-                        <SettingItem 
-                            icon={Store} 
-                            label="Profil Toko" 
-                            subtitle="Nama, alamat & telp outlet"
-                            onPress={() => navigation.navigate('StoreSettings' as never)} 
-                            isSmallDevice={isSmallDevice}
-                        />
-                        <View style={styles.divider} />
-                        <SettingItem 
-                            icon={Users} 
-                            label="Daftar Pelayan" 
-                            subtitle="Kelola data karyawan & pelayan"
-                            onPress={() => navigation.navigate('EmployeeSettings' as never)} 
-                            isSmallDevice={isSmallDevice}
-                        />
-                    </View>
-                </View>
-
-                {/* Sesi Kasir */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Operasional Kasir</Text>
-                    <View style={styles.card}>
-                        <SettingItem 
-                            icon={Lock} 
-                            label="Sesi Kasir Wajib" 
-                            subtitle="Wajib buka shift sebelum transaksi"
-                            type="switch"
-                            value={fullSettings?.require_mandatory_session ?? true}
-                            onToggle={(val: boolean) => toggleSetting('require_mandatory_session', val)}
-                            isSmallDevice={isSmallDevice}
-                        />
-                        <View style={styles.divider} />
-                        {/* Preparation Duration */}
-                        <View style={styles.settingItem}>
-                            <View style={styles.settingIconContainer}>
-                                <Clock size={isSmallDevice ? 18 : 20} color="#6b7280" />
-                            </View>
-                            <View style={styles.settingContent}>
-                                <Text style={[styles.settingLabel, isSmallDevice && { fontSize: 13 }]}>Durasi Penyiapan</Text>
-                                <Text style={[styles.settingSubtitleText, isSmallDevice && { fontSize: 11 }]}>Perkiraan waktu siap untuk pelanggan</Text>
-                            </View>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                                <TouchableOpacity
-                                    onPress={() => savePreparationDuration(preparationDuration - 5)}
-                                    style={styles.durationBtn}
-                                >
-                                    <Text style={styles.durationBtnText}>−</Text>
-                                </TouchableOpacity>
-                                <Text style={styles.durationValue}>{preparationDuration}m</Text>
-                                <TouchableOpacity
-                                    onPress={() => savePreparationDuration(preparationDuration + 5)}
-                                    style={styles.durationBtn}
-                                >
-                                    <Text style={styles.durationBtnText}>+</Text>
-                                </TouchableOpacity>
-                            </View>
+                <View style={isLandscape ? { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', paddingHorizontal: 4 } : null}>
+                    {/* Toko & Profil */}
+                    <View style={[styles.section, isLandscape && { width: '48.5%' }]}>
+                        <Text style={styles.sectionTitle}>Toko & Profil</Text>
+                        <View style={styles.card}>
+                            <SettingItem 
+                                icon={Store} 
+                                label="Profil Toko" 
+                                subtitle="Nama, alamat & telp outlet"
+                                onPress={() => navigation.navigate('StoreSettings' as never)} 
+                                isSmallDevice={isSmallDevice}
+                            />
+                            <View style={styles.divider} />
+                            <SettingItem 
+                                icon={Users} 
+                                label="Daftar Pelayan" 
+                                subtitle="Kelola data karyawan & pelayan"
+                                onPress={() => navigation.navigate('EmployeeSettings' as never)} 
+                                isSmallDevice={isSmallDevice}
+                            />
                         </View>
-                        <View style={styles.divider} />
-                        <SettingItem 
-                            icon={ShoppingCart}
-                            label="Wajib Modal Awal" 
-                            subtitle="Input kas awal saat buka shift"
-                            type="switch"
-                            value={fullSettings?.require_starting_cash ?? true}
-                            onToggle={(val: boolean) => toggleSetting('require_starting_cash', val)}
-                            isSmallDevice={isSmallDevice}
-                        />
-                        <View style={styles.divider} />
-                        <TouchableOpacity 
-                            style={[
-                                styles.sessionBox,
-                                isSmallDevice && { padding: 10, margin: 8 }
-                            ]}
-                            activeOpacity={0.8}
-                            onPress={() => {
-                                setSessionMode(isSessionActive ? 'close' : 'open');
-                                setShowSessionModal(true);
-                            }}
-                        >
-                            <View style={[styles.statusIndicator, { backgroundColor: isSessionActive ? '#22c55e' : '#ef4444' }]} />
-                            <View style={{ flex: 1 }}>
-                                <Text style={[
-                                    styles.sessionStatusText,
-                                    isSmallDevice && { fontSize: 13 }
-                                ]}>{isSessionActive ? 'Shift Sedang Aktif' : 'Shift Belum Dibuka'}</Text>
-                                <Text style={[
-                                    styles.sessionActionText,
-                                    isSmallDevice && { fontSize: 11 }
-                                ]}>{isSessionActive ? 'Ketuk untuk Tutup Shift' : 'Ketuk untuk Buka Shift'}</Text>
-                            </View>
-                            <ChevronRight size={isSmallDevice ? 14 : 16} color="#94a3b8" />
-                        </TouchableOpacity>
                     </View>
-                </View>
+
+                    {/* Sesi Kasir */}
+                    <View style={[styles.section, isLandscape && { width: '48.5%' }]}>
+                        <Text style={styles.sectionTitle}>Operasional Kasir</Text>
+                        <View style={styles.card}>
+                            <SettingItem 
+                                icon={Lock} 
+                                label="Sesi Kasir Wajib" 
+                                subtitle="Wajib buka shift sebelum transaksi"
+                                type="switch"
+                                value={fullSettings?.require_mandatory_session ?? true}
+                                onToggle={(val: boolean) => toggleSetting('require_mandatory_session', val)}
+                                isSmallDevice={isSmallDevice}
+                            />
+                            <View style={styles.divider} />
+                            {/* Preparation Duration */}
+                            <View style={styles.settingItem}>
+                                <View style={styles.settingIconContainer}>
+                                    <Clock size={isSmallDevice ? 18 : 20} color="#6b7280" />
+                                </View>
+                                <View style={styles.settingContent}>
+                                    <Text style={[styles.settingLabel, isSmallDevice && { fontSize: 13 }]}>Durasi Penyiapan</Text>
+                                    <Text style={[styles.settingSubtitleText, isSmallDevice && { fontSize: 11 }]}>Perkiraan waktu siap untuk pelanggan</Text>
+                                </View>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                    <TouchableOpacity
+                                        onPress={() => savePreparationDuration(preparationDuration - 5)}
+                                        style={styles.durationBtn}
+                                    >
+                                        <Text style={styles.durationBtnText}>−</Text>
+                                    </TouchableOpacity>
+                                    <Text style={styles.durationValue}>{preparationDuration}m</Text>
+                                    <TouchableOpacity
+                                        onPress={() => savePreparationDuration(preparationDuration + 5)}
+                                        style={styles.durationBtn}
+                                    >
+                                        <Text style={styles.durationBtnText}>+</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                            <View style={styles.divider} />
+                            <SettingItem 
+                                icon={ShoppingCart}
+                                label="Wajib Modal Awal" 
+                                subtitle="Input kas awal saat buka shift"
+                                type="switch"
+                                value={fullSettings?.require_starting_cash ?? true}
+                                onToggle={(val: boolean) => toggleSetting('require_starting_cash', val)}
+                                isSmallDevice={isSmallDevice}
+                            />
+                            <View style={styles.divider} />
+                            <TouchableOpacity 
+                                style={[
+                                    styles.sessionBox,
+                                    isSmallDevice && { padding: 10, margin: 8 }
+                                ]}
+                                activeOpacity={0.8}
+                                onPress={() => {
+                                    setSessionMode(isSessionActive ? 'close' : 'open');
+                                    setShowSessionModal(true);
+                                }}
+                            >
+                                <View style={[styles.statusIndicator, { backgroundColor: isSessionActive ? '#22c55e' : '#ef4444' }]} />
+                                <View style={{ flex: 1 }}>
+                                    <Text style={[
+                                        styles.sessionStatusText,
+                                        isSmallDevice && { fontSize: 13 }
+                                    ]}>{isSessionActive ? 'Shift Sedang Aktif' : 'Shift Belum Dibuka'}</Text>
+                                    <Text style={[
+                                        styles.sessionActionText,
+                                        isSmallDevice && { fontSize: 11 }
+                                    ]}>{isSessionActive ? 'Ketuk untuk Tutup Shift' : 'Ketuk untuk Buka Shift'}</Text>
+                                </View>
+                                <ChevronRight size={isSmallDevice ? 14 : 16} color="#94a3b8" />
+                            </TouchableOpacity>
+                        </View>
+                    </View>
 
                 {/* Mode Aplikasi */}
-                <View style={styles.section}>
+                <View style={[styles.section, isLandscape && { width: '48.5%' }]}>
                     <Text style={styles.sectionTitle}>Mode & Keamanan</Text>
                     <View style={styles.card}>
                         <SettingItem 
@@ -712,7 +727,7 @@ export default function SettingsScreen() {
                 </View>
 
                 {/* Koneksi & Offline */}
-                <View style={styles.section}>
+                <View style={[styles.section, isLandscape && { width: '48.5%' }]}>
                     <Text style={styles.sectionTitle}>Koneksi & Offline</Text>
                     <View style={styles.card}>
                         <SettingItem 
@@ -762,7 +777,7 @@ export default function SettingsScreen() {
                 </View>
 
                 {/* Printer */}
-                <View style={styles.section}>
+                <View style={[styles.section, isLandscape && { width: '100%' }]}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 6 }}>
                         <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Printer Bluetooth</Text>
                         <TouchableOpacity 
@@ -774,91 +789,104 @@ export default function SettingsScreen() {
                         </TouchableOpacity>
                     </View>
                     
-                    {/* Multi Printer Management */}
                     <View style={styles.card}>
-                        {[
-                            { id: 'receipt', label: 'Printer Kasir (Struk)', value: selectedPrinters.receipt },
-                            { id: 'kitchen', label: 'Printer Dapur (Makanan)', value: selectedPrinters.kitchen },
-                            { id: 'bar', label: 'Printer Bar (Minuman)', value: selectedPrinters.bar }
-                        ].map((printer, index) => (
-                            <React.Fragment key={printer.id}>
-                                {index > 0 && <View style={styles.divider} />}
-                                <View style={styles.printerItem}>
-                                    <View style={styles.printerHeader}>
-                                        <View style={styles.printerStatusRow}>
-                                            <Bluetooth size={20} color={printer.value ? '#ea580c' : '#9ca3af'} />
-                                            <View style={{ marginLeft: 12, flex: 1 }}>
-                                                <Text style={[styles.settingLabel, { fontSize: 13 }]}>{printer.label}</Text>
-                                                <Text style={styles.printerNameText} numberOfLines={1}>{printer.value || 'Belum ada printer'}</Text>
+                        <View style={isLandscape ? { flexDirection: 'row', flexWrap: 'wrap' } : null}>
+                            {[
+                                { id: 'receipt', label: 'Printer Kasir (Struk)', value: selectedPrinters.receipt },
+                                { id: 'kitchen', label: 'Printer Dapur (Makanan)', value: selectedPrinters.kitchen },
+                                { id: 'bar', label: 'Printer Bar (Minuman)', value: selectedPrinters.bar },
+                                { id: 'report', label: 'Printer Laporan (Keuangan)', value: selectedPrinters.report }
+                            ].map((printer, index) => (
+                                <View key={printer.id} style={isLandscape ? { width: '50.0%', borderRightWidth: (index % 2 === 0) ? 1 : 0, borderRightColor: '#f1f5f9' } : null}>
+                                    {index > 0 && !isLandscape && <View style={styles.divider} />}
+                                    <View style={[styles.printerItem, isLandscape && { paddingHorizontal: 12 }]}>
+                                        <View style={styles.printerHeader}>
+                                            <View style={styles.printerStatusRow}>
+                                                <Bluetooth size={20} color={printer.value ? '#ea580c' : '#9ca3af'} />
+                                                <View style={{ marginLeft: 12, flex: 1 }}>
+                                                    <Text style={[styles.settingLabel, { fontSize: 13 }]}>{printer.label}</Text>
+                                                    <Text style={styles.printerNameText} numberOfLines={1}>{printer.value || 'Belum ada printer'}</Text>
+                                                </View>
+                                            </View>
+                                            <View style={{ alignItems: 'flex-end' }}>
+                                                <Text style={{ fontSize: 9, color: '#9ca3af', marginBottom: 2, fontWeight: 'bold' }}>LOKAL</Text>
+                                                <Switch 
+                                                    value={
+                                                        printer.id === 'receipt' ? enableReceipt : 
+                                                        (printer.id === 'kitchen' ? enableKitchen : 
+                                                        (printer.id === 'bar' ? enableBar : true))
+                                                    }
+                                                    onValueChange={(val) => {
+                                                        if (printer.id === 'report') return;
+                                                        togglePrinterEnable(printer.id as any, val);
+                                                    }}
+                                                    disabled={printer.id === 'report'}
+                                                    trackColor={{ false: '#e5e7eb', true: '#fb923c' }}
+                                                    style={{ transform: [{ scaleX: 0.7 }, { scaleY: 0.7 }] }}
+                                                />
                                             </View>
                                         </View>
-                                        <View style={{ alignItems: 'flex-end' }}>
-                                            <Text style={{ fontSize: 9, color: '#9ca3af', marginBottom: 2, fontWeight: 'bold' }}>LOKAL</Text>
-                                            <Switch 
-                                                value={printer.id === 'receipt' ? enableReceipt : (printer.id === 'kitchen' ? enableKitchen : enableBar)}
-                                                onValueChange={(val) => togglePrinterEnable(printer.id as any, val)}
-                                                trackColor={{ false: '#e5e7eb', true: '#fb923c' }}
-                                                style={{ transform: [{ scaleX: 0.7 }, { scaleY: 0.7 }] }}
-                                            />
-                                        </View>
-                                    </View>
 
-                                    
-                                    <View style={styles.printerActions}>
-                                        {printer.value && (
-                                            <View style={[styles.statusBadgeSmall, { marginRight: 'auto', marginLeft: 0 }]}>
-                                                <View style={{ 
-                                                    width: 6, 
-                                                    height: 6, 
-                                                    borderRadius: 3, 
-                                                    backgroundColor: printerStatus[printer.value] === 'connected' ? '#22c55e' : (printerStatus[printer.value] === 'connecting' ? '#f59e0b' : '#ef4444') 
-                                                }} />
-                                                <Text style={styles.statusTextSmall}>
-                                                    {printerStatus[printer.value] === 'connected' ? 'Connected' : (printerStatus[printer.value] === 'connecting' ? 'Connecting...' : 'Disconnected')}
-                                                </Text>
-                                            </View>
-                                        )}
-                                    
-                                {printer.value && printerStatus[printer.value] !== 'connected' && (
-                                    <TouchableOpacity style={styles.iconBtnSmall} onPress={() => handleReconnect(printer.value!)}>
-                                        <RefreshCw size={14} color="#3b82f6" />
-                                    </TouchableOpacity>
-                                )}
-                                        {printer.value && (
-                                            <TouchableOpacity style={styles.iconBtnSmall} onPress={() => handleTestPrint(printer.id as any)}>
-                                                <Printer size={14} color="#ea580c" />
-                                            </TouchableOpacity>
-                                        )}
-                                        {printer.value && (
-                                            <TouchableOpacity 
-                                                style={styles.deleteBtnSmall} 
-                                                onPress={() => handleForgetPrinter(printer.id as any)}
-                                            >
-                                                <Trash2 size={12} color="#fff" />
-                                                <Text style={styles.deleteBtnTextSmall}>Hapus</Text>
-                                            </TouchableOpacity>
-                                        )}
-                                        <TouchableOpacity 
-                                            style={[styles.scanBtnSmall, isScanning && configuringPrinterType === printer.id && { backgroundColor: '#cbd5e1' }]} 
-                                            onPress={() => startScan(printer.id as any)}
-                                            disabled={isScanning}
-                                        >
-                                            {isScanning && configuringPrinterType === printer.id ? (
-                                                <ActivityIndicator size="small" color="#fff" />
-                                            ) : (
-                                                <RefreshCw size={12} color="#fff" />
+                                        <View style={styles.printerActions}>
+                                            {printer.value && (
+                                                <View style={[styles.statusBadgeSmall, { marginRight: 'auto', marginLeft: 0 }]}>
+                                                    <View style={{ 
+                                                        width: 6, 
+                                                        height: 6, 
+                                                        borderRadius: 3, 
+                                                        backgroundColor: printerStatus[printer.value] === 'connected' ? '#22c55e' : (printerStatus[printer.value] === 'connecting' ? '#f59e0b' : '#ef4444') 
+                                                    }} />
+                                                    <Text style={styles.statusTextSmall}>
+                                                        {printerStatus[printer.value] === 'connected' ? 'Connected' : (printerStatus[printer.value] === 'connecting' ? 'Connecting...' : 'Disconnected')}
+                                                    </Text>
+                                                </View>
                                             )}
-                                            <Text style={styles.scanBtnTextSmall}>{isScanning && configuringPrinterType === printer.id ? '...' : 'Scan'}</Text>
-                                        </TouchableOpacity>
+                                        
+                                            {printer.value && printerStatus[printer.value] !== 'connected' && (
+                                                <TouchableOpacity style={styles.iconBtnSmall} onPress={() => handleReconnect(printer.value!)}>
+                                                    <RefreshCw size={14} color="#3b82f6" />
+                                                </TouchableOpacity>
+                                            )}
+                                            {printer.value && (
+                                                <TouchableOpacity style={styles.iconBtnSmall} onPress={() => handleTestPrint(printer.id as any)}>
+                                                    <Printer size={14} color="#ea580c" />
+                                                </TouchableOpacity>
+                                            )}
+                                            {printer.value && (
+                                                <TouchableOpacity 
+                                                    style={styles.deleteBtnSmall} 
+                                                    onPress={() => handleForgetPrinter(printer.id as any)}
+                                                >
+                                                    <Trash2 size={12} color="#fff" />
+                                                    <Text style={styles.deleteBtnTextSmall}>Hapus</Text>
+                                                </TouchableOpacity>
+                                            )}
+                                            <TouchableOpacity 
+                                                style={[styles.scanBtnSmall, isScanning && configuringPrinterType === printer.id && { backgroundColor: '#cbd5e1' }]} 
+                                                onPress={() => startScan(printer.id as any)}
+                                                disabled={isScanning}
+                                            >
+                                                {isScanning && configuringPrinterType === printer.id ? (
+                                                    <ActivityIndicator size="small" color="#fff" />
+                                                ) : (
+                                                    <RefreshCw size={12} color="#fff" />
+                                                )}
+                                                <Text style={styles.scanBtnTextSmall}>{isScanning && configuringPrinterType === printer.id ? '...' : 'Scan'}</Text>
+                                            </TouchableOpacity>
+                                        </View>
                                     </View>
                                 </View>
-                            </React.Fragment>
-                        ))}
+                            ))}
+                        </View>
 
                         {isScanning && (
                             <View style={styles.scanProgress}>
                                 <ActivityIndicator size="small" color="#f97316" style={{ marginBottom: 4 }} />
-                                <Text style={styles.scanProgressText}>Mencari untuk {configuringPrinterType === 'receipt' ? 'Kasir' : configuringPrinterType === 'kitchen' ? 'Dapur' : 'Bar'}...</Text>
+                                <Text style={styles.scanProgressText}>Mencari untuk {
+                                    configuringPrinterType === 'receipt' ? 'Kasir' : 
+                                    configuringPrinterType === 'kitchen' ? 'Dapur' : 
+                                    configuringPrinterType === 'bar' ? 'Bar' : 'Laporan'
+                                }...</Text>
                             </View>
                         )}
 
@@ -893,7 +921,7 @@ export default function SettingsScreen() {
                 </View>
 
                 {/* Produksi (Dapur & Bar) Template */}
-                <View style={styles.section}>
+                <View style={[styles.section, isLandscape && { width: '48.5%' }]}>
                     <Text style={styles.sectionTitle}>Produksi (Dapur & Bar)</Text>
                     <View style={styles.card}>
                         <SettingItem 
@@ -948,14 +976,29 @@ export default function SettingsScreen() {
                     </View>
                 </View>
 
+                {/* Laporan & Rekap */}
+                <View style={[styles.section, isLandscape && { width: '48.5%' }]}>
+                    <Text style={styles.sectionTitle}>Laporan & Rekap</Text>
+                    <View style={styles.card}>
+                        <SettingItem 
+                            icon={BarChart3} 
+                            label="Cetak Laporan Penjualan" 
+                            subtitle="Ringkasan transaksi ke printer thermal"
+                            onPress={() => setShowReportModal(true)} 
+                            isSmallDevice={isSmallDevice}
+                        />
+                    </View>
+                </View>
+
                 {/* Lainnya */}
-                <View style={styles.section}>
+                <View style={[styles.section, isLandscape && { width: '48.5%' }]}>
                     <Text style={styles.sectionTitle}>Lainnya</Text>
                     <View style={styles.card}>
                         <SettingItem icon={Bell} label="Notifikasi" />
                         <View style={styles.divider} />
                         <SettingItem icon={Info} label="Tentang Aplikasi" />
                     </View>
+                </View>
                 </View>
 
                 <TouchableOpacity 
@@ -1126,6 +1169,17 @@ export default function SettingsScreen() {
                 confirmText="Keluar"
                 iconType="logout"
             />
+            <SalesReportModal
+                visible={showReportModal}
+                onClose={() => setShowReportModal(false)}
+                currentBranchId={currentBranchId || ''}
+                branchName={branchName || 'WINNY POS'}
+                branchAddress={branchAddress}
+                branchPhone={branchPhone}
+                userName={userName || 'Kasir'}
+                receiptPaperWidth={fullSettings?.receipt_paper_width || '58mm'}
+                storeSettings={sessionSettings}
+            />
         </SafeAreaView>
     );
 }
@@ -1213,32 +1267,6 @@ const styles = StyleSheet.create({
         height: 1,
         backgroundColor: '#f1f5f9',
         marginHorizontal: 10,
-    },
-    sessionBox: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 12,
-        margin: 6,
-        backgroundColor: '#f8fafc',
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: '#f1f5f9',
-    },
-    statusIndicator: {
-        width: 10,
-        height: 10,
-        borderRadius: 5,
-        marginRight: 14,
-    },
-    sessionStatusText: {
-        fontSize: 14,
-        fontWeight: 'bold',
-        color: '#334155',
-    },
-    sessionActionText: {
-        fontSize: 12,
-        color: '#64748b',
-        marginTop: 2,
     },
     printerItem: {
         paddingVertical: 12,

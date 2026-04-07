@@ -10,10 +10,10 @@ interface SessionHistory {
     id: string;
     user_id: string;
     starting_cash: number;
-    ending_cash: number | null;
+    actual_cash: number | null;
     total_sales: number;
     expected_cash: number;
-    variance: number;
+    difference: number;
     opened_at: string;
     closed_at: string | null;
     status: 'Open' | 'Closed';
@@ -104,8 +104,8 @@ export function SessionHistoryView() {
             s.closed_at ? new Date(s.closed_at).toLocaleString('id-ID') : '-',
             s.starting_cash,
             s.total_sales,
-            s.ending_cash || 0,
-            s.variance,
+            s.actual_cash || 0,
+            s.difference,
             s.status
         ]);
 
@@ -144,7 +144,7 @@ export function SessionHistoryView() {
     // Calculate summary stats
     const totalSessions = filteredSessions.length;
     const totalSales = filteredSessions.reduce((sum, s) => sum + s.total_sales, 0);
-    const totalVariance = filteredSessions.filter(s => s.status === 'Closed').reduce((sum, s) => sum + s.variance, 0);
+    const totalVariance = filteredSessions.filter(s => s.status === 'Closed').reduce((sum, s) => sum + (s.difference || 0), 0);
     const avgVariance = totalSessions > 0 ? totalVariance / filteredSessions.filter(s => s.status === 'Closed').length : 0;
 
     const confirmDelete = (session: SessionHistory) => {
@@ -370,8 +370,8 @@ export function SessionHistoryView() {
                                         <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{formatDateTime(session.closed_at)}</td>
                                         <td className="px-6 py-4 text-right text-sm font-medium text-gray-800 dark:text-white">{formatCurrency(session.starting_cash)}</td>
                                         <td className="px-6 py-4 text-right text-sm font-medium text-gray-800 dark:text-white">{formatCurrency(session.total_sales)}</td>
-                                        <td className={`px-6 py-4 text-right text-sm font-bold ${session.variance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                            {formatCurrency(session.variance)}
+                                        <td className={`px-6 py-4 text-right text-sm font-bold ${(session.difference || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                            {formatCurrency(session.difference || 0)}
                                         </td>
                                         <td className="px-6 py-4 text-center">
                                             <span className={`inline-flex px-3 py-1 rounded-full text-xs font-bold ${session.status?.toLowerCase() === 'open'
@@ -473,12 +473,12 @@ export function SessionHistoryView() {
                             </div>
                             <div className="space-y-2">
                                 <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Uang Akhir</label>
-                                <p className="text-lg font-bold text-gray-800 dark:text-white">{formatCurrency(selectedSession.ending_cash || 0)}</p>
+                                <p className="text-lg font-bold text-gray-800 dark:text-white">{formatCurrency(selectedSession.actual_cash || 0)}</p>
                             </div>
                             <div className="space-y-2">
                                 <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Selisih (Variance)</label>
-                                <p className={`text-lg font-bold ${selectedSession.variance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                    {formatCurrency(selectedSession.variance)}
+                                <p className={`text-lg font-bold ${(selectedSession.difference || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                    {formatCurrency(selectedSession.difference || 0)}
                                 </p>
                             </div>
                         </div>

@@ -9,8 +9,11 @@ export default function KDSScreen() {
     const navigation = useNavigation();
     const route = useRoute();
     const { initialFilter = 'All' } = (route.params as any) || {};
-    const { width } = useWindowDimensions();
-    const isSmallDevice = width < 380;
+    const { width, height } = useWindowDimensions();
+    const isSmallDevice = width < 480;
+    const isLandscape = width > height;
+    const isWide = width >= 600;
+    const numColumns = isWide ? 4 : (width >= 500 ? 2 : 1);
     const { currentBranchId } = useSession();
 
     const [orders, setOrders] = useState<any[]>([]);
@@ -27,7 +30,7 @@ export default function KDSScreen() {
     }, []);
 
     useEffect(() => {
-        if (!currentBranchId) return;
+        if (!currentBranchId || isNaN(Number(currentBranchId))) return;
 
         fetchActiveOrders();
 
@@ -78,7 +81,7 @@ export default function KDSScreen() {
     }, [currentBranchId]);
 
     const fetchActiveOrders = async () => {
-        if (!currentBranchId) return;
+        if (!currentBranchId || isNaN(Number(currentBranchId))) return;
         
         try {
             // Fetch sales with items that are not yet completed
@@ -251,14 +254,18 @@ export default function KDSScreen() {
                                 ]}>
                                     <Text style={[
                                         styles.quantityText,
-                                        isSmallDevice && { fontSize: 11 }
+                                        isSmallDevice && { fontSize: 10 }
                                     ]}>{item.quantity}</Text>
                                 </View>
-                                <Text style={[
-                                    styles.itemName, 
-                                    item.status === 'Ready' && styles.itemNameReady,
-                                    isSmallDevice && { fontSize: 12 }
-                                ]}>
+                                <Text 
+                                    style={[
+                                        styles.itemName, 
+                                        item.status === 'Ready' && styles.itemNameReady,
+                                        isSmallDevice && { fontSize: 11 }
+                                    ]}
+                                    numberOfLines={1}
+                                    ellipsizeMode="tail"
+                                >
                                     {item.product_name}
                                 </Text>
                                 {item.notes ? (
@@ -354,8 +361,8 @@ export default function KDSScreen() {
                         styles.listContent,
                         isSmallDevice && { padding: 8 }
                     ]}
-                    numColumns={isSmallDevice ? 1 : 2}
-                    key={isSmallDevice ? 'single' : 'double'}
+                    numColumns={numColumns}
+                    key={`kds-grid-${numColumns}`}
                 />
             )}
 
@@ -509,7 +516,7 @@ const styles = StyleSheet.create({
         color: '#ea580c',
     },
     tableName: {
-        fontSize: 16,
+        fontSize: 14,
         fontWeight: '900',
         color: '#1f2937',
     },
@@ -556,12 +563,12 @@ const styles = StyleSheet.create({
         backgroundColor: '#dcfce7',
     },
     quantityText: {
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: 'bold',
         color: '#4b5563',
     },
     itemName: {
-        fontSize: 13,
+        fontSize: 11,
         color: '#374151',
         fontWeight: '500',
         flex: 1,

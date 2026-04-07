@@ -8,8 +8,9 @@ import Constants from 'expo-constants';
 const PRINTER_STORAGE_KEY = '@selected_printer_address';
 const KITCHEN_PRINTER_KEY = '@kitchen_printer_address';
 const BAR_PRINTER_KEY = '@bar_printer_address';
+const REPORT_PRINTER_KEY = '@report_printer_address';
 
-export type PrinterType = 'receipt' | 'kitchen' | 'bar';
+export type PrinterType = 'receipt' | 'kitchen' | 'bar' | 'report';
 
 const isExpoGo = Constants.appOwnership === 'expo';
 
@@ -124,17 +125,23 @@ export class PrinterManager {
     }
 
     static async saveSelectedPrinter(macAddress: string, type: PrinterType = 'receipt') {
-        const key = type === 'kitchen' ? KITCHEN_PRINTER_KEY : (type === 'bar' ? BAR_PRINTER_KEY : PRINTER_STORAGE_KEY);
+        const key = type === 'kitchen' ? KITCHEN_PRINTER_KEY : 
+                    (type === 'bar' ? BAR_PRINTER_KEY : 
+                    (type === 'report' ? REPORT_PRINTER_KEY : PRINTER_STORAGE_KEY));
         await AsyncStorage.setItem(key, macAddress);
     }
 
     static async forgetSelectedPrinter(type: PrinterType = 'receipt') {
-        const key = type === 'kitchen' ? KITCHEN_PRINTER_KEY : (type === 'bar' ? BAR_PRINTER_KEY : PRINTER_STORAGE_KEY);
+        const key = type === 'kitchen' ? KITCHEN_PRINTER_KEY : 
+                    (type === 'bar' ? BAR_PRINTER_KEY : 
+                    (type === 'report' ? REPORT_PRINTER_KEY : PRINTER_STORAGE_KEY));
         await AsyncStorage.removeItem(key);
     }
 
     static async getSelectedPrinter(type: PrinterType = 'receipt') {
-        const key = type === 'kitchen' ? KITCHEN_PRINTER_KEY : (type === 'bar' ? BAR_PRINTER_KEY : PRINTER_STORAGE_KEY);
+        const key = type === 'kitchen' ? KITCHEN_PRINTER_KEY : 
+                    (type === 'bar' ? BAR_PRINTER_KEY : 
+                    (type === 'report' ? REPORT_PRINTER_KEY : PRINTER_STORAGE_KEY));
         return await AsyncStorage.getItem(key);
     }
 
@@ -758,7 +765,7 @@ export class PrinterManager {
 
         macAddress = macAddress.toUpperCase();
         
-        const targetLabel = type === 'kitchen' ? 'DAPUR' : (type === 'bar' ? 'BAR' : 'KASIR');
+        const targetLabel = type === 'kitchen' ? 'DAPUR' : (type === 'bar' ? 'BAR' : (type === 'report' ? 'LAPORAN' : 'KASIR'));
         
         const CENTER = COMMANDS.TEXT_FORMAT.TXT_ALIGN_CT;
         const LEFT = COMMANDS.TEXT_FORMAT.TXT_ALIGN_LT;
@@ -794,6 +801,168 @@ export class PrinterManager {
         } catch (error) {
             console.error('Test Print Error:', error);
             throw error;
+        }
+    }
+
+    static formatSalesReport(reportData: any, isPreview: boolean = false): string {
+        const {
+            shopName,
+            address,
+            phone,
+            dateRange,
+            totalSales,
+            totalTax = 0,
+            totalDiscount = 0,
+            totalOrders,
+            paymentSummary = [],
+            categorySummary = [],
+            generatedBy,
+            receipt_paper_width,
+            showTax = true,
+            showDiscount = true,
+            showLogo = true,
+            showDate = true,
+            showQRISDetails = true,
+            receiptFooter
+        } = reportData;
+
+        // Determine width based on paper setting: 58mm = 32 chars, 80mm = 42 chars
+        const paperWidth = receipt_paper_width === '80mm' ? 42 : 32;
+
+        const CENTER = isPreview ? '[C]' : COMMANDS.TEXT_FORMAT.TXT_ALIGN_CT;
+        const LEFT = isPreview ? '[L]' : COMMANDS.TEXT_FORMAT.TXT_ALIGN_LT;
+        const BOLD_ON = isPreview ? '<b>' : COMMANDS.TEXT_FORMAT.TXT_BOLD_ON;
+        const BOLD_OFF = isPreview ? '</b>' : COMMANDS.TEXT_FORMAT.TXT_BOLD_OFF;
+        const DOUBLE_ON = isPreview ? '' : COMMANDS.TEXT_FORMAT.TXT_2HEIGHT;
+        const DOUBLE_OFF = isPreview ? '' : COMMANDS.TEXT_FORMAT.TXT_NORMAL;
+        const LINE = '-'.repeat(paperWidth) + '\n';
+        const DLINE = '='.repeat(paperWidth) + '\n';
+
+        let text = '';
+        
+        // Logo Placeholder for Preview
+        if (showLogo && isPreview) {
+            text += '[LOGO]\n';
+        }
+
+        const displayShopName = reportData.receiptHeader || reportData.receipt_header || reportData.shopName || reportData.shop_name || 'WINNY POS';
+        const displayAddress = reportData.address || reportData.shopAddress || reportData.shop_address || '';
+        const displayPhone = reportData.phone || reportData.shopPhone || reportData.shop_phone || '';
+
+        const shopNameDouble = isPreview ? '' : COMMANDS.TEXT_FORMAT.TXT_4SQUARE;
+        text += CENTER + BOLD_ON + shopNameDouble + displayShopName.toUpperCase() + (shopNameDouble ? DOUBLE_OFF : '') + BOLD_OFF + '\n';
+        
+        if (displayAddress) text += CENTER + displayAddress + '\n';
+        if (displayPhone) text += CENTER + (displayPhone.startsWith('Telp:') ? displayPhone : 'Telp: ' + displayPhone) + '\n';
+        text += CENTER + LINE;
+        
+        text += CENTER + BOLD_ON + DOUBLE_ON + 'LAPORAN PENJUALAN' + DOUBLE_OFF + BOLD_OFF + '\n';
+        if (showDate !== false) {
+            text += CENTER + dateRange + '\n';
+        }
+        text += CENTER + DLINE;
+
+        text += LEFT;
+        text += this.padColumns('Transaksi:', String(totalOrders), paperWidth) + '\n';
+        text += BOLD_ON + this.padColumns('TOTAL NET:', totalSales.toLocaleString('id-ID'), paperWidth) + BOLD_OFF + '\n';
+        
+        if (showTax && totalTax > 0) {
+            text += this.padColumns('Total Pajak:', totalTax.toLocaleString('id-ID'), paperWidth) + '\n';
+        }
+        if (showDiscount && totalDiscount > 0) {
+            text += this.padColumns('Total Diskon:', '-' + totalDiscount.toLocaleString('id-ID'), paperWidth) + '\n';
+        }
+        
+        text += LINE;
+
+        if (paymentSummary.length > 0) {
+            text += BOLD_ON + 'METODE PEMBAYARAN' + BOLD_OFF + '\n';
+            
+            if (showQRISDetails === false) {
+                // If QRIS details disabled, group all non-cash into "NON-TUNAI"
+                const cashTotal = paymentSummary.find((p: any) => p.method.toUpperCase() === 'TUNAI' || p.method.toUpperCase() === 'CASH')?.amount || 0;
+                const totalAmount = paymentSummary.reduce((sum: number, p: any) => sum + p.amount, 0);
+                const nonCashTotal = totalAmount - cashTotal;
+                
+                text += this.padColumns('TUNAI', cashTotal.toLocaleString('id-ID'), paperWidth) + '\n';
+                if (nonCashTotal > 0) {
+                    text += this.padColumns('NON-TUNAI', nonCashTotal.toLocaleString('id-ID'), paperWidth) + '\n';
+                }
+            } else {
+                paymentSummary.forEach((p: any) => {
+                    text += this.padColumns(p.method, p.amount.toLocaleString('id-ID'), paperWidth) + '\n';
+                });
+            }
+            text += LINE;
+        }
+
+        if (categorySummary.length > 0) {
+            text += BOLD_ON + 'RINGKASAN KATEGORI' + BOLD_OFF + '\n';
+            categorySummary.forEach((c: any) => {
+                text += this.padColumns(c.name, c.amount.toLocaleString('id-ID'), paperWidth) + '\n';
+            });
+            text += LINE;
+        }
+
+        text += CENTER + '\n';
+        text += CENTER + 'Waktu Cetak: ' + new Date().toLocaleString('id-ID') + '\n';
+        if (generatedBy) text += CENTER + 'Kasir: ' + generatedBy + '\n';
+        
+        if (receiptFooter) {
+            text += CENTER + LINE;
+            text += CENTER + receiptFooter + '\n';
+        }
+        
+        text += '\n\n\n' + (isPreview ? '' : COMMANDS.PAPER.PAPER_FULL_CUT);
+
+        return text;
+    }
+
+    static async printSalesReport(reportData: any) {
+        let macAddress = await this.getSelectedPrinter('report');
+        // Fallback to receipt printer if report printer not set
+        if (!macAddress) {
+            macAddress = await this.getSelectedPrinter('receipt');
+        }
+        
+        if (!macAddress) throw new Error('Printer belum diatur. Silakan atur printer di Pengaturan.');
+        
+        const reportText = this.formatSalesReport(reportData);
+        const logoUrl = reportData.showLogo ? reportData.receiptLogoUrl : null;
+        
+        try {
+            if (isExpoGo || Platform.OS === 'web') {
+                console.log('[Sim] Printing Report:', reportText);
+                return true;
+            }
+            await this.initPrinter();
+            const mac = macAddress.toUpperCase();
+            await BLEPrinter.connectPrinter(mac);
+            
+            // Wait for printer to be ready
+            await new Promise(resolve => setTimeout(resolve, 1500));
+
+            // Print Logo if enabled
+            if (logoUrl) {
+                try {
+                    const imageData = await this.getBase64FromUrl(logoUrl);
+                    if (imageData && imageData.length > 50) {
+                        await BLEPrinter.printImageBase64(imageData, {
+                            align: 'center',
+                            imageWidth: 200 
+                        });
+                        await new Promise(resolve => setTimeout(resolve, 1200));
+                    }
+                } catch (imgError) {
+                    console.error('[PrinterManager] Report Logo Print Error:', imgError);
+                }
+            }
+
+            await BLEPrinter.printBill(reportText);
+            return true;
+        } catch (e: any) {
+            console.error('Print Report Error:', e);
+            throw e;
         }
     }
 }

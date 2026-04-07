@@ -259,8 +259,9 @@ export function SalesView({
 
                 if (total >= minAmount) {
                     let count = 1;
-                    if (multiplier > 0) {
-                        count = Math.floor(total / multiplier);
+                    const step = multiplier > 0 ? multiplier : minAmount;
+                    if (step > 0) {
+                        count = Math.floor(total / step);
                     }
                     
                     if (count > 0) {
@@ -421,8 +422,9 @@ export function SalesView({
 
                 if (total >= minAmount) {
                     let count = 1;
-                    if (multiplier > 0) {
-                        count = Math.floor(total / multiplier);
+                    const step = multiplier > 0 ? multiplier : minAmount;
+                    if (step > 0) {
+                        count = Math.floor(total / step);
                     }
                     
                     console.log(`[SalesView] Calculated voucher count: ${count}`);

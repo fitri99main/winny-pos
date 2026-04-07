@@ -1623,7 +1623,7 @@ export function SettingsView({
                                         />
                                     </div>
                                     <div className="flex items-center justify-between">
-                                        <Label htmlFor="show-customer-status" className="cursor-pointer">Tampilkan Status Pelanggan</Label>
+                                        <Label htmlFor="show-customer-status" className="cursor-pointer text-gray-700 font-medium whitespace-nowrap">Tampilkan Status Pelanggan</Label>
                                         <Switch
                                             id="show-customer-status"
                                             checked={localSettings.show_customer_status}
@@ -1666,7 +1666,7 @@ export function SettingsView({
                                                             placeholder="Contoh: 50000"
                                                             className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/20 outline-none"
                                                         />
-                                                        <p className="text-[10px] text-gray-400">Setiap kelipatan jumlah ini akan mendapatkan 1 voucher tambahan (0 = hanya 1 voucher).</p>
+                                                        <p className="text-[10px] text-gray-400">Setiap kelipatan jumlah ini akan mendapatkan 1 voucher tambahan (0 = otomatis gunakan Minimal Belanja).</p>
                                                     </div>
                                                 </div>
                                                 <div className="space-y-2">
@@ -2231,7 +2231,7 @@ export function SettingsView({
                                         className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20"
                                         placeholder="20000"
                                     />
-                                    <p className="text-[10px] text-gray-400">Setiap kelipatan jumlah ini akan mendapatkan 1 voucher tambahan (0 = hanya 1 voucher).</p>
+                                    <p className="text-[10px] text-gray-400">Setiap kelipatan jumlah ini akan mendapatkan 1 voucher tambahan (0 = otomatis gunakan Minimal Belanja).</p>
                                 </div>
                                 <div className="space-y-2">
                                     <Label className="text-sm font-medium text-gray-700">Pesan Header Voucher</Label>

@@ -1857,10 +1857,25 @@ function Home() {
 
       // --- Automatic Printing ---
       let wifiVoucher = undefined;
-      if (storeSettings?.enable_wifi_vouchers && isOnline) {
+      const wifiMinSpend = Number(storeSettings?.wifi_voucher_min_amount) || 0;
+      const saleTotal = Number(sale.total_amount) || 0;
+
+      if (storeSettings?.enable_wifi_vouchers && isOnline && saleTotal >= wifiMinSpend) {
         try {
           const { WifiVoucherService } = await import('../lib/WifiVoucherService');
-          wifiVoucher = await WifiVoucherService.getVoucherForSale(sale.id, currentBranchId) || undefined;
+          
+          let count = 1;
+          const minSpend = Number(storeSettings?.wifi_voucher_min_amount) || 0;
+          const multiplier = Number(storeSettings?.wifi_voucher_multiplier) || 0;
+          const step = multiplier > 0 ? multiplier : minSpend;
+          
+          if (step > 0) {
+            count = Math.floor(saleTotal / step);
+          }
+
+          if (count > 0) {
+            wifiVoucher = await WifiVoucherService.getVoucherForSale(sale.id, currentBranchId, count) || undefined;
+          }
         } catch (e) { console.error('WiFi Voucher failed:', e); }
       }
 
@@ -2657,6 +2672,8 @@ function Home() {
           returns={returns}
           products={products}
           ingredients={inventoryIngredients}
+          voucherStats={voucherStats}
+          storeSettings={storeSettings}
           onNavigate={(module, tab) => {
             setActiveModule(module as ModuleType);
             if (tab) setSalesViewTab(tab);
@@ -2788,7 +2805,7 @@ function Home() {
             userRole={role || ''}
           />
         );
-      case 'reports': return <ReportsView sales={sales} returns={returns} paymentMethods={paymentMethods} />;
+      case 'reports': return <ReportsView sales={sales} returns={returns} paymentMethods={paymentMethods} storeSettings={storeSettings} />;
       case 'accounting': return (
         <AccountingView
           accounts={accounts}

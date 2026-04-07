@@ -8,9 +8,14 @@ import {
     Activity,
     Cake,
     ChevronRight,
-    DollarSign
+    DollarSign,
+    Printer,
+    X
 } from 'lucide-react';
 import { ContactData } from '../contacts/ContactsView';
+import { useState, useMemo } from 'react';
+import { Button } from '../ui/button';
+import { toast } from 'sonner';
 
 import { SalesOrder, SalesReturn } from '../pos/SalesView';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar } from 'recharts';
@@ -22,6 +27,7 @@ export interface DashboardViewProps {
     products: any[];
     ingredients: any[];
     voucherStats?: { total: number; used: number; available: number };
+    storeSettings?: any;
     onNavigate: (module: string, tab?: any) => void;
 }
 
@@ -32,10 +38,15 @@ export function DashboardView({
     products = [], 
     ingredients = [], 
     voucherStats = { total: 0, used: 0, available: 0 }, 
+    storeSettings,
     onNavigate 
 }: DashboardViewProps) {
+    const [showDailyReceipt, setShowDailyReceipt] = useState(false);
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
+
+    const [reportStartDate, setReportStartDate] = useState(todayStr);
+    const [reportEndDate, setReportEndDate] = useState(todayStr);
 
     // --- Real Stats Calculation ---
     const salesToday = (sales || []).filter(s => s && s.date && s.date.startsWith(todayStr) && s.status !== 'Returned');
@@ -103,6 +114,34 @@ export function DashboardView({
         .sort((a, b) => b.value - a.value)
         .slice(0, 5);
 
+    // --- Daily Receipt Calculations (Filtered by Date Range) ---
+    const reportSales = useMemo(() => {
+        return (sales || []).filter(s => {
+            if (!s || !s.date || s.status === 'Returned') return false;
+            const saleDate = s.date.split('T')[0];
+            return saleDate >= reportStartDate && saleDate <= reportEndDate;
+        });
+    }, [sales, reportStartDate, reportEndDate]);
+
+    const dailyTax = useMemo(() => reportSales.reduce((acc, s) => acc + (s.tax || 0), 0), [reportSales]);
+    const dailyDiscount = useMemo(() => reportSales.reduce((acc, s) => acc + (s.discount || 0), 0), [reportSales]);
+    const paymentBreakdown = useMemo(() => {
+        const counts: Record<string, number> = {};
+        reportSales.forEach(s => {
+            if (s.status === 'Completed') {
+                counts[s.paymentMethod] = (counts[s.paymentMethod] || 0) + s.totalAmount;
+            }
+        });
+        return Object.entries(counts).map(([name, total]) => ({ name, total }));
+    }, [reportSales]);
+
+    const dailyNetTotal = useMemo(() => reportSales.reduce((acc, s) => acc + (s.totalAmount || 0), 0), [reportSales]);
+    const subtotalGross = dailyNetTotal + dailyDiscount - dailyTax;
+
+    const handlePrint = () => {
+        window.print();
+    };
+
     const stats = [
         {
             label: 'Total Penjualan Hari Ini',
@@ -166,9 +205,18 @@ export function DashboardView({
                     <h2 className="text-xl font-bold text-gray-800">Ringkasan</h2>
                     <p className="text-xs text-gray-500">Overview Toko</p>
                 </div>
-                <div className="flex items-center gap-2 px-3 py-1 bg-white rounded-full shadow-sm border border-gray-100 text-[10px] font-bold text-gray-600">
-                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                    LIVE
+                <div className="flex items-center gap-3">
+                    <Button
+                        onClick={() => setShowDailyReceipt(true)}
+                        className="bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold px-4 h-9 rounded-xl shadow-lg shadow-orange-200 flex items-center gap-2 transition-all active:scale-95"
+                    >
+                        <Printer className="w-4 h-4" />
+                        Cetak Laporan Hari Ini
+                    </Button>
+                    <div className="flex items-center gap-2 px-3 py-1 bg-white rounded-full shadow-sm border border-gray-100 text-[10px] font-bold text-gray-600">
+                        <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                        LIVE
+                    </div>
                 </div>
             </div>
 
@@ -298,6 +346,137 @@ export function DashboardView({
                     ))}
                 </div>
             </div>
+
+            {/* Daily Sales Receipt Modal */}
+            {showDailyReceipt && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 print:p-0 print:bg-white animate-in fade-in duration-300">
+                    <div className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl relative print:shadow-none print:max-h-none print:w-full">
+                        {/* Header Modal (Hidden on Print) */}
+                        <div className="p-6 border-b border-gray-100 flex items-center justify-between print:hidden">
+                            <div className="flex-1 mr-4">
+                                <h3 className="font-bold text-gray-800">Bukti Fisik Transaksi</h3>
+                                <div className="flex items-center gap-2 mt-2">
+                                    <input 
+                                        type="date" 
+                                        value={reportStartDate} 
+                                        onChange={(e) => setReportStartDate(e.target.value)}
+                                        className="text-xs px-2 py-1 border rounded-md focus:ring-1 focus:ring-orange-500 outline-none"
+                                    />
+                                    <span className="text-[10px] font-bold text-gray-400">s/d</span>
+                                    <input 
+                                        type="date" 
+                                        value={reportEndDate} 
+                                        onChange={(e) => setReportEndDate(e.target.value)}
+                                        className="text-xs px-2 py-1 border rounded-md focus:ring-1 focus:ring-orange-500 outline-none"
+                                    />
+                                </div>
+                            </div>
+                            <Button variant="ghost" size="icon" onClick={() => setShowDailyReceipt(false)}>
+                                <X className="w-5 h-5" />
+                            </Button>
+                        </div>
+
+                        {/* Receipt Content */}
+                        <div className="flex-1 overflow-y-auto p-8 print:p-0 bg-gray-100 print:bg-white scrollbar-thin scrollbar-thumb-gray-200">
+                            <div className="bg-white p-8 shadow-sm mx-auto print:shadow-none print:p-0 print:m-0" 
+                                 style={{ 
+                                     width: storeSettings?.receipt_paper_width === '80mm' ? '400px' : '300px',
+                                     maxWidth: '100%',
+                                     fontFamily: 'monospace'
+                                 }}>
+                                
+                                {/* Receipt Header */}
+                                <div className="text-center space-y-1 mb-4">
+                                    {storeSettings?.show_logo && storeSettings?.receipt_logo_url && (
+                                        <div className="flex justify-center mb-3">
+                                            <img src={storeSettings.receipt_logo_url} alt="Logo" className="w-16 h-16 object-contain grayscale" />
+                                        </div>
+                                    )}
+                                    <h4 className="font-bold text-lg uppercase">{(storeSettings?.receipt_header || 'WINNY POS').toUpperCase()}</h4>
+                                    {storeSettings?.address && <p className="text-[11px] whitespace-pre-line">{storeSettings.address}</p>}
+                                    {storeSettings?.phone && <p className="text-[11px]">Telp: {storeSettings.phone}</p>}
+                                    <div className="py-2">--------------------------------</div>
+                                    <h5 className="font-bold text-sm">LAPORAN TRANSAKSI</h5>
+                                    <p className="text-[11px] font-bold">
+                                        {reportStartDate === reportEndDate 
+                                            ? new Date(reportStartDate).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+                                            : `${new Date(reportStartDate).toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' })} s/d ${new Date(reportEndDate).toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' })}`
+                                        }
+                                    </p>
+                                    <div className="py-1">================================</div>
+                                </div>
+
+                                {/* Summary */}
+                                <div className="space-y-1 text-[12px]">
+                                    <div className="flex justify-between">
+                                        <span className="font-bold tracking-tighter uppercase">RINGKASAN</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span>Total Transaksi:</span>
+                                        <span>{reportSales.length}</span>
+                                    </div>
+                                    <div className="flex justify-between font-bold border-t border-gray-200 mt-2 pt-1">
+                                        <span>TOTAL BERSIH (NET):</span>
+                                        <span>Rp {(reportSales.reduce((acc, s) => acc + (s.totalAmount || 0), 0)).toLocaleString('id-ID')}</span>
+                                    </div>
+                                    
+                                    {/* Tax/Discount Details */}
+                                    <div className="flex justify-between mt-1 text-gray-500">
+                                        <span>Subtotal Kotor:</span>
+                                        <span>{subtotalGross.toLocaleString('id-ID')}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span>Total Pajak (+):</span>
+                                        <span>{dailyTax.toLocaleString('id-ID')}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span>Total Diskon (-):</span>
+                                        <span>{dailyDiscount.toLocaleString('id-ID')}</span>
+                                    </div>
+                                </div>
+
+                                <div className="py-2 text-center">--------------------------------</div>
+
+                                {/* Payment Breakdown */}
+                                <div className="space-y-1 text-[12px]">
+                                    <span className="font-bold tracking-tighter uppercase">DETAIL PEMBAYARAN</span>
+                                    {paymentBreakdown.map((m, idx) => (
+                                        <div key={idx} className="flex justify-between">
+                                            <span>{m.name.toUpperCase()}:</span>
+                                            <span>{m.total.toLocaleString('id-ID')}</span>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="py-4 text-center">--------------------------------</div>
+
+                                {/* Footer */}
+                                <div className="text-center text-[10px] space-y-1 text-gray-500">
+                                    <p>Dicetak pada: {new Date().toLocaleString('id-ID')}</p>
+                                    <p className="font-bold text-black border border-black p-1 inline-block mt-2">BUKTI FISIK SAH</p>
+                                    
+                                    {storeSettings?.receipt_footer && (
+                                        <div className="pt-4 text-black text-[11px]">
+                                            <p>{storeSettings.receipt_footer}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Footer Print Control (Hidden on Print) */}
+                        <div className="p-6 border-t border-gray-100 flex gap-3 print:hidden">
+                            <Button variant="outline" className="flex-1" onClick={() => setShowDailyReceipt(false)}>
+                                Batal
+                            </Button>
+                            <Button className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold" onClick={handlePrint}>
+                                <Printer className="w-4 h-4 mr-2" />
+                                Cetak Struk Sekarang
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

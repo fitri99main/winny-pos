@@ -11,14 +11,16 @@ interface ReportsViewProps {
     sales: SalesOrder[];
     returns: SalesReturn[];
     paymentMethods: any[];
+    storeSettings?: any;
 }
 
-export function ReportsView({ sales, returns, paymentMethods }: ReportsViewProps) {
+export function ReportsView({ sales, returns, paymentMethods, storeSettings }: ReportsViewProps) {
     const [searchQuery, setSearchQuery] = useState('');
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
     const [methodFilter, setMethodFilter] = useState('All');
     const [showFilters, setShowFilters] = useState(false);
+    const [showReceiptPreview, setShowReceiptPreview] = useState(false);
     
     // [Part 25] Helper for quick date selection
     const handlePreset = (type: 'today' | 'yesterday' | 'week' | 'month') => {
@@ -211,6 +213,10 @@ export function ReportsView({ sales, returns, paymentMethods }: ReportsViewProps
         }
     };
 
+    const handlePrintReceipt = () => {
+        window.print();
+    };
+
     return (
         <div className="p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
             {/* Header section */}
@@ -234,6 +240,13 @@ export function ReportsView({ sales, returns, paymentMethods }: ReportsViewProps
                     >
                         <FileText className="w-5 h-5" />
                         Download PDF
+                    </Button>
+                    <Button
+                        onClick={() => setShowReceiptPreview(true)}
+                        className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl px-5 h-12 shadow-lg shadow-orange-200"
+                    >
+                        <Printer className="w-5 h-5" />
+                        Cetak Struk
                     </Button>
                 </div>
             </div>
@@ -478,6 +491,142 @@ export function ReportsView({ sales, returns, paymentMethods }: ReportsViewProps
                     </table>
                 </div>
             </div>
+
+            {/* Receipt Preview Modal */}
+            {showReceiptPreview && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 print:p-0 print:bg-white animate-in fade-in duration-300">
+                    <div className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl relative print:shadow-none print:max-h-none print:w-full">
+                        {/* Header Modal (Hidden on Print) */}
+                        <div className="p-6 border-b border-gray-100 flex items-center justify-between print:hidden">
+                            <div>
+                                <h3 className="font-bold text-gray-800">Pratinjau Struk Laporan</h3>
+                                <p className="text-xs text-gray-500">Tampilan thermal 58mm/80mm</p>
+                            </div>
+                            <Button variant="ghost" size="icon" onClick={() => setShowReceiptPreview(false)}>
+                                <X className="w-5 h-5" />
+                            </Button>
+                        </div>
+
+                        {/* Receipt Content */}
+                        <div className="flex-1 overflow-y-auto p-8 print:p-0 bg-gray-100 print:bg-white scrollbar-thin scrollbar-thumb-gray-200">
+                            <div className="bg-white p-8 shadow-sm mx-auto print:shadow-none print:p-0 print:m-0" 
+                                 style={{ 
+                                     width: storeSettings?.receipt_paper_width === '80mm' ? '400px' : '300px',
+                                     maxWidth: '100%',
+                                     fontFamily: 'monospace'
+                                 }}>
+                                
+                                {/* Receipt Header */}
+                                <div className="text-center space-y-1 mb-4">
+                                    {storeSettings?.show_logo && storeSettings?.receipt_logo_url && (
+                                        <div className="flex justify-center mb-3">
+                                            <img src={storeSettings.receipt_logo_url} alt="Logo" className="w-16 h-16 object-contain grayscale" />
+                                        </div>
+                                    )}
+                                    <h4 className="font-bold text-lg uppercase">{(storeSettings?.receipt_header || 'WINNY POS').toUpperCase()}</h4>
+                                    {storeSettings?.address && <p className="text-[11px] whitespace-pre-line">{storeSettings.address}</p>}
+                                    {storeSettings?.phone && <p className="text-[11px]">Telp: {storeSettings.phone}</p>}
+                                    <div className="py-2">--------------------------------</div>
+                                    <h5 className="font-bold text-sm">LAPORAN PENJUALAN</h5>
+                                    <p className="text-[11px]">
+                                        {startDate || endDate 
+                                            ? `${startDate || '...'} s/d ${endDate || '...'}` 
+                                            : 'Semua Periode'}
+                                    </p>
+                                    <div className="py-1">================================</div>
+                                </div>
+
+                                {/* Summary */}
+                                <div className="space-y-1 text-[12px]">
+                                    <div className="flex justify-between">
+                                        <span className="font-bold tracking-tighter uppercase">RINGKASAN</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span>Total Transaksi:</span>
+                                        <span>{totalTransactions}</span>
+                                    </div>
+                                    <div className="flex justify-between font-bold">
+                                        <span>TOTAL NET:</span>
+                                        <span>{totalSales.toLocaleString('id-ID')}</span>
+                                    </div>
+                                    
+                                    {/* Conditional Tax/Discount */}
+                                    {(storeSettings?.show_tax_on_report !== false) && (
+                                        <div className="flex justify-between">
+                                            <span>Total Pajak:</span>
+                                            <span>{filteredSales.reduce((acc, s) => acc + (s.tax || 0), 0).toLocaleString('id-ID')}</span>
+                                        </div>
+                                    )}
+                                    {(storeSettings?.show_discount_on_report !== false) && (
+                                        <div className="flex justify-between">
+                                            <span>Total Diskon:</span>
+                                            <span>-{filteredSales.reduce((acc, s) => acc + (s.discount || 0), 0).toLocaleString('id-ID')}</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="py-2 text-center">--------------------------------</div>
+
+                                {/* Payment Breakdown */}
+                                <div className="space-y-1 text-[12px]">
+                                    <span className="font-bold tracking-tighter uppercase">PEMBAYARAN</span>
+                                    {storeSettings?.show_qris_on_report === false ? (
+                                        <>
+                                            <div className="flex justify-between">
+                                                <span>TUNAI:</span>
+                                                <span>{(salesByPaymentMethod.find(m => m.name.toUpperCase() === 'TUNAI' || m.name.toUpperCase() === 'CASH')?.total || 0).toLocaleString('id-ID')}</span>
+                                            </div>
+                                            {(() => {
+                                                const cashTotal = salesByPaymentMethod.find(m => m.name.toUpperCase() === 'TUNAI' || m.name.toUpperCase() === 'CASH')?.total || 0;
+                                                const totalAll = salesByPaymentMethod.reduce((acc, m) => acc + m.total, 0);
+                                                const nonCash = totalAll - cashTotal;
+                                                return nonCash > 0 && (
+                                                    <div className="flex justify-between">
+                                                        <span>NON-TUNAI:</span>
+                                                        <span>{nonCash.toLocaleString('id-ID')}</span>
+                                                    </div>
+                                                );
+                                            })()}
+                                        </>
+                                    ) : (
+                                        salesByPaymentMethod.map((m, idx) => (
+                                            <div key={idx} className="flex justify-between">
+                                                <span>{m.name}:</span>
+                                                <span>{m.total.toLocaleString('id-ID')}</span>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+
+                                <div className="py-4 text-center">--------------------------------</div>
+
+                                {/* Footer */}
+                                <div className="text-center text-[10px] space-y-1 text-gray-500">
+                                    <p>Dicetak pada: {new Date().toLocaleString('id-ID')}</p>
+                                    <p>Status Data: Sinkron</p>
+                                    
+                                    {storeSettings?.receipt_footer && (
+                                        <div className="pt-4 text-black text-[11px]">
+                                            <p>{storeSettings.receipt_footer}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Footer Print Control (Hidden on Print) */}
+                        <div className="p-6 border-t border-gray-100 flex gap-3 print:hidden">
+                            <Button variant="outline" className="flex-1" onClick={() => setShowReceiptPreview(false)}>
+                                Batal
+                            </Button>
+                            <Button className="flex-1 bg-orange-500 hover:bg-orange-600 text-white" onClick={handlePrintReceipt}>
+                                <Printer className="w-4 h-4 mr-2" />
+                                Cetak Sekarang
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
