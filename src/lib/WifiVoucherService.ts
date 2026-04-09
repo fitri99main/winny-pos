@@ -145,16 +145,21 @@ export class WifiVoucherService {
      * Get statistics about vouchers
      */
     static async getCounts(branchId: string = 'default'): Promise<{ total: number; used: number; available: number }> {
-        const { count: total, error: totalError } = await supabase
-            .from('wifi_vouchers')
-            .select('*', { count: 'exact', head: true })
-            .eq('branch_id', branchId);
+        let totalQuery = supabase.from('wifi_vouchers').select('*', { count: 'exact', head: true });
+        let usedQuery = supabase.from('wifi_vouchers').select('*', { count: 'exact', head: true }).eq('is_used', true);
 
-        const { count: used, error: usedError } = await supabase
-            .from('wifi_vouchers')
-            .select('*', { count: 'exact', head: true })
-            .eq('branch_id', branchId)
-            .eq('is_used', true);
+        if (branchId !== 'default') {
+            totalQuery = totalQuery.or(`branch_id.eq.${branchId},branch_id.eq.default`);
+            usedQuery = usedQuery.or(`branch_id.eq.${branchId},branch_id.eq.default`);
+        } else {
+            totalQuery = totalQuery.eq('branch_id', 'default');
+            usedQuery = usedQuery.eq('branch_id', 'default');
+        }
+
+        const [{ count: total, error: totalError }, { count: used, error: usedError }] = await Promise.all([
+            totalQuery,
+            usedQuery
+        ]);
 
         if (totalError || usedError) {
             console.error('Error fetching voucher counts:', totalError || usedError);
@@ -185,12 +190,17 @@ export class WifiVoucherService {
         let query = supabase
             .from('wifi_vouchers')
             .select('*', { count: 'exact' })
-            .eq('branch_id', branchId)
             .order('created_at', { ascending: false })
             .range(from, to);
 
         if (isUsed !== undefined) {
             query = query.eq('is_used', isUsed);
+        }
+
+        if (branchId && branchId !== 'default') {
+            query = query.or(`branch_id.eq.${branchId},branch_id.eq.default`);
+        } else if (branchId) {
+            query = query.eq('branch_id', branchId);
         }
 
         if (search) {
