@@ -6,6 +6,8 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { toast } from 'sonner';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { ChevronRight, Cake, Activity } from 'lucide-react';
 
 interface ReportsViewProps {
     sales: SalesOrder[];
@@ -134,7 +136,44 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
         }
 
         return breakdown.sort((a, b) => b.total - a.total);
-    }, [sales, paymentMethods]);
+    }, [filteredSales, paymentMethods]);
+
+    // Calculate Best Sellers by Category for Reports
+    const bestSellersByCategory = useMemo(() => {
+        const productCounts: Record<string, { name: string, value: number, category: string }> = {};
+        
+        filteredSales.forEach(sale => {
+            if (sale.status !== 'Completed') return;
+            (sale.productDetails || []).forEach(item => {
+                if (!item.name) return;
+                const key = item.name;
+                if (!productCounts[key]) {
+                    productCounts[key] = { name: item.name, value: 0, category: (item.category || '').toLowerCase() };
+                }
+                productCounts[key].value += item.quantity || 1;
+                // If category is missing in detail but exists now, update it
+                if (!productCounts[key].category && item.category) {
+                    productCounts[key].category = item.category.toLowerCase();
+                }
+            });
+        });
+
+        const list = Object.values(productCounts);
+        
+        const getTop5 = (keyword: string) => list
+            .filter(p => p.category.includes(keyword) || p.name.toLowerCase().includes(keyword))
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 5);
+
+        return {
+            makanan: getTop5('makan'),
+            minuman: getTop5('minum'),
+            snack: getTop5('snack'),
+            produk: list.filter(p => p.category.includes('kemasan') || p.category.includes('produk') || p.name.toLowerCase().includes('kemasan'))
+                        .sort((a, b) => b.value - a.value)
+                        .slice(0, 5)
+        };
+    }, [filteredSales]);
 
     const exportToExcel = () => {
         try {
@@ -353,6 +392,85 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
                     </p>
                 </div>
             </div>
+
+            {/* Best Sellers Sections - 2x2 Grid */}
+            {reportType === 'sales' && (
+                <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm space-y-6">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+                                <TrendingUp className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-gray-800 text-lg">Produk Terlaris per Kategori</h3>
+                                <p className="text-xs text-gray-400">Berdasarkan kuantitas yang terjual</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Makanan */}
+                        <div className="bg-gray-50/50 p-5 rounded-2xl border border-gray-100">
+                            <h4 className="text-[10px] font-bold text-red-600 uppercase mb-3 tracking-widest pl-1">Makanan Terlaris</h4>
+                            <div className="h-48">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart layout="vertical" data={bestSellersByCategory.makanan} margin={{ left: -20, right: 30 }}>
+                                        <XAxis type="number" hide />
+                                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={100} tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 'bold' }} />
+                                        <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', shadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
+                                        <Bar dataKey="value" fill="#ef4444" radius={[0, 6, 6, 0]} barSize={12} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                        {/* Minuman */}
+                        <div className="bg-gray-50/50 p-5 rounded-2xl border border-gray-100">
+                            <h4 className="text-[10px] font-bold text-blue-600 uppercase mb-3 tracking-widest pl-1">Minuman Terlaris</h4>
+                            <div className="h-48">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart layout="vertical" data={bestSellersByCategory.minuman} margin={{ left: -20, right: 30 }}>
+                                        <XAxis type="number" hide />
+                                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={100} tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 'bold' }} />
+                                        <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', shadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
+                                        <Bar dataKey="value" fill="#3b82f6" radius={[0, 6, 6, 0]} barSize={12} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                        {/* Snack */}
+                        <div className="bg-gray-50/50 p-5 rounded-2xl border border-gray-100">
+                            <h4 className="text-[10px] font-bold text-orange-600 uppercase mb-3 tracking-widest pl-1">Snack Terlaris</h4>
+                            <div className="h-48">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart layout="vertical" data={bestSellersByCategory.snack} margin={{ left: -20, right: 30 }}>
+                                        <XAxis type="number" hide />
+                                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={100} tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 'bold' }} />
+                                        <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', shadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
+                                        <Bar dataKey="value" fill="#f97316" radius={[0, 6, 6, 0]} barSize={12} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                        {/* Produk */}
+                        <div className="bg-gray-50/50 p-5 rounded-2xl border border-gray-100">
+                            <h4 className="text-[10px] font-bold text-purple-600 uppercase mb-3 tracking-widest pl-1">Produk Kemasan Terlaris</h4>
+                            <div className="h-48">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart layout="vertical" data={bestSellersByCategory.produk} margin={{ left: -20, right: 30 }}>
+                                        <XAxis type="number" hide />
+                                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={100} tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 'bold' }} />
+                                        <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', shadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
+                                        <Bar dataKey="value" fill="#8b5cf6" radius={[0, 6, 6, 0]} barSize={12} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Filter Controls */}
             {showFilters && (
