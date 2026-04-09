@@ -44,8 +44,10 @@ export default function AccountingScreen() {
         totalSales: 0,
         avgTicket: 0
     });
-    const [coffeeBestSellers, setCoffeeBestSellers] = useState<any[]>([]);
-    const [nonCoffeeBestSellers, setNonCoffeeBestSellers] = useState<any[]>([]);
+    const [makananBestSellers, setMakananBestSellers] = useState<any[]>([]);
+    const [minumanBestSellers, setMinumanBestSellers] = useState<any[]>([]);
+    const [snackBestSellers, setSnackBestSellers] = useState<any[]>([]);
+    const [produkBestSellers, setProdukBestSellers] = useState<any[]>([]);
     const [recentSales, setRecentSales] = useState<any[]>([]);
 
     useFocusEffect(
@@ -133,9 +135,13 @@ export default function AccountingScreen() {
 
             if (itemsError) throw itemsError;
 
-            // Group by product name with category separation
-            const coffeeGrouping: any = {};
-            const nonCoffeeGrouping: any = {};
+            // Group by product name with granular category separation
+            const groups: any = {
+                makanan: {},
+                minuman: {},
+                snack: {},
+                produk: {}
+            };
 
             items?.forEach(item => {
                 const name = item.product_name || 'Produk';
@@ -143,27 +149,26 @@ export default function AccountingScreen() {
                 const category = (item.product as any)?.category?.toLowerCase() || '';
                 const lowerName = name.toLowerCase();
                 
-                if (category.includes('kopi') || lowerName.startsWith('kopi')) {
-                    if (!coffeeGrouping[name]) coffeeGrouping[name] = 0;
-                    coffeeGrouping[name] += qty;
-                } else {
-                    if (!nonCoffeeGrouping[name]) nonCoffeeGrouping[name] = 0;
-                    nonCoffeeGrouping[name] += qty;
+                if (category.includes('makan') || lowerName.includes('makan')) {
+                    groups.makanan[name] = (groups.makanan[name] || 0) + qty;
+                } else if (category.includes('minum') || lowerName.includes('minum')) {
+                    groups.minuman[name] = (groups.minuman[name] || 0) + qty;
+                } else if (category.includes('snack') || lowerName.includes('snack')) {
+                    groups.snack[name] = (groups.snack[name] || 0) + qty;
+                } else if (category.includes('kemasan') || category.includes('produk') || lowerName.includes('kemasan')) {
+                    groups.produk[name] = (groups.produk[name] || 0) + qty;
                 }
             });
 
-            const sortedCoffee = Object.keys(coffeeGrouping)
-                .map(name => ({ name, qty: coffeeGrouping[name] }))
+            const sortAndSlice = (group: any) => Object.keys(group)
+                .map(name => ({ name, qty: group[name] }))
                 .sort((a, b) => b.qty - a.qty)
                 .slice(0, 5);
 
-            const sortedNonCoffee = Object.keys(nonCoffeeGrouping)
-                .map(name => ({ name, qty: nonCoffeeGrouping[name] }))
-                .sort((a, b) => b.qty - a.qty)
-                .slice(0, 5);
-
-            setCoffeeBestSellers(sortedCoffee);
-            setNonCoffeeBestSellers(sortedNonCoffee);
+            setMakananBestSellers(sortAndSlice(groups.makanan));
+            setMinumanBestSellers(sortAndSlice(groups.minuman));
+            setSnackBestSellers(sortAndSlice(groups.snack));
+            setProdukBestSellers(sortAndSlice(groups.produk));
 
         } catch (error: any) {
             console.error('Fetch Dashboard Error:', error);
@@ -263,20 +268,20 @@ export default function AccountingScreen() {
                             </View>
                         </View>
 
-                        {/* Best Sellers - Coffee */}
+                        {/* Best Sellers - Makanan */}
                         <View style={styles.section}>
                             <View style={styles.sectionHeader}>
-                                <Award size={20} color="#ea580c" />
-                                <Text style={styles.sectionTitle}>Kopi Terlaris</Text>
+                                <Award size={20} color="#ef4444" />
+                                <Text style={styles.sectionTitle}>Makanan Terlaris</Text>
                             </View>
                             <View style={styles.card}>
-                                {coffeeBestSellers.length === 0 ? (
-                                    <Text style={styles.emptyText}>Tidak ada data produk kopi</Text>
+                                {makananBestSellers.length === 0 ? (
+                                    <Text style={styles.emptyText}>Tidak ada data makanan</Text>
                                 ) : (
-                                    coffeeBestSellers.map((item, index) => (
-                                        <View key={'coffee-' + index} style={[styles.listItem, index === coffeeBestSellers.length - 1 && { borderBottomWidth: 0 }]}>
-                                            <View style={styles.rankBadge}>
-                                                <Text style={styles.rankText}>{index + 1}</Text>
+                                    makananBestSellers.map((item, index) => (
+                                        <View key={'makanan-' + index} style={[styles.listItem, index === makananBestSellers.length - 1 && { borderBottomWidth: 0 }]}>
+                                            <View style={[styles.rankBadge, { backgroundColor: '#fee2e2' }]}>
+                                                <Text style={[styles.rankText, { color: '#ef4444' }]}>{index + 1}</Text>
                                             </View>
                                             <Text style={styles.listItemName} numberOfLines={1}>{item.name}</Text>
                                             <Text style={styles.listItemQty}>{item.qty} Porsi</Text>
@@ -286,23 +291,69 @@ export default function AccountingScreen() {
                             </View>
                         </View>
 
-                        {/* Best Sellers - Non Coffee */}
+                        {/* Best Sellers - Minuman */}
                         <View style={styles.section}>
                             <View style={styles.sectionHeader}>
                                 <Award size={20} color="#3b82f6" />
-                                <Text style={styles.sectionTitle}>Non-Kopi Terlaris</Text>
+                                <Text style={styles.sectionTitle}>Minuman Terlaris</Text>
                             </View>
                             <View style={styles.card}>
-                                {nonCoffeeBestSellers.length === 0 ? (
-                                    <Text style={styles.emptyText}>Tidak ada data produk non-kopi</Text>
+                                {minumanBestSellers.length === 0 ? (
+                                    <Text style={styles.emptyText}>Tidak ada data minuman</Text>
                                 ) : (
-                                    nonCoffeeBestSellers.map((item, index) => (
-                                        <View key={'noncoffee-' + index} style={[styles.listItem, index === nonCoffeeBestSellers.length - 1 && { borderBottomWidth: 0 }]}>
+                                    minumanBestSellers.map((item, index) => (
+                                        <View key={'minuman-' + index} style={[styles.listItem, index === minumanBestSellers.length - 1 && { borderBottomWidth: 0 }]}>
                                             <View style={[styles.rankBadge, { backgroundColor: '#eff6ff' }]}>
                                                 <Text style={[styles.rankText, { color: '#3b82f6' }]}>{index + 1}</Text>
                                             </View>
                                             <Text style={styles.listItemName} numberOfLines={1}>{item.name}</Text>
                                             <Text style={styles.listItemQty}>{item.qty} Porsi</Text>
+                                        </View>
+                                    ))
+                                )}
+                            </View>
+                        </View>
+
+                        {/* Best Sellers - Snack */}
+                        <View style={styles.section}>
+                            <View style={styles.sectionHeader}>
+                                <Award size={20} color="#f97316" />
+                                <Text style={styles.sectionTitle}>Snack Terlaris</Text>
+                            </View>
+                            <View style={styles.card}>
+                                {snackBestSellers.length === 0 ? (
+                                    <Text style={styles.emptyText}>Tidak ada data snack</Text>
+                                ) : (
+                                    snackBestSellers.map((item, index) => (
+                                        <View key={'snack-' + index} style={[styles.listItem, index === snackBestSellers.length - 1 && { borderBottomWidth: 0 }]}>
+                                            <View style={[styles.rankBadge, { backgroundColor: '#fff7ed' }]}>
+                                                <Text style={[styles.rankText, { color: '#f97316' }]}>{index + 1}</Text>
+                                            </View>
+                                            <Text style={styles.listItemName} numberOfLines={1}>{item.name}</Text>
+                                            <Text style={styles.listItemQty}>{item.qty} Porsi</Text>
+                                        </View>
+                                    ))
+                                )}
+                            </View>
+                        </View>
+
+                        {/* Best Sellers - Produk Kemasan */}
+                        <View style={styles.section}>
+                            <View style={styles.sectionHeader}>
+                                <Award size={20} color="#a855f7" />
+                                <Text style={styles.sectionTitle}>Produk (Kemasan) Terlaris</Text>
+                            </View>
+                            <View style={styles.card}>
+                                {produkBestSellers.length === 0 ? (
+                                    <Text style={styles.emptyText}>Tidak ada data produk kemasan</Text>
+                                ) : (
+                                    produkBestSellers.map((item, index) => (
+                                        <View key={'produk-' + index} style={[styles.listItem, index === produkBestSellers.length - 1 && { borderBottomWidth: 0 }]}>
+                                            <View style={[styles.rankBadge, { backgroundColor: '#f5f3ff' }]}>
+                                                <Text style={[styles.rankText, { color: '#a855f7' }]}>{index + 1}</Text>
+                                            </View>
+                                            <Text style={styles.listItemName} numberOfLines={1}>{item.name}</Text>
+                                            <Text style={styles.listItemQty}>{item.qty} Pcs</Text>
                                         </View>
                                     ))
                                 )}
