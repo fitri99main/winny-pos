@@ -239,34 +239,34 @@ export function DashboardView({
 
             {/* Birthday Alert - Conditional */}
             {birthdaysToday.length > 0 && (
-                <div className="bg-gradient-to-r from-pink-500/10 to-orange-500/10 border border-pink-200 rounded-xl p-3 flex items-center justify-between animate-in slide-in-from-top duration-500 mb-1 shrink-0">
+                <div className="bg-gradient-to-r from-pink-500/10 to-orange-500/10 border border-pink-200 rounded-xl p-2.5 flex items-center justify-between shrink-0 mb-1">
                     <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-pink-500 rounded-lg flex items-center justify-center text-white shadow-sm">
-                            <Cake className="w-4 h-4" />
+                        <div className="w-7 h-7 bg-pink-500 rounded-lg flex items-center justify-center text-white shadow-sm">
+                            <Cake className="w-3.5 h-3.5" />
                         </div>
-                        <div className="text-xs">
-                            <span className="font-bold text-gray-800">Ulang Tahun:</span> {birthdaysToday.map(c => c.name).join(', ')}
+                        <div className="text-[11px]">
+                            <span className="font-bold text-gray-800">Ulang Tahun Hari Ini:</span> {birthdaysToday.map(c => c.name).join(', ')}
                         </div>
                     </div>
                 </div>
             )}
 
 
-            {/* 2. Stats Grid - Fixed Height */}
+            {/* 2. Stats Grid - Compact & Precise */}
             <div className="grid grid-cols-5 gap-3 shrink-0">
                 {stats.map((stat, index) => (
                     <div 
                         key={index} 
                         onClick={() => stat.module && onNavigate(stat.module, stat.tab)}
-                        className="bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex items-center gap-3 cursor-pointer hover:shadow-md hover:border-blue-200 transition-all group"
+                        className="bg-white p-2.5 rounded-xl shadow-sm border border-gray-100 flex items-center gap-2.5 cursor-pointer hover:shadow-md hover:border-blue-200 transition-all group"
                     >
-                        <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${stat.gradient} flex items-center justify-center text-white shadow-sm shrink-0 group-hover:scale-110 transition-transform`}>
-                            <stat.icon className="w-5 h-5" />
+                        <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${stat.gradient} flex items-center justify-center text-white shadow-sm shrink-0 group-hover:scale-105 transition-transform`}>
+                            <stat.icon className="w-4.5 h-4.5" />
                         </div>
                         <div className="min-w-0">
-                            <p className="text-[10px] text-gray-400 font-medium truncate">{stat.label}</p>
-                            <h3 className="text-lg font-bold text-gray-800 leading-tight">{stat.value}</h3>
-                            <span className="text-[10px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-md inline-block mt-0.5">{stat.trend}</span>
+                            <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider truncate">{stat.label}</p>
+                            <h3 className="text-base font-bold text-gray-800 leading-tight">{stat.value}</h3>
+                            <span className="text-[9px] font-bold text-green-600 bg-green-50 px-1 py-0.5 rounded inline-block mt-0.5">{stat.trend}</span>
                         </div>
                     </div>
                 ))}
@@ -307,64 +307,66 @@ export function DashboardView({
                             Lihat Semua <ChevronRight className="w-2.5 h-2.5" />
                         </button>
                     </div>
-                    <div className="flex-1 min-h-0 w-full overflow-y-auto space-y-4">
-                        {/* Makanan */}
-                        <div className="flex flex-col">
-                            <h4 className="text-[10px] font-bold text-red-600 uppercase mb-1 tracking-wider">Makanan</h4>
-                            <div className="h-16">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart layout="vertical" data={makananBestSellers} margin={{ left: -20, right: 10 }}>
-                                        <XAxis type="number" hide />
-                                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 9, fill: '#6b7280' }} />
-                                        <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px' }} />
-                                        <Bar dataKey="value" fill="#ef4444" radius={[0, 4, 4, 0]} barSize={8} />
-                                    </BarChart>
-                                </ResponsiveContainer>
+                    <div className="flex-1 min-h-0 w-full overflow-y-auto pr-1">
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-4">
+                            {/* Makanan */}
+                            <div className="flex flex-col">
+                                <h4 className="text-[10px] font-bold text-red-600 uppercase mb-1 tracking-wider">Makanan</h4>
+                                <div className="h-20">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart layout="vertical" data={makananBestSellers} margin={{ left: -25, right: 10 }}>
+                                            <XAxis type="number" hide />
+                                            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 9, fill: '#6b7280' }} />
+                                            <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px' }} />
+                                            <Bar dataKey="value" fill="#ef4444" radius={[0, 4, 4, 0]} barSize={8} />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
                             </div>
-                        </div>
 
-                        {/* Minuman */}
-                        <div className="flex flex-col">
-                            <h4 className="text-[10px] font-bold text-blue-600 uppercase mb-1 tracking-wider">Minuman</h4>
-                            <div className="h-16">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart layout="vertical" data={minumanBestSellers} margin={{ left: -20, right: 10 }}>
-                                        <XAxis type="number" hide />
-                                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 9, fill: '#6b7280' }} />
-                                        <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px' }} />
-                                        <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={8} />
-                                    </BarChart>
-                                </ResponsiveContainer>
+                            {/* Minuman */}
+                            <div className="flex flex-col">
+                                <h4 className="text-[10px] font-bold text-blue-600 uppercase mb-1 tracking-wider">Minuman</h4>
+                                <div className="h-20">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart layout="vertical" data={minumanBestSellers} margin={{ left: -25, right: 10 }}>
+                                            <XAxis type="number" hide />
+                                            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 9, fill: '#6b7280' }} />
+                                            <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px' }} />
+                                            <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={8} />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
                             </div>
-                        </div>
 
-                        {/* Snack */}
-                        <div className="flex flex-col">
-                            <h4 className="text-[10px] font-bold text-orange-600 uppercase mb-1 tracking-wider">Snack</h4>
-                            <div className="h-12">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart layout="vertical" data={snackBestSellers} margin={{ left: -20, right: 10 }}>
-                                        <XAxis type="number" hide />
-                                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 9, fill: '#6b7280' }} />
-                                        <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px' }} />
-                                        <Bar dataKey="value" fill="#f97316" radius={[0, 4, 4, 0]} barSize={8} />
-                                    </BarChart>
-                                </ResponsiveContainer>
+                            {/* Snack */}
+                            <div className="flex flex-col">
+                                <h4 className="text-[10px] font-bold text-orange-600 uppercase mb-1 tracking-wider">Snack</h4>
+                                <div className="h-20">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart layout="vertical" data={snackBestSellers} margin={{ left: -25, right: 10 }}>
+                                            <XAxis type="number" hide />
+                                            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 9, fill: '#6b7280' }} />
+                                            <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px' }} />
+                                            <Bar dataKey="value" fill="#f97316" radius={[0, 4, 4, 0]} barSize={8} />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
                             </div>
-                        </div>
 
-                        {/* Produk Kemasan */}
-                        <div className="flex flex-col">
-                            <h4 className="text-[10px] font-bold text-purple-600 uppercase mb-1 tracking-wider">Produk (Kemasan)</h4>
-                            <div className="h-12">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart layout="vertical" data={produkBestSellers} margin={{ left: -20, right: 10 }}>
-                                        <XAxis type="number" hide />
-                                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 9, fill: '#6b7280' }} />
-                                        <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px' }} />
-                                        <Bar dataKey="value" fill="#a855f7" radius={[0, 4, 4, 0]} barSize={8} />
-                                    </BarChart>
-                                </ResponsiveContainer>
+                            {/* Produk Kemasan */}
+                            <div className="flex flex-col">
+                                <h4 className="text-[10px] font-bold text-purple-600 uppercase mb-1 tracking-wider">Produk (Kemasan)</h4>
+                                <div className="h-20">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart layout="vertical" data={produkBestSellers} margin={{ left: -25, right: 10 }}>
+                                            <XAxis type="number" hide />
+                                            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 9, fill: '#6b7280' }} />
+                                            <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px' }} />
+                                            <Bar dataKey="value" fill="#a855f7" radius={[0, 4, 4, 0]} barSize={8} />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
                             </div>
                         </div>
                     </div>

@@ -3119,22 +3119,23 @@ function Home() {
                         key={module.id}
                         onClick={() => {
                           setActiveModule(module.id as ModuleType);
-                          // Close mobile drawer if open (not implemented but good practice)
                         }}
-                        className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start px-3'} gap-3 py-2.5 rounded-xl transition-all duration-200 group relative ${isActive
-                          ? 'bg-blue-50 text-blue-700 shadow-sm ring-1 ring-blue-100'
-                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                        className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start px-2.5'} gap-2.5 py-1.5 rounded-lg transition-all duration-200 group relative ${isActive
+                          ? 'bg-blue-50/80 text-blue-700 shadow-sm ring-1 ring-blue-100/50'
+                          : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
                           }`}
                         title={isSidebarCollapsed ? module.label : ''}
                       >
-                        <div className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${isActive ? 'bg-white text-blue-600' : `${module.bgColor} bg-opacity-40 group-hover:bg-opacity-100 ${module.color} group-hover:text-gray-900`}`}>
-                          <Icon className="w-5 h-5" />
+                        <div className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${isActive ? 'bg-white text-blue-600 shadow-sm' : `${module.bgColor} bg-opacity-30 group-hover:bg-opacity-100 ${module.color} group-hover:text-white`}`}>
+                          <Icon className="w-4.5 h-4.5 text-current" />
                         </div>
                         {!isSidebarCollapsed && (
-                          <span className="font-medium text-sm truncate animate-in fade-in duration-200">{module.label}</span>
+                          <span className={`font-semibold text-xs truncate animate-in fade-in duration-200 ${isActive ? 'text-blue-700' : 'text-gray-600'}`}>
+                            {module.label}
+                          </span>
                         )}
                         {!isSidebarCollapsed && isActive && (
-                          <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-600" />
+                          <div className="ml-auto w-1 h-1 rounded-full bg-blue-600 animate-pulse" />
                         )}
                       </button>
                     );

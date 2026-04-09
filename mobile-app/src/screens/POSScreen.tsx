@@ -932,38 +932,6 @@ export default function POSScreen() {
         }
     };
 
-    const fetchTopSellingProducts = async () => {
-        try {
-            const thirtyDaysAgo = new Date();
-            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-            const { data, error } = await supabase
-                .from('sale_items')
-                .select('product_name, quantity, sales!inner(date)')
-                .eq('branch_id', currentBranchId)
-                .gte('sales.date', thirtyDaysAgo.toISOString());
-
-            if (error) throw error;
-
-            const counts: Record<string, number> = {};
-            (data || []).forEach(item => {
-                const name = item.product_name;
-                if (name) {
-                    counts[name] = (counts[name] || 0) + (Number(item.quantity) || 1);
-                }
-            });
-
-            const sorted = Object.entries(counts)
-                .sort(([, a], [, b]) => b - a)
-                .slice(0, 50)
-                .map(([name]) => name);
-
-            setTopSellingProducts(sorted);
-        } catch (err) {
-            console.error('Failed to fetch top selling products mobile:', err);
-        }
-    };
-
 
     // Filter Logic
     const filteredProducts = useMemo(() => {
