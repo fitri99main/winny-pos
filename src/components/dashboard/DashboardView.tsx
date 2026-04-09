@@ -308,17 +308,20 @@ export function DashboardView({
                         </button>
                     </div>
                     <div className="flex-1 min-h-0 w-full overflow-y-auto pr-1">
-                        <div className="grid grid-cols-2 gap-x-3 gap-y-4">
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-6 mt-2">
                             {/* Makanan */}
                             <div className="flex flex-col">
-                                <h4 className="text-[10px] font-bold text-red-600 uppercase mb-1 tracking-wider">Makanan</h4>
-                                <div className="h-20">
+                                <div className="flex items-center gap-1.5 mb-2">
+                                    <div className="w-1 h-3 bg-red-500 rounded-full" />
+                                    <h4 className="text-[11px] font-extrabold text-gray-800 uppercase tracking-wider">Makanan</h4>
+                                </div>
+                                <div className="h-28">
                                     <ResponsiveContainer width="100%" height="100%">
-                                        <BarChart layout="vertical" data={makananBestSellers} margin={{ left: -25, right: 10 }}>
+                                        <BarChart layout="vertical" data={makananBestSellers} margin={{ left: -10, right: 20 }}>
                                             <XAxis type="number" hide />
-                                            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 9, fill: '#6b7280' }} />
-                                            <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px' }} />
-                                            <Bar dataKey="value" fill="#ef4444" radius={[0, 4, 4, 0]} barSize={8} />
+                                            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={90} tick={{ fontSize: 10, fill: '#374151', fontWeight: '600' }} />
+                                            <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                                            <Bar dataKey="value" fill="#ef4444" radius={[0, 4, 4, 0]} barSize={10} />
                                         </BarChart>
                                     </ResponsiveContainer>
                                 </div>
@@ -326,14 +329,17 @@ export function DashboardView({
 
                             {/* Minuman */}
                             <div className="flex flex-col">
-                                <h4 className="text-[10px] font-bold text-blue-600 uppercase mb-1 tracking-wider">Minuman</h4>
-                                <div className="h-20">
+                                <div className="flex items-center gap-1.5 mb-2">
+                                    <div className="w-1 h-3 bg-blue-500 rounded-full" />
+                                    <h4 className="text-[11px] font-extrabold text-gray-800 uppercase tracking-wider">Minuman</h4>
+                                </div>
+                                <div className="h-28">
                                     <ResponsiveContainer width="100%" height="100%">
-                                        <BarChart layout="vertical" data={minumanBestSellers} margin={{ left: -25, right: 10 }}>
+                                        <BarChart layout="vertical" data={minumanBestSellers} margin={{ left: -10, right: 20 }}>
                                             <XAxis type="number" hide />
-                                            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 9, fill: '#6b7280' }} />
-                                            <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px' }} />
-                                            <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={8} />
+                                            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={90} tick={{ fontSize: 10, fill: '#374151', fontWeight: '600' }} />
+                                            <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                                            <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={10} />
                                         </BarChart>
                                     </ResponsiveContainer>
                                 </div>
@@ -341,14 +347,17 @@ export function DashboardView({
 
                             {/* Snack */}
                             <div className="flex flex-col">
-                                <h4 className="text-[10px] font-bold text-orange-600 uppercase mb-1 tracking-wider">Snack</h4>
-                                <div className="h-20">
+                                <div className="flex items-center gap-1.5 mb-2">
+                                    <div className="w-1 h-3 bg-orange-500 rounded-full" />
+                                    <h4 className="text-[11px] font-extrabold text-gray-800 uppercase tracking-wider">Snack</h4>
+                                </div>
+                                <div className="h-28">
                                     <ResponsiveContainer width="100%" height="100%">
-                                        <BarChart layout="vertical" data={snackBestSellers} margin={{ left: -25, right: 10 }}>
+                                        <BarChart layout="vertical" data={snackBestSellers} margin={{ left: -10, right: 20 }}>
                                             <XAxis type="number" hide />
-                                            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 9, fill: '#6b7280' }} />
-                                            <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px' }} />
-                                            <Bar dataKey="value" fill="#f97316" radius={[0, 4, 4, 0]} barSize={8} />
+                                            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={90} tick={{ fontSize: 10, fill: '#374151', fontWeight: '600' }} />
+                                            <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                                            <Bar dataKey="value" fill="#f97316" radius={[0, 4, 4, 0]} barSize={10} />
                                         </BarChart>
                                     </ResponsiveContainer>
                                 </div>
@@ -356,14 +365,17 @@ export function DashboardView({
 
                             {/* Produk Kemasan */}
                             <div className="flex flex-col">
-                                <h4 className="text-[10px] font-bold text-purple-600 uppercase mb-1 tracking-wider">Produk (Kemasan)</h4>
-                                <div className="h-20">
+                                <div className="flex items-center gap-1.5 mb-2">
+                                    <div className="w-1 h-3 bg-purple-500 rounded-full" />
+                                    <h4 className="text-[11px] font-extrabold text-gray-800 uppercase tracking-wider">Produk (Kemasan)</h4>
+                                </div>
+                                <div className="h-28">
                                     <ResponsiveContainer width="100%" height="100%">
-                                        <BarChart layout="vertical" data={produkBestSellers} margin={{ left: -25, right: 10 }}>
+                                        <BarChart layout="vertical" data={produkBestSellers} margin={{ left: -10, right: 20 }}>
                                             <XAxis type="number" hide />
-                                            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 9, fill: '#6b7280' }} />
-                                            <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px' }} />
-                                            <Bar dataKey="value" fill="#a855f7" radius={[0, 4, 4, 0]} barSize={8} />
+                                            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={90} tick={{ fontSize: 10, fill: '#374151', fontWeight: '600' }} />
+                                            <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                                            <Bar dataKey="value" fill="#8b5cf6" radius={[0, 4, 4, 0]} barSize={10} />
                                         </BarChart>
                                     </ResponsiveContainer>
                                 </div>
