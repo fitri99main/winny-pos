@@ -115,7 +115,13 @@ export default function POSScreen() {
     const [products, setProducts] = useState<any[]>([]);
     const [loadingProducts, setLoadingProducts] = useState(true);
     const [selectedCategory, setSelectedCategory] = useState('Semua');
-    const [categories, setCategories] = useState<string[]>(['Semua']);
+    const [categories, setCategories] = useState<string[]>([
+        'Semua', 
+        'Makanan Terlaris', 
+        'Minuman Terlaris', 
+        'Snack Terlaris', 
+        'Produk Terlaris'
+    ]);
     const [topSellingProducts, setTopSellingProducts] = useState<string[]>([]);
 
     // Master Data

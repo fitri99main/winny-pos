@@ -85,8 +85,10 @@ export function DashboardView({
     });
 
     // --- Best Sellers Calculation ---
-    const coffeeSales: Record<string, number> = {};
-    const nonCoffeeSales: Record<string, number> = {};
+    const makananSales: Record<string, number> = {};
+    const minumanSales: Record<string, number> = {};
+    const snackSales: Record<string, number> = {};
+    const produkSales: Record<string, number> = {};
 
     (sales || []).forEach(sale => {
         if (sale.status !== 'Returned' && Array.isArray(sale.productDetails)) {
@@ -94,25 +96,40 @@ export function DashboardView({
                 if (item && item.name) {
                     const category = (item.category || '').toLowerCase();
                     const lowerName = item.name.toLowerCase();
-                    if (category.includes('kopi') || lowerName.startsWith('kopi')) {
-                        coffeeSales[item.name] = (coffeeSales[item.name] || 0) + (item.quantity || 0);
-                    } else {
-                        nonCoffeeSales[item.name] = (nonCoffeeSales[item.name] || 0) + (item.quantity || 0);
+                    
+                    if (category.includes('makan')) {
+                        makananSales[item.name] = (makananSales[item.name] || 0) + (item.quantity || 0);
+                    } else if (category.includes('minum')) {
+                        minumanSales[item.name] = (minumanSales[item.name] || 0) + (item.quantity || 0);
+                    } else if (category.includes('snack')) {
+                        snackSales[item.name] = (snackSales[item.name] || 0) + (item.quantity || 0);
+                    } else if (category.includes('kemasan')) {
+                        produkSales[item.name] = (produkSales[item.name] || 0) + (item.quantity || 0);
                     }
                 }
             });
         }
     });
 
-    const coffeeBestSellers = Object.entries(coffeeSales)
+    const makananBestSellers = Object.entries(makananSales)
         .map(([name, value]) => ({ name, value }))
         .sort((a, b) => b.value - a.value)
-        .slice(0, 5);
+        .slice(0, 3);
 
-    const nonCoffeeBestSellers = Object.entries(nonCoffeeSales)
+    const minumanBestSellers = Object.entries(minumanSales)
         .map(([name, value]) => ({ name, value }))
         .sort((a, b) => b.value - a.value)
-        .slice(0, 5);
+        .slice(0, 3);
+
+    const snackBestSellers = Object.entries(snackSales)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 3);
+
+    const produkBestSellers = Object.entries(produkSales)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 3);
 
     // --- Daily Receipt Calculations (Filtered by Date Range) ---
     const reportSales = useMemo(() => {
@@ -291,31 +308,61 @@ export function DashboardView({
                         </button>
                     </div>
                     <div className="flex-1 min-h-0 w-full overflow-y-auto space-y-4">
-                        {/* Kopi Chart */}
-                        <div className="h-1/2 flex flex-col">
-                            <h4 className="text-[10px] font-bold text-orange-600 uppercase mb-1 tracking-wider">Kopi</h4>
-                            <div className="flex-1 min-h-0">
+                        {/* Makanan */}
+                        <div className="flex flex-col">
+                            <h4 className="text-[10px] font-bold text-red-600 uppercase mb-1 tracking-wider">Makanan</h4>
+                            <div className="h-16">
                                 <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart layout="vertical" data={coffeeBestSellers} margin={{ left: -20, right: 10 }}>
+                                    <BarChart layout="vertical" data={makananBestSellers} margin={{ left: -20, right: 10 }}>
                                         <XAxis type="number" hide />
                                         <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 9, fill: '#6b7280' }} />
                                         <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px' }} />
-                                        <Bar dataKey="value" fill="#ea580c" radius={[0, 4, 4, 0]} barSize={10} />
+                                        <Bar dataKey="value" fill="#ef4444" radius={[0, 4, 4, 0]} barSize={8} />
                                     </BarChart>
                                 </ResponsiveContainer>
                             </div>
                         </div>
 
-                        {/* Non-Kopi Chart */}
-                        <div className="h-1/2 flex flex-col">
-                            <h4 className="text-[10px] font-bold text-blue-600 uppercase mb-1 tracking-wider">Non-Kopi</h4>
-                            <div className="flex-1 min-h-0">
+                        {/* Minuman */}
+                        <div className="flex flex-col">
+                            <h4 className="text-[10px] font-bold text-blue-600 uppercase mb-1 tracking-wider">Minuman</h4>
+                            <div className="h-16">
                                 <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart layout="vertical" data={nonCoffeeBestSellers} margin={{ left: -20, right: 10 }}>
+                                    <BarChart layout="vertical" data={minumanBestSellers} margin={{ left: -20, right: 10 }}>
                                         <XAxis type="number" hide />
                                         <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 9, fill: '#6b7280' }} />
                                         <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px' }} />
-                                        <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={10} />
+                                        <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={8} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                        {/* Snack */}
+                        <div className="flex flex-col">
+                            <h4 className="text-[10px] font-bold text-orange-600 uppercase mb-1 tracking-wider">Snack</h4>
+                            <div className="h-12">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart layout="vertical" data={snackBestSellers} margin={{ left: -20, right: 10 }}>
+                                        <XAxis type="number" hide />
+                                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 9, fill: '#6b7280' }} />
+                                        <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px' }} />
+                                        <Bar dataKey="value" fill="#f97316" radius={[0, 4, 4, 0]} barSize={8} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                        {/* Produk Kemasan */}
+                        <div className="flex flex-col">
+                            <h4 className="text-[10px] font-bold text-purple-600 uppercase mb-1 tracking-wider">Produk (Kemasan)</h4>
+                            <div className="h-12">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart layout="vertical" data={produkBestSellers} margin={{ left: -20, right: 10 }}>
+                                        <XAxis type="number" hide />
+                                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} tick={{ fontSize: 9, fill: '#6b7280' }} />
+                                        <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px' }} />
+                                        <Bar dataKey="value" fill="#a855f7" radius={[0, 4, 4, 0]} barSize={8} />
                                     </BarChart>
                                 </ResponsiveContainer>
                             </div>

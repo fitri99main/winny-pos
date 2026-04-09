@@ -3330,7 +3330,7 @@ function Home() {
               ...p,
               is_best_seller: topSellingProducts.includes(p.name)
             }))}
-
+            topSellingProducts={topSellingProducts}
             categories={categories}
             tables={tables}
             activeSales={sales}
