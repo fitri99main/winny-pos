@@ -539,6 +539,7 @@ function Home() {
       supabase.channel('tables_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'tables' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
       supabase.channel('employee_assessments').on('postgres_changes', { event: '*', schema: 'public', table: 'employee_assessments' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
       supabase.channel('assessment_criteria').on('postgres_changes', { event: '*', schema: 'public', table: 'assessment_criteria' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
+      supabase.channel('wifi_vouchers_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'wifi_vouchers' }, () => fetchVoucherStats()).subscribe(),
 
     ];
 

@@ -10,7 +10,8 @@ import {
     ChevronRight,
     DollarSign,
     Printer,
-    X
+    X,
+    Wifi
 } from 'lucide-react';
 import { ContactData } from '../contacts/ContactsView';
 import { useState, useMemo } from 'react';
@@ -203,13 +204,13 @@ export function DashboardView({
             module: 'inventory'
         },
         {
-            label: 'Voucher WiFi',
+            label: 'Voucher WiFi (Tersedia)',
             value: (voucherStats?.available || 0).toString(),
-            icon: Activity,
-            trend: (voucherStats?.available || 0) < 10 ? 'Segera Import' : 'Cukup',
+            icon: Wifi,
+            trend: (voucherStats?.available || 0) < 10 ? 'Segera Import' : 'Stok Aman',
             trendUp: (voucherStats?.available || 0) >= 10,
-            gradient: (voucherStats?.available || 0) < 10 ? 'from-orange-600 to-red-700' : 'from-emerald-500 to-teal-600',
-            shadow: 'shadow-orange-500/20',
+            gradient: (voucherStats?.available || 0) < 10 ? 'from-red-500 to-orange-600' : 'from-cyan-500 to-blue-600',
+            shadow: 'shadow-cyan-500/20',
             module: 'settings'
         },
     ];
