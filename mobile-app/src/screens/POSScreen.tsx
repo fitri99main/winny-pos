@@ -502,7 +502,17 @@ export default function POSScreen() {
                         setLoadingProducts(false); // Hide loader early if cache exists
                     }
                     if (cachedCategories) {
-                        setCategories(JSON.parse(cachedCategories));
+                        const parsed = JSON.parse(cachedCategories);
+                        // Merge with hardcoded ones to ensure they are always present
+                        const merged = [
+                            'Semua', 
+                            'Makanan Terlaris', 
+                            'Minuman Terlaris', 
+                            'Snack Terlaris', 
+                            'Produk Terlaris',
+                            ...parsed.filter((c: string) => ![ 'Semua', 'Makanan Terlaris', 'Minuman Terlaris', 'Snack Terlaris', 'Produk Terlaris'].includes(c))
+                        ];
+                        setCategories(merged);
                     }
                     if (cachedPMs) {
                         setPaymentMethods(JSON.parse(cachedPMs));
@@ -828,6 +838,39 @@ export default function POSScreen() {
         }
     }, [showHeldOrdersModal]);
 
+
+    const fetchTopSellingProducts = async () => {
+        if (!currentBranchId) return;
+        try {
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+            const { data, error } = await supabase
+                .from('sale_items')
+                .select('product_name, quantity, sales!inner(date)')
+                .eq('branch_id', currentBranchId)
+                .gte('sales.date', thirtyDaysAgo.toISOString());
+
+            if (error) throw error;
+
+            const counts: Record<string, number> = {};
+            (data || []).forEach(item => {
+                const name = item.product_name;
+                if (name) {
+                    counts[name] = (counts[name] || 0) + (Number(item.quantity) || 1);
+                }
+            });
+
+            const sorted = Object.entries(counts)
+                .sort(([, a], [, b]) => b - a)
+                .slice(0, 50)
+                .map(([name]) => name);
+
+            setTopSellingProducts(sorted);
+        } catch (err) {
+            console.error('[POSScreen] Error fetching top selling:', err);
+        }
+    };
 
     const fetchCategories = async () => {
         try {
