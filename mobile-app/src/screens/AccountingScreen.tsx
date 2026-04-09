@@ -23,7 +23,14 @@ export default function AccountingScreen() {
     const navigation = useNavigation();
     const { width } = useWindowDimensions();
     const isSmallDevice = width < 380;
-    const { currentBranchId, branchName, loading: sessionLoading } = useSession();
+    const { isAdmin, storeSettings, currentBranchId, branchName, loading: sessionLoading } = useSession();
+    
+    useEffect(() => {
+        if (!sessionLoading && !isAdmin && storeSettings && !storeSettings.cashier_can_view_reports) {
+            Alert.alert('Akses Ditolak', 'Anda tidak memiliki izin untuk melihat laporan penjualan.');
+            navigation.goBack();
+        }
+    }, [isAdmin, storeSettings, sessionLoading]);
 
     const [filter, setFilter] = useState<FilterType>('today');
     const [loading, setLoading] = useState(true);
@@ -413,13 +420,13 @@ const styles = StyleSheet.create({
     filterContainer: {
         flexDirection: 'row',
         backgroundColor: '#e2e8f0',
-        borderRadius: 12,
+        borderRadius: 10,
         padding: 4,
-        marginBottom: 20,
+        marginBottom: 16,
     },
     filterTab: {
         flex: 1,
-        paddingVertical: 10,
+        paddingVertical: 8,
         alignItems: 'center',
         borderRadius: 8,
     },
@@ -431,14 +438,14 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.1,
         shadowRadius: 2,
     },
-    filterTabText: { fontSize: 13, fontWeight: '600', color: '#64748b' },
+    filterTabText: { fontSize: 12, fontWeight: '600', color: '#64748b' },
     filterTabTextActive: { color: '#ea580c' },
-    row: { flexDirection: 'row', marginBottom: 16 },
+    row: { flexDirection: 'row', marginBottom: 12 },
     statCard: {
         flex: 1,
         backgroundColor: '#fff',
-        borderRadius: 20,
-        padding: 16,
+        borderRadius: 16,
+        padding: 12,
         flexDirection: 'row',
         alignItems: 'center',
         borderWidth: 1,
@@ -446,22 +453,22 @@ const styles = StyleSheet.create({
         elevation: 1,
     },
     statIconContainer: {
-        width: 44,
-        height: 44,
-        borderRadius: 12,
+        width: 36,
+        height: 36,
+        borderRadius: 10,
         alignItems: 'center',
         justifyContent: 'center',
     },
-    statLabel: { fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5 },
-    statValue: { fontSize: 20, fontWeight: 'bold', color: '#1e293b', marginTop: 2 },
-    statSub: { fontSize: 10, color: '#94a3b8', marginTop: 2 },
-    section: { marginTop: 8, marginBottom: 24 },
-    sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, marginLeft: 4 },
-    sectionTitle: { fontSize: 15, fontWeight: 'bold', color: '#334155', marginLeft: 10 },
+    statLabel: { fontSize: 10, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5 },
+    statValue: { fontSize: 16, fontWeight: 'bold', color: '#1e293b', marginTop: 0 },
+    statSub: { fontSize: 9, color: '#94a3b8', marginTop: 2 },
+    section: { marginTop: 8, marginBottom: 16 },
+    sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, marginLeft: 4 },
+    sectionTitle: { fontSize: 13, fontWeight: 'bold', color: '#334155', marginLeft: 8 },
     card: {
         backgroundColor: '#fff',
-        borderRadius: 20,
-        padding: 8,
+        borderRadius: 16,
+        padding: 6,
         borderWidth: 1,
         borderColor: '#f1f5f9',
         elevation: 1,
@@ -469,24 +476,24 @@ const styles = StyleSheet.create({
     listItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 12,
+        padding: 10,
         borderBottomWidth: 1,
         borderBottomColor: '#f8fafc',
     },
     rankBadge: {
-        width: 24,
-        height: 24,
-        borderRadius: 12,
+        width: 20,
+        height: 20,
+        borderRadius: 10,
         backgroundColor: '#fff7ed',
         alignItems: 'center',
         justifyContent: 'center',
-        marginRight: 12,
+        marginRight: 10,
     },
-    rankText: { fontSize: 12, fontWeight: 'bold', color: '#ea580c' },
-    listItemName: { flex: 1, fontSize: 14, color: '#334155', fontWeight: '500' },
-    listItemQty: { fontSize: 13, fontWeight: 'bold', color: '#64748b' },
-    emptyText: { textAlign: 'center', padding: 20, color: '#94a3b8', fontSize: 13 },
-    orderNo: { fontSize: 14, fontWeight: 'bold', color: '#1e293b' },
-    timeText: { fontSize: 11, color: '#94a3b8', marginTop: 2 },
-    amountText: { fontSize: 14, fontWeight: 'bold', color: '#22c55e', marginRight: 10 },
+    rankText: { fontSize: 10, fontWeight: 'bold', color: '#ea580c' },
+    listItemName: { flex: 1, fontSize: 12, color: '#334155', fontWeight: '500' },
+    listItemQty: { fontSize: 11, fontWeight: 'bold', color: '#64748b' },
+    emptyText: { textAlign: 'center', padding: 16, color: '#94a3b8', fontSize: 12 },
+    orderNo: { fontSize: 12, fontWeight: 'bold', color: '#1e293b' },
+    timeText: { fontSize: 10, color: '#94a3b8', marginTop: 2 },
+    amountText: { fontSize: 13, fontWeight: 'bold', color: '#22c55e', marginRight: 10 },
 });

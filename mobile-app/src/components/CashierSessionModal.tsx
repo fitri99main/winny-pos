@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, Modal, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, ScrollView, Alert } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { PrinterManager } from '../lib/PrinterManager';
 
 interface CashierSessionModalProps {
     visible: boolean;
@@ -36,35 +37,106 @@ export default function CashierSessionModal({ visible, onClose, mode, session, o
         }
         setLoading(true);
         try {
+            // [MODIFIED] Use ISO string for robust date comparison across timezones
+            const openedAt = new Date(session.opened_at).toISOString();
+
             const { data: sales, error } = await supabase
                 .from('sales')
                 .select('*')
-                .gte('created_at', session.opened_at);
+                .gte('created_at', openedAt);
 
             if (error) throw error;
 
             let cash = 0;
-            let card = 0;
-            let qris = 0;
+            let nonCash = 0;
             let total = 0;
+            let completedCount = 0;
+            let paySummary: Record<string, number> = {};
 
             sales?.forEach(sale => {
-                const amount = sale.total_amount || 0;
-                total += amount;
-                const method = sale.payment_method;
-                if (method === 'Tunai' || method === 'Cash') cash += amount;
-                else if (method === 'Debit' || method === 'Kredit' || method === 'Card') card += amount;
-                else qris += amount; // QRIS, Transfer, Cek, etc.
+                const status = (sale.status || '').toLowerCase();
+                // [MODIFIED] Broaden paid status check
+                const isPaid = ['completed', 'selesai', 'paid', 'served', 'success', 'settlement', 'capture'].includes(status);
+                
+                if (isPaid) {
+                    completedCount++;
+                    const amount = (sale.paid_amount || sale.total_amount || 0);
+                    total += amount;
+                    const rawMethod = sale.payment_method || 'Tunai';
+                    const method = rawMethod.trim();
+                    paySummary[method] = (paySummary[method] || 0) + amount;
+
+                    const lowerMethod = method.toLowerCase();
+                    const isCash = lowerMethod === 'cash' || 
+                                  lowerMethod === 'tunai' || 
+                                  lowerMethod === 'uang tunai' ||
+                                  lowerMethod === 'cash ';
+
+                    if (isCash) cash += amount;
+                    else nonCash += amount;
+                }
             });
 
+            // Fetch Sale Items for Category & Product Summary
+            const saleIds = sales?.map(s => s.id) || [];
+            let catSummary: Record<string, number> = {};
+            let prodSummary: Record<string, { quantity: number; amount: number; category: string }> = {};
+
+            if (saleIds.length > 0) {
+                // [NEW] Robust category lookup maps
+                const { data: allProducts } = await supabase.from('products').select('id, name, category');
+                const productCatMap: Record<string, string> = {};
+                const productIdMap: Record<number, string> = {};
+                
+                allProducts?.forEach(p => {
+                    const cat = (p.category || 'LAINNYA').toUpperCase();
+                    if (p.name) productCatMap[p.name] = cat;
+                    if (p.id) productIdMap[Number(p.id)] = cat;
+                });
+
+                const { data: items, error: itemsError } = await supabase
+                    .from('sale_items')
+                    .select('product_id, product_name, quantity, price') // Corrected column names
+                    .in('sale_id', saleIds);
+                
+                if (!itemsError && items && items.length > 0) {
+                    items.forEach(item => {
+                        // [MODIFIED] Multi-layer category lookup
+                        const name = item.product_name || 'Produk';
+                        const productId = item.product_id ? Number(item.product_id) : null;
+                        const cat = (productId ? productIdMap[productId] : null) || productCatMap[name] || 'LAINNYA';
+                        
+                        const qty = Number(item.quantity) || 0;
+                        const price = Number(item.price) || 0;
+                        const amount = qty * price;
+
+                        if (amount > 0) {
+                            catSummary[cat] = (catSummary[cat] || 0) + amount;
+                            if (!prodSummary[name]) prodSummary[name] = { quantity: 0, amount: 0, category: cat };
+                            prodSummary[name].quantity += qty;
+                            prodSummary[name].amount += amount;
+                        }
+                    });
+                }
+            }
+
             const startCash = parseFloat(session.starting_cash) || 0;
-            setClosingData({
+            const finalClosingData = {
                 cash_sales: cash,
-                card_sales: card,
-                qris_sales: qris,
+                non_cash_sales: nonCash,
                 total_sales: total,
-                expected_cash: startCash + cash
-            });
+                total_orders: completedCount, 
+                expected_cash: startCash + cash,
+                payment_summary: Object.entries(paySummary).map(([method, amount]) => ({ method, amount })),
+                category_summary: Object.entries(catSummary).map(([name, amount]) => ({ name, amount })),
+                product_summary: Object.entries(prodSummary).map(([name, data]) => ({ 
+                    name, 
+                    quantity: data.quantity, 
+                    amount: data.amount,
+                    category: data.category
+                }))
+            };
+            setClosingData(finalClosingData);
         } catch (err: any) {
             console.error('Error calculating closing:', err);
             Alert.alert('Error', 'Gagal memuat ringkasan shift: ' + err.message);
@@ -104,6 +176,42 @@ export default function CashierSessionModal({ visible, onClose, mode, session, o
         }
     };
 
+    const handlePrintReport = async (data: any) => {
+        try {
+            const { data: settings } = await supabase.from('store_settings').select('*').single();
+            const reportData = {
+                shopName: settings?.store_name || 'WINNY COFFEE PNK',
+                address: settings?.address || '',
+                phone: settings?.phone || '',
+                dateRange: `${new Date(session.opened_at).toLocaleString('id-ID')} - ${new Date().toLocaleString('id-ID')}`,
+                totalOrders: data.total_orders || 0,
+                totalSales: data.total_sales,
+                totalTax: 0,
+                totalDiscount: 0,
+                paymentSummary: data.payment_summary || [],
+                categorySummary: (data.category_summary || []).map((c: any) => ({ category: c.name, amount: c.amount })),
+                productSummary: (data.product_summary || []).map((p: any) => ({
+                    ...p,
+                    name: p.category ? `[${p.category}] ${p.name}` : p.name
+                })),
+                openingBalance: parseFloat(session.starting_cash),
+                cashTotal: data.cash_sales,
+                qrTotal: data.non_cash_sales,
+                expectedCash: data.expected_cash,
+                actualCash: parseFloat(actualCash),
+                variance: parseFloat(actualCash) - data.expected_cash,
+                generatedBy: session.employee_name || 'Kasir',
+                showLogo: true,
+                receiptLogoUrl: settings?.logo_url
+            };
+
+            await PrinterManager.printSalesReport(reportData);
+        } catch (printErr: any) {
+            console.error('Print error:', printErr);
+            Alert.alert('Printer Error', 'Gagal mencetak laporan: ' + printErr.message);
+        }
+    };
+
     const handleCloseSession = async () => {
         const actual = parseFloat(actualCash) || 0;
         const expected = closingData?.expected_cash || 0;
@@ -115,8 +223,8 @@ export default function CashierSessionModal({ visible, onClose, mode, session, o
                 closed_at: new Date().toISOString(),
                 status: 'Closed',
                 cash_sales: closingData?.cash_sales || 0,
-                card_sales: closingData?.card_sales || 0,
-                qris_sales: closingData?.qris_sales || 0,
+                card_sales: 0,
+                qris_sales: closingData?.non_cash_sales || 0,
                 total_sales: closingData?.total_sales || 0,
                 expected_cash: expected,
                 actual_cash: actual,
@@ -132,12 +240,14 @@ export default function CashierSessionModal({ visible, onClose, mode, session, o
                 .from('cashier_sessions')
                 .update(updateData)
                 .eq('id', session.id)
-                .select(); // Select to verify it actually updated something
+                .select(); 
 
             if (error) throw error;
             if (!data || data.length === 0) {
                 throw new Error('Gagal memperbarui shift di database. Sesi tidak ditemukan.');
             }
+
+            await handlePrintReport(closingData);
 
             Alert.alert(
                 'Shift Ditutup', 
@@ -146,7 +256,6 @@ export default function CashierSessionModal({ visible, onClose, mode, session, o
                     { 
                         text: 'OK', 
                         onPress: async () => {
-                            // Auto Sign Out after user acknowledges
                             await supabase.auth.signOut();
                             onComplete();
                             onClose();
@@ -157,7 +266,7 @@ export default function CashierSessionModal({ visible, onClose, mode, session, o
         } catch (err: any) {
             Alert.alert('Error', 'Gagal menutup shift: ' + err.message);
         } finally {
-            setLoading(false);
+            setLoading(true);
         }
     };
 

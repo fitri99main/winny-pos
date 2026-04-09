@@ -1034,6 +1034,17 @@ export function SettingsView({
                                 />
                             </div>
 
+                            <div className="flex items-center justify-between p-4 bg-blue-50 rounded-xl border border-blue-200">
+                                <div>
+                                    <h4 className="font-bold text-blue-800">Cetak Dapur/Bar Saat Hold</h4>
+                                    <p className="text-xs text-blue-600">Otomatis mencetak tiket dapur dan bar ketika pesanan di-hold.</p>
+                                </div>
+                                <Switch
+                                    checked={localSettings.print_kds_on_hold ?? false}
+                                    onCheckedChange={c => handleLocalChange({ ...localSettings, print_kds_on_hold: c })}
+                                />
+                            </div>
+
                             <div className="flex items-center justify-between p-4 bg-primary/5 rounded-xl border border-primary/10">
                                 <div>
                                     <h4 className="font-bold text-gray-800">Manajemen Meja</h4>

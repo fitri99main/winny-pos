@@ -268,14 +268,25 @@ export default function HomeScreen() {
                     </TouchableOpacity>
 
                     {/* 3. Session History Button (RESTORED) */}
-                    <TouchableOpacity style={[styles.logoutButton, isSmallDevice && { width: 42, height: 42 }]} onPress={() => navigation.navigate('CashierSessionHistory' as never)}>
-                        <Text style={[styles.logoutButtonIcon, isSmallDevice && { fontSize: 18 }]}>🏪</Text>
-                    </TouchableOpacity>
+                    {(!isAdmin ? storeSettings?.cashier_can_view_session_history : true) && (
+                        <TouchableOpacity style={[styles.logoutButton, isSmallDevice && { width: 42, height: 42 }]} onPress={() => navigation.navigate('CashierSessionHistory' as never)}>
+                            <Text style={[styles.logoutButtonIcon, isSmallDevice && { fontSize: 18 }]}>🏪</Text>
+                        </TouchableOpacity>
+                    )}
 
                     {/* 4. Accounting Button */}
-                    <TouchableOpacity style={[styles.logoutButton, isSmallDevice && { width: 42, height: 42 }]} onPress={() => navigation.navigate('Accounting' as never)}>
-                        <Text style={[styles.logoutButtonIcon, isSmallDevice && { fontSize: 18 }]}>📊</Text>
-                    </TouchableOpacity>
+                    {(!isAdmin ? storeSettings?.cashier_can_view_reports : true) && (
+                        <TouchableOpacity style={[styles.logoutButton, isSmallDevice && { width: 42, height: 42 }]} onPress={() => navigation.navigate('Accounting' as never)}>
+                            <Text style={[styles.logoutButtonIcon, isSmallDevice && { fontSize: 18 }]}>📊</Text>
+                        </TouchableOpacity>
+                    )}
+
+                    {/* 4b. Purchases Button */}
+                    {(!isAdmin ? storeSettings?.cashier_can_view_reports : true) && (
+                        <TouchableOpacity style={[styles.logoutButton, isSmallDevice && { width: 42, height: 42 }]} onPress={() => navigation.navigate('Purchases' as never)}>
+                            <Text style={[styles.logoutButtonIcon, isSmallDevice && { fontSize: 18 }]}>📦</Text>
+                        </TouchableOpacity>
+                    )}
 
                     {/* 5. Settings Button */}
                     <TouchableOpacity style={[styles.logoutButton, isSmallDevice && { width: 42, height: 42 }]} onPress={() => navigation.navigate('Settings' as never)}>
@@ -283,9 +294,11 @@ export default function HomeScreen() {
                     </TouchableOpacity>
 
                     {/* 6. Printer/Report Button (RESTORED) */}
-                    <TouchableOpacity style={[styles.logoutButton, isSmallDevice && { width: 42, height: 42 }]} onPress={handleOpenSalesReport}>
-                        <Printer size={18} color="#1e293b" />
-                    </TouchableOpacity>
+                    {(!isAdmin ? storeSettings?.cashier_can_view_reports : true) && (
+                        <TouchableOpacity style={[styles.logoutButton, isSmallDevice && { width: 42, height: 42 }]} onPress={handleOpenSalesReport}>
+                            <Printer size={18} color="#1e293b" />
+                        </TouchableOpacity>
+                    )}
 
                     {/* 7. Logout Button */}
                     <TouchableOpacity style={[styles.logoutButton, { backgroundColor: '#ef444420' }, isSmallDevice && { width: 42, height: 42 }]} onPress={handleLogout}>
@@ -428,7 +441,7 @@ export default function HomeScreen() {
             </View>
 
             {/* Modals */}
-            <ConfirmExitModal visible={showShiftWarningModal.visible} onClose={() => setShowShiftWarningModal({ visible: false, message: '' })} title="Gagal Keluar" message={showShiftWarningModal.message} confirmText="Mengerti" iconType="alert" showCancel={false} />
+            <ConfirmExitModal visible={showShiftWarningModal.visible} onClose={() => setShowShiftWarningModal({ visible: false, message: '' })} onConfirm={() => setShowShiftWarningModal({ visible: false, message: '' })} title="Gagal Keluar" message={showShiftWarningModal.message} confirmText="Mengerti" iconType="alert" showCancel={false} />
             <ConfirmExitModal visible={showExitModal} onClose={() => setShowExitModal(false)} onConfirm={() => BackHandler.exitApp()} title="Konfirmasi Keluar" message="Keluar aplikasi?" confirmText="Keluar" iconType="alert" />
             <ConfirmExitModal visible={showDeleteConfirm} onClose={() => setShowDeleteConfirm(false)} onConfirm={onConfirmDelete} title="Hapus Pesanan?" message="Data akan dihapus permanen" confirmText="Hapus" cancelText="Batal" iconType="trash" />
             <ConfirmExitModal visible={showLogoutModal} onClose={() => setShowLogoutModal(false)} onConfirm={confirmLogout} title="Logout" message="Keluar ke login?" confirmText="Keluar" iconType="logout" />
@@ -445,6 +458,7 @@ const styles = StyleSheet.create({
     flex1: { flex: 1 },
     watermarkBg: { position: 'absolute', opacity: 0.1 },
     header: { padding: 20 },
+    tabletHeader: { paddingHorizontal: 40, paddingVertical: 30 },
     headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     greeting: { fontSize: 13 },
     username: { fontSize: 18, fontWeight: 'bold', color: '#1e293b' },

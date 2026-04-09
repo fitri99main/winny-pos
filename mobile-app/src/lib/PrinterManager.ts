@@ -663,13 +663,19 @@ export class PrinterManager {
             }
             
             await this.initPrinter();
-            const mac = macAddress?.toUpperCase() || '';
+            const mac = (macAddress || '').toUpperCase();
             if (!mac) throw new Error('Printer address missing');
              
-            // Forced reconnect to ensure switching works between Kitchen/Bar/Cashier printers
-            this.connectionStatus[mac] = 'connecting';
-            await BLEPrinter.connectPrinter(mac);
-            this.connectionStatus[mac] = 'connected';
+            // [OPTIMIZED] Skip connection delay if already connected
+            if (this.connectionStatus[mac] !== 'connected') {
+                this.connectionStatus[mac] = 'connecting';
+                await BLEPrinter.connectPrinter(mac);
+                this.connectionStatus[mac] = 'connected';
+                // Small delay (500ms) to ensure printer is ready
+                await new Promise(resolve => setTimeout(resolve, 500));
+            } else {
+                console.log(`Bluetooth (${targetName}): Already connected to ${mac}, skip waiting.`);
+            }
             
             await BLEPrinter.printBill(ticketText);
             return true;
@@ -727,7 +733,7 @@ export class PrinterManager {
             console.log('Bluetooth: Connected successfully!');
             
             // Wait for printer to be completely ready
-            await new Promise(resolve => setTimeout(resolve, 1500));
+            await new Promise(resolve => setTimeout(resolve, 500));
 
             if (orderData.show_logo && orderData.receipt_logo_url) {
                 try {
@@ -739,7 +745,7 @@ export class PrinterManager {
                             imageWidth: 200 
                         });
                         // Delay after image to allow processing
-                        await new Promise(resolve => setTimeout(resolve, 1200));
+                        await new Promise(resolve => setTimeout(resolve, 400));
                     }
                 } catch (imgError) {
                     console.error('[PrinterManager] Logo Print Error:', imgError);
@@ -899,10 +905,41 @@ export class PrinterManager {
         if (categorySummary.length > 0) {
             text += BOLD_ON + 'RINGKASAN KATEGORI' + BOLD_OFF + '\n';
             categorySummary.forEach((c: any) => {
-                text += this.padColumns(c.name, c.amount.toLocaleString('id-ID'), paperWidth) + '\n';
+                const catName = (c.name || c.category || 'LAINNYA').toUpperCase();
+                text += this.padColumns(catName, c.amount.toLocaleString('id-ID'), paperWidth) + '\n';
             });
             text += LINE;
         }
+
+        const prodSummary = reportData.productSummary || [];
+        if (prodSummary.length > 0) {
+            text += BOLD_ON + 'RINCIAN PENJUALAN PRODUK' + BOLD_OFF + '\n';
+            prodSummary.forEach((p: any) => {
+                const label = `${p.quantity}x ${p.name}`;
+                const value = p.amount.toLocaleString('id-ID');
+                const valWidth = 10;
+                const labelWidth = paperWidth - valWidth;
+                
+                if (label.length > labelWidth) {
+                    text += label + '\n';
+                    text += ' '.repeat(labelWidth) + value.padStart(valWidth) + '\n';
+                } else {
+                    text += label.padEnd(labelWidth) + value.padStart(valWidth) + '\n';
+                }
+            });
+            text += LINE;
+        }
+
+        // Add Financial Summary Section
+        text += BOLD_ON + 'RINGKASAN KEUANGAN' + BOLD_OFF + '\n';
+        text += this.padColumns('MODAL AWAL:', (reportData.openingBalance || 0).toLocaleString('id-ID'), paperWidth) + '\n';
+        text += this.padColumns('PENERIMAAN TUNAI:', (reportData.cashTotal || 0).toLocaleString('id-ID'), paperWidth) + '\n';
+        text += this.padColumns('PENERIMAAN NON-TUNAI:', (reportData.qrTotal || 0).toLocaleString('id-ID'), paperWidth) + '\n';
+        text += DLINE;
+        text += BOLD_ON + this.padColumns('TOTAL SEHARUSNYA:', (reportData.expectedCash || 0).toLocaleString('id-ID'), paperWidth) + BOLD_OFF + '\n';
+        text += this.padColumns('FISIK (LACI):', (reportData.actualCash || 0).toLocaleString('id-ID'), paperWidth) + '\n';
+        text += BOLD_ON + this.padColumns('SELISIH:', (reportData.variance || 0).toLocaleString('id-ID'), paperWidth) + BOLD_OFF + '\n';
+        text += LINE;
 
         text += CENTER + '\n';
         text += CENTER + 'Waktu Cetak: ' + new Date().toLocaleString('id-ID') + '\n';
@@ -937,10 +974,14 @@ export class PrinterManager {
             }
             await this.initPrinter();
             const mac = macAddress.toUpperCase();
-            await BLEPrinter.connectPrinter(mac);
-            
-            // Wait for printer to be ready
-            await new Promise(resolve => setTimeout(resolve, 1500));
+            // [OPTIMIZED] Skip connection delay if already connected
+            if (this.connectionStatus[mac] !== 'connected') {
+                this.connectionStatus[mac] = 'connecting';
+                await BLEPrinter.connectPrinter(mac);
+                this.connectionStatus[mac] = 'connected';
+                // Reduced delay from 1500ms to 500ms
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
 
             // Print Logo if enabled
             if (logoUrl) {
@@ -951,7 +992,8 @@ export class PrinterManager {
                             align: 'center',
                             imageWidth: 200 
                         });
-                        await new Promise(resolve => setTimeout(resolve, 1200));
+                        // Reduced delay from 1200ms to 400ms after logo
+                        await new Promise(resolve => setTimeout(resolve, 400));
                     }
                 } catch (imgError) {
                     console.error('[PrinterManager] Report Logo Print Error:', imgError);

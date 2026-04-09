@@ -66,6 +66,7 @@ interface CashierInterfaceProps {
   autoOpenPayment?: boolean;
   autoOpenSaleId?: number | null;
   onAutoPaymentProcessed?: () => void;
+  topSellingProducts?: string[];
 }
 
 interface HeldOrder {
@@ -98,7 +99,8 @@ export function CashierInterface({
   onPaymentSuccess,
   autoOpenPayment,
   autoOpenSaleId,
-  onAutoPaymentProcessed
+  onAutoPaymentProcessed,
+  topSellingProducts = []
 }: CashierInterfaceProps) {
   // console.log('CashierInterface Props:', { productsLength: products?.length, categoriesLength: categories?.length }); 
   // Removed verbose log to prevent crash on undefined properties
@@ -246,7 +248,17 @@ export function CashierInterface({
   const filteredProducts = useMemo(() => {
     let currentProducts = (products || []).filter(p => p && p.id); // SAFEGUARD: Remove invalid items early
 
-    if (activeCategory !== 'Semua') {
+    if (activeCategory === 'Makanan Terlaris') {
+      currentProducts = currentProducts.filter(p => topSellingProducts.includes(p.name) && (p.category || '').toLowerCase().includes('makan'));
+    } else if (activeCategory === 'Minuman Terlaris') {
+      currentProducts = currentProducts.filter(p => topSellingProducts.includes(p.name) && (p.category || '').toLowerCase().includes('minum'));
+    } else if (activeCategory === 'Snack Terlaris') {
+      currentProducts = currentProducts.filter(p => topSellingProducts.includes(p.name) && (p.category || '').toLowerCase().includes('snack'));
+    } else if (activeCategory === 'Produk Terlaris') {
+      currentProducts = currentProducts.filter(p => topSellingProducts.includes(p.name) && (p.category || '').toLowerCase().includes('kemasan'));
+    } else if (activeCategory === 'Terlaris') {
+      currentProducts = currentProducts.filter(p => topSellingProducts.includes(p.name));
+    } else if (activeCategory !== 'Semua') {
       currentProducts = currentProducts.filter((p) => p.category === activeCategory);
     }
 
@@ -259,8 +271,18 @@ export function CashierInterface({
       );
     }
 
-    return currentProducts;
-  }, [activeCategory, searchQuery, products]);
+    // Sort: Best Selling first, then by sort_order
+    return currentProducts
+      .map(p => ({
+        ...p,
+        is_best_seller: topSellingProducts.includes(p.name)
+      }))
+      .sort((a, b) => {
+        if (a.is_best_seller && !b.is_best_seller) return -1;
+        if (!a.is_best_seller && b.is_best_seller) return 1;
+        return (a.sort_order || 0) - (b.sort_order || 0);
+      });
+  }, [activeCategory, searchQuery, products, topSellingProducts]);
 
   const taxableSubtotal = useMemo(() => {
     return orderItems.reduce((sum, item) => {
@@ -657,6 +679,7 @@ export function CashierInterface({
           name: item.product.name,
           quantity: item.quantity,
           price: item.product.price,
+          category: item.product.category, // [NEW] Pass category
           isManual: String(item.product.id).startsWith('manual-'),
           notes: item.notes
         })),
@@ -720,9 +743,39 @@ export function CashierInterface({
       });
     }
 
+    if (settings?.print_kds_on_hold) {
+        const itemsToPrint = orderItems.map(item => ({
+            name: item.product.name,
+            quantity: item.quantity,
+            note: item.notes,
+            notes: item.notes
+        }));
+
+        const orderDataForPrint = {
+            orderNo: `HOLD-${Date.now().toString().slice(-4)}`,
+            tableNo: selectedTable,
+            customerName: customerName,
+            waiterName: waiterName,
+            time: new Date().toLocaleTimeString(),
+            notes: '',
+            cashierName: '', // Assume web POS context
+            items: itemsToPrint
+        };
+        
+        try {
+            printerService.printTicket('Kitchen', orderDataForPrint);
+            printerService.printTicket('Bar', orderDataForPrint);
+            toast.success('Pesanan ditangguhkan dan dikirim ke KDS');
+        } catch (e) {
+            console.error("Print KDS Error", e);
+            toast.error('Pesanan ditangguhkan, namun gagal print KDS');
+        }
+    } else {
+        toast.success('Pesanan dikirim ke Dapur & ditangguhkan');
+    }
+
     setOrderItems([]);
     setOrderDiscount(0);
-    toast.success('Pesanan dikirim ke Dapur & ditangguhkan');
   };
 
   // Restore order
@@ -906,7 +959,7 @@ export function CashierInterface({
           {/* Category Tabs */}
           <div className="mb-4">
             <CategoryTabs
-              categories={['Semua', ...(categories || []).filter(c => c && c.name).map(c => c.name)]}
+              categories={['Semua', 'Makanan Terlaris', 'Minuman Terlaris', 'Snack Terlaris', 'Produk Terlaris', ...(categories || []).filter(c => c && c.name).map(c => c.name)]}
               activeCategory={activeCategory}
               onCategoryChange={setActiveCategory}
             />

@@ -65,6 +65,10 @@ export function PurchasesView({
     const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([]);
     const [returnForm, setReturnForm] = useState<Partial<PurchaseReturn>>({ date: new Date().toISOString().split('T')[0] });
 
+    const [isEditing, setIsEditing] = useState(false);
+    const [editingId, setEditingId] = useState<number | null>(null);
+
+
     // Scanner Hook
     useBarcodeScanner({
         onScan: (code) => {
@@ -144,22 +148,33 @@ export function PurchasesView({
             return;
         }
 
-        const newPurchase = {
-            purchase_no: `PO-2026-${String(purchases.length + 1).padStart(3, '0')}`,
+        const purchaseData = {
+            purchase_no: inputForm.purchaseNo || `PO-2026-${String(purchases.length + 1).padStart(3, '0')}`,
             supplier_name: inputForm.supplierName,
             date: inputForm.date || new Date().toISOString().split('T')[0],
             items_count: purchaseItems.reduce((sum, i) => sum + i.quantity, 0),
             total_amount: totalAmount,
-            status: 'Pending',
+            status: isEditing ? inputForm.status : 'Pending',
             branch_id: currentBranchId,
-            items_list: purchaseItems // This depends on DB schema supporting item details
+            items_list: purchaseItems
         };
 
-        onCRUD('purchases', 'create', newPurchase);
+        if (isEditing && editingId) {
+            onCRUD('purchases', 'update', { id: editingId, ...purchaseData });
+            toast.success('Pembelian berhasil diupdate');
+        } else {
+            onCRUD('purchases', 'create', purchaseData);
+            toast.success('Pembelian berhasil dibuat');
+        }
+
+        // Reset
         setInputForm({ date: new Date().toISOString().split('T')[0], supplierName: '' });
         setPurchaseItems([]);
+        setIsEditing(false);
+        setEditingId(null);
         setActiveTab('history');
     };
+
 
     const handleReturnSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -182,7 +197,29 @@ export function PurchasesView({
 
     const handleMarkCompleted = (po: any) => {
         onCRUD('purchases', 'update', { id: po.id, status: 'Completed' });
+        toast.success('Status PO berhasil diupdate ke Selesai');
     };
+
+    const handleEdit = (po: any) => {
+        setIsEditing(true);
+        setEditingId(po.id);
+        setInputForm({
+            date: po.date,
+            supplierName: po.supplier_name,
+            purchaseNo: po.purchase_no,
+            status: po.status
+        });
+        setPurchaseItems(po.items_list || []);
+        setActiveTab('input');
+    };
+
+    const handleDelete = (po: any) => {
+        if (window.confirm(`Hapus riwayat pembelian ${po.purchase_no}?`)) {
+            onCRUD('purchases', 'delete', { id: po.id });
+            toast.success('Data pembelian dihapus');
+        }
+    };
+
 
     const filteredPurchases = purchases.filter(p =>
         (!currentBranchId || String(p.branch_id) === String(currentBranchId) || !p.branch_id) &&
@@ -252,10 +289,22 @@ export function PurchasesView({
                                         <CheckCircle className="w-4 h-4" />
                                     </button>
                                 )}
-                                <button className="p-2 hover:bg-gray-100 text-gray-500 rounded-lg" title="Detail">
-                                    <FileText className="w-4 h-4" />
+                                <button 
+                                    onClick={() => handleEdit(po)}
+                                    className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg" 
+                                    title="Edit"
+                                >
+                                    <Edit className="w-4 h-4" />
+                                </button>
+                                <button 
+                                    onClick={() => handleDelete(po)}
+                                    className="p-2 hover:bg-red-50 text-red-600 rounded-lg" 
+                                    title="Hapus"
+                                >
+                                    <Trash2 className="w-4 h-4" />
                                 </button>
                             </td>
+
                         </tr>
                     ))}
                     {filteredPurchases.length === 0 && (
@@ -346,7 +395,25 @@ export function PurchasesView({
             <div className="space-y-6">
                 {/* Form & Totals */}
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-6">
-                    <h3 className="font-bold text-gray-800">Ringkasan Pembelian</h3>
+                    <div className="flex justify-between items-center">
+                        <h3 className="font-bold text-gray-800">Ringkasan Pembelian</h3>
+                        {isEditing && (
+                            <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="text-red-500 font-bold"
+                                onClick={() => {
+                                    setIsEditing(false);
+                                    setEditingId(null);
+                                    setInputForm({ date: new Date().toISOString().split('T')[0], supplierName: '' });
+                                    setPurchaseItems([]);
+                                }}
+                            >
+                                Batal Edit
+                            </Button>
+                        )}
+                    </div>
+
 
                     <div className="space-y-4">
                         <div>
@@ -384,9 +451,10 @@ export function PurchasesView({
                         </div>
                     </div>
 
-                    <Button onClick={handleInputSubmit} className="w-full h-14 rounded-2xl text-lg font-black" disabled={purchaseItems.length === 0}>
-                        Simpan Pembelian
+                    <Button onClick={handleInputSubmit} className={`w-full h-14 rounded-2xl text-lg font-black ${isEditing ? 'bg-blue-600 hover:bg-blue-700' : ''}`} disabled={purchaseItems.length === 0}>
+                        {isEditing ? 'Update Pembelian' : 'Simpan Pembelian'}
                     </Button>
+
                 </div>
 
                 {/* Additional Item Selection (Manual) */}

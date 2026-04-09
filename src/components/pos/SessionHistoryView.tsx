@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { History, Calendar, User, Search, Download, Eye, TrendingUp, DollarSign, Clock, Trash2, AlertTriangle } from 'lucide-react';
+import { History, Calendar, User, Search, Download, Eye, TrendingUp, DollarSign, Clock, Trash2, AlertTriangle, FileSpreadsheet } from 'lucide-react';
+import { utils, writeFile } from 'xlsx';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -29,7 +30,45 @@ export function SessionHistoryView() {
     const [dateTo, setDateTo] = useState('');
     const [statusFilter, setStatusFilter] = useState<'All' | 'Open' | 'Closed'>('All');
     const [selectedSession, setSelectedSession] = useState<SessionHistory | null>(null);
+    const [selectedCategorySummary, setSelectedCategorySummary] = useState<{ category: string; amount: number }[]>([]);
     const [detailModalOpen, setDetailModalOpen] = useState(false);
+
+    useEffect(() => {
+        if (selectedSession && detailModalOpen) {
+            fetchCategorySummary(selectedSession.opened_at, selectedSession.closed_at);
+        }
+    }, [selectedSession, detailModalOpen]);
+
+    const fetchCategorySummary = async (openedAt: string, closedAt: string | null) => {
+        try {
+            const query = supabase.from('sales').select('id').gte('created_at', openedAt);
+            if (closedAt) query.lte('created_at', closedAt);
+            
+            const { data: sales } = await query;
+            const saleIds = sales?.map(s => s.id) || [];
+            
+            if (saleIds.length === 0) {
+                setSelectedCategorySummary([]);
+                return;
+            }
+
+            const { data: items } = await supabase
+                .from('sale_items')
+                .select('category, quantity, price')
+                .in('sale_id', saleIds);
+            
+            if (items) {
+                const summaryMap: { [key: string]: number } = {};
+                items.forEach(item => {
+                    const cat = item.category || 'Lainnya';
+                    summaryMap[cat] = (summaryMap[cat] || 0) + ((item.quantity || 0) * (item.price || 0));
+                });
+                setSelectedCategorySummary(Object.entries(summaryMap).map(([category, amount]) => ({ category, amount })));
+            }
+        } catch (err) {
+            console.error('Error fetching category summary:', err);
+        }
+    };
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [sessionToDelete, setSessionToDelete] = useState<SessionHistory | null>(null);
     const [forceCloseOpen, setForceCloseOpen] = useState(false);
@@ -94,6 +133,27 @@ export function SessionHistoryView() {
         }
 
         setFilteredSessions(filtered);
+    };
+
+    const exportToExcel = () => {
+        const data = filteredSessions.map(s => ({
+            'Kasir': s.user_name,
+            'Dibuka': new Date(s.opened_at).toLocaleString('id-ID'),
+            'Ditutup': s.closed_at ? new Date(s.closed_at).toLocaleString('id-ID') : '-',
+            'Modal Awal': s.starting_cash,
+            'Total Sales': s.total_sales,
+            'Uang Akhir': s.actual_cash || 0,
+            'Variance': s.difference,
+            'Status': s.status
+        }));
+
+        const ws = utils.json_to_sheet(data);
+        const wb = utils.book_new();
+        utils.book_append_sheet(wb, ws, 'Riwayat Sesi');
+        
+        const fileName = `session-history-${new Date().toISOString().split('T')[0]}.xlsx`;
+        writeFile(wb, fileName);
+        toast.success('Excel Export berhasil!');
     };
 
     const exportToCSV = () => {
@@ -224,6 +284,10 @@ export function SessionHistoryView() {
                             Hapus Terfilter ({filteredSessions.length})
                         </Button>
                     )}
+                    <Button onClick={exportToExcel} className="bg-blue-600 hover:bg-blue-700 text-white">
+                        <FileSpreadsheet className="w-4 h-4 mr-2" />
+                        Export Excel
+                    </Button>
                     <Button onClick={exportToCSV} className="bg-green-600 hover:bg-green-700 text-white">
                         <Download className="w-4 h-4 mr-2" />
                         Export CSV
@@ -482,6 +546,24 @@ export function SessionHistoryView() {
                                 </p>
                             </div>
                         </div>
+
+                        {/* Category Summary Breakdown */}
+                        {selectedCategorySummary.length > 0 && (
+                            <div className="mt-8 pt-6 border-t border-gray-100">
+                                <div className="flex items-center gap-2 mb-4">
+                                    <TrendingUp className="w-4 h-4 text-gray-400" />
+                                    <h3 className="text-sm font-bold text-gray-500 uppercase tracking-widest">Ringkasan Kategori</h3>
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                                    {selectedCategorySummary.map((c, i) => (
+                                        <div key={i} className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-2xl border border-gray-100 dark:border-gray-600">
+                                            <span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">{c.category}</span>
+                                            <p className="text-sm font-bold text-gray-800 dark:text-white">{formatCurrency(c.amount)}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
                         <div className="mt-8 flex justify-end gap-3">
                             <Button

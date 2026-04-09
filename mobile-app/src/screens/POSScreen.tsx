@@ -14,7 +14,7 @@ import HeldOrdersModal from '../components/HeldOrdersModal';
 import { useSession } from '../context/SessionContext';
 import { OfflineService } from '../lib/OfflineService';
 import { WifiVoucherService } from '../lib/WifiVoucherService';
-import { Wifi, WifiOff } from 'lucide-react-native';
+import { Wifi, WifiOff, Star } from 'lucide-react-native';
 import ReceiptPreviewModal from '../components/ReceiptPreviewModal';
 import ManagerAuthModal from '../components/ManagerAuthModal';
 import HoldNoteModal from '../components/HoldNoteModal';
@@ -71,6 +71,28 @@ const ProductCard = memo(({ item, isTablet, onAdd, formatCurrency }: any) => {
                     {formatCurrency(item.price)}
                 </Text>
             </View>
+
+            {item.is_best_seller && (
+                <View style={{
+                    position: 'absolute',
+                    top: 5,
+                    left: 5,
+                    backgroundColor: '#f97316',
+                    paddingHorizontal: 6,
+                    paddingVertical: 2,
+                    borderRadius: 10,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    elevation: 3,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: 0.2,
+                    shadowRadius: 1.41,
+                }}>
+                    <Star size={8} color="white" fill="white" style={{ marginRight: 2 }} />
+                    <Text style={{ color: 'white', fontSize: 7, fontWeight: 'bold' }}>Terlaris</Text>
+                </View>
+            )}
         </TouchableOpacity>
     );
 });
@@ -94,6 +116,7 @@ export default function POSScreen() {
     const [loadingProducts, setLoadingProducts] = useState(true);
     const [selectedCategory, setSelectedCategory] = useState('Semua');
     const [categories, setCategories] = useState<string[]>(['Semua']);
+    const [topSellingProducts, setTopSellingProducts] = useState<string[]>([]);
 
     // Master Data
     const [customers, setCustomers] = useState<any[]>([]);
@@ -386,12 +409,13 @@ export default function POSScreen() {
                     let count = 1;
                     
                     if (effectiveMultiplier > 0) {
-                        count = Math.floor(totalAmount / effectiveMultiplier);
+                        // Ensure at least 1 voucher if min amount is met, otherwise calculate multiples
+                        count = Math.max(1, Math.floor(totalAmount / effectiveMultiplier));
                     }
 
                     console.log(`[POSScreen] WiFi Voucher Logic: total=${totalAmount}, min=${minAmount}, mult=${multiplier}, effective=${effectiveMultiplier}, count=${count}`);
 
-                if (count > 0) {
+                    if (count > 0) {
                     wifiVoucher = await WifiVoucherService.getVoucherForSale(sale.id, currentBranchId || '1', count);
                     if (wifiVoucher) {
                         console.log('[POSScreen] WiFi Vouchers result:', wifiVoucher);
@@ -482,6 +506,7 @@ export default function POSScreen() {
                 // 2. Fetch Fresh Data from Supabase
                 await Promise.all([
                     fetchProducts(),
+                    fetchTopSellingProducts(),
                     fetchCategories(),
                     fetchMasterData()
                 ]);
@@ -818,7 +843,14 @@ export default function POSScreen() {
                     }
                 });
 
-                const uniqueCategories = ['Semua', ...Array.from(uniqueSet)];
+                const uniqueCategories = [
+                    'Semua', 
+                    'Makanan Terlaris', 
+                    'Minuman Terlaris', 
+                    'Snack Terlaris', 
+                    'Produk Terlaris',
+                    ...Array.from(uniqueSet)
+                ];
                 setCategories(uniqueCategories);
                 // Save to Cache
                 AsyncStorage.setItem(`cached_categories_${currentBranchId}`, JSON.stringify(uniqueCategories));
@@ -829,8 +861,9 @@ export default function POSScreen() {
     };
 
     const fetchProducts = async () => {
+        setLoadingProducts(true);
         try {
-            // Speed optimization: Select only required columns instead of '*'
+            // Speed optimization: Select only required columns
             const { data, error } = await supabase
                 .from('products')
                 .select('id, name, price, image_url, category, target, stock, is_taxed, branch_id, sort_order, is_sellable, is_stock_ready')
@@ -841,7 +874,6 @@ export default function POSScreen() {
 
             if (data) {
                 setProducts(data);
-                // Save to Cache
                 AsyncStorage.setItem(`cached_products_${currentBranchId}`, JSON.stringify(data));
             }
         } catch (error) {
@@ -851,27 +883,84 @@ export default function POSScreen() {
         }
     };
 
+    const fetchTopSellingProducts = async () => {
+        try {
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+            const { data, error } = await supabase
+                .from('sale_items')
+                .select('product_name, quantity, sales!inner(date)')
+                .eq('branch_id', currentBranchId)
+                .gte('sales.date', thirtyDaysAgo.toISOString());
+
+            if (error) throw error;
+
+            const counts: Record<string, number> = {};
+            (data || []).forEach(item => {
+                const name = item.product_name;
+                if (name) {
+                    counts[name] = (counts[name] || 0) + (Number(item.quantity) || 1);
+                }
+            });
+
+            const sorted = Object.entries(counts)
+                .sort(([, a], [, b]) => b - a)
+                .slice(0, 50)
+                .map(([name]) => name);
+
+            setTopSellingProducts(sorted);
+        } catch (err) {
+            console.error('Failed to fetch top selling products mobile:', err);
+        }
+    };
+
+
     // Filter Logic
     const filteredProducts = useMemo(() => {
         let result = products;
 
-        // [NEW] Filter out products that are NOT sellable or NOT ready (Kosong)
+        // 1. Filter out products that are NOT sellable or NOT ready (Kosong)
         result = result.filter(p => p.is_sellable !== false && p.is_stock_ready !== false);
 
-        if (selectedCategory !== 'Semua') {
+        // 2. Filter by Category
+        if (selectedCategory === 'Makanan Terlaris') {
+            result = result.filter(p => topSellingProducts.includes(p.name) && (p.category || '').toLowerCase().includes('makan'));
+        } else if (selectedCategory === 'Minuman Terlaris') {
+            result = result.filter(p => topSellingProducts.includes(p.name) && (p.category || '').toLowerCase().includes('minum'));
+        } else if (selectedCategory === 'Snack Terlaris') {
+            result = result.filter(p => topSellingProducts.includes(p.name) && (p.category || '').toLowerCase().includes('snack'));
+        } else if (selectedCategory === 'Produk Terlaris') {
+            result = result.filter(p => topSellingProducts.includes(p.name) && (p.category || '').toLowerCase().includes('kemasan'));
+        } else if (selectedCategory === 'Terlaris') {
+            result = result.filter(p => topSellingProducts.includes(p.name));
+        } else if (selectedCategory !== 'Semua') {
             const lowerSelected = selectedCategory.toLowerCase();
             result = result.filter(p => {
                 const pCat = (p.category || '').toLowerCase();
-                const pCatName = (p.category_name || '').toLowerCase();
-                return pCat === lowerSelected || pCatName === lowerSelected;
+                return pCat === lowerSelected;
             });
         }
+
+        // 3. Filter by Search Query
         if (searchQuery) {
             const lowerQuery = searchQuery.toLowerCase();
             result = result.filter(p => p.name.toLowerCase().includes(lowerQuery));
         }
-        return result;
-    }, [products, searchQuery, selectedCategory]);
+
+        // 4. Map Best Seller status and Sort
+        return result
+            .map(p => ({
+                ...p,
+                is_best_seller: topSellingProducts.includes(p.name)
+            }))
+            .sort((a, b) => {
+                if (a.is_best_seller && !b.is_best_seller) return -1;
+                if (!a.is_best_seller && b.is_best_seller) return 1;
+                return (a.sort_order || 0) - (b.sort_order || 0);
+            });
+    }, [products, searchQuery, selectedCategory, topSellingProducts]);
+
 
 
     // Cart Total used in Apply Discount
@@ -1091,11 +1180,33 @@ export default function POSScreen() {
         };
 
         setHeldOrders(prev => [newHeldOrder, ...prev]);
+
+        if (storeSettings?.print_kds_on_hold) {
+            try {
+                const orderDataForPrint = {
+                    orderNo: `HOLD-${Date.now().toString().slice(-4)}`,
+                    tableNo: selectedTable,
+                    customerName: customerName,
+                    waiterName: selectedWaiter || userName,
+                    date: new Date(),
+                    notes: note,
+                    cashier_name: userName
+                };
+                await PrinterManager.printToTarget(cart, 'kitchen', orderDataForPrint);
+                await PrinterManager.printToTarget(cart, 'bar', orderDataForPrint);
+                showToast('Pesanan ditangguhkan & tiket dikirim ke dapur!', 'success');
+            } catch (err) {
+                console.error("Print KDS on Hold Error:", err);
+                showToast('Pesanan ditangguhkan, namun gagal print ke dapur', 'error');
+            }
+        } else {
+            showToast('Pesanan ditangguhkan', 'success');
+        }
+
         clearCart();
         setOrderDiscount(0);
         setDiscountReason('');
         setShowCartModal(false);
-        showToast('Pesanan ditangguhkan', 'success');
     };
 
     const handleRestoreHeldOrder = async (order: any) => {

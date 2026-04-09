@@ -30,7 +30,14 @@ export default function CashierSessionHistoryScreen() {
     const [selectedSession, setSelectedSession] = useState<CashierSession | null>(null);
     const [showDetail, setShowDetail] = useState(false);
     const [showCloseModal, setShowCloseModal] = useState(false);
-    const { currentBranchId, isAdmin, userName } = useSession();
+    const { currentBranchId, isAdmin, userName, storeSettings, loading: sessionLoading } = useSession();
+    
+    useEffect(() => {
+        if (!sessionLoading && !isAdmin && storeSettings && !storeSettings.cashier_can_view_session_history) {
+            Alert.alert('Akses Ditolak', 'Anda tidak memiliki izin untuk melihat riwayat kasir.');
+            navigation.goBack();
+        }
+    }, [isAdmin, storeSettings, sessionLoading]);
     
     // CRUD States
     const [showEditModal, setShowEditModal] = useState(false);
@@ -258,7 +265,7 @@ export default function CashierSessionHistoryScreen() {
                     <FlatList
                         data={sessions}
                         keyExtractor={(item, index) => (item?.id ?? index).toString()}
-                        contentContainerStyle={{ padding: 16 }}
+                        contentContainerStyle={{ padding: 12, paddingBottom: 24 }}
                         renderItem={({ item }) => (
                             <TouchableOpacity 
                                 style={styles.card}
@@ -629,21 +636,21 @@ const styles = StyleSheet.create({
         marginRight: 12,
     },
     headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#1f2937' },
-    summaryContainer: { padding: 16, gap: 12 },
+    summaryContainer: { padding: 12, gap: 10 },
     summaryCard: {
         backgroundColor: 'white',
-        padding: 12,
-        borderRadius: 12,
+        padding: 10,
+        borderRadius: 10,
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 12,
-        minWidth: 160,
+        gap: 10,
+        minWidth: 140,
         borderWidth: 1,
         borderColor: '#f3f4f6',
     },
     summaryIconContainer: {
-        width: 40,
-        height: 40,
+        width: 36,
+        height: 36,
         borderRadius: 10,
         alignItems: 'center',
         justifyContent: 'center',
@@ -652,36 +659,36 @@ const styles = StyleSheet.create({
     summaryValue: { fontSize: 14, fontWeight: 'bold', color: '#1f2937' },
     card: {
         backgroundColor: 'white',
-        padding: 16,
-        borderRadius: 16,
-        marginBottom: 16,
+        padding: 10,
+        borderRadius: 10,
+        marginBottom: 8,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.05,
-        shadowRadius: 5,
+        shadowRadius: 2,
         elevation: 1,
         borderWidth: 1,
         borderColor: '#f3f4f6',
     },
-    cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-    cashierInfo: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    userIconContainer: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center' },
-    cashierName: { fontSize: 16, fontWeight: 'bold', color: '#1f2937' },
-    statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+    cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+    cashierInfo: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    userIconContainer: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center' },
+    cashierName: { fontSize: 13, fontWeight: 'bold', color: '#1f2937' },
+    statusBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
     statusOpen: { backgroundColor: '#f0fdf4' },
     statusClosed: { backgroundColor: '#f3f4f6' },
-    statusText: { fontSize: 10, fontWeight: 'bold' },
+    statusText: { fontSize: 8, fontWeight: 'bold' },
     statusTextOpen: { color: '#16a34a' },
     statusTextClosed: { color: '#6b7280' },
-    timeInfo: { gap: 4, marginBottom: 12, paddingVertical: 8, borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#f9fafb' },
-    timeRow: { flexDirection: 'row', gap: 8 },
-    timeLabel: { fontSize: 12, color: '#6b7280', width: 45 },
-    timeValue: { fontSize: 12, color: '#374151', fontWeight: '500' },
-    cardFooter: { flexDirection: 'row', justifyContent: 'space-between' },
-    footerLabel: { fontSize: 10, color: '#9ca3af', marginBottom: 2 },
-    footerValue: { fontSize: 14, fontWeight: 'bold', color: '#111827' },
+    timeInfo: { gap: 1, marginBottom: 6, paddingVertical: 4, borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#f9fafb' },
+    timeRow: { flexDirection: 'row', gap: 4 },
+    timeLabel: { fontSize: 10, color: '#6b7280', width: 36 },
+    timeValue: { fontSize: 10, color: '#374151', fontWeight: '500' },
+    cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    footerLabel: { fontSize: 8, color: '#9ca3af', marginBottom: 0 },
+    footerValue: { fontSize: 12, fontWeight: 'bold', color: '#111827' },
     varianceContainer: { alignItems: 'flex-end' },
-    varianceValue: { fontSize: 14, fontWeight: 'bold' },
+    varianceValue: { fontSize: 12, fontWeight: 'bold' },
     textSuccess: { color: '#16a34a' },
     textDanger: { color: '#dc2626' },
     emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },

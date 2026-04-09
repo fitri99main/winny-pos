@@ -238,8 +238,9 @@ class PrinterService {
         orderNo: string;
         tableNo: string;
         waiterName: string;
+        cashierName?: string;
         time: string;
-        items: { name: string; quantity: number; price: number; note?: string; notes?: string }[];
+        items: { name: string; quantity: number; price: number; category?: string; note?: string; notes?: string }[];
         subtotal: number;
         discount: number;
         tax: number;
@@ -250,7 +251,6 @@ class PrinterService {
         change: number;
         customerName?: string;
         customerLevel?: string;
-        cashierName?: string;
         wifiVoucher?: string;
         wifi_voucher?: string;
         wifiNotice?: string;
@@ -376,14 +376,23 @@ class PrinterService {
     }
 
     async printSalesReport(reportData: {
-        title?: string;
+        title: string;
         dateRange: string;
         totalOrders: number;
         totalSales: number;
         totalTax?: number;
         totalDiscount?: number;
+        completedCount?: number;
+        pendingCount?: number;
+        openingBalance?: number;
+        cashTotal?: number;
+        qrTotal?: number;
+        expectedCash?: number;
+        actualCash?: number;
+        variance?: number;
         paymentSummary: { method: string; amount: number }[];
         categorySummary?: { category: string; amount: number }[];
+        productSummary?: { name: string; quantity: number; amount: number; category?: string }[];
     }) {
         const printer = this.cashierPrinter;
         if (!printer || !printer.characteristic) {
@@ -423,16 +432,69 @@ class PrinterService {
         commands.push(encoder.encode(`${reportData.dateRange}\n`));
         commands.push(encoder.encode(dline));
 
+        // [RELOCATED] Category Summary (Move to top for visibility)
+        if (reportData.categorySummary && reportData.categorySummary.length > 0) {
+            commands.push(new Uint8Array([this.GS, 0x21, 0x01])); // Double Height for title
+            commands.push(new Uint8Array([this.ESC, 0x45, 0x01])); // Bold
+            commands.push(encoder.encode('RINGKASAN KATEGORI\n'));
+            commands.push(new Uint8Array([this.GS, 0x21, 0x00])); // Reset size
+            commands.push(new Uint8Array([this.ESC, 0x45, 0x00])); // Reset Bold
+            commands.push(encoder.encode(line));
+            
+            reportData.categorySummary.forEach(c => {
+                const label = (c.category?.trim() || 'LAINNYA').toUpperCase();
+                const value = (c.amount || 0).toLocaleString('id-ID');
+                const spaces = Math.max(1, lineWidth - label.length - value.length);
+                commands.push(new Uint8Array([this.ESC, 0x45, 0x01])); // Bold for categories
+                commands.push(encoder.encode(`${label}${' '.repeat(spaces)}${value}\n`));
+                commands.push(new Uint8Array([this.ESC, 0x45, 0x00])); // Reset Bold
+            });
+            commands.push(encoder.encode(line));
+        }
+
+        // Product Summary
+        if (reportData.productSummary && reportData.productSummary.length > 0) {
+            commands.push(new Uint8Array([this.ESC, 0x45, 0x01])); // Bold
+            commands.push(encoder.encode('RINCIAN PENJUALAN PRODUK\n'));
+            commands.push(new Uint8Array([this.ESC, 0x45, 0x00])); // Reset Bold
+            
+            reportData.productSummary.forEach(p => {
+                const label = `${p.quantity}x ${p.name}`;
+                const value = p.amount.toLocaleString('id-ID');
+                const valWidth = 10;
+                const labelWidth = lineWidth - valWidth;
+                commands.push(encoder.encode(`${label.slice(0, labelWidth).padEnd(labelWidth)}${value.padStart(valWidth)}\n`));
+            });
+            commands.push(encoder.encode(line));
+        }
+
         // Summary
         commands.push(new Uint8Array([this.ESC, 0x61, 0x00])); // Left
         const valWidth = 12;
         const labelWidth = lineWidth - valWidth;
 
-        commands.push(encoder.encode(`${'Transaksi:'.padEnd(labelWidth)}${reportData.totalOrders.toString().padStart(valWidth)}\n`));
+        if (reportData.openingBalance !== undefined) {
+            commands.push(encoder.encode(`${'MODAL AWAL:'.padEnd(labelWidth)}${reportData.openingBalance.toLocaleString('id-ID').padStart(valWidth)}\n`));
+        }
         
+        commands.push(encoder.encode(`${'Jml Transaksi:'.padEnd(labelWidth)}${reportData.totalOrders.toString().padStart(valWidth)}\n`));
+        if (reportData.completedCount !== undefined) {
+            commands.push(encoder.encode(`${'  - Selesai:'.padEnd(labelWidth)}${reportData.completedCount.toString().padStart(valWidth)}\n`));
+        }
+        if (reportData.pendingCount !== undefined) {
+            commands.push(encoder.encode(`${'  - Belum Bayar:'.padEnd(labelWidth)}${reportData.pendingCount.toString().padStart(valWidth)}\n`));
+        }
+
         commands.push(new Uint8Array([this.ESC, 0x45, 0x01])); // Bold
         commands.push(encoder.encode(`${'TOTAL NET:'.padEnd(labelWidth)}${reportData.totalSales.toLocaleString('id-ID').padStart(valWidth)}\n`));
         commands.push(new Uint8Array([this.ESC, 0x45, 0x00])); // Reset Bold
+
+        if (reportData.cashTotal !== undefined) {
+            commands.push(encoder.encode(`${'Total Tunai:'.padEnd(labelWidth)}${reportData.cashTotal.toLocaleString('id-ID').padStart(valWidth)}\n`));
+        }
+        if (reportData.qrTotal !== undefined) {
+            commands.push(encoder.encode(`${'Total Non-Tunai:'.padEnd(labelWidth)}${reportData.qrTotal.toLocaleString('id-ID').padStart(valWidth)}\n`));
+        }
 
         if (reportData.totalTax && reportData.totalTax > 0) {
             commands.push(encoder.encode(`${'Total Pajak:'.padEnd(labelWidth)}${reportData.totalTax.toLocaleString('id-ID').padStart(valWidth)}\n`));
@@ -442,10 +504,26 @@ class PrinterService {
         }
         commands.push(encoder.encode(line));
 
-        // Payment Methods
+        // Cash Reconciliation
+        if (reportData.expectedCash !== undefined && reportData.actualCash !== undefined) {
+            commands.push(new Uint8Array([this.ESC, 0x45, 0x01])); // Bold
+            commands.push(encoder.encode('REKONSILIASI KAS\n'));
+            commands.push(new Uint8Array([this.ESC, 0x45, 0x00])); // Reset Bold
+            
+            commands.push(encoder.encode(`${'Total Di Sistem:'.padEnd(labelWidth)}${reportData.expectedCash.toLocaleString('id-ID').padStart(valWidth)}\n`));
+            commands.push(encoder.encode(`${'Total Aktual:'.padEnd(labelWidth)}${reportData.actualCash.toLocaleString('id-ID').padStart(valWidth)}\n`));
+            
+            commands.push(new Uint8Array([this.ESC, 0x45, 0x01])); // Bold
+            const varLabel = (reportData.variance || 0) >= 0 ? 'SELISIH (+):' : 'SELISIH (-):';
+            commands.push(encoder.encode(`${varLabel.padEnd(labelWidth)}${(reportData.variance || 0).toLocaleString('id-ID').padStart(valWidth)}\n`));
+            commands.push(new Uint8Array([this.ESC, 0x45, 0x00])); // Reset Bold
+            commands.push(encoder.encode(line));
+        }
+
+        // Payment Methods (Detail)
         if (reportData.paymentSummary && reportData.paymentSummary.length > 0) {
             commands.push(new Uint8Array([this.ESC, 0x45, 0x01])); // Bold
-            commands.push(encoder.encode('METODE PEMBAYARAN\n'));
+            commands.push(encoder.encode('RINCIAN PEMBAYARAN\n'));
             commands.push(new Uint8Array([this.ESC, 0x45, 0x00])); // Reset Bold
             
             reportData.paymentSummary.forEach(p => {
@@ -454,22 +532,14 @@ class PrinterService {
             commands.push(encoder.encode(line));
         }
 
-        // Category Summary
-        if (reportData.categorySummary && reportData.categorySummary.length > 0) {
-            commands.push(new Uint8Array([this.ESC, 0x45, 0x01])); // Bold
-            commands.push(encoder.encode('RINGKASAN KATEGORI\n'));
-            commands.push(new Uint8Array([this.ESC, 0x45, 0x00])); // Reset Bold
-            
-            reportData.categorySummary.forEach(c => {
-                commands.push(encoder.encode(`${c.category.padEnd(labelWidth)}${c.amount.toLocaleString('id-ID').padStart(valWidth)}\n`));
-            });
-            commands.push(encoder.encode(line));
-        }
-
         // Footer
         const now = new Date().toLocaleString('id-ID');
         commands.push(new Uint8Array([this.ESC, 0x61, 0x01])); // Center
         commands.push(encoder.encode(`\nDicetak pada: ${now}\n`));
+        
+        // [DEBUG] Marker to confirm data size
+        const catLines = reportData.categorySummary?.length || 0;
+        commands.push(encoder.encode(`[Detail Ktg: ${catLines}]\n`));
 
         const feedLines = this.template.receipt_footer_feed ?? 4;
         if (feedLines > 0) {

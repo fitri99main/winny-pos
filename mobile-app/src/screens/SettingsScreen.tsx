@@ -99,7 +99,7 @@ export default function SettingsScreen() {
     const [selectedPrinters, setSelectedPrinters] = React.useState<{receipt: string | null, kitchen: string | null, bar: string | null, report: string | null}>({ receipt: null, kitchen: null, bar: null, report: null });
     const [configuringPrinterType, setConfiguringPrinterType] = React.useState<'receipt' | 'kitchen' | 'bar' | 'report'>('receipt');
     const [autoPrint, setAutoPrint] = React.useState<boolean>(false);
-    const { currentSession, isSessionActive, checkSession, requireMandatorySession, permissions, currentBranchId, storeSettings: sessionSettings, branchName, branchAddress, branchPhone, userName } = useSession();
+    const { isAdmin, currentSession, isSessionActive, checkSession, requireMandatorySession, permissions, currentBranchId, storeSettings: sessionSettings, branchName, branchAddress, branchPhone, userName } = useSession();
     const [showSessionModal, setShowSessionModal] = React.useState(false);
     const [sessionMode, setSessionMode] = React.useState<'open' | 'close'>('open');
     const [showLogoutModal, setShowLogoutModal] = React.useState(false);
@@ -639,6 +639,16 @@ export default function SettingsScreen() {
                                 isSmallDevice={isSmallDevice}
                             />
                             <View style={styles.divider} />
+                            <SettingItem 
+                                icon={Printer} 
+                                label="Cetak Dapur/Bar Saat Hold" 
+                                subtitle="Otomatis cetak tiket dapur/bar saat Hold pesanan"
+                                type="switch"
+                                value={fullSettings?.print_kds_on_hold ?? false}
+                                onToggle={(val: boolean) => toggleSetting('print_kds_on_hold', val)}
+                                isSmallDevice={isSmallDevice}
+                            />
+                            <View style={styles.divider} />
                             {/* Preparation Duration */}
                             <View style={styles.settingItem}>
                                 <View style={styles.settingIconContainer}>
@@ -977,18 +987,20 @@ export default function SettingsScreen() {
                 </View>
 
                 {/* Laporan & Rekap */}
-                <View style={[styles.section, isLandscape && { width: '48.5%' }]}>
-                    <Text style={styles.sectionTitle}>Laporan & Rekap</Text>
-                    <View style={styles.card}>
-                        <SettingItem 
-                            icon={BarChart3} 
-                            label="Cetak Laporan Penjualan" 
-                            subtitle="Ringkasan transaksi ke printer thermal"
-                            onPress={() => setShowReportModal(true)} 
-                            isSmallDevice={isSmallDevice}
-                        />
+                {(!isAdmin ? sessionSettings?.cashier_can_view_reports : true) && (
+                    <View style={[styles.section, isLandscape && { width: '48.5%' }]}>
+                        <Text style={styles.sectionTitle}>Laporan & Rekap</Text>
+                        <View style={styles.card}>
+                            <SettingItem 
+                                icon={BarChart3} 
+                                label="Cetak Laporan Penjualan" 
+                                subtitle="Ringkasan transaksi ke printer thermal"
+                                onPress={() => setShowReportModal(true)} 
+                                isSmallDevice={isSmallDevice}
+                            />
+                        </View>
                     </View>
-                </View>
+                )}
 
                 {/* Lainnya */}
                 <View style={[styles.section, isLandscape && { width: '48.5%' }]}>

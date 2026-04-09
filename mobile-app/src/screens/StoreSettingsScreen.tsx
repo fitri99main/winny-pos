@@ -309,6 +309,36 @@ export default function StoreSettingsScreen() {
                                 trackColor={{ false: '#e2e8f0', true: '#f97316' }}
                             />
                         </View>
+                        <View style={styles.divider} />
+                        <View style={styles.switchItem}>
+                            <View style={styles.switchContent}>
+                                <View style={styles.switchLabelRow}>
+                                    <Shield size={18} color="#ea580c" />
+                                    <Text style={styles.switchLabel}>Kasir Bisa Buka Laporan</Text>
+                                </View>
+                                <Text style={styles.switchSubtitle}>Izin melihat Laporan Penjualan & Grafik</Text>
+                            </View>
+                            <Switch
+                                value={storeSettings?.cashier_can_view_reports ?? false}
+                                onValueChange={(val) => toggleSetting('cashier_can_view_reports', val)}
+                                trackColor={{ false: '#e2e8f0', true: '#ea580c' }}
+                            />
+                        </View>
+                        <View style={styles.divider} />
+                        <View style={styles.switchItem}>
+                            <View style={styles.switchContent}>
+                                <View style={styles.switchLabelRow}>
+                                    <Shield size={18} color="#ea580c" />
+                                    <Text style={styles.switchLabel}>Kasir Bisa Buka Riwayat</Text>
+                                </View>
+                                <Text style={styles.switchSubtitle}>Izin melihat Riwayat Sesi (Tutup Kasir)</Text>
+                            </View>
+                            <Switch
+                                value={storeSettings?.cashier_can_view_session_history ?? false}
+                                onValueChange={(val) => toggleSetting('cashier_can_view_session_history', val)}
+                                trackColor={{ false: '#e2e8f0', true: '#ea580c' }}
+                            />
+                        </View>
                     </View>
                 </View>
 

@@ -20,6 +20,8 @@ export interface Product {
   is_taxed?: boolean;
   is_stock_ready?: boolean;
   image_url?: string;
+  sort_order?: number;
+  is_best_seller?: boolean;
 }
 
 export interface OrderItem {

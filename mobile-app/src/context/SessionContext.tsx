@@ -67,7 +67,24 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             }
             
             // 1. Silent Session Check
-            const { data: { session } } = await supabase.auth.getSession();
+            const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+            
+            if (sessionError) {
+                console.warn('[SessionContext] getSession error:', sessionError.message);
+                // [FIX] Explicitly handle "Refresh Token Not Found" to prevent infinite loops/hangs
+                if (sessionError.message.includes('Refresh Token Not Found') || sessionError.message.includes('invalid refresh token')) {
+                    console.error('[SessionContext] PERMANENT AUTH FAILURE: Session is stale. Clearing storage.');
+                    await supabase.auth.signOut();
+                    // Optional: Manually clear potential stale items if signOut fails or is partial
+                    try { await AsyncStorage.multiRemove(['supabase.auth.token', 'sb-access-token', 'sb-refresh-token']); } catch (e) {}
+                    
+                    setAuthSession(null);
+                    setCurrentSession(null);
+                    setLoading(false);
+                    return;
+                }
+            }
+
             setAuthSession(session);
             if (!session) {
                 console.log('[SessionContext] No active session found.');
@@ -79,8 +96,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             // 2. Verified User Fetch
             const { data: { user }, error: userError } = await supabase.auth.getUser();
             if (userError || !user) {
-                if (userError) console.warn('[SessionContext] getUser issue:', userError.message);
-                setCurrentSession(null);
+                if (userError) {
+                    console.warn('[SessionContext] getUser issue:', userError.message);
+                    // Same recovery for getUser failure
+                    if (userError.message.includes('Refresh Token Not Found')) {
+                        await supabase.auth.signOut();
+                        setAuthSession(null);
+                        setCurrentSession(null);
+                    }
+                }
                 setLoading(false);
                 return;
             }
@@ -195,9 +219,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }, [currentBranchId]);
 
     useEffect(() => {
-        // 1. Auth state change listener - Only once on mount
         const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange((event, session) => {
             console.log('[SessionContext] Auth event:', event, 'User:', session?.user?.email);
+            
+            // Deduplicate: If we are already checking or it's the INITIAL_SESSION event
+            // which is handled by our mount useEffect, we skip to avoid race conditions
+            if (event === 'INITIAL_SESSION' && isCheckingRef.current) return;
+            
             checkSession(false); // Don't block screen for background auth changes
         });
 

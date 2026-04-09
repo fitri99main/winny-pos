@@ -99,6 +99,7 @@ function Home() {
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [tables, setTables] = useState<any[]>([]);
+  const [topSellingProducts, setTopSellingProducts] = useState<string[]>([]);
 
   // Restored Missing States
   const [units, setUnits] = useState<any[]>([]);
@@ -165,6 +166,8 @@ function Home() {
       setActiveModule(moduleId as ModuleType);
     }
   };
+
+
 
   const handleClearTableStatus = async (tableNo: string) => {
     try {
@@ -417,6 +420,38 @@ function Home() {
     if (paymentsRes.data) setPaymentMethods(paymentsRes.data);
   };
 
+  const fetchTopSellingProducts = async (branchId: string) => {
+    try {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      const { data, error } = await supabase
+        .from('sale_items')
+        .select('product_name, quantity, sales!inner(date)')
+        .eq('branch_id', branchId)
+        .gte('sales.date', thirtyDaysAgo.toISOString());
+
+      if (error) throw error;
+
+      const counts: Record<string, number> = {};
+      (data || []).forEach(item => {
+        const name = item.product_name;
+        if (name) {
+          counts[name] = (counts[name] || 0) + (Number(item.quantity) || 1);
+        }
+      });
+
+      const sorted = Object.entries(counts)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 50) // Get top 50 names
+        .map(([name]) => name);
+
+      setTopSellingProducts(sorted);
+    } catch (err) {
+      console.error('Error fetching top products:', err);
+    }
+  };
+
   const fetchBranchData = async (branchId: string) => {
     if (!branchId) return;
 
@@ -491,6 +526,7 @@ function Home() {
   useEffect(() => {
     if (currentBranchId) {
       fetchBranchData(currentBranchId);
+      fetchTopSellingProducts(currentBranchId);
     }
 
     // Subscribe to branch-specific changes
@@ -526,8 +562,8 @@ function Home() {
   useEffect(() => {
     fetchPurchases();
     const purchaseChannels = [
-      supabase.channel('purchases_all').on('postgres_changes', { event: '*', schema: 'public', table: 'purchases' }, fetchPurchases).subscribe(),
-      supabase.channel('returns_all').on('postgres_changes', { event: '*', schema: 'public', table: 'purchase_returns' }, fetchPurchases).subscribe(),
+      supabase.channel('purchases_all').on('postgres_changes', { event: '*', schema: 'public', table: 'purchases' }, () => fetchPurchases()).subscribe(),
+      supabase.channel('returns_all').on('postgres_changes', { event: '*', schema: 'public', table: 'purchase_returns' }, () => fetchPurchases()).subscribe(),
     ];
     return () => {
       purchaseChannels.forEach(ch => ch.unsubscribe());
@@ -950,8 +986,12 @@ function Home() {
           // [REFINED] Robust Kiosk Detection
           const isKioskOrder = (newOrder.status === 'Unpaid' || newOrder.status === 'Pending') && 
                               (!newOrder.waiter_name || newOrder.waiter_name === 'Kiosk' || newOrder.waiter_name === 'User Display');
-          // Show notification for all incoming orders (regardless of suppression)
-          toast.info(`Pesanan Masuk: ${formattedSale.orderNo}`);
+          // Show notification for all incoming orders (respect suppression setting or specifically ignore User Display)
+          const shouldSuppress = storeSettings?.disable_web_kiosk_notifications || newOrder.waiter_name === 'User Display';
+          
+          if (!shouldSuppress) {
+            toast.info(`Pesanan Masuk: ${formattedSale.orderNo}`);
+          }
 
           // [FIX] Auto-open for External Orders (Waitress/Display/Admin)
           // Web app should NOT auto-open cashier if the setting is enabled.
@@ -1870,7 +1910,8 @@ function Home() {
           const step = multiplier > 0 ? multiplier : minSpend;
           
           if (step > 0) {
-            count = Math.floor(saleTotal / step);
+            // Ensure at least 1 voucher if min amount is met, otherwise calculate multiples
+            count = Math.max(1, Math.floor(saleTotal / step));
           }
 
           if (count > 0) {
@@ -2805,7 +2846,7 @@ function Home() {
             userRole={role || ''}
           />
         );
-      case 'reports': return <ReportsView sales={sales} returns={returns} paymentMethods={paymentMethods} storeSettings={storeSettings} />;
+      case 'reports': return <ReportsView sales={sales} returns={returns} purchases={purchases} purchaseReturns={purchaseReturns} paymentMethods={paymentMethods} storeSettings={storeSettings} />;
       case 'accounting': return (
         <AccountingView
           accounts={accounts}
@@ -3285,7 +3326,11 @@ function Home() {
             contacts={contacts}
             employees={employees}
             onSendToKDS={handleSendToKDS}
-            products={products}
+            products={products.map(p => ({
+              ...p,
+              is_best_seller: topSellingProducts.includes(p.name)
+            }))}
+
             categories={categories}
             tables={tables}
             activeSales={sales}

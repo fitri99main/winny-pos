@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { FileText, Download, FileSpreadsheet, Printer, TrendingUp, DollarSign, ShoppingBag, CreditCard, Search, Calendar, Filter, X } from 'lucide-react';
+import { FileText, Download, FileSpreadsheet, Printer, TrendingUp, DollarSign, ShoppingBag, CreditCard, Search, Calendar, Filter, X, ShoppingCart } from 'lucide-react';
 import { SalesOrder, SalesReturn } from '../pos/SalesView';
 import { Button } from '../ui/button';
 import * as XLSX from 'xlsx';
@@ -10,11 +10,15 @@ import { toast } from 'sonner';
 interface ReportsViewProps {
     sales: SalesOrder[];
     returns: SalesReturn[];
+    purchases: any[];
+    purchaseReturns: any[];
     paymentMethods: any[];
     storeSettings?: any;
 }
 
-export function ReportsView({ sales, returns, paymentMethods, storeSettings }: ReportsViewProps) {
+export function ReportsView({ sales, returns, purchases = [], purchaseReturns = [], paymentMethods, storeSettings }: ReportsViewProps) {
+    const [reportType, setReportType] = useState<'sales' | 'purchases'>('sales');
+
     const [searchQuery, setSearchQuery] = useState('');
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
@@ -72,10 +76,26 @@ export function ReportsView({ sales, returns, paymentMethods, storeSettings }: R
         });
     }, [returns, startDate, endDate]);
 
+    const filteredPurchases = useMemo(() => {
+        return (purchases || []).filter(p => {
+            const matchesSearch = (p.purchase_no || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                (p.supplier_name || '').toLowerCase().includes(searchQuery.toLowerCase());
+            
+            const pDate = p.date; // Usually YYYY-MM-DD
+            const matchesStartDate = !startDate || pDate >= startDate;
+            const matchesEndDate = !endDate || pDate <= endDate;
+            
+            return matchesSearch && matchesStartDate && matchesEndDate;
+        });
+    }, [purchases, searchQuery, startDate, endDate]);
+
     const totalSales = filteredSales.reduce((sum, s) => sum + (s.status === 'Completed' ? s.totalAmount : 0), 0);
+    const totalPurchases = filteredPurchases.reduce((sum, p) => sum + (p.total_amount || 0), 0);
     const totalTransactions = filteredSales.filter(s => s.status === 'Completed').length;
+    const totalPurchaseTrans = filteredPurchases.length;
     const totalReturned = filteredSales.filter(s => s.status === 'Returned').length;
     const totalRefunded = filteredReturns.reduce((sum, r) => sum + r.refundAmount, 0);
+
 
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat('id-ID', {
@@ -118,37 +138,58 @@ export function ReportsView({ sales, returns, paymentMethods, storeSettings }: R
 
     const exportToExcel = () => {
         try {
-            const data = filteredSales.map(s => ({
-                'No. Invoice': s.orderNo,
-                'Tanggal': s.date,
-                'Items': s.items,
-                'Total Amount': s.totalAmount,
-                'Metode Pembayaran': s.paymentMethod,
-                'Status': s.status === 'Completed' ? 'Selesai' : 'Retur',
-                'Kasir': s.cashierName || s.waiterName || '-',
-                'Meja': s.tableNo || '-'
-            }));
+            let data: any[];
+            let summaryData: any[];
+            let fileName: string;
 
-            // Add breakdown sheet
-            const summaryData = salesByPaymentMethod.map(m => ({
-                'Metode Pembayaran': m.name,
-                'Tipe': m.type,
-                'Jumlah Transaksi': m.count,
-                'Total Penjualan': m.total
-            }));
+            if (reportType === 'sales') {
+                data = filteredSales.map(s => ({
+                    'No. Invoice': s.orderNo,
+                    'Tanggal': s.date,
+                    'Items': s.items,
+                    'Total Amount': s.totalAmount,
+                    'Metode Pembayaran': s.paymentMethod,
+                    'Status': s.status === 'Completed' ? 'Selesai' : 'Retur',
+                    'Kasir': s.cashierName || s.waiterName || '-',
+                    'Meja': s.tableNo || '-'
+                }));
+
+                summaryData = salesByPaymentMethod.map(m => ({
+                    'Metode Pembayaran': m.name,
+                    'Tipe': m.type,
+                    'Jumlah Transaksi': m.count,
+                    'Total Penjualan': m.total
+                }));
+                fileName = `Laporan_Penjualan_${new Date().toISOString().split('T')[0]}.xlsx`;
+            } else {
+                data = filteredPurchases.map(p => ({
+                    'No. PO': p.purchase_no,
+                    'Tanggal': p.date,
+                    'Supplier': p.supplier_name,
+                    'Total Belanja': p.total_amount,
+                    'Items': p.items_count,
+                    'Status': p.status
+                }));
+
+                const supplierTotals: Record<string, number> = {};
+                filteredPurchases.forEach(p => {
+                    supplierTotals[p.supplier_name] = (supplierTotals[p.supplier_name] || 0) + (p.total_amount || 0);
+                });
+                summaryData = Object.entries(supplierTotals).map(([name, total]) => ({
+                    'Supplier': name,
+                    'Total Belanja': total
+                }));
+                fileName = `Laporan_Pembelian_${new Date().toISOString().split('T')[0]}.xlsx`;
+            }
 
             const worksheet = XLSX.utils.json_to_sheet(data);
             const summarySheet = XLSX.utils.json_to_sheet(summaryData);
             const workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, worksheet, "Detail Penjualan");
-            XLSX.utils.book_append_sheet(workbook, summarySheet, "Ringkasan Metode");
+            XLSX.utils.book_append_sheet(workbook, worksheet, reportType === 'sales' ? "Detail Penjualan" : "Detail Pembelian");
+            XLSX.utils.book_append_sheet(workbook, summarySheet, "Ringkasan");
 
-            // Auto-size columns
-            const maxWidth = data.reduce((w, r) => Math.max(w, r['No. Invoice'].length), 10);
-            worksheet['!cols'] = [{ wch: maxWidth + 5 }];
-
-            XLSX.writeFile(workbook, `Laporan_Penjualan_${new Date().toISOString().split('T')[0]}.xlsx`);
-            toast.success('Laporan Excel berhasil diunduh');
+            XLSX.writeFile(workbook, fileName);
+            toast.success(`Laporan ${reportType === 'sales' ? 'Excel Penjualan' : 'Excel Pembelian'} berhasil diunduh`);
         } catch (error) {
             console.error('Excel Export Error:', error);
             toast.error('Gagal mengekspor ke Excel');
@@ -158,60 +199,64 @@ export function ReportsView({ sales, returns, paymentMethods, storeSettings }: R
     const exportToPDF = () => {
         try {
             const doc = new jsPDF();
+            const title = reportType === 'sales' ? 'Laporan Penjualan WinPOS' : 'Laporan Pembelian WinPOS';
 
             // Header
             doc.setFontSize(20);
-            doc.text('Laporan Penjualan WinPOS', 14, 22);
+            doc.text(title, 14, 22);
             doc.setFontSize(11);
             doc.setTextColor(100);
             doc.text(`Dicetak pada: ${new Date().toLocaleString('id-ID')}`, 14, 30);
 
             // Summary
             doc.setTextColor(0);
-            doc.text(`Total Penjualan: ${formatCurrency(totalSales)}`, 14, 40);
-            doc.text(`Total Transaksi: ${totalTransactions}`, 14, 46);
+            if (reportType === 'sales') {
+                doc.text(`Total Penjualan: ${formatCurrency(totalSales)}`, 14, 40);
+                doc.text(`Total Transaksi: ${totalTransactions}`, 14, 46);
 
-            const tableData = filteredSales.map(s => [
-                s.orderNo,
-                s.date,
-                s.status === 'Completed' ? 'Selesai' : 'Retur',
-                s.paymentMethod,
-                formatCurrency(s.totalAmount)
-            ]);
+                const tableData = filteredSales.map(s => [
+                    s.orderNo,
+                    s.date,
+                    s.status === 'Completed' ? 'Selesai' : 'Retur',
+                    s.paymentMethod,
+                    formatCurrency(s.totalAmount)
+                ]);
 
-            autoTable(doc, {
-                startY: 55,
-                head: [['No. Invoice', 'Tanggal', 'Status', 'Metode', 'Total']],
-                body: tableData,
-                theme: 'striped',
-                headStyles: { fillColor: [79, 70, 229] }, // Indigo-600
-            });
+                autoTable(doc, {
+                    startY: 55,
+                    head: [['No. Invoice', 'Tanggal', 'Status', 'Metode', 'Total']],
+                    body: tableData,
+                    theme: 'striped',
+                    headStyles: { fillColor: [79, 70, 229] }, // Indigo-600
+                });
+            } else {
+                doc.text(`Total Pembelian: ${formatCurrency(totalPurchases)}`, 14, 40);
+                doc.text(`Total Transaksi PO: ${totalPurchaseTrans}`, 14, 46);
 
-            // Add Payment Breakdown Table
-            const lastY = (doc as any).lastAutoTable.finalY + 15;
-            doc.text('Ringkasan per Metode Pembayaran', 14, lastY);
+                const tableData = filteredPurchases.map(p => [
+                    p.purchase_no,
+                    p.date,
+                    p.supplier_name,
+                    formatCurrency(p.total_amount)
+                ]);
 
-            const breakdownData = salesByPaymentMethod.map(m => [
-                m.name,
-                m.count.toString(),
-                formatCurrency(m.total)
-            ]);
+                autoTable(doc, {
+                    startY: 55,
+                    head: [['No. PO', 'Tanggal', 'Supplier', 'Total']],
+                    body: tableData,
+                    theme: 'striped',
+                    headStyles: { fillColor: [249, 115, 22] }, // Orange-500
+                });
+            }
 
-            autoTable(doc, {
-                startY: lastY + 5,
-                head: [['Metode', 'Transaksi', 'Total']],
-                body: breakdownData,
-                theme: 'grid',
-                headStyles: { fillColor: [16, 185, 129] }, // Emerald-500
-            });
-
-            doc.save(`Laporan_Penjualan_${new Date().toISOString().split('T')[0]}.pdf`);
-            toast.success('Laporan PDF berhasil diunduh');
+            doc.save(`${title.replace(/ /g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
+            toast.success(`Laporan ${reportType === 'sales' ? 'PDF Penjualan' : 'PDF Pembelian'} berhasil diunduh`);
         } catch (error) {
             console.error('PDF Export Error:', error);
             toast.error('Gagal mengekspor ke PDF');
         }
     };
+
 
     const handlePrintReceipt = () => {
         window.print();
@@ -223,9 +268,25 @@ export function ReportsView({ sales, returns, paymentMethods, storeSettings }: R
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h2 className="text-3xl font-bold text-gray-800 tracking-tight">Laporan Keuangan</h2>
-                    <p className="text-gray-500 mt-1">Ringkasan performa penjualan dan transaksi bisnis Anda.</p>
+                    <div className="flex gap-2 mt-2">
+                        <Button 
+                            variant={reportType === 'sales' ? 'default' : 'outline'}
+                            onClick={() => setReportType('sales')}
+                            className="rounded-full px-6"
+                        >
+                            Laporan Penjualan
+                        </Button>
+                        <Button 
+                            variant={reportType === 'purchases' ? 'default' : 'outline'}
+                            onClick={() => setReportType('purchases')}
+                            className="rounded-full px-6"
+                        >
+                            Laporan Pembelian
+                        </Button>
+                    </div>
                 </div>
                 <div className="flex gap-3">
+
                     <Button
                         onClick={exportToExcel}
                         variant="outline"
@@ -256,8 +317,8 @@ export function ReportsView({ sales, returns, paymentMethods, storeSettings }: R
                     <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center mb-4 text-blue-600">
                         <TrendingUp className="w-6 h-6" />
                     </div>
-                    <p className="text-sm font-medium text-gray-500">Total Penjualan</p>
-                    <h3 className="text-2xl font-bold text-gray-800 mt-1">{formatCurrency(totalSales)}</h3>
+                    <p className="text-sm font-medium text-gray-500">{reportType === 'sales' ? 'Total Penjualan' : 'Total Pembelian'}</p>
+                    <h3 className="text-2xl font-bold text-gray-800 mt-1">{formatCurrency(reportType === 'sales' ? totalSales : totalPurchases)}</h3>
                     <p className="text-xs text-gray-400 mt-2 font-medium">Dari data yang difilter</p>
                 </div>
 
@@ -266,26 +327,30 @@ export function ReportsView({ sales, returns, paymentMethods, storeSettings }: R
                         <ShoppingBag className="w-6 h-6" />
                     </div>
                     <p className="text-sm font-medium text-gray-500">Total Transaksi</p>
-                    <h3 className="text-2xl font-bold text-gray-800 mt-1">{totalTransactions}</h3>
-                    <p className="text-xs text-gray-400 mt-2 font-medium">Transaksi berhasil selesai</p>
+                    <h3 className="text-2xl font-bold text-gray-800 mt-1">{reportType === 'sales' ? totalTransactions : totalPurchaseTrans}</h3>
+                    <p className="text-xs text-gray-400 mt-2 font-medium">{reportType === 'sales' ? 'Transaksi berhasil selesai' : 'Transaksi pembelian barang'}</p>
                 </div>
 
                 <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
                     <div className="w-12 h-12 bg-orange-50 rounded-2xl flex items-center justify-center mb-4 text-orange-600">
                         <DollarSign className="w-6 h-6" />
                     </div>
-                    <p className="text-sm font-medium text-gray-500">Rata-rata Order</p>
-                    <h3 className="text-2xl font-bold text-gray-800 mt-1">{formatCurrency(totalTransactions > 0 ? totalSales / totalTransactions : 0)}</h3>
-                    <p className="text-xs text-gray-400 mt-2 font-medium">Nilai rata-rata per struk</p>
+                    <p className="text-sm font-medium text-gray-500">{reportType === 'sales' ? 'Rata-rata Order' : 'Rata-rata Belanja'}</p>
+                    <h3 className="text-2xl font-bold text-gray-800 mt-1">{formatCurrency(reportType === 'sales' ? (totalTransactions > 0 ? totalSales / totalTransactions : 0) : (totalPurchaseTrans > 0 ? totalPurchases / totalPurchaseTrans : 0))}</h3>
+                    <p className="text-xs text-gray-400 mt-2 font-medium">Nilai rata-rata per transaksi</p>
                 </div>
 
                 <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
                     <div className="w-12 h-12 bg-red-50 rounded-2xl flex items-center justify-center mb-4 text-red-600">
                         <Printer className="w-6 h-6" />
                     </div>
-                    <p className="text-sm font-medium text-gray-500">Retur & Refund</p>
-                    <h3 className="text-2xl font-bold text-gray-800 mt-1">{formatCurrency(totalRefunded)}</h3>
-                    <p className="text-xs text-red-500 mt-2 font-medium">{totalReturned} Transaksi diretur</p>
+                    <p className="text-sm font-medium text-gray-500">{reportType === 'sales' ? 'Retur & Refund' : 'Supplier Teraktif'}</p>
+                    <h3 className="text-2xl font-bold text-gray-800 mt-1">
+                        {reportType === 'sales' ? formatCurrency(totalRefunded) : (filteredPurchases.length > 0 ? [...new Set(filteredPurchases.map(p => p.supplier_name))].length : 0)}
+                    </h3>
+                    <p className="text-xs text-red-500 mt-2 font-medium">
+                        {reportType === 'sales' ? `${totalReturned} Transaksi diretur` : 'Jumlah supplier berbeda'}
+                    </p>
                 </div>
             </div>
 
@@ -385,38 +450,73 @@ export function ReportsView({ sales, returns, paymentMethods, storeSettings }: R
                 </div>
             )}
 
-            {/* Payment Method Breakdown */}
-            <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-                <div className="px-8 py-6 border-b border-gray-50 flex items-center gap-3">
-                    <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
-                        <CreditCard className="w-5 h-5" />
+            {/* Breakdown Section */}
+            {reportType === 'sales' ? (
+                <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+                    <div className="px-8 py-6 border-b border-gray-50 flex items-center gap-3">
+                        <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
+                            <CreditCard className="w-5 h-5" />
+                        </div>
+                        <h3 className="font-bold text-gray-800 text-lg">Breakdown per Metode Pembayaran</h3>
                     </div>
-                    <h3 className="font-bold text-gray-800 text-lg">Breakdown per Metode Pembayaran</h3>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-gray-50">
-                    {salesByPaymentMethod.map((method, idx) => (
-                        <div key={idx} className="p-8 space-y-2 hover:bg-gray-50/50 transition-colors">
-                            <p className="text-sm font-bold text-gray-400 uppercase tracking-wider">{method.name}</p>
-                            <div className="flex items-baseline gap-2">
-                                <h4 className="text-2xl font-black text-gray-800">{formatCurrency(method.total)}</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-gray-50">
+                        {salesByPaymentMethod.map((method, idx) => (
+                            <div key={idx} className="p-8 space-y-2 hover:bg-gray-50/50 transition-colors">
+                                <p className="text-sm font-bold text-gray-400 uppercase tracking-wider">{method.name}</p>
+                                <div className="flex items-baseline gap-2">
+                                    <h4 className="text-2xl font-black text-gray-800">{formatCurrency(method.total)}</h4>
+                                </div>
+                                <div className="flex items-center gap-2 text-xs">
+                                    <span className="bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full">
+                                        {method.count} Transaksi
+                                    </span>
+                                    <span className="text-gray-400 font-medium">
+                                        {((method.total / (totalSales || 1)) * 100).toFixed(1)}% Kontribusi
+                                    </span>
+                                </div>
                             </div>
-                            <div className="flex items-center gap-2 text-xs">
-                                <span className="bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full">
-                                    {method.count} Transaksi
-                                </span>
-                                <span className="text-gray-400 font-medium">
-                                    {((method.total / (totalSales || 1)) * 100).toFixed(1)}% Kontribusi
-                                </span>
+                        ))}
+                        {salesByPaymentMethod.length === 0 && (
+                            <div className="col-span-full p-12 text-center text-gray-400">
+                                Belum ada data pembayaran yang tercatat
                             </div>
-                        </div>
-                    ))}
-                    {salesByPaymentMethod.length === 0 && (
-                        <div className="col-span-full p-12 text-center text-gray-400">
-                            Belum ada data pembayaran yang tercatat
-                        </div>
-                    )}
+                        )}
+                    </div>
                 </div>
-            </div>
+            ) : (
+                <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+                    <div className="px-8 py-6 border-b border-gray-50 flex items-center gap-3">
+                        <div className="p-2 bg-orange-50 text-orange-600 rounded-lg">
+                            <ShoppingCart className="w-5 h-5" />
+                        </div>
+                        <h3 className="font-bold text-gray-800 text-lg">Breakdown per Supplier</h3>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-gray-50">
+                        {(() => {
+                            const supplierTotals: Record<string, number> = {};
+                            filteredPurchases.forEach(p => {
+                                supplierTotals[p.supplier_name] = (supplierTotals[p.supplier_name] || 0) + (p.total_amount || 0);
+                            });
+                            return Object.entries(supplierTotals).sort((a,b) => b[1] - a[1]).slice(0, 8).map(([name, total], idx) => (
+                                <div key={idx} className="p-8 space-y-2 hover:bg-gray-50/50 transition-colors">
+                                    <p className="text-sm font-bold text-gray-400 uppercase tracking-wider">{name}</p>
+                                    <div className="flex items-baseline gap-2">
+                                        <h4 className="text-2xl font-black text-gray-800">{formatCurrency(total)}</h4>
+                                    </div>
+                                    <div className="text-xs text-gray-400 font-medium">
+                                        {((total / (totalPurchases || 1)) * 100).toFixed(1)}% Dari total belanja
+                                    </div>
+                                </div>
+                            ));
+                        })()}
+                        {filteredPurchases.length === 0 && (
+                            <div className="col-span-full p-12 text-center text-gray-400">
+                                Belum ada data pembelian yang tercatat
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* List Table */}
             <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
@@ -442,50 +542,82 @@ export function ReportsView({ sales, returns, paymentMethods, storeSettings }: R
                     <table className="w-full text-left">
                         <thead>
                             <tr className="bg-gray-50 text-gray-500 text-xs font-bold uppercase tracking-wider">
-                                <th className="px-8 py-4">No. Invoice</th>
+                                <th className="px-8 py-4">{reportType === 'sales' ? 'No. Invoice' : 'No. PO'}</th>
                                 <th className="px-8 py-4">Tanggal</th>
-                                <th className="px-8 py-4">Metode</th>
+                                <th className="px-8 py-4">{reportType === 'sales' ? 'Metode' : 'Supplier'}</th>
                                 <th className="px-8 py-4 text-right">Total</th>
                                 <th className="px-8 py-4 text-center">Status</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
-                            {filteredSales.length === 0 ? (
-                                <tr>
-                                    <td colSpan={5} className="px-8 py-12 text-center text-gray-400">
-                                        <div className="flex flex-col items-center gap-2">
-                                            <Search className="w-8 h-8 opacity-20" />
-                                            <p>Tidak ada transaksi yang sesuai dengan filter</p>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ) : (
-                                filteredSales.map((sale) => (
-                                    <tr key={sale.id} className="hover:bg-gray-50/50 transition-colors">
-                                        <td className="px-8 py-5 font-mono text-sm font-bold text-gray-700">{sale.orderNo}</td>
-                                        <td className="px-8 py-5 text-sm text-gray-500">{sale.date.substring(0, 16)}</td>
-                                        <td className="px-8 py-5">
-                                            <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider ${
-                                                sale.paymentMethod.toLowerCase().includes('tunai') || sale.paymentMethod.toLowerCase().includes('cash')
-                                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                                                : sale.paymentMethod.toLowerCase().includes('qris') || sale.paymentMethod.toLowerCase().includes('digital')
-                                                ? 'bg-indigo-50 text-indigo-700 border border-indigo-100'
-                                                : 'bg-gray-50 text-gray-400 border border-gray-100'
-                                            }`}>
-                                                {sale.paymentMethod}
-                                            </span>
-                                        </td>
-                                        <td className="px-8 py-5 text-right font-bold text-gray-800">{formatCurrency(sale.totalAmount)}</td>
-                                        <td className="px-8 py-5 text-center">
-                                            <span className={`text-[10px] font-extrabold uppercase px-2 py-1 rounded-md border ${sale.status === 'Completed'
-                                                ? 'bg-green-50 text-green-700 border-green-100'
-                                                : 'bg-red-50 text-red-700 border-red-100'
-                                                }`}>
-                                                {sale.status === 'Completed' ? 'Selesai' : 'Retur'}
-                                            </span>
+                            {reportType === 'sales' ? (
+                                filteredSales.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={5} className="px-8 py-12 text-center text-gray-400">
+                                            <div className="flex flex-col items-center gap-2">
+                                                <Search className="w-8 h-8 opacity-20" />
+                                                <p>Tidak ada transaksi yang sesuai dengan filter</p>
+                                            </div>
                                         </td>
                                     </tr>
-                                ))
+                                ) : (
+                                    filteredSales.map((sale) => (
+                                        <tr key={sale.id} className="hover:bg-gray-50/50 transition-colors">
+                                            <td className="px-8 py-5 font-mono text-sm font-bold text-gray-700">{sale.orderNo}</td>
+                                            <td className="px-8 py-5 text-sm text-gray-500">{sale.date.substring(0, 16)}</td>
+                                            <td className="px-8 py-5">
+                                                <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider ${
+                                                    sale.paymentMethod.toLowerCase().includes('tunai') || sale.paymentMethod.toLowerCase().includes('cash')
+                                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                                    : sale.paymentMethod.toLowerCase().includes('qris') || sale.paymentMethod.toLowerCase().includes('digital')
+                                                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-100'
+                                                    : 'bg-gray-50 text-gray-400 border border-gray-100'
+                                                }`}>
+                                                    {sale.paymentMethod}
+                                                </span>
+                                            </td>
+                                            <td className="px-8 py-5 text-right font-bold text-gray-800">{formatCurrency(sale.totalAmount)}</td>
+                                            <td className="px-8 py-5 text-center">
+                                                <span className={`text-[10px] font-extrabold uppercase px-2 py-1 rounded-md border ${sale.status === 'Completed'
+                                                    ? 'bg-green-50 text-green-700 border-green-100'
+                                                    : 'bg-red-50 text-red-700 border-red-100'
+                                                    }`}>
+                                                    {sale.status === 'Completed' ? 'Selesai' : 'Retur'}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )
+                            ) : (
+                                filteredPurchases.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={5} className="px-8 py-12 text-center text-gray-400">
+                                            <div className="flex flex-col items-center gap-2">
+                                                <Search className="w-8 h-8 opacity-20" />
+                                                <p>Tidak ada data pembelian yang sesuai</p>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    filteredPurchases.map((p) => (
+                                        <tr key={p.id} className="hover:bg-gray-50/50 transition-colors">
+                                            <td className="px-8 py-5 font-mono text-sm font-bold text-gray-700">{p.purchase_no}</td>
+                                            <td className="px-8 py-5 text-sm text-gray-500">{p.date}</td>
+                                            <td className="px-8 py-5">
+                                                <span className="text-sm font-bold text-gray-700">{p.supplier_name}</span>
+                                            </td>
+                                            <td className="px-8 py-5 text-right font-bold text-gray-800">{formatCurrency(p.total_amount)}</td>
+                                            <td className="px-8 py-5 text-center">
+                                                <span className={`text-[10px] font-extrabold uppercase px-2 py-1 rounded-md border ${p.status === 'Completed'
+                                                    ? 'bg-green-50 text-green-700 border-green-100'
+                                                    : 'bg-orange-50 text-orange-700 border-orange-100'
+                                                    }`}>
+                                                    {p.status}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )
                             )}
                         </tbody>
                     </table>
