@@ -417,7 +417,7 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
                                     <BarChart layout="vertical" data={bestSellersByCategory.makanan} margin={{ left: -20, right: 30 }}>
                                         <XAxis type="number" hide />
                                         <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={100} tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 'bold' }} />
-                                        <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', shadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
+                                        <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
                                         <Bar dataKey="value" fill="#ef4444" radius={[0, 6, 6, 0]} barSize={12} />
                                     </BarChart>
                                 </ResponsiveContainer>
@@ -432,7 +432,7 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
                                     <BarChart layout="vertical" data={bestSellersByCategory.minuman} margin={{ left: -20, right: 30 }}>
                                         <XAxis type="number" hide />
                                         <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={100} tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 'bold' }} />
-                                        <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', shadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
+                                        <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
                                         <Bar dataKey="value" fill="#3b82f6" radius={[0, 6, 6, 0]} barSize={12} />
                                     </BarChart>
                                 </ResponsiveContainer>
@@ -447,7 +447,7 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
                                     <BarChart layout="vertical" data={bestSellersByCategory.snack} margin={{ left: -20, right: 30 }}>
                                         <XAxis type="number" hide />
                                         <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={100} tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 'bold' }} />
-                                        <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', shadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
+                                        <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
                                         <Bar dataKey="value" fill="#f97316" radius={[0, 6, 6, 0]} barSize={12} />
                                     </BarChart>
                                 </ResponsiveContainer>
@@ -462,7 +462,7 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
                                     <BarChart layout="vertical" data={bestSellersByCategory.produk} margin={{ left: -20, right: 30 }}>
                                         <XAxis type="number" hide />
                                         <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={100} tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 'bold' }} />
-                                        <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', shadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
+                                        <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
                                         <Bar dataKey="value" fill="#8b5cf6" radius={[0, 6, 6, 0]} barSize={12} />
                                     </BarChart>
                                 </ResponsiveContainer>
