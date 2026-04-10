@@ -9,6 +9,7 @@ import { printerService } from '../lib/PrinterService';
 import { WifiVoucherService } from '../lib/WifiVoucherService';
 import { Button } from './ui/button';
 import { supabase } from '../lib/supabase';
+import { PettyCashService } from '../lib/PettyCashService';
 import { useAuth } from './auth/AuthProvider';
 import { useSessionGuard } from './auth/SessionGuardContext';
 import { DashboardView } from './dashboard/DashboardView';
@@ -1282,6 +1283,42 @@ function Home() {
   };
 
   // Generic CRUD Handler
+  const syncPurchaseWithAccounting = async (po: any) => {
+    // 1. Journal Entry
+    const creditAcc = po.payment_method === 'Transfer' ? '102' : '101'; // Bank vs Kas
+    await supabase.from('journal_entries').insert([{
+      date: po.date || new Date().toISOString().split('T')[0],
+      description: `Pembelian Bahan: ${po.purchase_no || ''} (${po.supplier_name || ''})`,
+      debit_account: '501', // Beban Pembelian
+      credit_account: creditAcc,
+      amount: po.total_amount,
+      reference_id: String(po.id),
+      source_type: 'purchase'
+    }]);
+
+    // 2. Petty Cash Integration
+    if (po.payment_method === 'Kas Kecil') {
+      try {
+        const activeSession = await PettyCashService.getActiveSession(po.branch_id);
+        if (activeSession) {
+          await PettyCashService.addTransaction({
+            session_id: activeSession.id,
+            type: 'SPEND',
+            amount: po.total_amount,
+            description: `Pembelian: ${po.purchase_no}`,
+            reference_type: 'purchase',
+            reference_id: po.purchase_no
+          });
+          toast.success('Saldo Kas Kecil terpotong otomatis');
+        } else {
+          toast.warning('Pembelian "Kas Kecil" berhasil, namun tidak ada sesi Kas Kecil aktif untuk memotong saldo.');
+        }
+      } catch (pcErr) {
+        console.error('Petty Cash Sync Error:', pcErr);
+      }
+    }
+  };
+
   const handleMasterDataCRUD = async (
     table: string,
     action: 'create' | 'update' | 'delete',
@@ -1296,27 +1333,24 @@ function Home() {
           (payload as any).branch_id = currentBranchId;
         }
 
-        const { error } = await supabase.from(table).insert([payload]);
+        const { data: insertedData, error } = await supabase.from(table).insert([payload]).select().single();
         if (error) throw error;
         toast.success(`Data berhasil ditambahkan`);
+
+        // [NEW] Accounting Integration for New Purchases
+        if (table === 'purchases' && insertedData?.status === 'Completed') {
+          await syncPurchaseWithAccounting(insertedData);
+        }
       } else if (action === 'update') {
         const { error } = await supabase.from(table).update(data).eq('id', data.id);
         if (error) throw error;
 
-        // [NEW] Accounting Integration for Purchases
+        // [NEW] Accounting Integration for Updated Purchases
         if (table === 'purchases' && data.status === 'Completed') {
           // Fetch full purchase data for journaling
           const { data: po } = await supabase.from('purchases').select('*').eq('id', data.id).single();
           if (po) {
-            await supabase.from('journal_entries').insert([{
-              date: po.date || new Date().toISOString().split('T')[0],
-              description: `Pembelian Bahan: ${po.purchase_no || ''} (${po.supplier_name || ''})`,
-              debit_account: '501', // Beban Pembelian
-              credit_account: '101', // Kas
-              amount: po.total_amount,
-              reference_id: String(po.id),
-              source_type: 'purchase'
-            }]);
+            await syncPurchaseWithAccounting(po);
             toast.success('Pembelian dicatat ke Akuntansi');
           }
         }
@@ -2859,8 +2893,11 @@ function Home() {
           onAddTransaction={handleAddJournalEntry}
           onDeleteTransaction={handleDeleteJournalEntry}
           onResetTransactions={handleResetJournalEntries}
+          onPurchaseCRUD={(target, action, data) => handleMasterDataCRUD(target, action, data)}
           onRefresh={fetchAccounting}
           onBack={() => setActiveModule('payroll')}
+          currentBranchId={currentBranchId}
+          purchases={purchases}
         />
       );
       case 'session_history': return <SessionHistoryView />;

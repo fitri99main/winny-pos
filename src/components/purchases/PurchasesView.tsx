@@ -3,6 +3,7 @@ import { ShoppingCart, Plus, History, RotateCcw, Search, Calendar, FileText, Che
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
 import { useBarcodeScanner } from '../../hooks/useBarcodeScanner';
+import { PettyCashService } from '../../lib/PettyCashService';
 
 // --- Types ---
 
@@ -22,6 +23,7 @@ interface PurchaseOrder {
     items: number;
     totalAmount: number;
     status: 'Pending' | 'Completed' | 'Returned';
+    payment_method: string;
     itemsList?: PurchaseItem[];
 }
 
@@ -60,10 +62,13 @@ export function PurchasesView({
     // Form Tracking
     const [inputForm, setInputForm] = useState<Partial<PurchaseOrder>>({
         date: new Date().toISOString().split('T')[0],
-        supplierName: ''
+        supplierName: '',
+        payment_method: 'Tunai'
     });
     const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([]);
     const [returnForm, setReturnForm] = useState<Partial<PurchaseReturn>>({ date: new Date().toISOString().split('T')[0] });
+    const [isManualSupplier, setIsManualSupplier] = useState(false);
+    const [manualItemForm, setManualItemForm] = useState({ name: '', price: '' });
 
     const [isEditing, setIsEditing] = useState(false);
     const [editingId, setEditingId] = useState<number | null>(null);
@@ -148,13 +153,15 @@ export function PurchasesView({
             return;
         }
 
+        const purchaseNoFinal = inputForm.purchaseNo || `PO-2026-${String(purchases.length + 1).padStart(3, '0')}`;
         const purchaseData = {
-            purchase_no: inputForm.purchaseNo || `PO-2026-${String(purchases.length + 1).padStart(3, '0')}`,
+            purchase_no: purchaseNoFinal,
             supplier_name: inputForm.supplierName,
             date: inputForm.date || new Date().toISOString().split('T')[0],
             items_count: purchaseItems.reduce((sum, i) => sum + i.quantity, 0),
             total_amount: totalAmount,
             status: isEditing ? inputForm.status : 'Pending',
+            payment_method: inputForm.payment_method || 'Tunai',
             branch_id: currentBranchId,
             items_list: purchaseItems
         };
@@ -165,12 +172,36 @@ export function PurchasesView({
         } else {
             onCRUD('purchases', 'create', purchaseData);
             toast.success('Pembelian berhasil dibuat');
+
+            // Petty Cash Integration (New)
+            if (purchaseData.payment_method === 'Kas Kecil' && currentBranchId) {
+                PettyCashService.getActiveSession(currentBranchId).then(session => {
+                    if (session) {
+                        PettyCashService.addTransaction({
+                            session_id: session.id,
+                            type: 'SPEND',
+                            amount: totalAmount,
+                            description: `Pembelian: ${purchaseNoFinal}`,
+                            reference_type: 'purchase',
+                            reference_id: purchaseNoFinal
+                        }).then(() => {
+                            toast.success('Saldo Kas Kecil terpotong');
+                        }).catch(err => {
+                            console.error('Petty Cash Sync Error:', err);
+                            toast.error('PO Berhasil, namun gagal potong saldo kas kecil');
+                        });
+                    } else {
+                        toast.error('PO Berhasil, namun Sesi Kas Kecil belum dibuka');
+                    }
+                });
+            }
         }
 
         // Reset
         setInputForm({ date: new Date().toISOString().split('T')[0], supplierName: '' });
         setPurchaseItems([]);
         setIsEditing(false);
+        setIsManualSupplier(false);
         setEditingId(null);
         setActiveTab('history');
     };
@@ -207,7 +238,8 @@ export function PurchasesView({
             date: po.date,
             supplierName: po.supplier_name,
             purchaseNo: po.purchase_no,
-            status: po.status
+            status: po.status,
+            payment_method: po.payment_method || 'Tunai'
         });
         setPurchaseItems(po.items_list || []);
         setActiveTab('input');
@@ -261,6 +293,7 @@ export function PurchasesView({
                         <th className="px-6 py-4">No. PO</th>
                         <th className="px-6 py-4">Supplier</th>
                         <th className="px-6 py-4">Tanggal</th>
+                        <th className="px-6 py-4">Metode</th>
                         <th className="px-6 py-4 text-center">Items</th>
                         <th className="px-6 py-4 text-right">Total</th>
                         <th className="px-6 py-4 text-center">Status</th>
@@ -273,6 +306,7 @@ export function PurchasesView({
                             <td className="px-6 py-4 font-mono font-medium text-blue-600">{po.purchase_no}</td>
                             <td className="px-6 py-4 font-bold text-gray-700">{po.supplier_name}</td>
                             <td className="px-6 py-4 text-gray-500">{po.date}</td>
+                            <td className="px-6 py-4 text-xs font-medium text-gray-400 uppercase tracking-tighter">{po.payment_method || 'Tunai'}</td>
                             <td className="px-6 py-4 text-center">{po.items_count}</td>
                             <td className="px-6 py-4 text-right font-bold">Rp {(po.total_amount || 0).toLocaleString()}</td>
                             <td className="px-6 py-4 text-center">
@@ -426,16 +460,50 @@ export function PurchasesView({
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Supplier</label>
+                            <div className="flex justify-between items-center mb-2">
+                                <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest">Supplier</label>
+                                <button 
+                                    onClick={() => {
+                                        setIsManualSupplier(!isManualSupplier);
+                                        setInputForm({...inputForm, supplierName: ''});
+                                    }}
+                                    className="text-[10px] font-bold text-blue-600 hover:underline"
+                                >
+                                    {isManualSupplier ? 'Pilih dari Daftar' : 'Input Manual'}
+                                </button>
+                            </div>
+                            {isManualSupplier ? (
+                                <input
+                                    type="text"
+                                    className="w-full p-2.5 border rounded-xl"
+                                    placeholder="Ketik Nama Supplier..."
+                                    value={inputForm.supplierName}
+                                    onChange={e => setInputForm({ ...inputForm, supplierName: e.target.value })}
+                                />
+                            ) : (
+                                <select
+                                    className="w-full p-2.5 border rounded-xl"
+                                    value={inputForm.supplierName}
+                                    onChange={e => setInputForm({ ...inputForm, supplierName: e.target.value })}
+                                >
+                                    <option value="">Pilih Supplier...</option>
+                                    {contacts.filter(c => c.type === 'Supplier').map(c => (
+                                        <option key={c.id} value={c.name}>{c.name}</option>
+                                    ))}
+                                </select>
+                            )}
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Metode Pembayaran</label>
                             <select
                                 className="w-full p-2.5 border rounded-xl"
-                                value={inputForm.supplierName}
-                                onChange={e => setInputForm({ ...inputForm, supplierName: e.target.value })}
+                                value={inputForm.payment_method}
+                                onChange={e => setInputForm({ ...inputForm, payment_method: e.target.value })}
                             >
-                                <option value="">Pilih Supplier...</option>
-                                {contacts.filter(c => c.type === 'Supplier').map(c => (
-                                    <option key={c.id} value={c.name}>{c.name}</option>
-                                ))}
+                                <option value="Tunai">Tunai / Cash</option>
+                                <option value="Transfer">Transfer Bank</option>
+                                <option value="Kas Kecil">Kas Kecil (Petty Cash)</option>
+                                <option value="Hutang">Hutang / Credit</option>
                             </select>
                         </div>
                     </div>
@@ -457,9 +525,50 @@ export function PurchasesView({
 
                 </div>
 
-                {/* Additional Item Selection (Manual) */}
+                {/* Manual Item Input (Aligned with Mobile) */}
+                <div className="bg-white rounded-2xl shadow-sm border border-blue-100 p-6 bg-gradient-to-br from-white to-blue-50/20">
+                    <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                        <Plus className="w-4 h-4 text-blue-600" /> Item Kustom / Manual
+                    </h3>
+                    <div className="space-y-3">
+                        <input
+                            type="text"
+                            placeholder="Nama Barang (misal: Bensin)"
+                            className="w-full p-2.5 text-sm border rounded-xl"
+                            value={manualItemForm.name}
+                            onChange={e => setManualItemForm({ ...manualItemForm, name: e.target.value })}
+                        />
+                        <input
+                            type="number"
+                            placeholder="Harga Satuan"
+                            className="w-full p-2.5 text-sm border rounded-xl"
+                            value={manualItemForm.price}
+                            onChange={e => setManualItemForm({ ...manualItemForm, price: e.target.value })}
+                        />
+                        <Button 
+                            variant="outline" 
+                            className="w-full border-blue-200 text-blue-600 hover:bg-blue-50"
+                            onClick={() => {
+                                if (!manualItemForm.name || !manualItemForm.price) {
+                                    toast.error('Lengkapi Nama & Harga Item');
+                                    return;
+                                }
+                                handleAddItem({
+                                    itemId: `manual-${Date.now()}`,
+                                    name: manualItemForm.name,
+                                    price: Number(manualItemForm.price)
+                                });
+                                setManualItemForm({ name: '', price: '' });
+                            }}
+                        >
+                            Tambah Item Manual
+                        </Button>
+                    </div>
+                </div>
+
+                {/* Additional Item Selection */}
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                    <h3 className="font-bold text-gray-800 mb-4">Pencarian Manual</h3>
+                    <h3 className="font-bold text-gray-800 mb-4">Daftar Inventori</h3>
                     <div className="space-y-2 max-h-[300px] overflow-auto pr-2">
                         {ingredients.concat(products).map((item: any) => (
                             <button

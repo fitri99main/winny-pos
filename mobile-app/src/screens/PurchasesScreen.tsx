@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { useSession } from '../context/SessionContext';
 import { ArrowLeft, Plus, History, ShoppingCart, Search, Trash2, CheckCircle, Package, User, Edit } from 'lucide-react-native';
 import ModernToast from '../components/ModernToast';
+import { PettyCashService } from '../lib/PettyCashService';
 
 export default function PurchasesScreen() {
     const navigation = useNavigation();
@@ -19,6 +20,8 @@ export default function PurchasesScreen() {
     const [supplier, setSupplier] = useState('');
     const [purchaseItems, setPurchaseItems] = useState<any[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
+    const [paymentMethod, setPaymentMethod] = useState('Tunai');
+    const paymentMethods = ['Tunai', 'Transfer', 'Kas Kecil', 'Hutang'];
     
     // Master Data
     const [contacts, setContacts] = useState<any[]>([]);
@@ -104,7 +107,8 @@ export default function PurchasesScreen() {
                 date: new Date().toISOString().split('T')[0],
                 items_count: purchaseItems.reduce((sum, i) => sum + i.quantity, 0),
                 total_amount: totalAmount,
-                status: isEditing ? 'Completed' : 'Pending', // Keep or move to completed if edited? Usually stay Pending until marked
+                status: isEditing ? 'Completed' : 'Pending',
+                payment_method: paymentMethod,
                 branch_id: currentBranchId,
                 items_list: purchaseItems
             };
@@ -119,6 +123,28 @@ export default function PurchasesScreen() {
                 showToast('Pembelian disimpan');
             }
 
+            // Petty Cash Integration
+            if (paymentMethod === 'Kas Kecil') {
+                try {
+                    const activeSession = await PettyCashService.getActiveSession(currentBranchId!);
+                    if (activeSession) {
+                        await PettyCashService.addTransaction({
+                            session_id: activeSession.id,
+                            type: 'SPEND',
+                            amount: totalAmount,
+                            description: `Pembelian: ${finalPO}`,
+                            reference_type: 'purchase',
+                            reference_id: finalPO
+                        });
+                        showToast('Saldo Kas Kecil terpotong');
+                    } else {
+                        showToast('PO Berhasil, namun tidak ada sesi Kas Kecil aktif', 'info');
+                    }
+                } catch (pcErr) {
+                    console.error('Petty Cash Sync Error:', pcErr);
+                }
+            }
+
             // Reset
             setPurchaseItems([]);
             setSupplier('');
@@ -127,6 +153,7 @@ export default function PurchasesScreen() {
             setIsEditing(false);
             setEditingId(null);
             setPurchaseNo('');
+            setPaymentMethod('Tunai');
             setActiveTab('history');
             fetchData();
         } catch (err) {
@@ -191,6 +218,7 @@ export default function PurchasesScreen() {
         }
 
         setPurchaseItems(item.items_list || []);
+        setPaymentMethod(item.payment_method || 'Tunai');
         setActiveTab('input');
     };
 
@@ -365,6 +393,21 @@ export default function PurchasesScreen() {
                                 ))}
                             </ScrollView>
                         )}
+                    </View>
+
+                    <View style={styles.formGroup}>
+                        <Text style={styles.label}>Metode Pembayaran</Text>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.supplierScroll}>
+                            {paymentMethods.map(m => (
+                                <TouchableOpacity 
+                                    key={m} 
+                                    style={[styles.paymentMethodTag, paymentMethod === m && styles.activePaymentTag]}
+                                    onPress={() => setPaymentMethod(m)}
+                                >
+                                    <Text style={[styles.paymentTagText, paymentMethod === m && styles.activePaymentTagText]}>{m}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
                     </View>
 
                     <View style={styles.formGroup}>
@@ -691,5 +734,26 @@ const styles = StyleSheet.create({
     searchInput: { flex: 1, height: 50, fontSize: 16 },
     searchResultItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
     resultName: { fontSize: 16, fontWeight: 'bold', color: '#1e293b' },
-    resultSub: { fontSize: 12, color: '#94a3b8' }
+    resultSub: { fontSize: 12, color: '#94a3b8' },
+    paymentMethodTag: {
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 12,
+        backgroundColor: '#fff',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        marginRight: 8,
+    },
+    activePaymentTag: {
+        backgroundColor: '#ea580c',
+        borderColor: '#ea580c',
+    },
+    paymentTagText: {
+        fontSize: 13,
+        fontWeight: 'bold',
+        color: '#64748b',
+    },
+    activePaymentTagText: {
+        color: '#fff',
+    },
 });

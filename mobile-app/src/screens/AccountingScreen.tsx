@@ -11,7 +11,8 @@ import {
     ChevronRight, 
     ChevronLeft,
     Award,
-    Clock
+    Clock,
+    Wallet
 } from 'lucide-react-native';
 import { useSession } from '../context/SessionContext';
 import DateStepper from '../components/DateStepper';
@@ -268,6 +269,21 @@ export default function AccountingScreen() {
                             </View>
                         </View>
 
+                        {/* Petty Cash Integration Link */}
+                        <TouchableOpacity 
+                            style={styles.pettyCashCard}
+                            onPress={() => navigation.navigate('PettyCash' as never)}
+                        >
+                            <View style={[styles.statIconContainer, { backgroundColor: '#ea580c10' }]}>
+                                <Wallet size={24} color="#ea580c" />
+                            </View>
+                            <View style={{ flex: 1, marginLeft: 12 }}>
+                                <Text style={styles.statLabel}>Manajemen Kas Kecil</Text>
+                                <Text style={styles.statValue}>Buka/Tutup Kas Harian</Text>
+                            </View>
+                            <ChevronRight size={20} color="#cbd5e1" />
+                        </TouchableOpacity>
+
                         {/* Best Sellers - Makanan */}
                         <View style={styles.section}>
                             <View style={styles.sectionHeader}>
@@ -502,6 +518,21 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: '#f1f5f9',
         elevation: 1,
+    },
+    pettyCashCard: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 16,
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#ffedd5',
+        elevation: 2,
+        shadowColor: '#ea580c',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        marginBottom: 16,
     },
     statIconContainer: {
         width: 36,

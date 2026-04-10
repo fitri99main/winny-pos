@@ -8,6 +8,7 @@ import { Loader2, Banknote, AlertTriangle, CheckCircle2, LogIn, LogOut, CheckCir
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { printerService } from '@/lib/PrinterService';
+import { PettyCashService } from '@/lib/PettyCashService';
 
 interface CashierSessionModalProps {
     open: boolean;
@@ -281,6 +282,26 @@ export function CashierSessionModal({
                 description: `Selisih: ${new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(difference)}`,
                 duration: 3000
             });
+
+            // [NEW] Automatic Petty Cash Deposit
+            try {
+                const branchId = user?.user_metadata?.branch_id || '7';
+                const activePcSession = await PettyCashService.getActiveSession(branchId);
+                if (activePcSession) {
+                    await PettyCashService.addTransaction({
+                        session_id: activePcSession.id,
+                        type: 'TOPUP',
+                        amount: actual,
+                        description: `Setoran Kasir: ${user?.user_metadata?.name || user?.email} (Shift #${session.id})`,
+                        reference_type: 'cashier_closing',
+                        reference_id: String(session.id)
+                    });
+                    toast.success('Setoran Kasir masuk ke Kas Kecil otomatis');
+                }
+            } catch (pcErr) {
+                console.error('Petty Cash Deposit Error:', pcErr);
+                // Silent fail for petty cash - don't block session close
+            }
 
             // Re-fetch session status in Home.tsx via context if needed
             setTimeout(async () => {

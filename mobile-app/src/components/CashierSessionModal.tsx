@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, Modal, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, ScrollView, Alert } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { PrinterManager } from '../lib/PrinterManager';
+import { PettyCashService } from '../lib/PettyCashService';
 
 interface CashierSessionModalProps {
     visible: boolean;
@@ -248,6 +249,24 @@ export default function CashierSessionModal({ visible, onClose, mode, session, o
             }
 
             await handlePrintReport(closingData);
+
+            // [NEW] Automatic Petty Cash Deposit
+            try {
+                const branchId = currentBranchId || '7';
+                const activePcSession = await PettyCashService.getActiveSession(branchId);
+                if (activePcSession) {
+                    await PettyCashService.addTransaction({
+                        session_id: activePcSession.id,
+                        type: 'TOPUP',
+                        amount: actual,
+                        description: `Setoran Kasir: Shift #${session.id}`,
+                        reference_type: 'cashier_closing',
+                        reference_id: String(session.id)
+                    });
+                }
+            } catch (pcErr) {
+                console.error('Petty Cash Deposit Error:', pcErr);
+            }
 
             Alert.alert(
                 'Shift Ditutup', 

@@ -14,6 +14,7 @@ import EmployeeSettingsScreen from '../screens/EmployeeSettingsScreen';
 import CashierSessionHistoryScreen from '../screens/CashierSessionHistoryScreen';
 import KDSScreen from '../screens/KDSScreen';
 import PurchasesScreen from '../screens/PurchasesScreen';
+import PettyCashScreen from '../screens/PettyCashScreen';
 import { useSession } from '../context/SessionContext';
 import { View, ActivityIndicator } from 'react-native';
 
@@ -48,6 +49,7 @@ export default function AppNavigator() {
                         <Stack.Screen name="EmployeeSettings" component={EmployeeSettingsScreen} />
                         <Stack.Screen name="KDS" component={KDSScreen} />
                         <Stack.Screen name="Purchases" component={PurchasesScreen} />
+                        <Stack.Screen name="PettyCash" component={PettyCashScreen} />
                     </>
                 )}
             </Stack.Navigator>
