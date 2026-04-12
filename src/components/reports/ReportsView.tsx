@@ -8,6 +8,7 @@ import autoTable from 'jspdf-autotable';
 import { toast } from 'sonner';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { ChevronRight, Cake, Activity } from 'lucide-react';
+import { DateRangePicker } from '../shared/DateRangePicker';
 
 interface ReportsViewProps {
     sales: SalesOrder[];
@@ -19,11 +20,15 @@ interface ReportsViewProps {
 }
 
 export function ReportsView({ sales, returns, purchases = [], purchaseReturns = [], paymentMethods, storeSettings }: ReportsViewProps) {
+    console.log("ReportsView - Version 1.0.2 - Filter Updated");
     const [reportType, setReportType] = useState<'sales' | 'purchases'>('sales');
 
     const [searchQuery, setSearchQuery] = useState('');
-    const [startDate, setStartDate] = useState('');
-    const [endDate, setEndDate] = useState('');
+    const [startDate, setStartDate] = useState(() => {
+        const date = new Date();
+        return new Date(date.getFullYear(), date.getMonth(), 1).toISOString().split('T')[0];
+    });
+    const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
     const [methodFilter, setMethodFilter] = useState('All');
     const [showFilters, setShowFilters] = useState(false);
     const [showReceiptPreview, setShowReceiptPreview] = useState(false);
@@ -61,7 +66,7 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
 
             const matchesMethod = methodFilter === 'All' || s.paymentMethod === methodFilter;
 
-            const saleDate = s.date.split(' ')[0]; // Assuming format "YYYY-MM-DD HH:mm:ss"
+            const saleDate = s.date ? String(s.date).split('T')[0] : ''; 
             const matchesStartDate = !startDate || saleDate >= startDate;
             const matchesEndDate = !endDate || saleDate <= endDate;
 
@@ -71,7 +76,7 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
 
     const filteredReturns = useMemo(() => {
         return returns.filter(r => {
-            const saleDate = r.date.split(' ')[0];
+            const saleDate = r.date ? String(r.date).split('T')[0] : '';
             const matchesStartDate = !startDate || saleDate >= startDate;
             const matchesEndDate = !endDate || saleDate <= endDate;
             return matchesStartDate && matchesEndDate;
@@ -161,7 +166,7 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
         const list = Object.values(productCounts);
         
         const getTop5 = (keyword: string) => list
-            .filter(p => p.category.includes(keyword) || p.name.toLowerCase().includes(keyword))
+            .filter(p => (p.category || '').includes(keyword) || (p.name || '').toLowerCase().includes(keyword))
             .sort((a, b) => b.value - a.value)
             .slice(0, 5);
 
@@ -256,7 +261,7 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
                 const tableData = filteredSales.map(s => [
                     s.orderNo,
                     s.date,
-                    s.status === 'Completed' ? 'Selesai' : 'Retur',
+                    s.status === 'Returned' ? 'Retur' : 'Selesai',
                     s.paymentMethod,
                     formatCurrency(s.totalAmount)
                 ]);
@@ -349,6 +354,38 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
                         Cetak Struk
                     </Button>
                 </div>
+            </div>
+
+            {/* [NEW] Shared Date Filter Integration */}
+            <div className="flex flex-col md:flex-row items-center gap-4 bg-white p-4 rounded-3xl border border-gray-100 shadow-sm">
+                <div className="relative flex-1 group">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-primary transition-colors" />
+                    <input
+                        type="text"
+                        placeholder="Cari transaksi (No. Invoice / Nama Kasir / Nama Pelanggan)..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full pl-12 pr-4 py-3 bg-gray-50 border-none rounded-2xl text-sm focus:ring-2 focus:ring-primary/20 transition-all font-medium"
+                    />
+                </div>
+                <DateRangePicker 
+                    startDate={startDate}
+                    endDate={endDate}
+                    onChange={(range) => {
+                        setStartDate(range.startDate);
+                        setEndDate(range.endDate);
+                    }}
+                />
+                <select
+                    value={methodFilter}
+                    onChange={(e) => setMethodFilter(e.target.value)}
+                    className="px-4 py-3 bg-gray-50 border-none rounded-2xl text-sm focus:ring-2 focus:ring-primary/20 font-bold text-gray-600 cursor-pointer outline-none"
+                >
+                    <option value="All">Semua Metode</option>
+                    {(paymentMethods || []).map(m => (
+                        <option key={m.id} value={m.name}>{m.name}</option>
+                    ))}
+                </select>
             </div>
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -472,101 +509,6 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
                 </div>
             )}
 
-            {/* Filter Controls */}
-            {showFilters && (
-                <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden animate-in slide-in-from-top-4 duration-300">
-                    <div className="px-8 py-4 border-b border-gray-50 flex items-center justify-between bg-gray-50/30">
-                        <div className="flex items-center gap-2">
-                            <Filter className="w-4 h-4 text-indigo-600" />
-                            <span className="font-bold text-gray-700">Set Filter Laporan</span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                            {(searchQuery || startDate || endDate || methodFilter !== 'All') && (
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => {
-                                        setSearchQuery('');
-                                        setStartDate('');
-                                        setEndDate('');
-                                        setMethodFilter('All');
-                                    }}
-                                    className="text-xs text-red-500 hover:text-red-600 hover:bg-red-50 font-bold gap-1"
-                                >
-                                    <X className="w-3 h-3" /> Reset
-                                </Button>
-                            )}
-                            <Button variant="ghost" size="sm" onClick={() => setShowFilters(false)}>
-                                <X className="w-4 h-4 text-gray-400" />
-                            </Button>
-                        </div>
-                    </div>
-                    
-                    {/* [Part 25] Quick Filters Bar */}
-                    <div className="px-8 py-3 bg-gray-50 border-b border-gray-100 flex gap-2 overflow-x-auto no-scrollbar">
-                        <Button variant="outline" size="sm" onClick={() => handlePreset('today')} className="text-xs font-bold rounded-lg h-8 bg-white hover:bg-indigo-50 border-gray-200">Hari Ini</Button>
-                        <Button variant="outline" size="sm" onClick={() => handlePreset('yesterday')} className="text-xs font-bold rounded-lg h-8 bg-white hover:bg-indigo-50 border-gray-200">Kemarin</Button>
-                        <Button variant="outline" size="sm" onClick={() => handlePreset('week')} className="text-xs font-bold rounded-lg h-8 bg-white hover:bg-indigo-50 border-gray-200">7 Hari Terakhir</Button>
-                        <Button variant="outline" size="sm" onClick={() => handlePreset('month')} className="text-xs font-bold rounded-lg h-8 bg-white hover:bg-indigo-50 border-gray-200">30 Hari Terakhir</Button>
-                    </div>
-
-                    <div className="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                        <div className="space-y-2">
-                            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest pl-1">Cari Transaksi</label>
-                            <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                <input
-                                    type="text"
-                                    placeholder="No. Invoice / Nama..."
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-3 bg-gray-50 border-none rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 transition-all font-medium"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="space-y-2">
-                            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest pl-1">Mulai Dari</label>
-                            <div className="relative">
-                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                <input
-                                    type="date"
-                                    value={startDate}
-                                    onChange={(e) => setStartDate(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-3 bg-gray-50 border-none rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 transition-all font-medium"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="space-y-2">
-                            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest pl-1">Sampai Dengan</label>
-                            <div className="relative">
-                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                <input
-                                    type="date"
-                                    value={endDate}
-                                    onChange={(e) => setEndDate(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-3 bg-gray-50 border-none rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 transition-all font-medium"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="space-y-2">
-                            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest pl-1">Metode Pembayaran</label>
-                            <select
-                                value={methodFilter}
-                                onChange={(e) => setMethodFilter(e.target.value)}
-                                className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 transition-all font-medium appearance-none select-none cursor-pointer"
-                            >
-                                <option value="All">Semua Metode</option>
-                                {(paymentMethods || []).map(m => (
-                                    <option key={m.id} value={m.name}>{m.name}</option>
-                                ))}
-                            </select>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* Breakdown Section */}
             {reportType === 'sales' ? (
@@ -642,19 +584,11 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
                     <div className="flex items-center gap-3">
                         <h3 className="font-bold text-gray-800 text-lg">Riwayat Transaksi</h3>
                         {filteredSales.length < sales.length && (
-                            <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-full animate-in fade-in zoom-in duration-300">
+                            <span className="text-xs font-bold text-primary bg-primary/5 px-2 py-1 rounded-full animate-in fade-in zoom-in duration-300">
                                 Menampilkan {filteredSales.length} dari {sales.length}
                             </span>
                         )}
                     </div>
-                    <Button
-                        variant="ghost"
-                        onClick={() => setShowFilters(!showFilters)}
-                        className={`text-sm font-bold flex items-center gap-2 rounded-xl px-4 py-2 transition-all ${showFilters ? 'bg-indigo-50 text-indigo-700' : 'text-gray-500 hover:bg-gray-100'}`}
-                    >
-                        <Search className="w-4 h-4" />
-                        {showFilters ? 'Tutup Filter' : 'Filter & Cari'}
-                    </Button>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">

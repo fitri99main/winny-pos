@@ -15,12 +15,14 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
+import { useSession } from '../context/SessionContext';
 import * as ImagePicker from 'expo-image-picker';
 import { ImageStorageService } from '../lib/ImageStorageService';
 import { ChevronLeft } from 'lucide-react-native';
 
 export default function ProductScreen() {
     const navigation = useNavigation();
+    const { currentBranchId } = useSession();
     const [products, setProducts] = useState<any[]>([]);
     const [filteredProducts, setFilteredProducts] = useState<any[]>([]);
     const [search, setSearch] = useState('');
@@ -32,8 +34,10 @@ export default function ProductScreen() {
     const [uploading, setUploading] = useState(false);
 
     useEffect(() => {
-        fetchProducts();
-    }, []);
+        if (currentBranchId) {
+            fetchProducts();
+        }
+    }, [currentBranchId]);
 
     useEffect(() => {
         if (search.trim() === '') {
@@ -48,11 +52,16 @@ export default function ProductScreen() {
     }, [search, products]);
 
     const fetchProducts = async () => {
+        if (!currentBranchId || isNaN(Number(currentBranchId))) {
+            setLoading(false);
+            return;
+        }
         try {
             setLoading(true);
             const { data, error } = await supabase
                 .from('products')
                 .select('*')
+                .or(`branch_id.eq.${currentBranchId},branch_id.is.null`)
                 .order('name', { ascending: true });
 
             if (error) throw error;

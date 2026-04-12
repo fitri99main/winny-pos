@@ -50,6 +50,19 @@ export const PettyCashService = {
         return data as PettyCashSession[];
     },
 
+    async getSessionsReport(branchId: string, startDate: string, endDate: string) {
+        const { data, error } = await supabase
+            .from('petty_cash_sessions')
+            .select('*')
+            .eq('branch_id', branchId)
+            .gte('date', startDate)
+            .lte('date', endDate)
+            .order('date', { ascending: false });
+        
+        if (error) throw error;
+        return data as PettyCashSession[];
+    },
+
     async getTransactions(sessionId: number) {
         const { data, error } = await supabase
             .from('petty_cash_transactions')
@@ -64,16 +77,16 @@ export const PettyCashService = {
     async openSession(branchId: string, openingBalance: number, userId?: string) {
         const today = new Date().toISOString().split('T')[0];
         
-        // Check if session already exists for today
+        // Check if ANY session is still open for this branch
         const { data: existing } = await supabase
             .from('petty_cash_sessions')
-            .select('id')
+            .select('id, date')
             .eq('branch_id', branchId)
-            .eq('date', today)
-            .single();
+            .eq('status', 'open')
+            .limit(1);
 
-        if (existing) {
-            throw new Error('Sesi untuk hari ini sudah ada.');
+        if (existing && existing.length > 0) {
+            throw new Error(`Terdapat saldo aktif yang belum ditutup (Tanggal: ${existing[0].date}). Tutup saldo tersebut terlebih dahulu.`);
         }
 
         const { data, error } = await supabase

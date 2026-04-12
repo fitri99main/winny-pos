@@ -5,12 +5,14 @@ import { CheckCircle2, Printer, Mail, MessageCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { toast } from 'sonner';
+import { printerService } from '../../lib/PrinterService';
 
 interface SuccessModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   total: number;
   change?: number;
+  lastSaleData?: any;
   onNewTransaction: () => void;
   onViewHistory?: () => void;
 }
@@ -20,6 +22,7 @@ export function SuccessModal({
   onOpenChange,
   total,
   change,
+  lastSaleData,
   onNewTransaction,
   onViewHistory,
 }: SuccessModalProps) {
@@ -31,6 +34,42 @@ export function SuccessModal({
       currency: 'IDR',
       minimumFractionDigits: 0,
     }).format(price);
+  };
+
+  const handlePrintReceipt = async () => {
+    if (!lastSaleData) {
+      toast.error('Data transaksi tidak ditemukan untuk dicetak');
+      return;
+    }
+
+    try {
+      await printerService.printReceipt({
+        orderNo: lastSaleData.order_no || lastSaleData.orderNo || 'INV-000',
+        tableNo: lastSaleData.tableNo || 'TAKEAWAY',
+        waiterName: lastSaleData.waiterName || 'Cashier',
+        cashierName: lastSaleData.cashier_name || 'Admin',
+        time: lastSaleData.time || new Date().toLocaleTimeString(),
+        items: (lastSaleData.productDetails || []).map((item: any) => ({
+          name: item.name,
+          quantity: item.quantity,
+          price: item.price,
+          note: item.notes || item.note
+        })),
+        subtotal: lastSaleData.subtotal || lastSaleData.totalAmount,
+        discount: lastSaleData.discount || 0,
+        tax: lastSaleData.tax || 0,
+        serviceCharge: lastSaleData.service || 0,
+        total: lastSaleData.totalAmount || total,
+        paymentType: lastSaleData.paymentMethod || 'Cash',
+        amountPaid: lastSaleData.paidAmount || (lastSaleData.totalAmount + (change || 0)),
+        change: lastSaleData.change || change || 0,
+        customerName: lastSaleData.customerName || 'Guest'
+      });
+      toast.success('Struk sedang dicetak...');
+    } catch (e) {
+      console.error('Print Error:', e);
+      toast.error('Gagal mencetak struk. Cek koneksi printer.');
+    }
   };
 
   useEffect(() => {
@@ -136,7 +175,7 @@ export function SuccessModal({
                 <Button
                   variant="outline"
                   className="h-16 rounded-2xl flex flex-col gap-1 transition-all border-gray-100 hover:border-pos-teal hover:bg-pos-teal/5 group"
-                  onClick={() => toast.success('Struk sedang dicetak...')}
+                  onClick={handlePrintReceipt}
                 >
                   <Printer className="w-5 h-5 text-gray-400 group-hover:text-pos-teal" />
                   <span className="text-[10px] font-black">CETAK</span>

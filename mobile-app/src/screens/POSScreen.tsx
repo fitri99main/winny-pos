@@ -72,27 +72,6 @@ const ProductCard = memo(({ item, isTablet, onAdd, formatCurrency }: any) => {
                 </Text>
             </View>
 
-            {item.is_best_seller && (
-                <View style={{
-                    position: 'absolute',
-                    top: 5,
-                    left: 5,
-                    backgroundColor: '#f97316',
-                    paddingHorizontal: 6,
-                    paddingVertical: 2,
-                    borderRadius: 10,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    elevation: 3,
-                    shadowColor: '#000',
-                    shadowOffset: { width: 0, height: 1 },
-                    shadowOpacity: 0.2,
-                    shadowRadius: 1.41,
-                }}>
-                    <Star size={8} color="white" fill="white" style={{ marginRight: 2 }} />
-                    <Text style={{ color: 'white', fontSize: 7, fontWeight: 'bold' }}>Terlaris</Text>
-                </View>
-            )}
         </TouchableOpacity>
     );
 });
@@ -115,13 +94,7 @@ export default function POSScreen() {
     const [products, setProducts] = useState<any[]>([]);
     const [loadingProducts, setLoadingProducts] = useState(true);
     const [selectedCategory, setSelectedCategory] = useState('Semua');
-    const [categories, setCategories] = useState<string[]>([
-        'Semua', 
-        'Makanan Terlaris', 
-        'Minuman Terlaris', 
-        'Snack Terlaris', 
-        'Produk Terlaris'
-    ]);
+    const [categories, setCategories] = useState<string[]>(['Semua']);
     const [topSellingProducts, setTopSellingProducts] = useState<string[]>([]);
 
     // Master Data
@@ -301,17 +274,12 @@ export default function POSScreen() {
             const orderData = await fetchOrderDataForReceipt(lastSaleId || lastOrderNo);
             if (!orderData) throw new Error('Order not found');
 
-            // 1. Print Main Receipt
-            const success = await PrinterManager.printOrderReceipt(orderData);
-            
-            // 2. [NEW] Print Kitchen and Bar Tickets
-            console.log(`[POSScreen] Starting kitchen/bar prints for items: ${orderData.items.length}`);
-            
-            await new Promise(resolve => setTimeout(resolve, 1500)); // Delay after main receipt
-            const kitchenSuccess = await PrinterManager.printToTarget(orderData.items, 'kitchen', orderData);
-            
-            await new Promise(resolve => setTimeout(resolve, 1500)); // Increased delay between targets
-            const barSuccess = await PrinterManager.printToTarget(orderData.items, 'bar', orderData);
+            // [OPTIMIZED] Print all targets in parallel for maximum speed
+            const [success, kitchenSuccess, barSuccess] = await Promise.all([
+                PrinterManager.printOrderReceipt(orderData),
+                PrinterManager.printToTarget(orderData.items, 'kitchen', orderData),
+                PrinterManager.printToTarget(orderData.items, 'bar', orderData)
+            ]);
 
             if (success) {
                 showToast('Struk sedang dicetak', 'success');
@@ -320,10 +288,10 @@ export default function POSScreen() {
             }
             
             if (!kitchenSuccess) {
-                showToast('Printer Dapur/Kitchen belum diatur atau tidak terhubung', 'error');
+                console.log('[POSScreen] Kitchen print skipped or failed');
             }
             if (!barSuccess) {
-                showToast('Printer Bar belum diatur atau tidak terhubung', 'error');
+                console.log('[POSScreen] Bar print skipped or failed');
             }
 
         } catch (e) {
@@ -506,11 +474,7 @@ export default function POSScreen() {
                         // Merge with hardcoded ones to ensure they are always present
                         const merged = [
                             'Semua', 
-                            'Makanan Terlaris', 
-                            'Minuman Terlaris', 
-                            'Snack Terlaris', 
-                            'Produk Terlaris',
-                            ...parsed.filter((c: string) => ![ 'Semua', 'Makanan Terlaris', 'Minuman Terlaris', 'Snack Terlaris', 'Produk Terlaris'].includes(c))
+                            ...parsed.filter((c: string) => ![ 'Semua'].includes(c))
                         ];
                         setCategories(merged);
                     }
@@ -847,9 +811,9 @@ export default function POSScreen() {
 
             const { data, error } = await supabase
                 .from('sale_items')
-                .select('product_name, quantity, sales!inner(date)')
-                .eq('branch_id', currentBranchId)
-                .gte('sales.date', thirtyDaysAgo.toISOString());
+                .select('product_name, quantity, sale:sales!inner(date, branch_id)')
+                .eq('sale.branch_id', currentBranchId)
+                .gte('sale.date', thirtyDaysAgo.toISOString());
 
             if (error) throw error;
 
@@ -873,6 +837,7 @@ export default function POSScreen() {
     };
 
     const fetchCategories = async () => {
+        if (!currentBranchId || isNaN(Number(currentBranchId))) return;
         try {
             const { data, error } = await supabase
                 .from('categories')
@@ -894,10 +859,6 @@ export default function POSScreen() {
 
                 const uniqueCategories = [
                     'Semua', 
-                    'Makanan Terlaris', 
-                    'Minuman Terlaris', 
-                    'Snack Terlaris', 
-                    'Produk Terlaris',
                     ...Array.from(uniqueSet)
                 ];
                 setCategories(uniqueCategories);
@@ -910,13 +871,14 @@ export default function POSScreen() {
     };
 
     const fetchProducts = async () => {
+        if (!currentBranchId || isNaN(Number(currentBranchId))) return;
         setLoadingProducts(true);
         try {
             // Speed optimization: Select only required columns
             const { data, error } = await supabase
                 .from('products')
                 .select('id, name, price, image_url, category, target, stock, is_taxed, branch_id, sort_order, is_sellable, is_stock_ready')
-                .eq('branch_id', currentBranchId)
+                .or(`branch_id.eq.${currentBranchId},branch_id.is.null`)
                 .order('sort_order', { ascending: true });
 
             if (error) throw error;
@@ -941,17 +903,7 @@ export default function POSScreen() {
         result = result.filter(p => p.is_sellable !== false && p.is_stock_ready !== false);
 
         // 2. Filter by Category
-        if (selectedCategory === 'Makanan Terlaris') {
-            result = result.filter(p => topSellingProducts.includes(p.name) && (p.category || '').toLowerCase().includes('makan'));
-        } else if (selectedCategory === 'Minuman Terlaris') {
-            result = result.filter(p => topSellingProducts.includes(p.name) && (p.category || '').toLowerCase().includes('minum'));
-        } else if (selectedCategory === 'Snack Terlaris') {
-            result = result.filter(p => topSellingProducts.includes(p.name) && (p.category || '').toLowerCase().includes('snack'));
-        } else if (selectedCategory === 'Produk Terlaris') {
-            result = result.filter(p => topSellingProducts.includes(p.name) && (p.category || '').toLowerCase().includes('kemasan'));
-        } else if (selectedCategory === 'Terlaris') {
-            result = result.filter(p => topSellingProducts.includes(p.name));
-        } else if (selectedCategory !== 'Semua') {
+        if (selectedCategory !== 'Semua') {
             const lowerSelected = selectedCategory.toLowerCase();
             result = result.filter(p => {
                 const pCat = (p.category || '').toLowerCase();
@@ -967,15 +919,7 @@ export default function POSScreen() {
 
         // 4. Map Best Seller status and Sort
         return result
-            .map(p => ({
-                ...p,
-                is_best_seller: topSellingProducts.includes(p.name)
-            }))
-            .sort((a, b) => {
-                if (a.is_best_seller && !b.is_best_seller) return -1;
-                if (!a.is_best_seller && b.is_best_seller) return 1;
-                return (a.sort_order || 0) - (b.sort_order || 0);
-            });
+            .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
     }, [products, searchQuery, selectedCategory, topSellingProducts]);
 
 
@@ -1178,6 +1122,35 @@ export default function POSScreen() {
         setDiscountReason(discount.reason || '');
     };
 
+    const printKdsTickets = async (items: any[], orderNoToPrint: string, printNote: string = '') => {
+        if (!items || items.length === 0) return;
+        
+        try {
+            const orderDataForPrint = {
+                orderNo: orderNoToPrint,
+                tableNo: selectedTable,
+                customerName: customerName,
+                waiterName: selectedWaiter || userName,
+                date: new Date(),
+                notes: printNote,
+                cashier_name: userName
+            };
+            
+            // [OPTIMIZED] Print to targets in parallel
+            const [kitchenSuccess, barSuccess] = await Promise.all([
+                PrinterManager.printToTarget(items, 'kitchen', orderDataForPrint),
+                PrinterManager.printToTarget(items, 'bar', orderDataForPrint)
+            ]);
+            
+            if (kitchenSuccess || barSuccess) {
+                showToast('Tiket pesanan dikirim ke Dapur/Bar', 'success');
+            }
+        } catch (err) {
+            console.error("[POSScreen] printKdsTickets Error:", err);
+            showToast('Gagal mengirim tiket ke Dapur/Bar', 'error');
+        }
+    };
+
     const handleHoldOrder = async (note: string = '') => {
         if (cart.length === 0) return;
         
@@ -1209,8 +1182,11 @@ export default function POSScreen() {
                     notes: note,
                     cashier_name: userName
                 };
-                await PrinterManager.printToTarget(cart, 'kitchen', orderDataForPrint);
-                await PrinterManager.printToTarget(cart, 'bar', orderDataForPrint);
+                // [OPTIMIZED] Print to targets in parallel
+                await Promise.all([
+                    PrinterManager.printToTarget(cart, 'kitchen', orderDataForPrint),
+                    PrinterManager.printToTarget(cart, 'bar', orderDataForPrint)
+                ]);
                 showToast('Pesanan ditangguhkan & tiket dikirim ke dapur!', 'success');
             } catch (err) {
                 console.error("Print KDS on Hold Error:", err);
@@ -1337,6 +1313,7 @@ export default function POSScreen() {
         }
 
         try {
+            let orderNoText = '';
             if (!currentBranchId) {
             Alert.alert('Error', 'Data cabang belum dimuat. Silakan tunggu atau login ulang.');
             return;
@@ -1383,21 +1360,21 @@ export default function POSScreen() {
                 const { error: itemsError } = await supabase.from('sale_items').insert(itemsToInsert);
                 if (itemsError) throw itemsError;
 
-                setLastOrderNo(updatedSale.order_no || '');
+                orderNoText = updatedSale.order_no || '';
+                setLastOrderNo(orderNoText);
                 setLastSaleId(String(existingSaleId) || '');
                 setSuccessModalConfig({
                     title: 'Pesanan Terkirim!',
                     message: isActuallyDisplay ? 'Pesanan berhasil dikirim ke kasir' : 'Pesanan berhasil diperbarui'
                 });
                 setShowSuccessModal(true);
-            } else {
                 // Create New Sale
                 const effectiveOnline = isOnline && !isManualOffline;
-                const orderNo = generateOrderNo(effectiveOnline); // Respect manual offline toggle
+                orderNoText = generateOrderNo(effectiveOnline); // Respect manual offline toggle
                 const { data: sale, error: saleError } = await supabase
                     .from('sales')
                     .insert([{
-                        order_no: orderNo,
+                        order_no: orderNoText,
                         branch_id: currentBranchId,
                         customer_name: customerName,
                         customer_id: selectedCustomerId,
@@ -1432,7 +1409,7 @@ export default function POSScreen() {
                 const { error: itemsError } = await supabase.from('sale_items').insert(itemsToInsert);
                 if (itemsError) throw itemsError;
                 
-                setLastOrderNo(orderNo);
+                setLastOrderNo(orderNoText);
                 setLastSaleId(sale.id);
                 setCurrentSaleId(sale.id);
                 setSuccessModalConfig({
@@ -1441,6 +1418,9 @@ export default function POSScreen() {
                 });
                 setShowSuccessModal(true);
             }
+
+            // [NEW] Automatic KDS Printing for Orders
+            printKdsTickets(cart, orderNoText, '');
 
 
             clearCart();
@@ -1455,7 +1435,7 @@ export default function POSScreen() {
             if (!existingSaleId) {
                 const totalAmount = calculateTotal();
                 // REGENERATED with Offline Prefix for fallback
-                const orderNo = (storeSettings?.offline_invoice_mode === 'auto') 
+                orderNoText = (storeSettings?.offline_invoice_mode === 'auto') 
                     ? `${storeSettings?.offline_invoice_prefix || 'OFF'}-${(Number(storeSettings?.offline_invoice_last_number) + 1).toString().padStart(4, '0')}`
                     : `OFF-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
                 
@@ -1466,7 +1446,7 @@ export default function POSScreen() {
                 }
 
                 const saleData = {
-                    order_no: orderNo,
+                    order_no: orderNoText,
                     branch_id: currentBranchId,
                     customer_name: customerName,
                     customer_id: selectedCustomerId,
@@ -1482,7 +1462,7 @@ export default function POSScreen() {
 
                 const success = await OfflineService.queueOfflineSale(saleData, cart);
                 if (success) {
-                    setLastOrderNo(orderNo);
+                    setLastOrderNo(orderNoText);
                     setSuccessModalConfig({
                         title: 'Tersimpan Offline!',
                         message: 'Koneksi bermasalah. Pesanan disimpan di HP dan akan dikirim saat internet aktif kembali.'
@@ -1495,7 +1475,6 @@ export default function POSScreen() {
 
             Alert.alert('Error', 'Gagal memproses pesanan: ' + error.message);
         }
-    };
     };
 
     const handlePaymentConfirm = async (paymentData: { method: string; amount: number; change: number }) => {
@@ -1759,13 +1738,19 @@ export default function POSScreen() {
                 });
                 setShowSuccessModal(true);
 
-                // Auto Print Logic
+                // [OPTIMIZED] Simultaneous Auto Printing
                 const savedAutoPrint = await AsyncStorage.getItem('auto_print');
+                const printJobs = [];
+                
                 if (savedAutoPrint === 'true') {
-                    // Slight delay to ensure sequence of state updates doesn't conflict
-                    setTimeout(() => {
-                        handlePrintReceipt();
-                    }, 1000);
+                    printJobs.push(handlePrintReceipt());
+                } else {
+                    // Even if main receipt is off, auto KDS is often still required
+                    printJobs.push(printKdsTickets(cart, orderNoText, ''));
+                }
+                
+                if (printJobs.length > 0) {
+                    Promise.all(printJobs).catch(err => console.error('[POSScreen] Parallel print error:', err));
                 }
             }
             setShowPaymentModal(false);

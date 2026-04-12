@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from "./components/auth/AuthProvider";
 import { SessionGuardProvider } from "./components/auth/SessionGuardContext";
 import { KioskView } from "./components/kiosk/KioskView";
 import { ESSView } from "./components/attendance/ESSView";
+import { AttendanceKiosk } from "./components/attendance/AttendanceKiosk";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 
 // Protected Route Wrapper
@@ -56,6 +57,7 @@ function App() {
                 <>
                   <Route path="/login" element={<LoginPage />} />
                   <Route path="/kiosk" element={<KioskView />} />
+                  <Route path="/attendance-kiosk" element={<AttendanceKiosk />} />
                   <Route path="/ess" element={<ESSView />} />
                   <Route
                     path="/"

@@ -17,6 +17,8 @@ interface Schedule {
     employee_name: string;
     shift_id: string;
     date: string;
+    custom_start_time?: string;
+    custom_end_time?: string;
 }
 
 interface Employee {
@@ -50,7 +52,14 @@ export function ShiftsView({
     const [editingShift, setEditingShift] = useState<any>(null); // Use any to be safe during transition or Shift
     const [editingSchedule, setEditingSchedule] = useState<any>(null);
 
-    const [newAssignment, setNewAssignment] = useState({ employeeName: '', shiftId: '', date: new Date().toISOString().split('T')[0] });
+    const [newAssignment, setNewAssignment] = useState({ 
+        employeeName: '', 
+        shiftId: '', 
+        date: new Date().toISOString().split('T')[0],
+        isManual: false,
+        customStartTime: '08:00',
+        customEndTime: '17:00'
+    });
 
     const handleAddShift = (e: React.FormEvent) => {
         e.preventDefault();
@@ -87,11 +96,20 @@ export function ShiftsView({
         onScheduleAction('create', {
             employeeId: emp?.id,
             employeeName: newAssignment.employeeName,
-            shiftId: newAssignment.shiftId,
-            date: newAssignment.date
+            shiftId: newAssignment.isManual ? null : (newAssignment.shiftId || (shifts[0]?.id)),
+            date: newAssignment.date,
+            custom_start_time: newAssignment.isManual ? newAssignment.customStartTime : null,
+            custom_end_time: newAssignment.isManual ? newAssignment.customEndTime : null
         });
         setIsAssignModalOpen(false);
-        setNewAssignment({ employeeName: '', shiftId: '', date: new Date().toISOString().split('T')[0] });
+        setNewAssignment({ 
+            employeeName: '', 
+            shiftId: '', 
+            date: new Date().toISOString().split('T')[0],
+            isManual: false,
+            customStartTime: '08:00',
+            customEndTime: '17:00'
+        });
     };
 
     const handleUpdateSchedule = (e: React.FormEvent) => {
@@ -100,10 +118,12 @@ export function ShiftsView({
 
         onScheduleAction('update', {
             id: editingSchedule.id,
-            employeeId: editingSchedule.employee_id, // Ensure this exists if needed, or matched lookup
+            employeeId: editingSchedule.employee_id || editingSchedule.employeeId,
             employeeName: editingSchedule.employee_name || editingSchedule.employeeName,
-            shiftId: editingSchedule.shift_id || editingSchedule.shiftId,
-            date: editingSchedule.date
+            shiftId: editingSchedule.isManual ? null : (editingSchedule.shift_id || editingSchedule.shiftId),
+            date: editingSchedule.date,
+            custom_start_time: editingSchedule.isManual ? editingSchedule.custom_start_time : null,
+            custom_end_time: editingSchedule.isManual ? editingSchedule.custom_end_time : null
         });
         setIsEditScheduleModalOpen(false);
         setEditingSchedule(null);
@@ -190,17 +210,40 @@ export function ShiftsView({
                                                 <td className="px-6 py-4 font-bold text-gray-800">{sc.employee_name || sc.employeeName}</td>
                                                 <td className="px-6 py-4 text-gray-500">{sc.date}</td>
                                                 <td className="px-6 py-4">
-                                                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${shift?.color || 'bg-gray-100 text-gray-600'}`}>
-                                                        {shift?.name || 'Shift Dihapus'}
-                                                    </span>
+                                                    {sc.custom_start_time ? (
+                                                        <div className="flex flex-col">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="font-mono font-black text-orange-600">{sc.custom_start_time} - {sc.custom_end_time}</span>
+                                                                <span className="text-[9px] font-black bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded uppercase tracking-widest border border-orange-100">Manual</span>
+                                                            </div>
+                                                            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">Bypass Master Shift</span>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex flex-col">
+                                                            <span className="font-mono font-bold text-gray-700">
+                                                                {shift?.start_time || shift?.startTime} - {shift?.end_time || shift?.endTime}
+                                                            </span>
+                                                            <span className="text-[10px] text-gray-400 font-medium uppercase tracking-tighter italic">{shift?.name || 'Unknown'}</span>
+                                                        </div>
+                                                    )}
                                                 </td>
-                                                <td className="px-6 py-4 text-gray-600 font-mono text-xs">
-                                                    {shift?.start_time || shift?.startTime} - {shift?.end_time || shift?.endTime}
+                                                <td className="px-6 py-4">
+                                                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${sc.custom_start_time ? 'bg-orange-50 text-orange-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                                        {sc.custom_start_time ? 'Custom' : 'Master'}
+                                                    </span>
                                                 </td>
                                                 <td className="px-6 py-4 text-right">
                                                     <div className="flex justify-end gap-1">
                                                         <button
-                                                            onClick={() => { setEditingSchedule(sc); setIsEditScheduleModalOpen(true); }}
+                                                            onClick={() => { 
+                                                                setEditingSchedule({
+                                                                    ...sc,
+                                                                    isManual: !!sc.custom_start_time,
+                                                                    custom_start_time: sc.custom_start_time || '08:00',
+                                                                    custom_end_time: sc.custom_end_time || '17:00'
+                                                                }); 
+                                                                setIsEditScheduleModalOpen(true); 
+                                                            }}
                                                             className="p-2 hover:bg-blue-50 text-gray-300 hover:text-blue-500 transition-colors"
                                                         >
                                                             <Edit2 className="w-4 h-4" />
@@ -283,24 +326,61 @@ export function ShiftsView({
                                         {employees.map(e => <option key={e.id} value={e.name}>{e.name} ({e.position})</option>)}
                                     </select>
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="text-sm font-bold text-gray-700">Pilih Shift</label>
-                                    <select
-                                        className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-white"
-                                        value={newAssignment.shiftId}
-                                        onChange={e => setNewAssignment({ ...newAssignment, shiftId: e.target.value })}
-                                    >
-                                        {shifts.map(s => <option key={s.id} value={s.id}>{s.name} ({s.startTime}-{s.endTime})</option>)}
-                                    </select>
+                                <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Gunakan Jam Manual?</label>
+                                        <input 
+                                            type="checkbox" 
+                                            checked={newAssignment.isManual}
+                                            onChange={e => setNewAssignment({ ...newAssignment, isManual: e.target.checked })}
+                                            className="w-5 h-5 accent-primary"
+                                        />
+                                    </div>
+
+                                    {!newAssignment.isManual ? (
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-gray-700">Pilih Master Shift</label>
+                                            <select
+                                                className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-white font-bold"
+                                                value={newAssignment.shiftId}
+                                                onChange={e => setNewAssignment({ ...newAssignment, shiftId: e.target.value })}
+                                            >
+                                                {shifts.map(s => <option key={s.id} value={s.id}>{s.name} ({s.start_time || s.startTime} - {s.end_time || s.endTime})</option>)}
+                                            </select>
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                                            <div className="space-y-2">
+                                                <label className="text-xs font-bold text-gray-600 uppercase">Jam Masuk</label>
+                                                <input
+                                                    type="time"
+                                                    required
+                                                    value={newAssignment.customStartTime}
+                                                    onChange={e => setNewAssignment({ ...newAssignment, customStartTime: e.target.value })}
+                                                    className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold text-orange-600 bg-white"
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-xs font-bold text-gray-600 uppercase">Jam Pulang</label>
+                                                <input
+                                                    type="time"
+                                                    required
+                                                    value={newAssignment.customEndTime}
+                                                    onChange={e => setNewAssignment({ ...newAssignment, customEndTime: e.target.value })}
+                                                    className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold text-orange-600 bg-white"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="text-sm font-bold text-gray-700">Tanggal</label>
+                                    <label className="text-sm font-bold text-gray-700">Tanggal Kerja</label>
                                     <input
                                         type="date"
                                         required
                                         value={newAssignment.date}
                                         onChange={e => setNewAssignment({ ...newAssignment, date: e.target.value })}
-                                        className="w-full px-4 py-3 border border-gray-200 rounded-xl"
+                                        className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold"
                                     />
                                 </div>
                                 <div className="pt-4 flex gap-3">
@@ -463,24 +543,61 @@ export function ShiftsView({
                                         {employees.map(e => <option key={e.id} value={e.name}>{e.name} ({e.position})</option>)}
                                     </select>
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="text-sm font-bold text-gray-700">Pilih Shift</label>
-                                    <select
-                                        className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-white"
-                                        value={editingSchedule.shift_id || editingSchedule.shiftId}
-                                        onChange={e => setEditingSchedule({ ...editingSchedule, shift_id: e.target.value })}
-                                    >
-                                        {shifts.map(s => <option key={s.id} value={s.id}>{s.name} ({s.startTime}-{s.endTime})</option>)}
-                                    </select>
+                                <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-xs font-black text-gray-500 uppercase tracking-widest">Gunakan Jam Manual?</label>
+                                        <input 
+                                            type="checkbox" 
+                                            checked={editingSchedule.isManual}
+                                            onChange={e => setEditingSchedule({ ...editingSchedule, isManual: e.target.checked })}
+                                            className="w-5 h-5 accent-primary"
+                                        />
+                                    </div>
+
+                                    {!editingSchedule.isManual ? (
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-gray-700">Pilih Master Shift</label>
+                                            <select
+                                                className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-white font-bold"
+                                                value={editingSchedule.shift_id || editingSchedule.shiftId}
+                                                onChange={e => setEditingSchedule({ ...editingSchedule, shift_id: e.target.value })}
+                                            >
+                                                {shifts.map(s => <option key={s.id} value={s.id}>{s.name} ({s.start_time || s.startTime} - {s.end_time || s.endTime})</option>)}
+                                            </select>
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                                            <div className="space-y-2">
+                                                <label className="text-xs font-bold text-gray-600 uppercase">Jam Masuk</label>
+                                                <input
+                                                    type="time"
+                                                    required
+                                                    value={editingSchedule.custom_start_time}
+                                                    onChange={e => setEditingSchedule({ ...editingSchedule, custom_start_time: e.target.value })}
+                                                    className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold text-orange-600 bg-white"
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-xs font-bold text-gray-600 uppercase">Jam Pulang</label>
+                                                <input
+                                                    type="time"
+                                                    required
+                                                    value={editingSchedule.custom_end_time}
+                                                    onChange={e => setEditingSchedule({ ...editingSchedule, custom_end_time: e.target.value })}
+                                                    className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold text-orange-600 bg-white"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="text-sm font-bold text-gray-700">Tanggal</label>
+                                    <label className="text-sm font-bold text-gray-700">Tanggal Kerja</label>
                                     <input
                                         type="date"
                                         required
                                         value={editingSchedule.date}
                                         onChange={e => setEditingSchedule({ ...editingSchedule, date: e.target.value })}
-                                        className="w-full px-4 py-3 border border-gray-200 rounded-xl"
+                                        className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold"
                                     />
                                 </div>
                                 <div className="pt-4 flex gap-3">

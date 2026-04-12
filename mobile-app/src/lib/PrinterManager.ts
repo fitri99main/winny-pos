@@ -19,6 +19,7 @@ export class PrinterManager {
     private static isScanning = false;
     private static isInitialized = false;
     private static connectionStatus: Record<string, 'connected' | 'disconnected' | 'connecting'> = {};
+    private static logoCache: Record<string, string> = {};
 
     static async requestPermissions() {
         if (Platform.OS === 'android') {
@@ -146,6 +147,12 @@ export class PrinterManager {
     }
 
     static async getBase64FromUrl(url: string): Promise<string | null> {
+        if (!url) return null;
+        if (this.logoCache[url]) {
+            console.log(`[PrinterManager] Using cached logo for ${url}`);
+            return this.logoCache[url];
+        }
+
         try {
             const encodedUrl = encodeURI(url);
             console.log(`[PrinterManager] Fetching logo: ${url}`);
@@ -159,16 +166,17 @@ export class PrinterManager {
             const arrayBuffer = await response.arrayBuffer();
             const rawBase64 = Buffer.from(arrayBuffer).toString('base64');
             
-            // [CRITICAL] Remove ANY prefix like data:image/png;base64, or data:application/octet-stream;base64,
-            // Native Android Base64.decode FAILS if these prefixes exist.
+            // [CRITICAL] Remove ANY prefix
             const cleanedBase64 = rawBase64.replace(/^data:.*?;base64,/, '').replace(/\s/g, '');
-            
-            console.log(`[PrinterManager] Logo converted. Length: ${cleanedBase64.length}`);
             
             if (cleanedBase64.length < 50) {
                 console.warn('[PrinterManager] Warning: Logo data too short.');
                 return null;
             }
+
+            // Save to cache
+            this.logoCache[url] = cleanedBase64;
+            console.log(`[PrinterManager] Logo converted and cached. Length: ${cleanedBase64.length}`);
 
             return cleanedBase64;
         } catch (error) {
@@ -671,8 +679,8 @@ export class PrinterManager {
                 this.connectionStatus[mac] = 'connecting';
                 await BLEPrinter.connectPrinter(mac);
                 this.connectionStatus[mac] = 'connected';
-                // Small delay (500ms) to ensure printer is ready
-                await new Promise(resolve => setTimeout(resolve, 500));
+                // Small delay (300ms) to ensure printer is ready
+                await new Promise(resolve => setTimeout(resolve, 300));
             } else {
                 console.log(`Bluetooth (${targetName}): Already connected to ${mac}, skip waiting.`);
             }
@@ -726,14 +734,18 @@ export class PrinterManager {
 
             await this.initPrinter();
 
-            console.log(`Bluetooth: Attempting to connect to ${macAddress}...`);
-            this.connectionStatus[macAddress] = 'connecting';
-            await BLEPrinter.connectPrinter(macAddress);
-            this.connectionStatus[macAddress] = 'connected';
-            console.log('Bluetooth: Connected successfully!');
-            
-            // Wait for printer to be completely ready
-            await new Promise(resolve => setTimeout(resolve, 500));
+            // [OPTIMIZED] Only connect if not already connected
+            if (this.connectionStatus[macAddress] !== 'connected') {
+                console.log(`Bluetooth: Attempting to connect to ${macAddress}...`);
+                this.connectionStatus[macAddress] = 'connecting';
+                await BLEPrinter.connectPrinter(macAddress);
+                this.connectionStatus[macAddress] = 'connected';
+                console.log('Bluetooth: Connected successfully!');
+                // Wait briefly for printer to be completely ready
+                await new Promise(resolve => setTimeout(resolve, 300));
+            } else {
+                console.log(`Bluetooth: Already connected to ${macAddress}, continuing.`);
+            }
 
             if (orderData.show_logo && orderData.receipt_logo_url) {
                 try {
@@ -744,8 +756,8 @@ export class PrinterManager {
                             align: 'center',
                             imageWidth: 200 
                         });
-                        // Delay after image to allow processing
-                        await new Promise(resolve => setTimeout(resolve, 400));
+                        // Reduced delay after image
+                        await new Promise(resolve => setTimeout(resolve, 200));
                     }
                 } catch (imgError) {
                     console.error('[PrinterManager] Logo Print Error:', imgError);
@@ -1002,8 +1014,74 @@ export class PrinterManager {
 
             await BLEPrinter.printBill(reportText);
             return true;
+        } catch (error) {
+            console.error('[PrinterManager] Print Sales Report Error:', error);
+            throw error;
+        }
+    }
+
+    static formatPettyCashSlip(tx: any, shopInfo: any, isPreview: boolean = false): string {
+        const paperWidth = shopInfo.receipt_paper_width === '80mm' ? 42 : 32;
+        const CENTER = isPreview ? '[C]' : COMMANDS.TEXT_FORMAT.TXT_ALIGN_CT;
+        const LEFT = isPreview ? '[L]' : COMMANDS.TEXT_FORMAT.TXT_ALIGN_LT;
+        const BOLD_ON = isPreview ? '<b>' : COMMANDS.TEXT_FORMAT.TXT_BOLD_ON;
+        const BOLD_OFF = isPreview ? '</b>' : COMMANDS.TEXT_FORMAT.TXT_BOLD_OFF;
+        const DOUBLE_ON = isPreview ? '' : COMMANDS.TEXT_FORMAT.TXT_2HEIGHT;
+        const DOUBLE_OFF = isPreview ? '' : COMMANDS.TEXT_FORMAT.TXT_NORMAL;
+        const LINE = '-'.repeat(paperWidth) + '\n';
+
+        let text = '';
+        const shopName = shopInfo.receiptHeader || shopInfo.receipt_header || shopInfo.name || 'WINNY POS';
+        
+        text += CENTER + BOLD_ON + shopName.toUpperCase() + BOLD_OFF + '\n';
+        if (shopInfo.address) text += CENTER + shopInfo.address + '\n';
+        text += CENTER + LINE;
+        
+        text += CENTER + BOLD_ON + DOUBLE_ON + (tx.type === 'TOPUP' ? 'KAS MASUK' : 'KAS KELUAR') + DOUBLE_OFF + BOLD_OFF + '\n';
+        text += CENTER + LINE;
+
+        text += LEFT;
+        text += `Tanggal: ${new Date(tx.created_at).toLocaleString('id-ID')}\n`;
+        text += `Tipe   : ${tx.type === 'TOPUP' ? 'Pemasukan' : 'Pengeluaran'}\n`;
+        text += LINE;
+        
+        text += BOLD_ON + `KEPERLUAN:` + BOLD_OFF + `\n${tx.description}\n`;
+        text += LINE;
+        
+        text += BOLD_ON + this.padColumns('NOMINAL:', tx.amount.toLocaleString('id-ID'), paperWidth) + BOLD_OFF + '\n';
+        text += LINE;
+        
+        text += CENTER + '\n\n';
+        text += this.padColumns(' (Penerima) ', ' (Petugas) ', paperWidth) + '\n';
+        text += '\n\n';
+        text += CENTER + '*** Bukti Transaksi Sah ***\n';
+        
+        text += '\n\n\n' + (isPreview ? '' : COMMANDS.PAPER.PAPER_FULL_CUT);
+        return text;
+    }
+
+    static async printPettyCashSlip(tx: any, shopInfo: any) {
+        let macAddress = await this.getSelectedPrinter('receipt');
+        if (!macAddress) throw new Error('Printer Kasir belum diatur.');
+        
+        const slipText = this.formatPettyCashSlip(tx, shopInfo);
+        
+        try {
+            if (isExpoGo || Platform.OS === 'web') {
+                console.log('[Sim] Printing Petty Cash Slip:', slipText);
+                return true;
+            }
+            await this.initPrinter();
+            const mac = macAddress.toUpperCase();
+            if (this.connectionStatus[mac] !== 'connected') {
+                await BLEPrinter.connectPrinter(mac);
+                this.connectionStatus[mac] = 'connected';
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+            await BLEPrinter.printBill(slipText);
+            return true;
         } catch (e: any) {
-            console.error('Print Report Error:', e);
+            console.error('Print Petty Cash Error:', e);
             throw e;
         }
     }

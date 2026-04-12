@@ -138,6 +138,7 @@ export function CashierInterface({
   const [itemsToSplit, setItemsToSplit] = useState<OrderItem[]>([]);
   const [lastPaymentChange, setLastPaymentChange] = useState<number | undefined>();
   const [lastPaymentTotal, setLastPaymentTotal] = useState<number>(0);
+  const [lastSaleData, setLastSaleData] = useState<any>(null); // [NEW] Track last sale for printing
   // const [selectedTable, setSelectedTable] = useState<string>(''); // Removed duplicate
   const [customerName, setCustomerName] = useState<string>('');
   const [waiterName, setWaiterName] = useState('');
@@ -248,17 +249,7 @@ export function CashierInterface({
   const filteredProducts = useMemo(() => {
     let currentProducts = (products || []).filter(p => p && p.id); // SAFEGUARD: Remove invalid items early
 
-    if (activeCategory === 'Makanan Terlaris') {
-      currentProducts = currentProducts.filter(p => topSellingProducts.includes(p.name) && (p.category || '').toLowerCase().includes('makan'));
-    } else if (activeCategory === 'Minuman Terlaris') {
-      currentProducts = currentProducts.filter(p => topSellingProducts.includes(p.name) && (p.category || '').toLowerCase().includes('minum'));
-    } else if (activeCategory === 'Snack Terlaris') {
-      currentProducts = currentProducts.filter(p => topSellingProducts.includes(p.name) && (p.category || '').toLowerCase().includes('snack'));
-    } else if (activeCategory === 'Produk Terlaris') {
-      currentProducts = currentProducts.filter(p => topSellingProducts.includes(p.name) && (p.category || '').toLowerCase().includes('kemasan'));
-    } else if (activeCategory === 'Terlaris') {
-      currentProducts = currentProducts.filter(p => topSellingProducts.includes(p.name));
-    } else if (activeCategory !== 'Semua') {
+    if (activeCategory !== 'Semua') {
       currentProducts = currentProducts.filter((p) => p.category === activeCategory);
     }
 
@@ -273,15 +264,7 @@ export function CashierInterface({
 
     // Sort: Best Selling first, then by sort_order
     return currentProducts
-      .map(p => ({
-        ...p,
-        is_best_seller: topSellingProducts.includes(p.name)
-      }))
-      .sort((a, b) => {
-        if (a.is_best_seller && !b.is_best_seller) return -1;
-        if (!a.is_best_seller && b.is_best_seller) return 1;
-        return (a.sort_order || 0) - (b.sort_order || 0);
-      });
+      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
   }, [activeCategory, searchQuery, products, topSellingProducts]);
 
   const taxableSubtotal = useMemo(() => {
@@ -669,19 +652,21 @@ export function CashierInterface({
         ? itemsToSplit.reduce((sum, item) => sum + (item.product.price * item.quantity), 0)
         : total;
 
-      onAddSale({
+      const salePayload = {
         id: currentSaleId, // Pass the existing ID if available
         order_no: currentOrderNo, // Pass the existing Order No
         items: itemsToReport.reduce((sum, item) => sum + item.quantity, 0),
         totalAmount: amountToReport,
         paymentMethod: payment.method,
         productDetails: itemsToReport.map(item => ({
+          id: item.product.id,
           name: item.product.name,
           quantity: item.quantity,
           price: item.product.price,
           category: item.product.category, // [NEW] Pass category
           isManual: String(item.product.id).startsWith('manual-'),
-          notes: item.notes
+          notes: item.notes,
+          target: item.product.target // Pass the target for printing if needed
         })),
         tableNo: selectedTable,
         customerName: customerName,
@@ -691,8 +676,12 @@ export function CashierInterface({
         tax: isSplitPayment ? 0 : taxAmount,
         service: isSplitPayment ? 0 : serviceAmount,
         paidAmount: payment.amount || amountToReport,
-        change: payment.change || 0
-      });
+        change: payment.change || 0,
+        time: new Date().toLocaleTimeString()
+      };
+
+      setLastSaleData(salePayload);
+      onAddSale(salePayload);
     }
 
     // Always show a small success toast for partial payments if not the full success modal
@@ -743,35 +732,41 @@ export function CashierInterface({
       });
     }
 
-    if (settings?.print_kds_on_hold) {
-        const itemsToPrint = orderItems.map(item => ({
-            name: item.product.name,
-            quantity: item.quantity,
-            note: item.notes,
-            notes: item.notes
-        }));
+    // [NEW] Smart Production Printing on HOLD
+    if (settings?.enable_print_at_hold) {
+        const waiterShort = (waiterName || 'Cashier').split(' ')[0];
+        const kitchenItems = orderItems.filter(item => item.product.target === 'Kitchen' || item.product.category?.toLowerCase().includes('makan'));
+        const barItems = orderItems.filter(item => item.product.target === 'Bar' || item.product.category?.toLowerCase().includes('minum'));
 
-        const orderDataForPrint = {
+        const commonTicketData = {
             orderNo: `HOLD-${Date.now().toString().slice(-4)}`,
-            tableNo: selectedTable,
-            customerName: customerName,
-            waiterName: waiterName,
+            tableNo: selectedTable || 'TAKEAWAY',
+            customerName: customerName || 'Guest',
+            waiterName: waiterShort,
             time: new Date().toLocaleTimeString(),
             notes: '',
-            cashierName: '', // Assume web POS context
-            items: itemsToPrint
         };
-        
+
         try {
-            printerService.printTicket('Kitchen', orderDataForPrint);
-            printerService.printTicket('Bar', orderDataForPrint);
-            toast.success('Pesanan ditangguhkan dan dikirim ke KDS');
+            if (kitchenItems.length > 0) {
+                printerService.printTicket('Kitchen', {
+                    ...commonTicketData,
+                    items: kitchenItems.map(i => ({ name: i.product.name, quantity: i.quantity, notes: i.notes }))
+                });
+            }
+            if (barItems.length > 0) {
+                printerService.printTicket('Bar', {
+                    ...commonTicketData,
+                    items: barItems.map(i => ({ name: i.product.name, quantity: i.quantity, notes: i.notes }))
+                });
+            }
+            toast.success(`Berhasil HOLD & Cetak Produksi (${kitchenItems.length} Dapur, ${barItems.length} Bar)`);
         } catch (e) {
-            console.error("Print KDS Error", e);
-            toast.error('Pesanan ditangguhkan, namun gagal print KDS');
+            console.error("Hold Print Error", e);
+            toast.error('Gagal cetak produksi (Cek Koneksi Printer)');
         }
     } else {
-        toast.success('Pesanan dikirim ke Dapur & ditangguhkan');
+        toast.success('Pesanan berhasil disimpan sementara');
     }
 
     setOrderItems([]);
@@ -959,7 +954,7 @@ export function CashierInterface({
           {/* Category Tabs */}
           <div className="mb-4">
             <CategoryTabs
-              categories={['Semua', 'Makanan Terlaris', 'Minuman Terlaris', 'Snack Terlaris', 'Produk Terlaris', ...(categories || []).filter(c => c && c.name).map(c => c.name)]}
+              categories={['Semua', ...(categories || []).filter(c => c && c.name).map(c => c.name)]}
               activeCategory={activeCategory}
               onCategoryChange={setActiveCategory}
             />
@@ -1184,8 +1179,9 @@ export function CashierInterface({
         onOpenChange={setSuccessModalOpen}
         total={lastPaymentTotal}
         change={lastPaymentChange}
+        lastSaleData={lastSaleData}
         onNewTransaction={handleNewTransaction}
-        onViewHistory={onBack}
+        onViewHistory={() => { }}
       />
 
       <CashierSessionModal

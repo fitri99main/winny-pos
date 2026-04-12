@@ -157,8 +157,8 @@ class PrinterService {
         // Initialize
         commands.push(new Uint8Array([this.ESC, 0x40]));
 
-        // Header (Double Size + Bold)
-        commands.push(new Uint8Array([this.GS, 0x21, 0x11])); // Double width & height
+        // Header (Double Height + Bold)
+        commands.push(new Uint8Array([this.GS, 0x21, 0x01])); // Double height only
         commands.push(new Uint8Array([this.ESC, 0x45, 0x01])); // Bold ON
         commands.push(encoder.encode(`${header.toUpperCase()}\n`));
         commands.push(new Uint8Array([this.ESC, 0x45, 0x00])); // Bold OFF
@@ -169,9 +169,9 @@ class PrinterService {
         // Order No (Centered)
         commands.push(encoder.encode(`No: ${data.orderNo}\n`));
         
-        // Table No (Centered, Bold, Double Size)
+        // Table No (Centered, Bold, Double Height)
         if (showTable && data.tableNo) {
-            commands.push(new Uint8Array([this.GS, 0x21, 0x11])); // Double size
+            commands.push(new Uint8Array([this.GS, 0x21, 0x01])); // Double height only
             commands.push(new Uint8Array([this.ESC, 0x45, 0x01])); // Bold ON
             commands.push(encoder.encode(`MEJA: ${data.tableNo}\n`));
             commands.push(new Uint8Array([this.GS, 0x21, 0x00])); // Reset size
@@ -191,9 +191,9 @@ class PrinterService {
         // Items (Left align for readability)
         commands.push(new Uint8Array([this.ESC, 0x61, 0x00])); 
         data.items.forEach(item => {
-            // Match mobile's Double Width & Height + Bold for items
+            // Match mobile's Double Height + Bold for items
             if (doubleHeightItems) {
-                commands.push(new Uint8Array([this.GS, 0x21, 0x11])); // Double width & height
+                commands.push(new Uint8Array([this.GS, 0x21, 0x01])); // Double height only
             }
             commands.push(new Uint8Array([this.ESC, 0x45, 0x01])); // Bold ON
             commands.push(encoder.encode(`${item.quantity}x ${item.name}\n`));

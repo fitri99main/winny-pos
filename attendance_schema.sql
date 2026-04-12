@@ -6,16 +6,38 @@ CREATE TABLE IF NOT EXISTS public.attendance_logs (
     date DATE DEFAULT CURRENT_DATE,
     check_in TEXT, -- Storing as text 'HH:MM' to match UI format, or TIME
     check_out TEXT,
+    shift_id BIGINT REFERENCES public.shifts(id) ON DELETE SET NULL,
+    late_minutes INT DEFAULT 0,
+    overtime_minutes INT DEFAULT 0,
+    duration_minutes INT DEFAULT 0,
     status TEXT, -- 'Present', 'Late', 'Off Day Work'
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Ensure all new columns exist if table was already created earlier
+DO $$ 
+BEGIN 
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='attendance_logs' AND column_name='shift_id') THEN
+        ALTER TABLE public.attendance_logs ADD COLUMN shift_id BIGINT REFERENCES public.shifts(id) ON DELETE SET NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='attendance_logs' AND column_name='late_minutes') THEN
+        ALTER TABLE public.attendance_logs ADD COLUMN late_minutes INT DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='attendance_logs' AND column_name='overtime_minutes') THEN
+        ALTER TABLE public.attendance_logs ADD COLUMN overtime_minutes INT DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='attendance_logs' AND column_name='duration_minutes') THEN
+        ALTER TABLE public.attendance_logs ADD COLUMN duration_minutes INT DEFAULT 0;
+    END IF;
+END $$;
 
 -- Enable RLS
 ALTER TABLE public.attendance_logs ENABLE ROW LEVEL SECURITY;
 
 -- Create Policies
+DROP POLICY IF EXISTS "Enable all for users based on email" ON public.attendance_logs;
 CREATE POLICY "Enable all for users based on email" ON public.attendance_logs
     FOR ALL USING (true) WITH CHECK (true);
 
--- Enable Realtime
-ALTER PUBLICATION supabase_realtime ADD TABLE public.attendance_logs;
+-- Enable Realtime (Optional: Only if NOT set to 'FOR ALL TABLES')
+-- ALTER PUBLICATION supabase_realtime ADD TABLE public.attendance_logs;

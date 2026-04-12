@@ -325,17 +325,33 @@ export default function StoreSettingsScreen() {
                             />
                         </View>
                         <View style={styles.divider} />
+                        <View style={styles.divider} />
                         <View style={styles.switchItem}>
                             <View style={styles.switchContent}>
                                 <View style={styles.switchLabelRow}>
-                                    <Shield size={18} color="#ea580c" />
-                                    <Text style={styles.switchLabel}>Kasir Bisa Buka Riwayat</Text>
+                                    <Printer size={18} color="#ea580c" />
+                                    <Text style={styles.switchLabel}>Kasir Bisa Cetak Bukti Kas</Text>
                                 </View>
-                                <Text style={styles.switchSubtitle}>Izin melihat Riwayat Sesi (Tutup Kasir)</Text>
+                                <Text style={styles.switchSubtitle}>Izin cetak struk Kas Masuk/Kas Keluar</Text>
                             </View>
                             <Switch
-                                value={storeSettings?.cashier_can_view_session_history ?? false}
-                                onValueChange={(val) => toggleSetting('cashier_can_view_session_history', val)}
+                                value={storeSettings?.cashier_can_print_financial_receipt ?? false}
+                                onValueChange={(val) => toggleSetting('cashier_can_print_financial_receipt', val)}
+                                trackColor={{ false: '#e2e8f0', true: '#ea580c' }}
+                            />
+                        </View>
+                        <View style={styles.divider} />
+                        <View style={styles.switchItem}>
+                            <View style={styles.switchContent}>
+                                <View style={styles.switchLabelRow}>
+                                    <Printer size={18} color="#ea580c" />
+                                    <Text style={styles.switchLabel}>Kasir Bisa Cetak Lap. Omzet</Text>
+                                </View>
+                                <Text style={styles.switchSubtitle}>Izin cetak ringkasan laporan penjualan</Text>
+                            </View>
+                            <Switch
+                                value={storeSettings?.cashier_can_print_sales_summary ?? false}
+                                onValueChange={(val) => toggleSetting('cashier_can_print_sales_summary', val)}
                                 trackColor={{ false: '#e2e8f0', true: '#ea580c' }}
                             />
                         </View>

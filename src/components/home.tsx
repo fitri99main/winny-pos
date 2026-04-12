@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, ShoppingCart, Settings, Coffee, FileText,
   LogOut, Bell, Search, Menu, Calculator, ChefHat, MonitorCheck,
   Contact, Archive, MapPin, CalendarCheck, History as ClockHistory, Wallet, Award, Target,
-  Store, ChevronLeft, ChevronRight, CheckCircle, Package, RefreshCw, ShieldCheck, Clock, History, Percent
+  Store, ChevronLeft, ChevronRight, CheckCircle, Package, RefreshCw, ShieldCheck, Clock, History, Percent, Fingerprint
 } from 'lucide-react';
 import { printerService } from '../lib/PrinterService';
 import { WifiVoucherService } from '../lib/WifiVoucherService';
@@ -615,11 +615,14 @@ function Home() {
             const targetTable = latestOrder.table_no || latestOrder.tableNo || latestOrder.table_number;
 
             // [NEW] Respect disable_web_kiosk_notifications for Web App
-            // Suppress auto-open for ALL incoming orders if enabled on web.
-            const shouldSuppress = storeSettings?.disable_web_kiosk_notifications;
+            // Suppress auto-open and popups for Display/Kiosk orders
+            const isDisplayOrder = !latestOrder.waiter_name || latestOrder.waiter_name === 'Kiosk' || latestOrder.waiter_name === 'User Display';
+            const shouldSuppress = storeSettings?.disable_web_kiosk_notifications || isDisplayOrder;
 
             if (shouldSuppress) {
-              console.log('[Polling] Suppression active. Skipping auto-open for web cashier.');
+              console.log('[Polling] Suppression active for display/settings. Skipping UI alerts.');
+              // We still want to fetch transactions so the list is updated quietly
+              await fetchTransactions();
               return;
             }
 
@@ -988,8 +991,8 @@ function Home() {
           // [REFINED] Robust Kiosk Detection
           const isKioskOrder = (newOrder.status === 'Unpaid' || newOrder.status === 'Pending') && 
                               (!newOrder.waiter_name || newOrder.waiter_name === 'Kiosk' || newOrder.waiter_name === 'User Display');
-          // Show notification for all incoming orders (respect suppression setting or specifically ignore User Display)
-          const shouldSuppress = storeSettings?.disable_web_kiosk_notifications || newOrder.waiter_name === 'User Display';
+          // Show notification for all incoming orders (respect suppression setting or specifically ignore Display/Kiosk)
+          const shouldSuppress = storeSettings?.disable_web_kiosk_notifications || isKioskOrder;
           
           if (!shouldSuppress) {
             toast.info(`Pesanan Masuk: ${formattedSale.orderNo}`);
@@ -998,7 +1001,7 @@ function Home() {
           // [FIX] Auto-open for External Orders (Waitress/Display/Admin)
           // Web app should NOT auto-open cashier if the setting is enabled.
           if (!isPaidCompleted && !isMyOwnOrder && (newOrder.status === 'Pending' || newOrder.status === 'Unpaid')) {
-            if (storeSettings?.disable_web_kiosk_notifications) {
+            if (shouldSuppress) {
               console.log('[Auto-Open] Suppression active. Skipping auto-open for web cashier.');
               return;
             }
@@ -1605,13 +1608,27 @@ function Home() {
             service_charge: 0 // Not explicitly in SalesOrder
           };
 
-          const { data: saleData, error: saleError } = await supabase
+          // [IDEMPOTENCY CHECK] Check if Order No already exists (Idempotency)
+          const { data: existingSale } = await supabase
             .from('sales')
-            .insert([salePayload])
-            .select()
-            .single();
+            .select('id')
+            .eq('order_no', sale.orderNo)
+            .maybeSingle();
 
-          if (saleError) throw saleError;
+          let saleData;
+          if (existingSale) {
+            console.log('[Sync] Order already exists, skipping insert:', sale.orderNo);
+            saleData = existingSale;
+          } else {
+            const { data, error: saleError } = await supabase
+              .from('sales')
+              .insert([salePayload])
+              .select()
+              .single();
+
+            if (saleError) throw saleError;
+            saleData = data;
+          }
 
           // Items - Mapping from productDetails
           // CAUTION: productDetails might lack product_id. We'll try to use 'id' if present (casted) or 0.
@@ -3030,6 +3047,8 @@ function Home() {
             onRefresh={fetchAttendance}
             dbInfo={{ url: import.meta.env.VITE_SUPABASE_URL || 'Unknown', error: null }} 
             branchId={currentBranchId}
+            shifts={shifts}
+            schedules={shiftSchedules}
           />
         );
       case 'payroll':
@@ -3365,10 +3384,7 @@ function Home() {
             contacts={contacts}
             employees={employees}
             onSendToKDS={handleSendToKDS}
-            products={products.map(p => ({
-              ...p,
-              is_best_seller: topSellingProducts.includes(p.name)
-            }))}
+            products={products}
             topSellingProducts={topSellingProducts}
             categories={categories}
             tables={tables}
@@ -3435,6 +3451,23 @@ function Home() {
           </div>
         )
       }
+      
+      {/* Floating Quick Attendance Button */}
+      {activeModule !== 'attendance' && !isCashierOpen && storeSettings?.show_attendance_fab !== false && (
+        <button
+          onClick={() => setActiveModule('attendance')}
+          className="fixed bottom-8 right-8 z-[60] flex items-center gap-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-4 rounded-full shadow-2xl shadow-blue-500/40 hover:scale-110 hover:-translate-y-1 active:scale-95 transition-all group animate-in slide-in-from-bottom-10 duration-500"
+        >
+          <div className="relative">
+            <Fingerprint className="w-6 h-6" />
+            <div className="absolute inset-0 bg-white/20 rounded-full animate-ping"></div>
+          </div>
+          <span className="font-black text-sm uppercase tracking-widest">Absensi</span>
+          
+          {/* Tooltip-like decorative pulse */}
+          <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-bounce"></div>
+        </button>
+      )}
     </div >
   );
 }

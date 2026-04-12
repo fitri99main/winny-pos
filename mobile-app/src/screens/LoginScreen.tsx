@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, SafeAreaView, Alert, ActivityIndicator, StyleSheet, Image, KeyboardAvoidingView, Platform, useWindowDimensions } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
-import { Mail, Lock } from 'lucide-react-native';
+import { Mail, Lock, Eye, EyeOff } from 'lucide-react-native';
 import { supabase } from '../lib/supabase';
 
 import { useSession } from '../context/SessionContext';
@@ -14,6 +14,7 @@ export default function LoginScreen() {
     const isSmallDevice = width < 380;
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const isMounted = useRef(true);
 
@@ -171,10 +172,20 @@ export default function LoginScreen() {
                                     ]}
                                     value={password}
                                     onChangeText={setPassword}
-                                    secureTextEntry
+                                    secureTextEntry={!showPassword}
                                     autoComplete="password"
                                     textContentType="password"
                                 />
+                                <TouchableOpacity 
+                                    onPress={() => setShowPassword(!showPassword)}
+                                    style={styles.eyeIcon}
+                                >
+                                    {showPassword ? (
+                                        <EyeOff size={isSmallDevice ? 18 : 20} color="#94a3b8" />
+                                    ) : (
+                                        <Eye size={isSmallDevice ? 18 : 20} color="#94a3b8" />
+                                    )}
+                                </TouchableOpacity>
                             </View>
                         </View>
 
@@ -309,6 +320,9 @@ const styles = StyleSheet.create({
         paddingVertical: 14,
         fontSize: 15,
         color: '#0f172a',
+    },
+    eyeIcon: {
+        padding: 8,
     },
     button: {
         width: '100%',

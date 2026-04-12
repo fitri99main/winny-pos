@@ -2,13 +2,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Alert, TextInput, Modal, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { ChevronLeft, Wallet, Lock, Unlock, History, Plus, ArrowUpCircle, ArrowDownCircle } from 'lucide-react-native';
+import { ChevronLeft, Wallet, Lock, Unlock, History, Plus, ArrowUpCircle, ArrowDownCircle, Printer } from 'lucide-react-native';
+import { PrinterManager } from '../lib/PrinterManager';
 import { PettyCashService, PettyCashSession, PettyCashTransaction } from '../lib/PettyCashService';
 import { useSession } from '../context/SessionContext';
 
 export default function PettyCashScreen() {
     const navigation = useNavigation();
-    const { currentBranchId } = useSession();
+    const { currentBranchId, isAdmin, storeSettings, branchName } = useSession();
     
     const [loading, setLoading] = useState(true);
     const [activeSession, setActiveSession] = useState<PettyCashSession | null>(null);
@@ -32,7 +33,10 @@ export default function PettyCashScreen() {
     const [closingPhysicalAmount, setClosingPhysicalAmount] = useState('');
 
     const fetchData = useCallback(async () => {
-        if (!currentBranchId) return;
+        if (!currentBranchId || isNaN(Number(currentBranchId))) {
+            setLoading(false);
+            return;
+        }
         setLoading(true);
         try {
             const session = await PettyCashService.getActiveSession(currentBranchId);
@@ -161,6 +165,27 @@ export default function PettyCashScreen() {
                 }
             ]
         );
+    };
+
+    const handlePrintTransaction = async (tx: PettyCashTransaction) => {
+        try {
+            const hasPermission = isAdmin || (storeSettings && storeSettings.cashier_can_print_financial_receipt);
+            if (!hasPermission) {
+                Alert.alert('Akses Ditolak', 'Anda tidak memiliki izin untuk mencetak bukti kas.');
+                return;
+            }
+
+            const branchInfo = {
+                name: branchName,
+                address: storeSettings?.address,
+                receiptHeader: storeSettings?.receipt_header,
+                receipt_paper_width: storeSettings?.receipt_paper_width || '58mm'
+            };
+
+            await PrinterManager.printPettyCashSlip(tx, branchInfo);
+        } catch (error: any) {
+            Alert.alert('Error', error.message || 'Gagal mencetak bukti kas');
+        }
     };
 
     const handleUpdateTransaction = async () => {
@@ -324,6 +349,9 @@ export default function PettyCashScreen() {
                                                 >
                                                     <Text style={styles.editLabel}>Edit</Text>
                                                 </TouchableOpacity>
+                                                <TouchableOpacity onPress={() => handlePrintTransaction(tx)} style={styles.txActionBtn}>
+                                                    <Printer size={16} color="#64748b" />
+                                                </TouchableOpacity>
                                                 <TouchableOpacity onPress={() => handleDeleteTransaction(tx.id)} style={styles.txActionBtn}>
                                                     <Text style={styles.deleteLabel}>✕</Text>
                                                 </TouchableOpacity>
@@ -397,7 +425,7 @@ export default function PettyCashScreen() {
                         <View style={{ backgroundColor: '#fff7ed', padding: 12, borderRadius: 12, marginBottom: 16 }}>
                             <Text style={{ fontSize: 12, color: '#9a3412', fontWeight: 'bold' }}>SALDO SISTEM</Text>
                             <Text style={{ fontSize: 20, fontWeight: '900', color: '#ea580c' }}>{formatCurrency(activeSession?.expected_balance || 0)}</Text>
-                        </div>
+                        </View>
                         
                         <Text style={styles.modalSub}>Berapa total uang fisik yang ada di laci saat ini?</Text>
                         <TextInput

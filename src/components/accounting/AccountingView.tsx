@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { DateRangePicker } from '../shared/DateRangePicker';
 
 // --- Types & Constants ---
 
@@ -184,10 +185,21 @@ function JournalTab({ transactions, accounts, onAddTransaction, onDeleteTransact
     );
 }
 
-function PettyCashTab({ branchId, userId, purchases = [] }: { branchId: string, userId?: string, purchases?: any[] }) {
+function PettyCashTab({ branchId, userId, purchases = [], startDate, endDate, onAddTransaction, accounts }: { 
+    branchId: string, 
+    userId?: string, 
+    purchases?: any[], 
+    startDate: string, 
+    endDate: string,
+    onAddTransaction: (tx: JournalEntry) => void,
+    accounts: Account[]
+}) {
     const [activeSession, setActiveSession] = useState<PettyCashSession | null>(null);
     const [history, setHistory] = useState<PettyCashSession[]>([]);
     const [transactions, setTransactions] = useState<PettyCashTransaction[]>([]);
+    const [viewingPastSession, setViewingPastSession] = useState<PettyCashSession | null>(null);
+    const [pastTransactions, setPastTransactions] = useState<PettyCashTransaction[]>([]);
+    const [loadingPastTxs, setLoadingPastTxs] = useState(false);
     const [loading, setLoading] = useState(true);
     const [openingAmount, setOpeningAmount] = useState('');
     const [manualData, setManualData] = useState({ type: 'SPEND', amount: '', desc: '' });
@@ -198,6 +210,7 @@ function PettyCashTab({ branchId, userId, purchases = [] }: { branchId: string, 
     const [isClosing, setIsClosing] = useState(false);
     const [closingAmount, setClosingAmount] = useState('');
     const [viewingPurchaseItems, setViewingPurchaseItems] = useState<any>(null);
+    const [sourceAccount, setSourceAccount] = useState('102'); // Default to Bank
 
     const fetchData = useCallback(async () => {
         if (!branchId) return;
@@ -209,7 +222,7 @@ function PettyCashTab({ branchId, userId, purchases = [] }: { branchId: string, 
                 const txs = await PettyCashService.getTransactions(session.id);
                 setTransactions(txs);
             }
-            const pastSessions = await PettyCashService.getSessions(branchId);
+            const pastSessions = await PettyCashService.getSessionsReport(branchId, startDate, endDate);
             setHistory(pastSessions);
         } catch (error) {
             console.error('Error fetching petty cash:', error);
@@ -230,11 +243,22 @@ function PettyCashTab({ branchId, userId, purchases = [] }: { branchId: string, 
         }
         try {
             await PettyCashService.openSession(branchId, Number(openingAmount), userId);
-            toast.success('Kas Kecil dibuka (Saldo Real)');
+            
+            // AUTOMATED JOURNAL ENTRY: Debit Petty Cash, Credit Source (Bank/Cash)
+            onAddTransaction({
+                id: Date.now(),
+                date: new Date().toISOString().split('T')[0],
+                description: `Pembukaan Saldo Kas Kecil (Shift/Harian)`,
+                debitAccount: '105',
+                creditAccount: sourceAccount,
+                amount: Number(openingAmount)
+            });
+
+            toast.success('Saldo Kas Kecil dibuka & Jurnal dicatat');
             setOpeningAmount('');
             fetchData();
         } catch (error: any) {
-            toast.error(error.message || 'Gagal membuka Kas Kecil');
+            toast.error(error.message || 'Gagal membuka Saldo');
         }
     };
 
@@ -253,23 +277,35 @@ function PettyCashTab({ branchId, userId, purchases = [] }: { branchId: string, 
                 return;
             }
 
-            // 1. If there's a difference, create a correction transaction first
-            if (finalPhysical !== activeSession.expected_balance) {
+            const variance = finalPhysical - activeSession.expected_balance;
+
+            // 1. If there's a difference, create a correction transaction first in petty cash records
+            if (variance !== 0) {
                 await PettyCashService.setBalance(
                     activeSession.id, 
                     activeSession.expected_balance, 
                     finalPhysical
                 );
+
+                // AUTOMATED JOURNAL ENTRY: Record Variance
+                onAddTransaction({
+                    id: Date.now(),
+                    date: new Date().toISOString().split('T')[0],
+                    description: `Penyesuaian Selisih Kas Kecil (${variance > 0 ? 'Surplus' : 'Defisit'})`,
+                    debitAccount: variance > 0 ? '105' : '505',
+                    creditAccount: variance > 0 ? '402' : '105',
+                    amount: Math.abs(variance)
+                });
             }
 
-            // 2. Close the session with the physical amount as the official closing balance
+            // 2. Close the session
             await PettyCashService.closeSession(activeSession.id, finalPhysical);
             
-            toast.success('Sesi Kas Kecil telah ditutup & direkonsiliasi');
+            toast.success('Saldo Kas Kecil telah ditutup & Jurnal selisih dicatat');
             setIsClosing(false);
             fetchData();
         } catch (error) {
-            toast.error('Gagal menutup Kas Kecil');
+            toast.error('Gagal menutup Saldo');
         }
     };
 
@@ -325,6 +361,79 @@ function PettyCashTab({ branchId, userId, purchases = [] }: { branchId: string, 
         }
     };
 
+    const handleViewPastDetails = async (session: PettyCashSession) => {
+        setViewingPastSession(session);
+        setLoadingPastTxs(true);
+        try {
+            const txs = await PettyCashService.getTransactions(session.id);
+            setPastTransactions(txs);
+        } catch (error) {
+            toast.error('Gagal memuat transaksi detail');
+        } finally {
+            setLoadingPastTxs(false);
+        }
+    };
+
+    const exportPettyCashToExcel = () => {
+        try {
+            const data = history.map(s => {
+                const variance = (s.actual_closing_balance || 0) - s.expected_balance;
+                return {
+                    'Tanggal': s.date,
+                    'Status': s.status.toUpperCase(),
+                    'Saldo Awal': s.opening_balance,
+                    'Saldo Sistem (Akhir)': s.expected_balance,
+                    'Saldo Fisik (Laci)': s.actual_closing_balance || '-',
+                    'Selisih': s.status === 'closed' ? variance : 0,
+                    'Keterangan Selisih': variance === 0 ? 'Pas' : (variance > 0 ? 'Surplus' : 'Defisit')
+                };
+            });
+
+            const worksheet = XLSX.utils.json_to_sheet(data);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan Kas Kecil");
+            XLSX.writeFile(workbook, `Laporan_Kas_Kecil_${startDate}_to_${endDate}.xlsx`);
+            toast.success('Laporan Kas Kecil berhasil diunduh (Excel)');
+        } catch (error) {
+            toast.error('Gagal mengekspor laporan');
+        }
+    };
+
+    const exportPettyCashToPDF = () => {
+        try {
+            const doc = new jsPDF();
+            doc.setFontSize(18);
+            doc.text('LAPORAN RIWAYAT KAS KECIL', 105, 20, { align: 'center' });
+            doc.setFontSize(11);
+            doc.text(`Periode: ${startDate} s/d ${endDate}`, 105, 28, { align: 'center' });
+
+            const body = history.map(s => {
+                const variance = (s.actual_closing_balance || 0) - s.expected_balance;
+                return [
+                    s.date,
+                    s.status.toUpperCase(),
+                    `Rp ${s.opening_balance.toLocaleString()}`,
+                    `Rp ${s.expected_balance.toLocaleString()}`,
+                    s.actual_closing_balance ? `Rp ${s.actual_closing_balance.toLocaleString()}` : '-',
+                    `Rp ${variance.toLocaleString()}`
+                ];
+            });
+
+            autoTable(doc, {
+                startY: 40,
+                head: [['Tgl', 'Status', 'Awal', 'Sistem', 'Fisik', 'Selisih']],
+                body: body,
+                theme: 'striped',
+                headStyles: { fillColor: [234, 88, 12] }
+            });
+
+            doc.save(`Laporan_Kas_Kecil_${startDate}_to_${endDate}.pdf`);
+            toast.success('Laporan Kas Kecil berhasil diunduh (PDF)');
+        } catch (error) {
+            toast.error('Gagal mengekspor laporan');
+        }
+    };
+
     const handleAddManual = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!activeSession) return;
@@ -356,12 +465,23 @@ function PettyCashTab({ branchId, userId, purchases = [] }: { branchId: string, 
             {!activeSession ? (
                 <div className="max-w-md mx-auto bg-white p-8 rounded-2xl shadow-sm border text-center">
                     <Unlock className="w-12 h-12 text-primary mx-auto mb-4" />
-                    <h3 className="text-xl font-bold text-gray-800">Buka Kas Kecil (Saldo Real)</h3>
-                    <p className="text-gray-500 mb-6 text-sm">Input nominal uang tunai yang ada di laci saat ini.</p>
+                    <h3 className="text-xl font-bold text-gray-800">Buka Saldo Kas Kecil</h3>
+                    <p className="text-gray-500 mb-6 text-sm">Masukan nominal dana yang diambil untuk operasional harian.</p>
                     <div className="space-y-4">
+                        <div className="text-left">
+                            <label className="block text-[10px] uppercase font-bold text-gray-400 mb-1 ml-1">Sumber Dana (Ambil Dari)</label>
+                            <select 
+                                className="w-full p-3 border rounded-xl text-sm"
+                                value={sourceAccount}
+                                onChange={e => setSourceAccount(e.target.value)}
+                            >
+                                <option value="102">102 - Bank</option>
+                                <option value="101">101 - Kas (Besar)</option>
+                            </select>
+                        </div>
                         <input
                             type="number"
-                            className="w-full p-3 border rounded-xl text-center text-xl font-bold"
+                            className="w-full p-3 border rounded-xl text-center text-xl font-bold bg-gray-50"
                             placeholder="Rp 0"
                             value={openingAmount}
                             onChange={e => setOpeningAmount(e.target.value)}
@@ -403,7 +523,7 @@ function PettyCashTab({ branchId, userId, purchases = [] }: { branchId: string, 
                             </div>
                         ) : (
                             <div className="space-y-4 pt-6 border-t border-orange-100">
-                                <Button variant="outline" onClick={handleCloseSession} className="w-full border-orange-200 text-orange-600 hover:bg-orange-50">Tutup Sesi Hari Ini</Button>
+                                <Button variant="outline" onClick={handleCloseSession} className="w-full border-orange-200 text-orange-600 hover:bg-orange-50">Tutup Saldo Hari Ini</Button>
                             </div>
                         )}
                     </div>
@@ -534,8 +654,26 @@ function PettyCashTab({ branchId, userId, purchases = [] }: { branchId: string, 
 
             {/* History Table */}
             <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-                <div className="p-4 border-b bg-gray-50 flex justify-between items-center text-gray-400">
-                    <h3 className="font-bold flex items-center gap-2"><History className="w-4 h-4" /> Riwayat Kas Kecil</h3>
+                <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
+                    <h3 className="font-bold flex items-center gap-2 text-gray-800"><History className="w-4 h-4 text-orange-600" /> Riwayat Kas Kecil</h3>
+                    <div className="flex gap-2">
+                        <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="bg-white border-green-200 text-green-700 hover:bg-green-50 flex items-center gap-1"
+                            onClick={exportPettyCashToExcel}
+                        >
+                            <Download className="w-3 h-3" /> Excel
+                        </Button>
+                        <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="bg-white border-red-200 text-red-700 hover:bg-red-50 flex items-center gap-1"
+                            onClick={exportPettyCashToPDF}
+                        >
+                            <FileText className="w-3 h-3" /> PDF
+                        </Button>
+                    </div>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm">
@@ -581,9 +719,14 @@ function PettyCashTab({ branchId, userId, purchases = [] }: { branchId: string, 
                                         </span>
                                     </td>
                                     <td className="px-4 py-3 text-center">
-                                        <button onClick={() => handleDeleteSession(session.id)} className="p-1 text-red-500 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
+                                        <div className="flex justify-center gap-1">
+                                            <button onClick={() => handleViewPastDetails(session)} className="p-1 text-blue-500 hover:bg-blue-50 rounded" title="Lihat Rincian Transaksi">
+                                                <Eye className="w-4 h-4" />
+                                            </button>
+                                            <button onClick={() => handleDeleteSession(session.id)} className="p-1 text-red-500 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
@@ -591,6 +734,70 @@ function PettyCashTab({ branchId, userId, purchases = [] }: { branchId: string, 
                     </table>
                 </div>
             </div>
+
+            {/* Detail Past Session Modal */}
+            {viewingPastSession && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-3xl p-6 w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                        <div className="flex justify-between items-start mb-6">
+                            <div>
+                                <h3 className="text-xl font-bold text-gray-800">Rincian Kas Kecil</h3>
+                                <p className="text-sm text-gray-500">{new Date(viewingPastSession.date).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                            </div>
+                            <button onClick={() => setViewingPastSession(null)} className="text-gray-400 hover:text-gray-600 p-2 bg-gray-100 rounded-full">✕</button>
+                        </div>
+
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                            <div className="p-3 bg-gray-50 rounded-xl">
+                                <p className="text-[10px] text-gray-400 font-bold uppercase">Saldo Awal</p>
+                                <p className="text-sm font-bold">Rp {viewingPastSession.opening_balance.toLocaleString()}</p>
+                            </div>
+                            <div className="p-3 bg-gray-50 rounded-xl">
+                                <p className="text-[10px] text-gray-400 font-bold uppercase">Saldo Sistem</p>
+                                <p className="text-sm font-bold">Rp {viewingPastSession.expected_balance.toLocaleString()}</p>
+                            </div>
+                            <div className="p-3 bg-gray-50 rounded-xl">
+                                <p className="text-[10px] text-gray-400 font-bold uppercase">Saldo Fisik</p>
+                                <p className="text-sm font-bold text-blue-600">Rp {viewingPastSession.actual_closing_balance?.toLocaleString() || '-'}</p>
+                            </div>
+                            <div className="p-3 bg-red-50 rounded-xl">
+                                <p className="text-[10px] text-red-400 font-bold uppercase">Selisih</p>
+                                <p className="text-sm font-bold text-red-600">
+                                    Rp {((viewingPastSession.actual_closing_balance || 0) - viewingPastSession.expected_balance).toLocaleString()}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto pr-2">
+                            {loadingPastTxs ? (
+                                <div className="flex justify-center p-8"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>
+                            ) : (
+                                <table className="w-full text-xs">
+                                    <thead className="bg-gray-50 sticky top-0 font-bold text-gray-500">
+                                        <tr>
+                                            <th className="px-3 py-2 text-left">Waktu</th>
+                                            <th className="px-3 py-2 text-left">Keterangan</th>
+                                            <th className="px-3 py-2 text-right">Masuk</th>
+                                            <th className="px-3 py-2 text-right">Keluar</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y">
+                                        {pastTransactions.map(tx => (
+                                            <tr key={tx.id} className="hover:bg-gray-50">
+                                                <td className="px-3 py-2 text-gray-400">{new Date(tx.created_at).toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit' })}</td>
+                                                <td className="px-3 py-2 font-medium">{tx.description}</td>
+                                                <td className="px-3 py-2 text-right text-green-600">{tx.type === 'TOPUP' ? `Rp ${tx.amount.toLocaleString()}` : '-'}</td>
+                                                <td className="px-3 py-2 text-right text-red-600">{tx.type === 'SPEND' ? `Rp ${tx.amount.toLocaleString()}` : '-'}</td>
+                                            </tr>
+                                        ))}
+                                        {pastTransactions.length === 0 && <tr><td colSpan={4} className="p-4 text-center text-gray-400">Tidak ada rincian transaksi</td></tr>}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Edit Transaction Modal */}
             {editingTx && (
@@ -644,7 +851,7 @@ function PettyCashTab({ branchId, userId, purchases = [] }: { branchId: string, 
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">
                         <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-xl font-bold text-gray-800 text-center">Tutup Buku Kas Kecil</h3>
+                            <h3 className="text-xl font-bold text-gray-800 text-center">Tutup Saldo Kas Kecil</h3>
                             <button onClick={() => setIsClosing(false)} className="text-gray-400 hover:text-gray-600">✕</button>
                         </div>
                         <div className="space-y-6">
@@ -674,7 +881,7 @@ function PettyCashTab({ branchId, userId, purchases = [] }: { branchId: string, 
                                 </div>
                                 <div className="flex gap-3">
                                     <Button variant="ghost" onClick={() => setIsClosing(false)} className="flex-1">Batal</Button>
-                                    <Button onClick={handleFinalClose} className="flex-1 bg-orange-600 hover:bg-orange-700">Selesai & Tutup Sesi</Button>
+                                    <Button onClick={handleFinalClose} className="flex-1 bg-orange-600 hover:bg-orange-700">Selesai & Tutup Saldo</Button>
                                 </div>
                             </div>
                         </div>
@@ -1591,24 +1798,14 @@ export function AccountingView({
                     ))}
                 </div>
 
-                <div className="flex items-center gap-2 bg-white p-2 rounded-xl border border-gray-100 shadow-sm">
-                    <CalendarCheck className="w-4 h-4 text-gray-400 ml-2" />
-                    <div className="flex items-center gap-1">
-                        <input
-                            type="date"
-                            className="text-xs p-1 border-none focus:ring-0 cursor-pointer"
-                            value={startDate}
-                            onChange={(e) => setStartDate(e.target.value)}
-                        />
-                        <span className="text-gray-400 text-xs">-</span>
-                        <input
-                            type="date"
-                            className="text-xs p-1 border-none focus:ring-0 cursor-pointer"
-                            value={endDate}
-                            onChange={(e) => setEndDate(e.target.value)}
-                        />
-                    </div>
-                </div>
+                <DateRangePicker 
+                    startDate={startDate}
+                    endDate={endDate}
+                    onChange={(range) => {
+                        setStartDate(range.startDate);
+                        setEndDate(range.endDate);
+                    }}
+                />
             </div>
 
             {/* Content Area */}
@@ -1625,7 +1822,15 @@ export function AccountingView({
                     />
                 )}
                 {activeTab === 'pettycash' && (
-                    <PettyCashTab branchId={currentBranchId || sales[0]?.branch_id || ''} userId={user?.id} purchases={purchases} />
+                    <PettyCashTab 
+                        branchId={currentBranchId || sales[0]?.branch_id || ''} 
+                        userId={user?.id} 
+                        purchases={purchases} 
+                        startDate={startDate}
+                        endDate={endDate}
+                        onAddTransaction={onAddTransaction}
+                        accounts={accounts}
+                    />
                 )}
                 {activeTab === 'purchase_history' && (
                     <PurchaseHistoryTab purchases={purchases} onCRUD={onPurchaseCRUD} />

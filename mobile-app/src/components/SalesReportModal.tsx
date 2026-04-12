@@ -38,12 +38,13 @@ export default function SalesReportModal({
     const [printing, setPrinting] = useState(false);
 
     useEffect(() => {
-        if (visible) {
+        if (visible && currentBranchId && !isNaN(Number(currentBranchId))) {
             fetchSales();
         }
     }, [visible, dateRange, customStartDate, customEndDate, currentBranchId]);
 
     const fetchSales = async () => {
+        if (!currentBranchId || isNaN(Number(currentBranchId))) return;
         try {
             setLoading(true);
             const now = new Date();

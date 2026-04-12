@@ -1,37 +1,39 @@
 import { useState, useEffect, useRef } from 'react';
-import { QrCode, History, Camera, UserCheck, XCircle, Search, Zap, Plus, X, AlertCircle, RefreshCw, ExternalLink } from 'lucide-react';
+import { 
+    QrCode, History, Camera, UserCheck, XCircle, Search, Zap, Plus, X, 
+    AlertCircle, RefreshCw, ExternalLink, Clock, Download, FileText, FileSpreadsheet, Users
+} from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
 import { Employee } from '../employees/EmployeesView';
 import { fingerprint, FingerprintResult } from '../../lib/fingerprint';
 import { useBarcodeScanner } from '../../hooks/useBarcodeScanner';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
-interface AttendanceLog {
+export interface AttendanceLog {
     id: number;
+    employee_id?: number;
     employeeName: string;
     checkIn: string;
     checkOut?: string;
     date: string;
     status: 'Present' | 'Late' | 'Off Day Work';
     branchName?: string;
+    shift_id?: number;
+    late_minutes?: number;
+    overtime_minutes?: number;
+    duration_minutes?: number;
 }
 
-interface Shift {
-    id: string;
+export interface Shift {
+    id: any;
     name: string;
-    startTime: string;
+    start_time: string;
+    end_time: string;
+    color?: string;
 }
-
-const MOCK_SHIFTS: Shift[] = [
-    { id: 's1', name: 'Shift Pagi', startTime: '07:00' },
-    { id: 's2', name: 'Shift Sore', startTime: '15:00' },
-];
-
-const MOCK_SCHEDULES: Record<string, string> = {
-    'EMP-1': 's1',
-    'EMP-2': 's1',
-    'EMP-3': 's2',
-};
 
 const DAYS_NAME = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 
@@ -44,7 +46,9 @@ export function AttendanceView({
     settings,
     userRole,
     dbInfo,
-    branchId
+    branchId,
+    shifts = [],
+    schedules = []
 }: { 
     logs: AttendanceLog[], 
     setLogs: any, 
@@ -54,7 +58,9 @@ export function AttendanceView({
     settings?: any,
     userRole?: string,
     dbInfo?: { url: string; error?: string | null },
-    branchId?: string
+    branchId?: string,
+    shifts?: Shift[],
+    schedules?: any[]
 }) {
     const isAtleastAdmin = userRole?.toLowerCase() === 'administrator' || userRole?.toLowerCase() === 'owner';
     const [tab, setTab] = useState<'scan' | 'history'>('scan');
@@ -63,6 +69,14 @@ export function AttendanceView({
     const [scannedData, setScannedData] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterDate, setFilterDate] = useState(() => {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    });
+    const [startDate, setStartDate] = useState(() => {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`; // Start of month
+    });
+    const [endDate, setEndDate] = useState(() => {
         const now = new Date();
         return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     });
@@ -146,6 +160,112 @@ export function AttendanceView({
         return () => stopCamera();
     }, [tab, isCameraEnabled, hideCamera]);
 
+    // Helper for actual log logic (Share across QR and FP)
+    const processAttendance = async (employee: Employee) => {
+        const now = new Date();
+        const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const existingLog = logs.find(l => (String(l.employee_id) === String(employee.id) || l.employeeName === employee.name) && l.date === localDate);
+
+        // Find schedule for today
+        const schedule = schedules.find(s => String(s.employee_id) === String(employee.id) && s.date === localDate);
+        const shift = schedule ? shifts.find(sh => String(sh.id) === String(schedule.shift_id)) : null;
+
+        if (existingLog && !existingLog.checkOut) {
+            const checkOutTime = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+            
+            // Calculate Overtime and Duration
+            let overtimeMinutes = 0;
+            let durationMinutes = 0;
+
+            const [inH, inM] = existingLog.checkIn.split(':').map(Number);
+            const inDate = new Date(now);
+            inDate.setHours(inH, inM, 0, 0);
+            durationMinutes = Math.round((now.getTime() - inDate.getTime()) / (1000 * 60));
+
+            // Determine effective shift times (Manual Override > Master Shift)
+            const effectiveEndTime = schedule?.custom_end_time || shift?.end_time || shift?.endTime;
+
+            if (effectiveEndTime) {
+                const [endH, endM] = effectiveEndTime.split(':').map(Number);
+                const shiftEndDate = new Date(now);
+                shiftEndDate.setHours(endH, endM, 0, 0);
+                
+                if (now > shiftEndDate) {
+                    overtimeMinutes = Math.round((now.getTime() - shiftEndDate.getTime()) / (1000 * 60));
+                }
+            }
+
+            if (onLogAttendance) {
+                await onLogAttendance({ 
+                    ...existingLog, 
+                    checkOut: checkOutTime, 
+                    overtime_minutes: overtimeMinutes,
+                    duration_minutes: durationMinutes,
+                    isNew: false 
+                }, 'update');
+            } else {
+                setLogs((prev: AttendanceLog[]) => prev.map(l => l.id === existingLog.id ? { 
+                    ...l, 
+                    checkOut: checkOutTime,
+                    overtime_minutes: overtimeMinutes,
+                    duration_minutes: durationMinutes
+                } : l));
+            }
+            toast.success(`Check-Out Berhasil: ${employee.name}${overtimeMinutes > 0 ? ` (Lembur: ${overtimeMinutes}m)` : ''}`);
+        } else if (existingLog && existingLog.checkOut) {
+            toast.info(`${employee.name} sudah selesai bekerja hari ini.`);
+        } else {
+            const dayOfWeek = now.getDay();
+            const isOffDay = employee.offDays?.includes(dayOfWeek);
+            const checkInTime = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+
+            let isLate = false;
+            let lateMinutes = 0;
+
+            // Determine effective shift times (Manual Override > Master Shift)
+            const effectiveStartTime = schedule?.custom_start_time || shift?.start_time || shift?.startTime;
+
+            if (effectiveStartTime) {
+                const [sHour, sMin] = effectiveStartTime.split(':').map(Number);
+                const shiftStartDate = new Date(now);
+                shiftStartDate.setHours(sHour, sMin, 0, 0);
+
+                if (now > shiftStartDate) {
+                    isLate = true;
+                    lateMinutes = Math.round((now.getTime() - shiftStartDate.getTime()) / (1000 * 60));
+                }
+            }
+            const newLog: AttendanceLog = {
+                id: Date.now(),
+                employee_id: Number(employee.id),
+                employeeName: employee.name,
+                date: localDate,
+                checkIn: checkInTime,
+                shift_id: shift ? Number(shift.id) : undefined,
+                late_minutes: lateMinutes,
+                status: isOffDay ? 'Off Day Work' : (isLate ? 'Late' : 'Present')
+            };
+
+            if (onLogAttendance) {
+                await onLogAttendance({ ...newLog, isNew: true }, 'create');
+            } else {
+                setLogs([newLog, ...logs]);
+            }
+
+            if (isOffDay) {
+                toast.warning(`${employee.name} hadir di hari libur (Off Day: ${DAYS_NAME[dayOfWeek]})`);
+            } else {
+                if (isLate) {
+                    toast.error(`Terlambat: ${employee.name} terlambat ${lateMinutes} menit.`);
+                } else {
+                    toast.success(`Check-In Berhasil: ${employee.name}`);
+                }
+            }
+        }
+        setScannedData(employee.barcode || `EMP-${employee.id}`);
+        setTimeout(() => setScannedData(null), 3000);
+    };
+
     const handleScan = async (code: string) => {
         if (scannedData === code && !pendingFpEmployee) return;
 
@@ -167,9 +287,8 @@ export function AttendanceView({
             // STEP 1: Check if we need Fingerprint Verification
             if (isFingerprintMode && isPrecisionMode && employee.fingerprint_template) {
                 setPendingFpEmployee(employee);
-                setFpTimeout(15); // 15 seconds to scan finger
+                setFpTimeout(15); 
                 
-                // Set a timeout to clear pending state
                 fpTimeoutRef.current = setInterval(() => {
                     setFpTimeout(prev => {
                         if (prev <= 1) {
@@ -185,120 +304,10 @@ export function AttendanceView({
                 return;
             }
 
-            setScannedData(code);
-            setPendingFpEmployee(null);
-            const now = new Date();
-            const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-            const existingLog = logs.find(l => l.employeeName === employee.name && l.date === localDate);
-
-            if (existingLog && !existingLog.checkOut) {
-                const checkOutTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-                if (onLogAttendance) {
-                    onLogAttendance({ ...existingLog, checkOut: checkOutTime, isNew: false });
-                } else {
-                    setLogs((prev: AttendanceLog[]) => prev.map(l => l.id === existingLog.id ? { ...l, checkOut: checkOutTime } : l));
-                }
-                toast.success(`Check-Out Berhasil: ${employee.name}`);
-            } else if (existingLog && existingLog.checkOut) {
-                toast.info(`${employee.name} sudah selesai bekerja hari ini.`);
-            } else {
-                const now = new Date();
-                const dayOfWeek = now.getDay();
-                const isOffDay = employee.offDays?.includes(dayOfWeek);
-
-                const shiftId = MOCK_SCHEDULES[`EMP-${employee.id}`];
-                const shift = MOCK_SHIFTS.find(s => s.id === shiftId);
-                const checkInTime = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-
-                let isLate = false;
-                if (shift) {
-                    const [sHour, sMin] = shift.startTime.split(':').map(Number);
-                    if (now.getHours() > sHour || (now.getHours() === sHour && now.getMinutes() > sMin)) {
-                        isLate = true;
-                    }
-                }
-
-                const newLog: AttendanceLog = {
-                    id: Date.now(),
-                    employeeName: employee.name,
-                    date: localDate,
-                    checkIn: checkInTime,
-                    status: isOffDay ? 'Off Day Work' : (isLate ? 'Late' : 'Present')
-                };
-
-                if (onLogAttendance) {
-                    onLogAttendance({ ...newLog, isNew: true });
-                } else {
-                    setLogs([newLog, ...logs]);
-                }
-
-                if (isOffDay) {
-                    toast.warning(`${employee.name} hadir di hari libur (Off Day: ${DAYS_NAME[dayOfWeek]})`);
-                } else {
-                    toast.success(`Check-In Berhasil: ${employee.name}`);
-                }
-            }
-            setScannedData(null);
-            setPendingFpEmployee(null);
+            await processAttendance(employee);
         } else {
             if (!scannedData) toast.error(`ID/QR Code tidak dikenali: ${code}`);
         }
-    };
-
-    // Helper for actual log logic (Share across QR and FP)
-    const processAttendance = async (employee: Employee) => {
-        const now = new Date();
-        const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-        const existingLog = logs.find(l => l.employeeName === employee.name && l.date === localDate);
-
-        if (existingLog && !existingLog.checkOut) {
-            const checkOutTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-            if (onLogAttendance) {
-                await onLogAttendance({ ...existingLog, checkOut: checkOutTime, isNew: false });
-            } else {
-                setLogs((prev: AttendanceLog[]) => prev.map(l => l.id === existingLog.id ? { ...l, checkOut: checkOutTime } : l));
-            }
-            toast.success(`Check-Out Berhasil: ${employee.name}`);
-        } else if (existingLog && existingLog.checkOut) {
-            toast.info(`${employee.name} sudah selesai bekerja hari ini.`);
-        } else {
-            const dayOfWeek = now.getDay();
-            const isOffDay = employee.offDays?.includes(dayOfWeek);
-
-            const shiftId = MOCK_SCHEDULES[`EMP-${employee.id}`];
-            const shift = MOCK_SHIFTS.find(s => s.id === shiftId);
-            const checkInTime = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-
-            let isLate = false;
-            if (shift) {
-                const [sHour, sMin] = shift.startTime.split(':').map(Number);
-                if (now.getHours() > sHour || (now.getHours() === sHour && now.getMinutes() > sMin)) {
-                    isLate = true;
-                }
-            }
-
-            const newLog: AttendanceLog = {
-                id: Date.now(),
-                employeeName: employee.name,
-                date: localDate,
-                checkIn: checkInTime,
-                status: isOffDay ? 'Off Day Work' : (isLate ? 'Late' : 'Present')
-            };
-
-            if (onLogAttendance) {
-                await onLogAttendance({ ...newLog, isNew: true });
-            } else {
-                setLogs([newLog, ...logs]);
-            }
-
-            if (isOffDay) {
-                toast.warning(`${employee.name} hadir di hari libur (Off Day: ${DAYS_NAME[dayOfWeek]})`);
-            } else {
-                toast.success(`Check-In Berhasil: ${employee.name}`);
-            }
-        }
-        setScannedData(employee.barcode || `EMP-${employee.id}`);
-        setTimeout(() => setScannedData(null), 3000);
     };
 
     // USB Fingerprint Scanner SDK Effect
@@ -476,42 +485,7 @@ export function AttendanceView({
     });
 
     const handleManualAttendance = async (employee: Employee) => {
-        const now = new Date();
-        const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-        const dayOfWeek = now.getDay();
-        const existingLog = logs.find(l => l.employeeName === employee.name && l.date === localDate);
-
-        if (existingLog && !existingLog.checkOut) {
-            const checkOutTime = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-            if (onLogAttendance) {
-                await onLogAttendance({ ...existingLog, checkOut: checkOutTime, isNew: false }, 'update');
-            } else {
-                setLogs((prev: AttendanceLog[]) => prev.map(l => l.id === existingLog.id ? { ...l, checkOut: checkOutTime } : l));
-            }
-            toast.success(`Check-Out Berhasil: ${employee.name}`);
-        } else if (existingLog && existingLog.checkOut) {
-            toast.info(`Sudah selesai bekerja hari ini.`);
-        } else {
-            const isOffDay = employee.offDays?.includes(dayOfWeek);
-            const newLog: AttendanceLog = {
-                id: Date.now(),
-                employeeName: employee.name,
-                date: localDate,
-                checkIn: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
-                status: isOffDay ? 'Off Day Work' : 'Present'
-            };
-
-            if (onLogAttendance) {
-                await onLogAttendance({ ...newLog, isNew: true }, 'create');
-            } else {
-                setLogs([newLog, ...logs]);
-            }
-            if (isOffDay) {
-                toast.warning(`Absensi Manual: ${employee.name} masuk di hari libur.`);
-            } else {
-                toast.success(`Absensi Manual Berhasil: ${employee.name}`);
-            }
-        }
+        await processAttendance(employee);
         setIsManualModalOpen(false);
     };
 
@@ -526,11 +500,78 @@ export function AttendanceView({
     };
 
     const filteredLogs = logs.filter(log => {
-        if (showAllHistory) return true; // Bypass all filters in debug mode
+        if (showAllHistory) return true;
         const matchesSearch = log.employeeName.toLowerCase().includes(searchQuery.toLowerCase());
-        const matchesDate = (filterDate === '' || log.date === filterDate);
-        return matchesSearch && matchesDate;
-    });
+        const matchesDateRange = (!startDate || log.date >= startDate) && (!endDate || log.date <= endDate);
+        return matchesSearch && matchesDateRange;
+    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    const exportToExcel = () => {
+        try {
+            const dataToExport = filteredLogs.map(log => ({
+                'Karyawan': log.employeeName,
+                'Cabang': log.branchName || '-',
+                'Tanggal': log.date,
+                'Masuk': log.checkIn,
+                'Pulang': log.checkOut || '-',
+                'Durasi (Menit)': log.duration_minutes || 0,
+                'Lembur (Menit)': log.overtime_minutes || 0,
+                'Telat (Menit)': log.late_minutes || 0,
+                'Status': log.status
+            }));
+
+            const ws = XLSX.utils.json_to_sheet(dataToExport);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Rekap Absensi");
+            
+            XLSX.writeFile(wb, `Laporan_Absensi_${startDate}_to_${endDate}.xlsx`);
+            toast.success('Laporan Excel berhasil diunduh');
+        } catch (error) {
+            console.error('Export Excel failed:', error);
+            toast.error('Gagal mengekspor Excel');
+        }
+    };
+
+    const exportToPDF = () => {
+        try {
+            const doc = new jsPDF();
+            
+            // Header
+            doc.setFontSize(18);
+            doc.text('Laporan Rekapitulasi Absensi', 14, 22);
+            doc.setFontSize(11);
+            doc.setTextColor(100);
+            doc.text(`Periode: ${startDate} s/d ${endDate}`, 14, 30);
+            doc.text(`Dicetak pada: ${new Date().toLocaleString('id-ID')}`, 14, 36);
+
+            const tableData = filteredLogs.map(log => [
+                log.employeeName,
+                log.date,
+                log.checkIn,
+                log.checkOut || '-',
+                log.duration_minutes ? `${Math.floor(log.duration_minutes/60)}j ${log.duration_minutes%60}m` : '-',
+                log.late_minutes || 0,
+                log.overtime_minutes || 0,
+                log.status
+            ]);
+
+            autoTable(doc, {
+                startY: 45,
+                head: [['Nama Staff', 'Tanggal', 'Masuk', 'Pulang', 'Durasi', 'Telat', 'OT', 'Status']],
+                body: tableData,
+                theme: 'striped',
+                headStyles: { fillColor: [59, 130, 246], textColor: 255 },
+                styles: { fontSize: 8 },
+                columnStyles: { 0: { cellWidth: 40 } }
+            });
+
+            doc.save(`Laporan_Absensi_${startDate}_to_${endDate}.pdf`);
+            toast.success('Laporan PDF berhasil diunduh');
+        } catch (error) {
+            console.error('Export PDF failed:', error);
+            toast.error('Gagal mengekspor PDF');
+        }
+    };
 
     return (
         <div className="p-8 h-full bg-gray-50/50 flex flex-col">
@@ -735,16 +776,187 @@ export function AttendanceView({
                 </div>
             ) : (
                 <div className="space-y-6">
-                    <div className="bg-white p-6 rounded-[28px] shadow-sm border border-gray-100 flex flex-wrap gap-4 items-center">
-                        <div className="relative flex-1 min-w-[300px]">
-                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                            <input type="text" placeholder="Cari nama karyawan..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-12 pr-4 py-3 text-sm bg-gray-50 border-none rounded-2xl outline-none ring-1 ring-gray-200 focus:ring-2 focus:ring-primary/20 transition-all" />
+                    {/* Summary Widgets */}
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                        {(() => {
+                            const now = new Date();
+                            const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                            const todayLogs = logs.filter(l => l.date === today);
+                            const todaySchedules = schedules.filter(s => s.date === today);
+                            
+                            const presentCount = todayLogs.length;
+                            const lateCount = todayLogs.filter(l => l.status === 'Late').length;
+                            const topupCount = todayLogs.filter(l => (l.overtime_minutes || 0) > 0).length;
+                            
+                            const absentEmployees = todaySchedules.filter(s => 
+                                !todayLogs.some(l => String(l.employee_id) === String(s.employee_id) || l.employeeName === s.employee_name)
+                            );
+
+                            return (
+                                <>
+                                    <div className="bg-white p-6 rounded-[32px] shadow-sm border border-gray-100 flex items-center gap-4">
+                                        <div className="w-12 h-12 rounded-2xl bg-gray-50 text-gray-600 flex items-center justify-center">
+                                            <Users className="w-6 h-6" />
+                                        </div>
+                                        <div>
+                                            <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest uppercase">Total Karyawan</div>
+                                            <div className="text-2xl font-black text-gray-800">{employees.length}</div>
+                                        </div>
+                                    </div>
+                                    <div className="bg-white p-6 rounded-[32px] shadow-sm border border-gray-100 flex items-center gap-4">
+                                        <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                                            <UserCheck className="w-6 h-6" />
+                                        </div>
+                                        <div>
+                                            <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest uppercase">Hadir Hari Ini</div>
+                                            <div className="text-2xl font-black text-gray-800">{presentCount} <span className="text-xs text-gray-400">/ {todaySchedules.length}</span></div>
+                                        </div>
+                                    </div>
+                                    <div className="bg-white p-6 rounded-[32px] shadow-sm border border-gray-100 flex items-center gap-4">
+                                        <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center">
+                                            <XCircle className="w-6 h-6" />
+                                        </div>
+                                        <div>
+                                            <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest uppercase">Tidak Masuk</div>
+                                            <div className="text-2xl font-black text-rose-600">{absentEmployees.length}</div>
+                                        </div>
+                                    </div>
+                                    <div className="bg-white p-6 rounded-[32px] shadow-sm border border-gray-100 flex items-center gap-4">
+                                        <div className="w-12 h-12 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center">
+                                            <Clock className="w-6 h-6" />
+                                        </div>
+                                        <div>
+                                            <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest uppercase">Terlambat</div>
+                                            <div className="text-2xl font-black text-orange-600">{lateCount}</div>
+                                        </div>
+                                    </div>
+                                    <div className="bg-white p-6 rounded-[32px] shadow-sm border border-gray-100 flex items-center gap-4">
+                                        <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                                            <Zap className="w-6 h-6" />
+                                        </div>
+                                        <div>
+                                            <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest uppercase">Lembur</div>
+                                            <div className="text-2xl font-black text-blue-600">{topupCount}</div>
+                                        </div>
+                                    </div>
+                                </>
+                            );
+                        })()}
+                    </div>
+
+                    {/* NEW: Today's Scheduled Staff List */}
+                    <div className="bg-white p-6 rounded-[32px] shadow-sm border border-gray-100">
+                        <div className="flex items-center justify-between mb-6">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                                    <Clock className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-black text-gray-800 uppercase tracking-widest">Jadwal Staff Hari Ini</h3>
+                                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-tighter">Monitoring Kehadiran Real-time</p>
+                                </div>
+                            </div>
                         </div>
-                        <div className="flex items-center gap-3 bg-gray-50 px-5 py-3 rounded-2xl border border-gray-200 shadow-inner">
-                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Filter Tanggal</span>
-                            <input type="date" value={filterDate} onChange={(e) => { setFilterDate(e.target.value); setShowAllHistory(false); }} className="bg-transparent border-none outline-none text-sm font-bold text-gray-700" />
+
+                        <div className="flex flex-wrap gap-4">
+                            {(() => {
+                                const now = new Date();
+                                const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                                const todaySchedules = schedules.filter(s => s.date === todayStr);
+                                const todayLogs = logs.filter(l => l.date === todayStr);
+
+                                if (todaySchedules.length === 0) {
+                                    return (
+                                        <div className="w-full py-10 text-center border-2 border-dashed border-gray-100 rounded-[32px] flex flex-col items-center gap-2">
+                                            <Users className="w-10 h-10 text-gray-200" />
+                                            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Tidak ada jadwal diatur hari ini</p>
+                                        </div>
+                                    );
+                                }
+
+                                return todaySchedules.map(sched => {
+                                    const log = todayLogs.find(l => String(l.employee_id) === String(sched.employee_id) || l.employeeName === (sched as any).employee_name);
+                                    const shift = shifts.find(s => String(s.id) === String(sched.shift_id));
+                                    const startTime = sched.custom_start_time || shift?.start_time || '--:--';
+                                    const endTime = sched.custom_end_time || shift?.end_time || '--:--';
+
+                                    return (
+                                        <div key={sched.id} className="bg-gray-50/50 border border-gray-100 p-4 rounded-3xl min-w-[200px] flex-1 flex flex-col gap-3 group hover:border-primary/20 transition-all">
+                                            <div className="flex items-start justify-between">
+                                                <div>
+                                                    <div className="font-black text-gray-800 text-sm group-hover:text-primary transition-colors">{(sched as any).employee_name}</div>
+                                                    <div className="text-[9px] font-black text-blue-600 uppercase tracking-tighter flex items-center gap-1 mt-0.5">
+                                                        <Zap className="w-3 h-3" /> {shift?.name || 'Custom Shift'}
+                                                    </div>
+                                                </div>
+                                                {log ? (
+                                                    <div className="w-6 h-6 rounded-lg bg-emerald-500 text-white flex items-center justify-center">
+                                                        <CheckCircle className="w-3.5 h-3.5" />
+                                                    </div>
+                                                ) : (
+                                                    <div className="w-6 h-6 rounded-lg bg-gray-200 text-gray-400 flex items-center justify-center">
+                                                        <Clock className="w-3.5 h-3.5" />
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="flex items-center justify-between pt-2 border-t border-gray-100/50">
+                                                <div className="flex flex-col">
+                                                    <span className="text-[8px] font-black text-gray-400 uppercase">Shift Time</span>
+                                                    <span className="text-[10px] font-black font-mono text-gray-700">{startTime} - {endTime}</span>
+                                                </div>
+                                                <div className="flex flex-col items-end">
+                                                    <span className="text-[8px] font-black text-gray-400 uppercase">Status</span>
+                                                    {log ? (
+                                                        <span className="text-[10px] font-black text-emerald-600 uppercase">Hadir {log.checkIn}</span>
+                                                    ) : (
+                                                        <span className="text-[10px] font-black text-orange-500 uppercase italic">Belum Hadir</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                });
+                            })()}
                         </div>
-                        <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-xl border border-blue-100">
+                    </div>
+
+                    <div className="flex flex-wrap items-end gap-4 bg-white p-6 rounded-[32px] shadow-sm border border-gray-100">
+                        <div className="flex-1 min-w-[200px] space-y-2">
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Cari Karyawan</label>
+                            <div className="relative">
+                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                <input 
+                                    type="text" 
+                                    placeholder="Ketik nama staff..." 
+                                    value={searchQuery}
+                                    onChange={e => setSearchQuery(e.target.value)}
+                                    className="w-full pl-11 pr-4 py-3 bg-gray-50 border-none rounded-2xl text-sm font-bold focus:ring-2 focus:ring-primary/20 transition-all placeholder:text-gray-300"
+                                />
+                            </div>
+                        </div>
+                        <div className="flex gap-3 items-end">
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Dari Tanggal</label>
+                                <input 
+                                    type="date" 
+                                    value={startDate}
+                                    onChange={e => setStartDate(e.target.value)}
+                                    className="px-4 py-3 bg-gray-50 border-none rounded-2xl text-sm font-bold focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Sampai Tanggal</label>
+                                <input 
+                                    type="date" 
+                                    value={endDate}
+                                    onChange={e => setEndDate(e.target.value)}
+                                    className="px-4 py-3 bg-gray-50 border-none rounded-2xl text-sm font-bold focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 px-4 py-2 bg-blue-50/50 rounded-2xl border border-blue-100/50">
                             <input 
                                 type="checkbox" 
                                 id="showAll" 
@@ -752,13 +964,35 @@ export function AttendanceView({
                                 onChange={(e) => setShowAllHistory(e.target.checked)}
                                 className="w-4 h-4 accent-primary"
                             />
-                            <label htmlFor="showAll" className="text-[10px] font-black text-blue-600 uppercase cursor-pointer">Lihat Semua Riwayat</label>
+                            <label htmlFor="showAll" className="text-[10px] font-black text-blue-600 uppercase cursor-pointer select-none">Semua</label>
                         </div>
-                        {isAtleastAdmin && (
-                            <Button className="rounded-2xl h-12 shadow-lg shadow-primary/20 font-bold" onClick={() => setIsAddHistoryModalOpen(true)}>
-                                <Plus className="w-4 h-4 mr-2" /> Tambah Riwayat
-                            </Button>
-                        )}
+                        
+                        <div className="flex gap-2 ml-auto">
+                            <button 
+                                onClick={exportToExcel}
+                                title="Ekspor ke Excel"
+                                className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl hover:bg-emerald-100 transition-all active:scale-95 border border-emerald-100 flex items-center gap-2 group"
+                            >
+                                <FileSpreadsheet className="w-5 h-5" />
+                                <span className="text-[10px] font-black uppercase tracking-widest hidden lg:block">Excel</span>
+                            </button>
+                            <button 
+                                onClick={exportToPDF}
+                                title="Unduh PDF"
+                                className="p-3 bg-red-50 text-red-600 rounded-2xl hover:bg-red-100 transition-all active:scale-95 border border-red-100 flex items-center gap-2 group"
+                            >
+                                <FileText className="w-5 h-5" />
+                                <span className="text-[10px] font-black uppercase tracking-widest hidden lg:block">PDF</span>
+                            </button>
+                            {isAtleastAdmin && (
+                                <button 
+                                    onClick={() => setIsAddHistoryModalOpen(true)}
+                                    className="px-6 py-3 bg-primary text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-primary/20 hover:shadow-xl hover:-translate-y-0.5 transition-all active:translate-y-0 flex items-center gap-2"
+                                >
+                                    <Plus className="w-4 h-4" /> Input Manual
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     <div className="bg-white rounded-[32px] shadow-sm border border-gray-100 overflow-hidden">
@@ -768,8 +1002,8 @@ export function AttendanceView({
                                     <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px]">Karyawan</th>
                                     <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px]">Cabang</th>
                                     <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px]">Tanggal</th>
-                                    <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px]">Check-In</th>
-                                    <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px]">Check-Out</th>
+                                    <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px]">Masuk / Pulang</th>
+                                    <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px]">Durasi / OT</th>
                                     <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px] text-center">Status</th>
                                     {isAtleastAdmin && <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px] text-right">Aksi</th>}
                                 </tr>
@@ -796,25 +1030,44 @@ export function AttendanceView({
                                                     <div className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-1 rounded-lg inline-block uppercase">{log.branchName || '-'}</div>
                                                 </td>
                                                 <td className="px-8 py-5 text-gray-500 font-medium tracking-tight italic">{log.date}</td>
-                                                <td className="px-8 py-5 font-black text-emerald-600">
-                                                    {log.checkIn?.includes('T') 
-                                                        ? new Date(log.checkIn).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-                                                        : log.checkIn}
+                                                <td className="px-8 py-5 font-black">
+                                                    <div className="flex flex-col">
+                                                        <span className="text-emerald-600">
+                                                            {log.checkIn?.includes('T') 
+                                                                ? new Date(log.checkIn).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+                                                                : log.checkIn}
+                                                        </span>
+                                                        <span className="text-red-600 text-[10px]">
+                                                            {log.checkOut 
+                                                                ? (log.checkOut.includes('T')
+                                                                    ? new Date(log.checkOut).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+                                                                    : log.checkOut)
+                                                                : '--:--'}
+                                                        </span>
+                                                    </div>
                                                 </td>
-                                                <td className="px-8 py-5 font-black text-red-600">
-                                                    {log.checkOut 
-                                                        ? (log.checkOut.includes('T')
-                                                            ? new Date(log.checkOut).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-                                                            : log.checkOut)
-                                                        : '--:--'}
+                                                <td className="px-8 py-5">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-gray-600">
+                                                            {log.duration_minutes ? `${Math.floor(log.duration_minutes / 60)}j ${log.duration_minutes % 60}m` : '-'}
+                                                        </span>
+                                                        {log.overtime_minutes ? (
+                                                            <span className="text-[10px] font-black text-blue-500">+{log.overtime_minutes}m Lembur</span>
+                                                        ) : null}
+                                                    </div>
                                                 </td>
                                                 <td className="px-8 py-5 text-center">
-                                                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ring-1 ${isOffDayWork ? 'bg-orange-50 text-orange-600 ring-orange-100' :
-                                                        log.status === 'Late' ? 'bg-yellow-50 text-yellow-600 ring-yellow-100' :
-                                                            'bg-emerald-50 text-emerald-600 ring-emerald-100'
-                                                        }`}>
-                                                        {isOffDayWork ? 'Lembur' : (log.status === 'Late' ? 'Terlambat' : 'Hadir')}
-                                                    </span>
+                                                    <div className="flex flex-col items-center gap-1">
+                                                        <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase ring-1 ${isOffDayWork ? 'bg-orange-50 text-orange-600 ring-orange-100' :
+                                                            log.status === 'Late' ? 'bg-yellow-50 text-yellow-600 ring-yellow-100' :
+                                                                'bg-emerald-50 text-emerald-600 ring-emerald-100'
+                                                            }`}>
+                                                            {isOffDayWork ? 'Lembur' : (log.status === 'Late' ? 'Terlambat' : 'Hadir')}
+                                                        </span>
+                                                        {log.late_minutes ? (
+                                                            <span className="text-[9px] font-bold text-rose-500">-{log.late_minutes}m</span>
+                                                        ) : null}
+                                                    </div>
                                                 </td>
                                                 {isAtleastAdmin && (
                                                     <td className="px-8 py-5 text-right">

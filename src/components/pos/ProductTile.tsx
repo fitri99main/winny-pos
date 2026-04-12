@@ -61,12 +61,6 @@ export function ProductTile({ product, onAddToCart }: ProductTileProps) {
           </span>
         </div>
       )}
-      {product.is_best_seller && (
-        <div className="absolute top-2 left-2 bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg flex items-center gap-1 z-10 animate-pulse">
-          <Star className="w-2.5 h-2.5 fill-current" />
-          <span>Terlaris</span>
-        </div>
-      )}
     </motion.button>
   );
 }

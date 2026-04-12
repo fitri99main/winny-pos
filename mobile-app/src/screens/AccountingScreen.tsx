@@ -12,8 +12,10 @@ import {
     ChevronLeft,
     Award,
     Clock,
-    Wallet
+    Wallet,
+    Printer
 } from 'lucide-react-native';
+import { PrinterManager } from '../lib/PrinterManager';
 import { useSession } from '../context/SessionContext';
 import DateStepper from '../components/DateStepper';
 
@@ -53,13 +55,18 @@ export default function AccountingScreen() {
 
     useFocusEffect(
         useCallback(() => {
-            if (currentBranchId) {
+            if (currentBranchId && !isNaN(Number(currentBranchId))) {
                 fetchDashboardData();
             }
         }, [filter, startDate, endDate, currentBranchId])
     );
 
     const fetchDashboardData = async () => {
+        const bId = currentBranchId;
+        if (!bId || isNaN(Number(bId))) {
+            setLoading(false);
+            return;
+        }
         try {
             setLoading(true);
             const now = new Date();
@@ -79,12 +86,6 @@ export default function AccountingScreen() {
                 endQueryDate.setHours(23, 59, 59, 999);
             }
 
-            // 1. Fetch Sales Summary
-            const bId = currentBranchId;
-            if (!bId) {
-                setLoading(false);
-                return;
-            }
 
             let salesQuery = supabase
                 .from('sales')
@@ -122,14 +123,14 @@ export default function AccountingScreen() {
                     quantity,
                     product_name,
                     product:product_id (category),
-                    sales!inner(date, branch_id, status)
+                    sale:sales!inner(date, branch_id, status)
                 `)
-                .eq('sales.branch_id', bId)
-                .in('sales.status', ['Paid', 'Completed', 'Served', 'Ready'])
-                .gte('sales.date', startQueryDate.toISOString());
+                .eq('sale.branch_id', bId)
+                .in('sale.status', ['Paid', 'Completed', 'Served', 'Ready'])
+                .gte('sale.date', startQueryDate.toISOString());
 
             if (endQueryDate) {
-                itemsQuery = itemsQuery.lte('sales.date', endQueryDate.toISOString());
+                itemsQuery = itemsQuery.lte('sale.date', endQueryDate.toISOString());
             }
 
             const { data: items, error: itemsError } = await itemsQuery;
@@ -179,6 +180,46 @@ export default function AccountingScreen() {
         }
     };
 
+    const handlePrintSummary = async () => {
+        try {
+            const hasPermission = isAdmin || (storeSettings && storeSettings.cashier_can_print_sales_summary);
+            if (!hasPermission) {
+                Alert.alert('Akses Ditolak', 'Anda tidak memiliki izin untuk mencetak laporan penjualan.');
+                return;
+            }
+
+            const periodLabel = filter === 'today' ? 'Hari Ini' : filter === 'week' ? '7 Hari Terakhir' : filter === 'month' ? '30 Hari Terakhir' : `${startDate} s/d ${endDate}`;
+            
+            // Collect all best sellers into one list for printing
+            const allBestSellers = [
+                ...makananBestSellers.map(b => ({ ...b, category: 'Makanan' })),
+                ...minumanBestSellers.map(b => ({ ...b, category: 'Minuman' })),
+                ...snackBestSellers.map(b => ({ ...b, category: 'Snack' })),
+                ...produkBestSellers.map(b => ({ ...b, category: 'Produk' }))
+            ].sort((a, b) => b.qty - a.qty).slice(0, 10);
+
+            const reportData = {
+                receiptHeader: storeSettings?.receipt_header,
+                address: storeSettings?.address,
+                phone: storeSettings?.phone,
+                dateRange: periodLabel,
+                totalOrders: stats.totalSales,
+                totalSales: stats.totalOmzet,
+                productSummary: allBestSellers.map(p => ({
+                    name: p.name,
+                    quantity: p.qty,
+                    amount: 0 // We don't have individual amounts here, but qty is enough for summary
+                })),
+                generatedBy: isAdmin ? 'Admin' : 'Kasir',
+                receipt_paper_width: storeSettings?.receipt_paper_width || '58mm'
+            };
+
+            await PrinterManager.printSalesReport(reportData);
+        } catch (error: any) {
+            Alert.alert('Error', error.message || 'Gagal mencetak laporan');
+        }
+    };
+
     const formatCurrency = (value: number) => {
         return new Intl.NumberFormat('id-ID', { 
             style: 'currency', 
@@ -210,6 +251,12 @@ export default function AccountingScreen() {
                     <Text style={styles.headerTitle}>Laporan Penjualan</Text>
                     <Text style={{ fontSize: 12, color: '#64748b' }}>{branchName}</Text>
                 </View>
+                <TouchableOpacity 
+                    onPress={handlePrintSummary} 
+                    style={{ marginLeft: 'auto', padding: 8 }}
+                >
+                    <Printer size={24} color="#ea580c" />
+                </TouchableOpacity>
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>

@@ -203,9 +203,10 @@ export function SessionHistoryView() {
 
     // Calculate summary stats
     const totalSessions = filteredSessions.length;
+    const closedSessionsCount = filteredSessions.filter(s => s.status === 'Closed').length;
     const totalSales = filteredSessions.reduce((sum, s) => sum + s.total_sales, 0);
     const totalVariance = filteredSessions.filter(s => s.status === 'Closed').reduce((sum, s) => sum + (s.difference || 0), 0);
-    const avgVariance = totalSessions > 0 ? totalVariance / filteredSessions.filter(s => s.status === 'Closed').length : 0;
+    const avgVariance = closedSessionsCount > 0 ? totalVariance / closedSessionsCount : 0;
 
     const confirmDelete = (session: SessionHistory) => {
         setSessionToDelete(session);
@@ -294,7 +295,7 @@ export function SessionHistoryView() {
                     </Button>
                 </div>
             </div>
-
+            
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-100 dark:border-gray-700">

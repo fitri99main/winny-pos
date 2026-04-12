@@ -110,30 +110,44 @@ export const OfflineService = {
 
         for (const sale of queue) {
             try {
-                // 1. Insert Sale
-                const { data: newSale, error: saleError } = await supabase
+                // [IDEMPOTENCY CHECK] Check if Order No already exists
+                const { data: existingSale } = await supabase
                     .from('sales')
-                    .insert([{
-                        order_no: sale.order_no,
-                        branch_id: sale.branch_id,
-                        customer_name: sale.customer_name,
-                        customer_id: sale.customer_id,
-                        table_no: sale.table_no,
-                        waiter_name: sale.waiter_name,
-                        total_amount: sale.total_amount,
-                        discount: sale.discount,
-                        tax: sale.tax || 0,
-                        service_charge: sale.service_charge || 0,
-                        status: sale.status,
-                        payment_method: sale.payment_method,
-                        date: sale.date,
-                        paid_amount: sale.paid_amount,
-                        change: sale.change
-                    }])
-                    .select()
-                    .single();
+                    .select('id')
+                    .eq('order_no', sale.order_no)
+                    .maybeSingle();
 
-                if (saleError) throw saleError;
+                let newSale;
+                if (existingSale) {
+                    console.log('[OfflineService] Order already exists, skipping insert:', sale.order_no);
+                    newSale = existingSale;
+                } else {
+                    // 1. Insert Sale
+                    const { data: insertedSale, error: saleError } = await supabase
+                        .from('sales')
+                        .insert([{
+                            order_no: sale.order_no,
+                            branch_id: sale.branch_id,
+                            customer_name: sale.customer_name,
+                            customer_id: sale.customer_id,
+                            table_no: sale.table_no,
+                            waiter_name: sale.waiter_name,
+                            total_amount: sale.total_amount,
+                            discount: sale.discount,
+                            tax: sale.tax || 0,
+                            service_charge: sale.service_charge || 0,
+                            status: sale.status,
+                            payment_method: sale.payment_method,
+                            date: sale.date,
+                            paid_amount: sale.paid_amount,
+                            change: sale.change
+                        }])
+                        .select()
+                        .single();
+
+                    if (saleError) throw saleError;
+                    newSale = insertedSale;
+                }
 
                 // 2. Insert Items - Map to correct schema columns
                 const cleanedItems = sale.items.map(item => ({

@@ -66,7 +66,8 @@ export function UsersView({ branches: propsBranches = [] }: { branches?: any[] }
     // Auto-select first branch when loaded
     useEffect(() => {
         if (allBranches.length > 0 && !newUser.branchId && !editingUser) {
-            setNewUser(prev => ({ ...prev, branchId: allBranches[0].id.toString() }));
+            // Ensure we use string for consistent comparison in Select
+            setNewUser(prev => ({ ...prev, branchId: String(allBranches[0].id) }));
         }
     }, [allBranches, editingUser, newUser.branchId]);
 
@@ -280,7 +281,7 @@ export function UsersView({ branches: propsBranches = [] }: { branches?: any[] }
             email: user.email || '',
             password: '', // Password empty means don't change
             role: user.role || (roles.length > 0 ? roles[0].name : ''),
-            branchId: user.branchId || user.branch_id || '7'
+            branchId: String(user.branchId || user.branch_id || '7')
         });
         setIsAddUserModalOpen(true);
     };
@@ -323,7 +324,7 @@ export function UsersView({ branches: propsBranches = [] }: { branches?: any[] }
                         full_name: newUser.name,
                         username: newUser.email.split('@')[0],
                         role: newUser.role || 'Kasir',
-                        branch_id: newUser.branchId || allBranches[0]?.id?.toString() || '7'
+                        branch_id: String(newUser.branchId || allBranches[0]?.id || '7')
                     }
                 }
             });
@@ -358,18 +359,17 @@ export function UsersView({ branches: propsBranches = [] }: { branches?: any[] }
                     username: newUser.email.split('@')[0],
                     email: newUser.email,
                     full_name: newUser.name,
-                    branch_id: newUser.branchId || allBranches[0]?.id?.toString() || '7'
+                    branch_id: String(newUser.branchId || allBranches[0]?.id || '7')
                 };
 
                 console.log('[UsersView] FORCING Profile update payload:', payload);
 
                 console.log('[UsersView] FORCING Profile update with role:', finalRole);
                 
-                // Use UPDATE instead of UPSERT to specifically override the trigger's result
+                // Use UPSERT to ensure the profile is created whether or not a database trigger exists
                 const { error: profileError } = await supabase
                     .from('profiles')
-                    .update(payload)
-                    .eq('id', newUserId);
+                    .upsert({ ...payload, id: newUserId });
 
                 if (profileError) {
                     console.warn('[UsersView] Manual Profile Update prevented (likely RLS). Relying on Auth Metadata.', profileError.message);
@@ -383,7 +383,7 @@ export function UsersView({ branches: propsBranches = [] }: { branches?: any[] }
             toast.success('Pengguna berhasil dibuat! Data profil sinkron.');
 
             // 4. CLEANUP & REFRESH
-            setNewUser({ name: '', email: '', password: '', role: (roles.length > 0 ? roles[0].name : 'Kasir'), branchId: allBranches[0]?.id || '7' });
+            setNewUser({ name: '', email: '', password: '', role: (roles.length > 0 ? roles[0].name : 'Kasir'), branchId: String(allBranches[0]?.id || '7') });
             setIsAddUserModalOpen(false);
             fetchUsers(); // Refresh list
 
@@ -406,7 +406,7 @@ export function UsersView({ branches: propsBranches = [] }: { branches?: any[] }
                     full_name: newUser.name, // Keep synced
                     email: newUser.email,    // Now allowing email update
                     role: newUser.role,
-                    branch_id: newUser.branchId,
+                    branch_id: String(newUser.branchId || allBranches[0]?.id || '7'),
                 };
 
                 const { error: profileError } = await supabase
@@ -452,8 +452,15 @@ export function UsersView({ branches: propsBranches = [] }: { branches?: any[] }
         if (activeTab === 'roles') {
             setIsAddRoleModalOpen(true);
         } else {
-            // Set default role for new user
-            setNewUser(prev => ({ ...prev, role: prev.role || (roles.length > 0 ? roles[0].name : 'Administrator') }));
+            // Set default role and branch for new user
+            const defaultRole = roles.find(r => r.name === 'Administrator') || roles[0];
+            const defaultBranch = allBranches[0];
+            
+            setNewUser(prev => ({ 
+                ...prev, 
+                role: prev.role || defaultRole?.name || 'Administrator',
+                branchId: prev.branchId || String(defaultBranch?.id || '7')
+            }));
             setIsAddUserModalOpen(true);
         }
     };
@@ -1013,7 +1020,7 @@ export function UsersView({ branches: propsBranches = [] }: { branches?: any[] }
                                         email: '', 
                                         password: '', 
                                         role: defaultRoleObj?.name || 'Administrator', 
-                                        branchId: defaultBranch?.id || '7' 
+                                        branchId: String(defaultBranch?.id || '7') 
                                     });
                                 }}
                                 className="p-1 hover:bg-gray-200 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"

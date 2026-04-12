@@ -780,6 +780,22 @@ export function SettingsView({
                                 />
                             </div>
 
+                            <div className="flex items-center justify-between p-4 bg-white rounded-2xl border border-blue-100 shadow-sm">
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-indigo-50 p-2 rounded-xl border border-indigo-100">
+                                        <Zap className="w-5 h-5 text-indigo-600" />
+                                    </div>
+                                    <div>
+                                        <h4 className="font-bold text-gray-800">Tombol Absensi Melayang (FAB)</h4>
+                                        <p className="text-[10px] text-gray-400">Tampilkan tombol akses cepat absensi di pojok kanan bawah Dashboard.</p>
+                                    </div>
+                                </div>
+                                <Switch
+                                    checked={localSettings.show_attendance_fab !== false}
+                                    onCheckedChange={c => handleLocalChange({ ...localSettings, show_attendance_fab: c })}
+                                />
+                            </div>
+
                             {localSettings.enable_fingerprint && (
                                 <div className="space-y-4 pt-2 animate-in slide-in-from-top-2 duration-200">
                                     <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-blue-100">
@@ -1353,6 +1369,28 @@ export function SettingsView({
                                         />
                                     </div>
                                 </div>
+                            </div>
+
+                            {/* [NEW] Print on Hold Setting */}
+                            <div className="p-6 rounded-2xl border border-orange-200 bg-orange-50/20 space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center">
+                                            <Zap className="w-5 h-5 text-orange-600" />
+                                        </div>
+                                        <div>
+                                            <h4 className="font-bold text-gray-800">Cetak Produksi saat HOLD</h4>
+                                            <p className="text-xs text-gray-500">Kirim pesanan ke Bar/Dapur saat menangguhkan transaksi</p>
+                                        </div>
+                                    </div>
+                                    <Switch
+                                        checked={localSettings.enable_print_at_hold || false}
+                                        onCheckedChange={c => handleLocalChange({ ...localSettings, enable_print_at_hold: c })}
+                                    />
+                                </div>
+                                <p className="text-[10px] text-gray-400 italic font-medium">
+                                    * Jika aktif, sistem akan langsung mencetak ke area produksi meskipun pembayaran belum selesai.
+                                </p>
                             </div>
 
                             {/* Cashier Printer */}

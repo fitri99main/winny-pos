@@ -4,6 +4,7 @@ import { Button } from '../ui/button';
 import { toast } from 'sonner';
 import { useBarcodeScanner } from '../../hooks/useBarcodeScanner';
 import { PettyCashService } from '../../lib/PettyCashService';
+import { DateRangePicker } from '../shared/DateRangePicker';
 
 // --- Types ---
 
@@ -58,6 +59,11 @@ export function PurchasesView({
     const [activeTab, setActiveTab] = useState<'history' | 'input' | 'returns'>('history');
     const [searchQuery, setSearchQuery] = useState('');
     const [returnSearchQuery, setReturnSearchQuery] = useState('');
+    const [startDate, setStartDate] = useState(() => {
+        const date = new Date();
+        return new Date(date.getFullYear(), date.getMonth(), 1).toISOString().split('T')[0];
+    });
+    const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
 
     // Form Tracking
     const [inputForm, setInputForm] = useState<Partial<PurchaseOrder>>({
@@ -253,11 +259,16 @@ export function PurchasesView({
     };
 
 
-    const filteredPurchases = purchases.filter(p =>
-        (!currentBranchId || String(p.branch_id) === String(currentBranchId) || !p.branch_id) &&
-        ((p.purchase_no || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-            (p.supplier_name || '').toLowerCase().includes(searchQuery.toLowerCase()))
-    );
+    const filteredPurchases = purchases.filter(p => {
+        const matchesBranch = !currentBranchId || String(p.branch_id) === String(currentBranchId) || !p.branch_id;
+        const matchesSearch = (p.purchase_no || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                             (p.supplier_name || '').toLowerCase().includes(searchQuery.toLowerCase());
+        
+        const pDate = p.date ? String(p.date).split('T')[0] : '';
+        const matchesDate = pDate >= startDate && pDate <= endDate;
+
+        return matchesBranch && matchesSearch && matchesDate;
+    }).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     const filteredReturns = returns.filter(r =>
         (!currentBranchId || String(r.branch_id) === String(currentBranchId) || !r.branch_id) &&
@@ -272,14 +283,24 @@ export function PurchasesView({
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="p-4 border-b border-gray-100 bg-gray-50/30">
                 <div className="flex justify-between items-center">
-                    <div className="relative max-w-md w-full">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                            type="text"
-                            placeholder="Cari No. PO atau Supplier..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2.5 text-sm border rounded-xl"
+                    <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
+                        <div className="relative max-w-xs w-full">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input
+                                type="text"
+                                placeholder="Cari No. PO atau Supplier..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full pl-10 pr-4 py-2 text-sm border rounded-xl"
+                            />
+                        </div>
+                        <DateRangePicker 
+                            startDate={startDate}
+                            endDate={endDate}
+                            onChange={(range) => {
+                                setStartDate(range.startDate);
+                                setEndDate(range.endDate);
+                            }}
                         />
                     </div>
                     <Button onClick={() => setActiveTab('input')} className="gap-2">

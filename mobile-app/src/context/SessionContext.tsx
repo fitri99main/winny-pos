@@ -128,9 +128,27 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             const name = profileData?.full_name || profileData?.name || user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'User';
             setUserName(name);
             
-            if (profileData?.branch_id) {
-                const bId = String(profileData.branch_id);
-                if (bId !== currentBranchId) setCurrentBranchId(bId);
+            let bId = profileData?.branch_id ? String(profileData.branch_id) : '';
+            
+            // If branch_id is still empty but user is logged in, try to find a default
+            if (!bId || bId === '') {
+                // Prioritize 'Winny Coffee PNK' (ID 7) if it exists, otherwise use first available
+                const { data: pnkBranch } = await supabase.from('branches').select('id').eq('id', 7).maybeSingle();
+                if (pnkBranch) {
+                    bId = '7';
+                } else {
+                    const { data: branches } = await supabase.from('branches').select('id').limit(1);
+                    if (branches && branches.length > 0) {
+                        bId = String(branches[0].id);
+                    } else {
+                        bId = '1'; // Absolute fallback
+                    }
+                }
+            }
+            
+            if (bId !== currentBranchId) {
+                console.log('[SessionContext] setting currentBranchId to:', bId);
+                setCurrentBranchId(bId);
             }
 
             // Process Settings
