@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
     QrCode, History, Camera, UserCheck, XCircle, Search, Zap, Plus, X, 
-    AlertCircle, RefreshCw, ExternalLink, Clock, Download, FileText, FileSpreadsheet, Users
+    AlertCircle, RefreshCw, ExternalLink, Clock, Download, FileText, FileSpreadsheet, Users,
+    CheckCircle
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -183,7 +184,7 @@ export function AttendanceView({
             durationMinutes = Math.round((now.getTime() - inDate.getTime()) / (1000 * 60));
 
             // Determine effective shift times (Manual Override > Master Shift)
-            const effectiveEndTime = schedule?.custom_end_time || shift?.end_time || shift?.endTime;
+            const effectiveEndTime = schedule?.custom_end_time || shift?.end_time;
 
             if (effectiveEndTime) {
                 const [endH, endM] = effectiveEndTime.split(':').map(Number);
@@ -223,7 +224,7 @@ export function AttendanceView({
             let lateMinutes = 0;
 
             // Determine effective shift times (Manual Override > Master Shift)
-            const effectiveStartTime = schedule?.custom_start_time || shift?.start_time || shift?.startTime;
+            const effectiveStartTime = schedule?.custom_start_time || shift?.start_time;
 
             if (effectiveStartTime) {
                 const [sHour, sMin] = effectiveStartTime.split(':').map(Number);
