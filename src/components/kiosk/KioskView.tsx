@@ -90,9 +90,6 @@ export function KioskView() {
         window.addEventListener('storage', handleForceOffline);
         window.addEventListener('force-offline-change', handleForceOffline);
 
-        // Set Kiosk Mode Flag
-        localStorage.setItem('app_mode', 'kiosk');
-
         // Check for URL Parameters (Deep Linking)
         const urlParams = new URLSearchParams(window.location.search);
         const branchParam = urlParams.get('branch_id');

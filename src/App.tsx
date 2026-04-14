@@ -33,7 +33,7 @@ function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const isKioskMode = localStorage.getItem('app_mode') === 'kiosk';
+
 
   useEffect(() => {
     if (searchParams.get('setup') === 'kiosk') {
@@ -48,27 +48,18 @@ function App() {
         <SessionGuardProvider>
           <Suspense fallback={<p>Loading...</p>}>
             <Routes>
-              {isKioskMode ? (
-                <>
-                  <Route path="/kiosk" element={<KioskView />} />
-                  <Route path="*" element={<Navigate to="/kiosk" replace />} />
-                </>
-              ) : (
-                <>
-                  <Route path="/login" element={<LoginPage />} />
-                  <Route path="/kiosk" element={<KioskView />} />
-                  <Route path="/attendance-kiosk" element={<AttendanceKiosk />} />
-                  <Route path="/ess" element={<ESSView />} />
-                  <Route
-                    path="/"
-                    element={
-                      <ProtectedRoute>
-                        <Home />
-                      </ProtectedRoute>
-                    }
-                  />
-                </>
-              )}
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/kiosk" element={<KioskView />} />
+              <Route path="/attendance-kiosk" element={<AttendanceKiosk />} />
+              <Route path="/ess" element={<ESSView />} />
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
+                    <Home />
+                  </ProtectedRoute>
+                }
+              />
             </Routes>
           </Suspense>
         </SessionGuardProvider>

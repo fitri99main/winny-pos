@@ -250,7 +250,9 @@ export function CashierInterface({
     let currentProducts = (products || []).filter(p => p && p.id); // SAFEGUARD: Remove invalid items early
 
     if (activeCategory !== 'Semua') {
-      currentProducts = currentProducts.filter((p) => p.category === activeCategory);
+      currentProducts = currentProducts.filter((p) => 
+        (p.category || '').trim().toLowerCase() === activeCategory.trim().toLowerCase()
+      );
     }
 
     // Filter by sellable status and stock readiness
