@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../ui/button';
-import { Store, Loader2, Lock, Mail, UserPlus, LogIn, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Lock, Mail, UserPlus, LogIn, Eye, EyeOff, User } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 
@@ -99,16 +99,20 @@ export default function LoginPage() {
         <div className="min-h-screen w-full flex bg-gray-50">
             {/* Left Side - Brand / Image */}
             <div className="hidden lg:flex lg:w-1/2 bg-blue-600 relative overflow-hidden items-center justify-center">
-                <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-indigo-700 z-10" />
+                <div className="absolute inset-0 bg-gradient-to-br from-[#0f5f7f] via-[#0c5874] to-[#083b51] z-10" />
                 <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1556742049-0cfed4f7a07d?q=80&w=2070&auto=format&fit=crop')] bg-cover bg-center opacity-30 mix-blend-overlay" />
 
                 <div className="relative z-20 text-center p-12">
-                    <div className="w-24 h-24 bg-primary/20 backdrop-blur-md rounded-3xl flex items-center justify-center mx-auto mb-8 shadow-2xl shadow-primary/20 border border-white/10">
-                        <Store className="w-12 h-12 text-white" />
+                    <div className="mx-auto mb-8 w-64 rounded-[2rem] bg-white/95 p-5 shadow-2xl shadow-black/20 backdrop-blur-sm">
+                        <img
+                            src="/winny-coffee-login.jpg"
+                            alt="Logo Winny Coffee"
+                            className="h-auto w-full rounded-2xl object-contain"
+                        />
                     </div>
-                    <h1 className="text-5xl font-bold text-white mb-6 tracking-tight">Sistem WinPOS</h1>
+                    <h1 className="text-5xl font-bold text-white mb-6 tracking-tight">ERPPOS</h1>
                     <p className="text-xl text-gray-300 max-w-md mx-auto leading-relaxed">
-                        Solusi Point of Sales paling canggih dan elegan untuk pertumbuhan bisnis Anda.
+
                     </p>
                 </div>
 
@@ -121,8 +125,12 @@ export default function LoginPage() {
             <div className="flex-1 flex flex-col justify-center items-center p-8 lg:p-12 relative">
                 <div className="w-full max-w-md space-y-8">
                     <div className="text-center lg:text-left">
-                        <div className="lg:hidden w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-4">
-                            <Store className="w-6 h-6 text-primary" />
+                        <div className="lg:hidden mx-auto mb-5 w-40 rounded-3xl bg-white p-3 shadow-lg shadow-slate-200/80">
+                            <img
+                                src="/winny-coffee-login.jpg"
+                                alt="Logo Winny Coffee"
+                                className="h-auto w-full rounded-2xl object-contain"
+                            />
                         </div>
                         <h2 className="text-3xl font-bold text-gray-900 tracking-tight">
                             {isSignUp ? 'Buat Akun' : 'Selamat Datang'}
@@ -137,7 +145,7 @@ export default function LoginPage() {
                             <div className="space-y-2">
                                 <label className="text-sm font-medium text-gray-700 ml-1">Nama Lengkap</label>
                                 <div className="relative">
-                                    <Store className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                                    <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                                     <input
                                         type="text"
                                         required
