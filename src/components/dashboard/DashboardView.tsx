@@ -87,25 +87,60 @@ export function DashboardView({
 
     // --- Best Sellers Calculation ---
     const makananSales: Record<string, number> = {};
-    const minumanSales: Record<string, number> = {};
+    const kopiSales: Record<string, number> = {};
+    const nonKopiSales: Record<string, number> = {};
     const snackSales: Record<string, number> = {};
     const produkSales: Record<string, number> = {};
+
+    // Keywords that indicate a coffee-based drink (check product name)
+    const coffeeNameKeywords = ['kopi', 'coffee', 'espresso', 'latte', 'cappuccino', 'americano', 'mocha', 'macchiato', 'affogato', 'lungo', 'ristretto', 'flat white', 'cold brew', 'v60', 'vietnam drip', 'frappe'];
+    const isCoffeeByName = (name: string) => coffeeNameKeywords.some(kw => name.toLowerCase().includes(kw));
+
+    // Drink-related category keywords (other than specific kopi/non-kopi)
+    const drinkCategoryKeywords = ['minum', 'teh', 'jus', 'juice', 'susu', 'milk', 'tea', 'soda', 'es ', 'ice', 'minuman', 'drink', 'beverage', 'smoothie', 'yogurt'];
+    const isDrinkCategory = (cat: string) => drinkCategoryKeywords.some(kw => cat.includes(kw));
 
     (sales || []).forEach(sale => {
         if (sale.status !== 'Returned' && Array.isArray(sale.productDetails)) {
             sale.productDetails.forEach((item: any) => {
                 if (item && item.name) {
                     const category = (item.category || '').toLowerCase();
-                    const lowerName = item.name.toLowerCase();
-                    
+                    const qty = item.quantity || 0;
+
                     if (category.includes('makan')) {
-                        makananSales[item.name] = (makananSales[item.name] || 0) + (item.quantity || 0);
-                    } else if (category.includes('minum')) {
-                        minumanSales[item.name] = (minumanSales[item.name] || 0) + (item.quantity || 0);
+                        // Makanan
+                        makananSales[item.name] = (makananSales[item.name] || 0) + qty;
                     } else if (category.includes('snack')) {
-                        snackSales[item.name] = (snackSales[item.name] || 0) + (item.quantity || 0);
+                        // Snack
+                        snackSales[item.name] = (snackSales[item.name] || 0) + qty;
                     } else if (category.includes('kemasan')) {
-                        produkSales[item.name] = (produkSales[item.name] || 0) + (item.quantity || 0);
+                        // Produk Kemasan
+                        produkSales[item.name] = (produkSales[item.name] || 0) + qty;
+                    } else if (
+                        // Category explicitly "non kopi" / "non-kopi" → always Non-Kopi
+                        category.includes('non kopi') || category.includes('non-kopi')
+                    ) {
+                        nonKopiSales[item.name] = (nonKopiSales[item.name] || 0) + qty;
+                    } else if (
+                        // Category explicitly "kopi" (without "non") → always Kopi
+                        category.includes('kopi') && !category.includes('non')
+                    ) {
+                        kopiSales[item.name] = (kopiSales[item.name] || 0) + qty;
+                    } else if (
+                        // Any other drink-related category → split by product name
+                        isDrinkCategory(category)
+                    ) {
+                        if (isCoffeeByName(item.name)) {
+                            kopiSales[item.name] = (kopiSales[item.name] || 0) + qty;
+                        } else {
+                            nonKopiSales[item.name] = (nonKopiSales[item.name] || 0) + qty;
+                        }
+                    } else if (
+                        // Fallback: product name itself sounds like coffee/drink
+                        // but no clear category — classify by name
+                        isCoffeeByName(item.name)
+                    ) {
+                        kopiSales[item.name] = (kopiSales[item.name] || 0) + qty;
                     }
                 }
             });
@@ -117,7 +152,12 @@ export function DashboardView({
         .sort((a, b) => b.value - a.value)
         .slice(0, 3);
 
-    const minumanBestSellers = Object.entries(minumanSales)
+    const kopiBestSellers = Object.entries(kopiSales)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 3);
+
+    const nonKopiBestSellers = Object.entries(nonKopiSales)
         .map(([name, value]) => ({ name, value }))
         .sort((a, b) => b.value - a.value)
         .slice(0, 3);
@@ -309,14 +349,14 @@ export function DashboardView({
                         </button>
                     </div>
                     <div className="flex-1 min-h-0 w-full overflow-y-auto pr-1">
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-6 mt-2">
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-4 mt-2">
                             {/* Makanan */}
                             <div className="flex flex-col">
-                                <div className="flex items-center gap-1.5 mb-2">
+                                <div className="flex items-center gap-1.5 mb-1.5">
                                     <div className="w-1 h-3 bg-red-500 rounded-full" />
                                     <h4 className="text-[11px] font-extrabold text-gray-800 uppercase tracking-wider">Makanan</h4>
                                 </div>
-                                <div className="h-28">
+                                <div className="h-24">
                                     <ResponsiveContainer width="100%" height="100%">
                                         <BarChart layout="vertical" data={makananBestSellers} margin={{ left: -10, right: 20 }}>
                                             <XAxis type="number" hide />
@@ -328,31 +368,57 @@ export function DashboardView({
                                 </div>
                             </div>
 
-                            {/* Minuman */}
+                            {/* Kopi */}
                             <div className="flex flex-col">
-                                <div className="flex items-center gap-1.5 mb-2">
-                                    <div className="w-1 h-3 bg-blue-500 rounded-full" />
-                                    <h4 className="text-[11px] font-extrabold text-gray-800 uppercase tracking-wider">Minuman</h4>
+                                <div className="flex items-center gap-1.5 mb-1.5">
+                                    <div className="w-1 h-3 bg-amber-700 rounded-full" />
+                                    <h4 className="text-[11px] font-extrabold text-gray-800 uppercase tracking-wider">☕ Kopi</h4>
                                 </div>
-                                <div className="h-28">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <BarChart layout="vertical" data={minumanBestSellers} margin={{ left: -10, right: 20 }}>
-                                            <XAxis type="number" hide />
-                                            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={90} tick={{ fontSize: 10, fill: '#374151', fontWeight: '600' }} />
-                                            <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                                            <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={10} />
-                                        </BarChart>
-                                    </ResponsiveContainer>
+                                <div className="h-24">
+                                    {kopiBestSellers.length > 0 ? (
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart layout="vertical" data={kopiBestSellers} margin={{ left: -10, right: 20 }}>
+                                                <XAxis type="number" hide />
+                                                <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={90} tick={{ fontSize: 10, fill: '#374151', fontWeight: '600' }} />
+                                                <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                                                <Bar dataKey="value" fill="#92400e" radius={[0, 4, 4, 0]} barSize={10} />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    ) : (
+                                        <div className="h-full flex items-center justify-center text-[10px] text-gray-400 italic">Belum ada data</div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Non-Kopi */}
+                            <div className="flex flex-col">
+                                <div className="flex items-center gap-1.5 mb-1.5">
+                                    <div className="w-1 h-3 bg-cyan-500 rounded-full" />
+                                    <h4 className="text-[11px] font-extrabold text-gray-800 uppercase tracking-wider">🥤 Non-Kopi</h4>
+                                </div>
+                                <div className="h-24">
+                                    {nonKopiBestSellers.length > 0 ? (
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart layout="vertical" data={nonKopiBestSellers} margin={{ left: -10, right: 20 }}>
+                                                <XAxis type="number" hide />
+                                                <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={90} tick={{ fontSize: 10, fill: '#374151', fontWeight: '600' }} />
+                                                <Tooltip cursor={{ fill: '#f9fafb' }} contentStyle={{ borderRadius: '8px', fontSize: '10px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                                                <Bar dataKey="value" fill="#06b6d4" radius={[0, 4, 4, 0]} barSize={10} />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    ) : (
+                                        <div className="h-full flex items-center justify-center text-[10px] text-gray-400 italic">Belum ada data</div>
+                                    )}
                                 </div>
                             </div>
 
                             {/* Snack */}
                             <div className="flex flex-col">
-                                <div className="flex items-center gap-1.5 mb-2">
+                                <div className="flex items-center gap-1.5 mb-1.5">
                                     <div className="w-1 h-3 bg-orange-500 rounded-full" />
                                     <h4 className="text-[11px] font-extrabold text-gray-800 uppercase tracking-wider">Snack</h4>
                                 </div>
-                                <div className="h-28">
+                                <div className="h-24">
                                     <ResponsiveContainer width="100%" height="100%">
                                         <BarChart layout="vertical" data={snackBestSellers} margin={{ left: -10, right: 20 }}>
                                             <XAxis type="number" hide />
@@ -364,13 +430,13 @@ export function DashboardView({
                                 </div>
                             </div>
 
-                            {/* Produk Kemasan */}
-                            <div className="flex flex-col">
-                                <div className="flex items-center gap-1.5 mb-2">
+                            {/* Produk Kemasan - full width */}
+                            <div className="flex flex-col col-span-2">
+                                <div className="flex items-center gap-1.5 mb-1.5">
                                     <div className="w-1 h-3 bg-purple-500 rounded-full" />
                                     <h4 className="text-[11px] font-extrabold text-gray-800 uppercase tracking-wider">Produk (Kemasan)</h4>
                                 </div>
-                                <div className="h-28">
+                                <div className="h-24">
                                     <ResponsiveContainer width="100%" height="100%">
                                         <BarChart layout="vertical" data={produkBestSellers} margin={{ left: -10, right: 20 }}>
                                             <XAxis type="number" hide />

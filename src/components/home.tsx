@@ -675,18 +675,43 @@ function Home() {
   const fetchTransactions = async () => {
     if (!currentBranchId) return;
 
-    // Fetch Sales with Items
-    const { data: salesData } = await supabase
-      .from('sales')
-      .select(`
-        *,
-        items:sale_items(
+    // Fetch all sales in batches because Supabase select() can otherwise
+    // return only the default page and hide older transactions from history.
+    const pageSize = 1000;
+    let salesData: any[] = [];
+    let from = 0;
+
+    while (true) {
+      const { data: pageData, error: salesError } = await supabase
+        .from('sales')
+        .select(`
           *,
-          product:product_id(category)
-        )
-      `)
-      .eq('branch_id', currentBranchId)
-      .order('date', { ascending: false }); // Sort by Payment Time (Date) not Creation Time
+          items:sale_items(
+            *,
+            product:product_id(category)
+          )
+        `)
+        .eq('branch_id', currentBranchId)
+        .order('date', { ascending: false })
+        .range(from, from + pageSize - 1); // Sort by Payment Time (Date) not Creation Time
+
+      if (salesError) {
+        console.error('Error fetching sales:', salesError);
+        break;
+      }
+
+      if (!pageData || pageData.length === 0) {
+        break;
+      }
+
+      salesData = [...salesData, ...pageData];
+
+      if (pageData.length < pageSize) {
+        break;
+      }
+
+      from += pageSize;
+    }
 
     if (salesData) {
       const formattedSales = salesData.map(s => ({
@@ -2891,6 +2916,7 @@ function Home() {
             onOpenCashier={() => setIsCashierOpen(true)}
             onClearTableStatus={handleClearTableStatus}
             initialTab={salesViewTab}
+            initialDateFilter={{ start: '2026-04-06', end: '2026-04-06' }}
             currentBranchId={currentBranchId}
             onModeChange={(mode) => setSalesViewTab(mode)}
             onExit={() => setActiveModule('dashboard')}

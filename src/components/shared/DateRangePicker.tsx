@@ -24,6 +24,13 @@ const PRESETS = [
     { label: 'Semua Waktu', id: 'all_time' },
 ];
 
+const formatDateForInput = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
 export function DateRangePicker({ startDate, endDate, onChange, className = '' }: DateRangePickerProps) {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -41,6 +48,7 @@ export function DateRangePicker({ startDate, endDate, onChange, className = '' }
 
     const handlePresetClick = (id: string) => {
         const now = new Date();
+        now.setHours(0, 0, 0, 0);
         let start = new Date();
         let end = new Date();
 
@@ -77,8 +85,8 @@ export function DateRangePicker({ startDate, endDate, onChange, className = '' }
         }
 
         onChange({
-            startDate: start.toISOString().split('T')[0],
-            endDate: end.toISOString().split('T')[0]
+            startDate: formatDateForInput(start),
+            endDate: formatDateForInput(end)
         });
         setIsOpen(false);
     };

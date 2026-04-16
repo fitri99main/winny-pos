@@ -378,19 +378,14 @@ export default function POSScreen() {
             
             if (totalAmount >= minAmount) {
                 try {
-                    // [IMPROVED] Use multiplier if set, otherwise fallback to minAmount for per-voucher calculation
-                    const effectiveMultiplier = multiplier > 0 ? multiplier : minAmount;
                     let count = 1;
-                    
-                    if (effectiveMultiplier > 0) {
-                        // Ensure at least 1 voucher if min amount is met, otherwise calculate multiples
-                        count = Math.max(1, Math.floor(totalAmount / effectiveMultiplier));
-                    }
 
-                    console.log(`[POSScreen] WiFi Voucher Logic: total=${totalAmount}, min=${minAmount}, mult=${multiplier}, effective=${effectiveMultiplier}, count=${count}`);
+                    if (multiplier > 0) {
+                        count = Math.floor(totalAmount / multiplier);
+                    console.log(`[POSScreen] WiFi Voucher Logic: total=${totalAmount}, min=${minAmount}, mult=${multiplier}, count=${count}`);
 
                     if (count > 0) {
-                    wifiVoucher = await WifiVoucherService.getVoucherForSale(sale.id, currentBranchId || '1', count);
+                        wifiVoucher = await WifiVoucherService.getVoucherForSale(sale.id, currentBranchId || '1', count);
                     if (wifiVoucher) {
                         console.log('[POSScreen] WiFi Vouchers result:', wifiVoucher);
                     } else {
@@ -1368,6 +1363,7 @@ export default function POSScreen() {
                     message: isActuallyDisplay ? 'Pesanan berhasil dikirim ke kasir' : 'Pesanan berhasil diperbarui'
                 });
                 setShowSuccessModal(true);
+            } else {
                 // Create New Sale
                 const effectiveOnline = isOnline && !isManualOffline;
                 orderNoText = generateOrderNo(effectiveOnline); // Respect manual offline toggle
@@ -1474,6 +1470,7 @@ export default function POSScreen() {
                 }
 
             Alert.alert('Error', 'Gagal memproses pesanan: ' + error.message);
+            }
         }
     };
 

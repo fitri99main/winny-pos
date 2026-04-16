@@ -219,16 +219,15 @@ export default function LoginPage() {
                         </Button>
                     </form>
 
-                    <div className="text-center pt-4">
-                        <p className="text-sm text-gray-500">
-                            {isSignUp ? 'Sudah punya akun?' : "Belum punya akun?"}
-                            <button
-                                onClick={() => setIsSignUp(!isSignUp)}
-                                className="ml-2 font-semibold text-primary hover:text-primary/80 transition-colors"
-                            >
-                                {isSignUp ? 'Masuk' : 'Buat Akun'}
-                            </button>
-                        </p>
+                    <div className="text-center pt-4 text-sm text-gray-500">
+                        <span>{isSignUp ? 'Sudah punya akun?' : "Belum punya akun?"}</span>
+                        <button
+                            type="button"
+                            onClick={() => setIsSignUp(!isSignUp)}
+                            className="ml-2 font-semibold text-primary hover:text-primary/80 transition-colors"
+                        >
+                            {isSignUp ? 'Masuk' : 'Buat Akun'}
+                        </button>
                     </div>
                 </div>
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, FlatList, StyleSheet, useWindowDimensions, ActivityIndicator, Alert, TextInput, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -26,12 +26,17 @@ export default function HistoryScreen() {
     const [filteredHistory, setFilteredHistory] = useState<any[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [dateFilter, setDateFilter] = useState<'today' | 'yesterday' | 'week' | 'this_month' | 'all' | 'custom'>('today');
-    const [statusFilter, setStatusFilter] = useState<'all' | 'Paid' | 'Pending'>('all');
+    const [statusFilter, setStatusFilter] = useState('all');
+    const [paymentFilter, setPaymentFilter] = useState('all');
+    const [staffFilter, setStaffFilter] = useState('all');
+    const [tableFilter, setTableFilter] = useState<'all' | 'with_table' | 'without_table'>('all');
+    const [sortFilter, setSortFilter] = useState<'newest' | 'oldest' | 'highest' | 'lowest'>('newest');
     
     // Custom Date Range State
     const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
     const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
     const [showDateRangeModal, setShowDateRangeModal] = useState(false);
+    const [showAdvancedFilterModal, setShowAdvancedFilterModal] = useState(false);
     
     // UI Modals
     const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -59,12 +64,99 @@ export default function HistoryScreen() {
         }, [dateFilter, startDate, endDate, currentBranchId])
     );
 
+    const getStaffName = useCallback((sale: any) => {
+        return sale?.cashier_name || sale?.waiter_name || '';
+    }, []);
+
+    const hasAssignedTable = useCallback((sale: any) => {
+        const tableNo = String(sale?.table_no || '').trim();
+        return !!tableNo && tableNo !== '-' && tableNo.toLowerCase() !== 'tanpa meja';
+    }, []);
+
+    const getStatusLabel = useCallback((status: string) => {
+        switch (status) {
+            case 'Paid':
+                return 'Lunas';
+            case 'Completed':
+                return 'Selesai';
+            case 'Served':
+                return 'Tersaji';
+            case 'Ready':
+                return 'Siap';
+            case 'Preparing':
+                return 'Diproses';
+            case 'Pending':
+                return 'Pending';
+            case 'Unpaid':
+                return 'Belum Bayar';
+            default:
+                return status || 'Tanpa Status';
+        }
+    }, []);
+
+    const statusOptions = useMemo(() => {
+        const preferredOrder = ['Paid', 'Completed', 'Served', 'Ready', 'Preparing', 'Pending', 'Unpaid'];
+        const discovered = Array.from(new Set(history.map(item => item?.status).filter(Boolean)));
+        const sorted = [
+            ...preferredOrder.filter(status => discovered.includes(status)),
+            ...discovered.filter(status => !preferredOrder.includes(status)).sort(),
+        ];
+        return [{ value: 'all', label: 'Semua Status' }, ...sorted.map(status => ({ value: status, label: getStatusLabel(status) }))];
+    }, [history, getStatusLabel]);
+
+    const paymentOptions = useMemo(() => {
+        const methods = Array.from(new Set(history.map(item => String(item?.payment_method || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+        return [{ value: 'all', label: 'Semua Metode' }, ...methods.map(method => ({ value: method, label: method }))];
+    }, [history]);
+
+    const staffOptions = useMemo(() => {
+        const staffs = Array.from(new Set(history.map(item => getStaffName(item).trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+        return [{ value: 'all', label: 'Semua Kasir/Pelayan' }, ...staffs.map(name => ({ value: name, label: name }))];
+    }, [history, getStaffName]);
+
+    const activeFilterCount = useMemo(() => {
+        return [
+            statusFilter !== 'all',
+            paymentFilter !== 'all',
+            staffFilter !== 'all',
+            tableFilter !== 'all',
+            sortFilter !== 'newest',
+        ].filter(Boolean).length;
+    }, [statusFilter, paymentFilter, staffFilter, tableFilter, sortFilter]);
+
+    const activeFilterLabels = useMemo(() => {
+        const labels: string[] = [];
+        if (statusFilter !== 'all') labels.push(getStatusLabel(statusFilter));
+        if (paymentFilter !== 'all') labels.push(paymentFilter);
+        if (staffFilter !== 'all') labels.push(staffFilter);
+        if (tableFilter === 'with_table') labels.push('Dengan Meja');
+        if (tableFilter === 'without_table') labels.push('Tanpa Meja');
+        if (sortFilter === 'oldest') labels.push('Terlama');
+        if (sortFilter === 'highest') labels.push('Nominal Tertinggi');
+        if (sortFilter === 'lowest') labels.push('Nominal Terendah');
+        return labels;
+    }, [statusFilter, paymentFilter, staffFilter, tableFilter, sortFilter, getStatusLabel]);
+
     useEffect(() => {
-        let filtered = history;
+        let filtered = [...history];
         
         // Apply status filter
         if (statusFilter !== 'all') {
             filtered = filtered.filter(item => item.status === statusFilter);
+        }
+
+        if (paymentFilter !== 'all') {
+            filtered = filtered.filter(item => (item.payment_method || '') === paymentFilter);
+        }
+
+        if (staffFilter !== 'all') {
+            filtered = filtered.filter(item => getStaffName(item) === staffFilter);
+        }
+
+        if (tableFilter === 'with_table') {
+            filtered = filtered.filter(item => hasAssignedTable(item));
+        } else if (tableFilter === 'without_table') {
+            filtered = filtered.filter(item => !hasAssignedTable(item));
         }
         
         // Apply search query
@@ -73,12 +165,32 @@ export default function HistoryScreen() {
             filtered = filtered.filter(item => 
                 item.order_no?.toLowerCase().includes(query) || 
                 item.table_no?.toLowerCase().includes(query) ||
-                item.customer_name?.toLowerCase().includes(query)
+                item.customer_name?.toLowerCase().includes(query) ||
+                item.payment_method?.toLowerCase().includes(query) ||
+                item.cashier_name?.toLowerCase().includes(query) ||
+                item.waiter_name?.toLowerCase().includes(query)
             );
         }
+
+        filtered.sort((a, b) => {
+            if (sortFilter === 'highest') return Number(b.total_amount || 0) - Number(a.total_amount || 0);
+            if (sortFilter === 'lowest') return Number(a.total_amount || 0) - Number(b.total_amount || 0);
+
+            const timeA = new Date(a.date || a.created_at || 0).getTime();
+            const timeB = new Date(b.date || b.created_at || 0).getTime();
+            return sortFilter === 'oldest' ? timeA - timeB : timeB - timeA;
+        });
         
         setFilteredHistory(filtered);
-    }, [searchQuery, statusFilter, history]);
+    }, [searchQuery, statusFilter, paymentFilter, staffFilter, tableFilter, sortFilter, history, getStaffName, hasAssignedTable]);
+
+    const resetAdvancedFilters = useCallback(() => {
+        setStatusFilter('all');
+        setPaymentFilter('all');
+        setStaffFilter('all');
+        setTableFilter('all');
+        setSortFilter('newest');
+    }, []);
 
     const fetchHistory = async () => {
         if (!currentBranchId || isNaN(Number(currentBranchId))) return;
@@ -123,7 +235,7 @@ export default function HistoryScreen() {
                 query = query.gte('date', start.toISOString()).lte('date', end.toISOString());
             }
 
-            const { data, error } = await query.limit(100);
+            const { data, error } = await query.limit(500);
 
             if (error) throw error;
             setHistory(data || []);
@@ -954,19 +1066,33 @@ export default function HistoryScreen() {
             </View>
 
             <View style={styles.searchSection}>
-                <View style={styles.searchBar}>
-                    <Search size={18} color="#94a3b8" />
-                    <TextInput
-                        style={styles.searchInput}
-                        placeholder="Cari order, meja, atau pelanggan..."
-                        value={searchQuery}
-                        onChangeText={setSearchQuery}
-                    />
-                    {searchQuery !== '' && (
-                        <TouchableOpacity onPress={() => setSearchQuery('')}>
-                            <X size={18} color="#94a3b8" />
-                        </TouchableOpacity>
-                    )}
+                <View style={styles.searchRow}>
+                    <View style={[styles.searchBar, styles.searchBarExpanded]}>
+                        <Search size={18} color="#94a3b8" />
+                        <TextInput
+                            style={styles.searchInput}
+                            placeholder="Cari order, meja, pelanggan, kasir..."
+                            value={searchQuery}
+                            onChangeText={setSearchQuery}
+                        />
+                        {searchQuery !== '' && (
+                            <TouchableOpacity onPress={() => setSearchQuery('')}>
+                                <X size={18} color="#94a3b8" />
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                    <TouchableOpacity
+                        style={styles.advancedFilterBtn}
+                        onPress={() => setShowAdvancedFilterModal(true)}
+                    >
+                        <Filter size={16} color="#ea580c" />
+                        <Text style={styles.advancedFilterText}>Filter</Text>
+                        {activeFilterCount > 0 && (
+                            <View style={styles.filterCountBadge}>
+                                <Text style={styles.filterCountText}>{activeFilterCount}</Text>
+                            </View>
+                        )}
+                    </TouchableOpacity>
                 </View>
 
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={{ gap: 8, paddingBottom: 12 }}>
@@ -1009,29 +1135,22 @@ export default function HistoryScreen() {
                     </TouchableOpacity>
                 </ScrollView>
 
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12 }}>
-                    <Filter size={14} color="#64748b" style={{ marginRight: 8 }} />
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
-                        <TouchableOpacity 
-                            style={[styles.statusToggle, statusFilter === 'all' && styles.statusToggleActive]}
-                            onPress={() => setStatusFilter('all')}
-                        >
-                            <Text style={[styles.statusToggleText, statusFilter === 'all' && styles.statusToggleTextActive]}>Semua</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                            style={[styles.statusToggle, statusFilter === 'Paid' && styles.statusToggleActive]}
-                            onPress={() => setStatusFilter('Paid')}
-                        >
-                            <Text style={[styles.statusToggleText, statusFilter === 'Paid' && styles.statusToggleTextActive]}>Lunas</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                            style={[styles.statusToggle, statusFilter === 'Pending' && styles.statusToggleActive]}
-                            onPress={() => setStatusFilter('Pending')}
-                        >
-                            <Text style={[styles.statusToggleText, statusFilter === 'Pending' && styles.statusToggleTextActive]}>Pending</Text>
-                        </TouchableOpacity>
-                    </ScrollView>
-                </View>
+                {(activeFilterLabels.length > 0 || filteredHistory.length !== history.length) && (
+                    <View style={styles.activeFilterWrap}>
+                        {activeFilterLabels.map(label => (
+                            <View key={label} style={styles.activeFilterPill}>
+                                <Text style={styles.activeFilterPillText}>{label}</Text>
+                            </View>
+                        ))}
+                        {filteredHistory.length !== history.length && (
+                            <View style={[styles.activeFilterPill, styles.activeFilterPillMuted]}>
+                                <Text style={[styles.activeFilterPillText, styles.activeFilterPillMutedText]}>
+                                    {filteredHistory.length}/{history.length} data
+                                </Text>
+                            </View>
+                        )}
+                    </View>
+                )}
             </View>
 
             {loading && history.length === 0 ? (
@@ -1168,6 +1287,128 @@ export default function HistoryScreen() {
                 </View>
             </Modal>
 
+            <Modal
+                visible={showAdvancedFilterModal}
+                animationType="slide"
+                transparent={true}
+                onRequestClose={() => setShowAdvancedFilterModal(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <View>
+                                <Text style={styles.modalTitle}>Filter Lengkap Penjualan</Text>
+                                <Text style={styles.modalSubtitle}>Atur tampilan riwayat transaksi</Text>
+                            </View>
+                            <TouchableOpacity onPress={() => setShowAdvancedFilterModal(false)}>
+                                <Text style={styles.closeBtnText}>Tutup</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        <ScrollView showsVerticalScrollIndicator={false}>
+                            <Text style={styles.filterSectionTitle}>Status</Text>
+                            <View style={styles.filterOptionWrap}>
+                                {statusOptions.map(option => (
+                                    <TouchableOpacity
+                                        key={option.value}
+                                        style={[styles.statusToggle, statusFilter === option.value && styles.statusToggleActive]}
+                                        onPress={() => setStatusFilter(option.value)}
+                                    >
+                                        <Text style={[styles.statusToggleText, statusFilter === option.value && styles.statusToggleTextActive]}>
+                                            {option.label}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+
+                            <Text style={styles.filterSectionTitle}>Metode Pembayaran</Text>
+                            <View style={styles.filterOptionWrap}>
+                                {paymentOptions.map(option => (
+                                    <TouchableOpacity
+                                        key={option.value}
+                                        style={[styles.statusToggle, paymentFilter === option.value && styles.statusToggleActive]}
+                                        onPress={() => setPaymentFilter(option.value)}
+                                    >
+                                        <Text style={[styles.statusToggleText, paymentFilter === option.value && styles.statusToggleTextActive]}>
+                                            {option.label}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+
+                            <Text style={styles.filterSectionTitle}>Kasir / Pelayan</Text>
+                            <View style={styles.filterOptionWrap}>
+                                {staffOptions.map(option => (
+                                    <TouchableOpacity
+                                        key={option.value}
+                                        style={[styles.statusToggle, staffFilter === option.value && styles.statusToggleActive]}
+                                        onPress={() => setStaffFilter(option.value)}
+                                    >
+                                        <Text style={[styles.statusToggleText, staffFilter === option.value && styles.statusToggleTextActive]}>
+                                            {option.label}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+
+                            <Text style={styles.filterSectionTitle}>Meja</Text>
+                            <View style={styles.filterOptionWrap}>
+                                {[
+                                    { value: 'all', label: 'Semua Meja' },
+                                    { value: 'with_table', label: 'Dengan Meja' },
+                                    { value: 'without_table', label: 'Tanpa Meja' },
+                                ].map(option => (
+                                    <TouchableOpacity
+                                        key={option.value}
+                                        style={[styles.statusToggle, tableFilter === option.value && styles.statusToggleActive]}
+                                        onPress={() => setTableFilter(option.value as 'all' | 'with_table' | 'without_table')}
+                                    >
+                                        <Text style={[styles.statusToggleText, tableFilter === option.value && styles.statusToggleTextActive]}>
+                                            {option.label}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+
+                            <Text style={styles.filterSectionTitle}>Urutkan</Text>
+                            <View style={styles.filterOptionWrap}>
+                                {[
+                                    { value: 'newest', label: 'Terbaru' },
+                                    { value: 'oldest', label: 'Terlama' },
+                                    { value: 'highest', label: 'Nominal Tertinggi' },
+                                    { value: 'lowest', label: 'Nominal Terendah' },
+                                ].map(option => (
+                                    <TouchableOpacity
+                                        key={option.value}
+                                        style={[styles.statusToggle, sortFilter === option.value && styles.statusToggleActive]}
+                                        onPress={() => setSortFilter(option.value as 'newest' | 'oldest' | 'highest' | 'lowest')}
+                                    >
+                                        <Text style={[styles.statusToggleText, sortFilter === option.value && styles.statusToggleTextActive]}>
+                                            {option.label}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                        </ScrollView>
+
+                        <View style={styles.filterFooter}>
+                            <TouchableOpacity
+                                style={styles.filterResetBtn}
+                                onPress={resetAdvancedFilters}
+                            >
+                                <Text style={styles.filterResetText}>Reset Filter</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.payBtnLarge, { flex: 1 }]}
+                                onPress={() => setShowAdvancedFilterModal(false)}
+                            >
+                                <Text style={styles.payBtnTextLarge}>Terapkan</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
             <PaymentModal
                 visible={showPaymentModal}
                 total={selectedSale?.total_amount || 0}
@@ -1215,6 +1456,7 @@ const styles = StyleSheet.create({
     headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#1e293b', flex: 1 },
     refreshBtn: { padding: 8 },
     searchSection: { padding: 12, backgroundColor: '#fff', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 },
+    searchRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
     searchBar: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -1224,7 +1466,41 @@ const styles = StyleSheet.create({
         height: 40,
         marginBottom: 10,
     },
+    searchBarExpanded: {
+        flex: 1,
+        marginBottom: 0,
+    },
     searchInput: { flex: 1, marginLeft: 8, fontSize: 13, color: '#334155' },
+    advancedFilterBtn: {
+        height: 40,
+        paddingHorizontal: 12,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#fed7aa',
+        backgroundColor: '#fff7ed',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    advancedFilterText: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#c2410c',
+    },
+    filterCountBadge: {
+        minWidth: 18,
+        height: 18,
+        borderRadius: 9,
+        paddingHorizontal: 4,
+        backgroundColor: '#ea580c',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    filterCountText: {
+        fontSize: 10,
+        fontWeight: '700',
+        color: 'white',
+    },
     filterScroll: { flexDirection: 'row' },
     filterChip: {
         paddingHorizontal: 12,
@@ -1261,6 +1537,64 @@ const styles = StyleSheet.create({
     statusToggleTextActive: {
         color: '#2563eb',
         fontWeight: 'bold',
+    },
+    activeFilterWrap: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+        marginTop: 2,
+    },
+    activeFilterPill: {
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 999,
+        backgroundColor: '#eff6ff',
+        borderWidth: 1,
+        borderColor: '#bfdbfe',
+    },
+    activeFilterPillText: {
+        fontSize: 10,
+        fontWeight: '700',
+        color: '#1d4ed8',
+    },
+    activeFilterPillMuted: {
+        backgroundColor: '#f8fafc',
+        borderColor: '#e2e8f0',
+    },
+    activeFilterPillMutedText: {
+        color: '#64748b',
+    },
+    filterSectionTitle: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#1e293b',
+        marginBottom: 8,
+        marginTop: 14,
+    },
+    filterOptionWrap: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+    },
+    filterFooter: {
+        flexDirection: 'row',
+        gap: 10,
+        marginTop: 16,
+    },
+    filterResetBtn: {
+        flex: 1,
+        paddingVertical: 16,
+        borderRadius: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#f8fafc',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    filterResetText: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#475569',
     },
     card: {
         backgroundColor: 'white',

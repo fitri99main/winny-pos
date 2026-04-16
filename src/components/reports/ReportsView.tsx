@@ -19,6 +19,36 @@ interface ReportsViewProps {
     storeSettings?: any;
 }
 
+const formatDateForInput = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+const normalizeDateValue = (value: unknown) => {
+    if (!value) return '';
+
+    if (value instanceof Date) {
+        return formatDateForInput(value);
+    }
+
+    const raw = String(value).trim();
+    if (!raw) return '';
+
+    const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (match) {
+        return match[1];
+    }
+
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+        return formatDateForInput(parsed);
+    }
+
+    return raw;
+};
+
 export function ReportsView({ sales, returns, purchases = [], purchaseReturns = [], paymentMethods, storeSettings }: ReportsViewProps) {
     console.log("ReportsView - Version 1.0.2 - Filter Updated");
     const [reportType, setReportType] = useState<'sales' | 'purchases'>('sales');
@@ -26,12 +56,17 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
     const [searchQuery, setSearchQuery] = useState('');
     const [startDate, setStartDate] = useState(() => {
         const date = new Date();
-        return new Date(date.getFullYear(), date.getMonth(), 1).toISOString().split('T')[0];
+        return formatDateForInput(new Date(date.getFullYear(), date.getMonth(), 1));
     });
-    const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+    const [endDate, setEndDate] = useState(() => formatDateForInput(new Date()));
     const [methodFilter, setMethodFilter] = useState('All');
     const [showFilters, setShowFilters] = useState(false);
     const [showReceiptPreview, setShowReceiptPreview] = useState(false);
+    const [selectedCategoryPreview, setSelectedCategoryPreview] = useState<null | {
+        title: string;
+        subtitle: string;
+        items: { name: string; value: number; category: string }[];
+    }>(null);
     
     // [Part 25] Helper for quick date selection
     const handlePreset = (type: 'today' | 'yesterday' | 'week' | 'month') => {
@@ -52,7 +87,7 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
             start.setMonth(now.getMonth() - 1);
         }
 
-        const formatDate = (d: Date) => d.toISOString().split('T')[0];
+        const formatDate = (d: Date) => formatDateForInput(d);
         setStartDate(formatDate(start));
         setEndDate(formatDate(end));
     };
@@ -66,7 +101,7 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
 
             const matchesMethod = methodFilter === 'All' || s.paymentMethod === methodFilter;
 
-            const saleDate = s.date ? String(s.date).split('T')[0] : ''; 
+            const saleDate = normalizeDateValue(s.date);
             const matchesStartDate = !startDate || saleDate >= startDate;
             const matchesEndDate = !endDate || saleDate <= endDate;
 
@@ -76,7 +111,7 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
 
     const filteredReturns = useMemo(() => {
         return returns.filter(r => {
-            const saleDate = r.date ? String(r.date).split('T')[0] : '';
+            const saleDate = normalizeDateValue(r.date);
             const matchesStartDate = !startDate || saleDate >= startDate;
             const matchesEndDate = !endDate || saleDate <= endDate;
             return matchesStartDate && matchesEndDate;
@@ -88,7 +123,7 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
             const matchesSearch = (p.purchase_no || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                 (p.supplier_name || '').toLowerCase().includes(searchQuery.toLowerCase());
             
-            const pDate = p.date; // Usually YYYY-MM-DD
+            const pDate = normalizeDateValue(p.date);
             const matchesStartDate = !startDate || pDate >= startDate;
             const matchesEndDate = !endDate || pDate <= endDate;
             
@@ -143,10 +178,10 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
         return breakdown.sort((a, b) => b.total - a.total);
     }, [filteredSales, paymentMethods]);
 
-    // Calculate Best Sellers by Category for Reports
+    // Calculate Best Sellers by Category for Reports (Kopi & Non-Kopi separated)
     const bestSellersByCategory = useMemo(() => {
         const productCounts: Record<string, { name: string, value: number, category: string }> = {};
-        
+
         filteredSales.forEach(sale => {
             if (sale.status !== 'Completed') return;
             (sale.productDetails || []).forEach(item => {
@@ -156,7 +191,6 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
                     productCounts[key] = { name: item.name, value: 0, category: (item.category || '').toLowerCase() };
                 }
                 productCounts[key].value += item.quantity || 1;
-                // If category is missing in detail but exists now, update it
                 if (!productCounts[key].category && item.category) {
                     productCounts[key].category = item.category.toLowerCase();
                 }
@@ -164,21 +198,58 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
         });
 
         const list = Object.values(productCounts);
-        
-        const getTop5 = (keyword: string) => list
-            .filter(p => (p.category || '').includes(keyword) || (p.name || '').toLowerCase().includes(keyword))
-            .sort((a, b) => b.value - a.value)
-            .slice(0, 5);
+
+        // Coffee keyword detection (by product name)
+        const coffeeNameKeywords = ['kopi', 'coffee', 'espresso', 'latte', 'cappuccino', 'americano', 'mocha', 'macchiato', 'affogato', 'lungo', 'ristretto', 'flat white', 'cold brew', 'v60', 'vietnam drip', 'frappe'];
+        const isCoffeeByName = (name: string) => coffeeNameKeywords.some(kw => name.toLowerCase().includes(kw));
+
+        // Drink-related category keywords
+        const drinkCategoryKeywords = ['minum', 'teh', 'jus', 'juice', 'susu', 'milk', 'tea', 'soda', 'es ', 'ice', 'minuman', 'drink', 'beverage', 'smoothie', 'yogurt'];
+        const isDrinkCategory = (cat: string) => drinkCategoryKeywords.some(kw => cat.includes(kw));
+
+        const sortItems = (items: typeof list) => [...items].sort((a, b) => b.value - a.value);
+        const takeTop = (items: typeof list) => sortItems(items).slice(0, 5);
+
+        const kopiItems = sortItems(list.filter(p => {
+            const cat = p.category || '';
+            if (cat.includes('non kopi') || cat.includes('non-kopi')) return false;
+            if (cat.includes('kopi') && !cat.includes('non')) return true;
+            if (isDrinkCategory(cat)) return isCoffeeByName(p.name);
+            return isCoffeeByName(p.name);
+        }));
+
+        const nonKopiItems = sortItems(list.filter(p => {
+            const cat = p.category || '';
+            if (cat.includes('non kopi') || cat.includes('non-kopi')) return true;
+            if (cat.includes('kopi') && !cat.includes('non')) return false;
+            if (isDrinkCategory(cat)) return !isCoffeeByName(p.name);
+            return false;
+        }));
+
+        const makananItems = sortItems(list.filter(p => (p.category || '').includes('makan')));
+        const snackItems = sortItems(list.filter(p => (p.category || '').includes('snack')));
+        const produkItems = sortItems(list.filter(p => p.category.includes('kemasan') || p.category.includes('produk') || p.name.toLowerCase().includes('kemasan')));
 
         return {
-            makanan: getTop5('makan'),
-            minuman: getTop5('minum'),
-            snack: getTop5('snack'),
-            produk: list.filter(p => p.category.includes('kemasan') || p.category.includes('produk') || p.name.toLowerCase().includes('kemasan'))
-                        .sort((a, b) => b.value - a.value)
-                        .slice(0, 5)
+            makanan: { all: makananItems, top: takeTop(makananItems) },
+            kopi: { all: kopiItems, top: takeTop(kopiItems) },
+            nonKopi: { all: nonKopiItems, top: takeTop(nonKopiItems) },
+            snack: { all: snackItems, top: takeTop(snackItems) },
+            produk: { all: produkItems, top: takeTop(produkItems) }
         };
     }, [filteredSales]);
+
+    const openCategoryPreview = (
+        title: string,
+        subtitle: string,
+        items: { name: string; value: number; category: string }[]
+    ) => {
+        setSelectedCategoryPreview({
+            title,
+            subtitle,
+            items
+        });
+    };
 
     const exportToExcel = () => {
         try {
@@ -445,13 +516,17 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                         {/* Makanan */}
-                        <div className="bg-gray-50/50 p-5 rounded-2xl border border-gray-100">
-                            <h4 className="text-[10px] font-bold text-red-600 uppercase mb-3 tracking-widest pl-1">Makanan Terlaris</h4>
+                        <button
+                            type="button"
+                            onClick={() => openCategoryPreview('Makanan Terlaris', 'Semua produk dalam kategori makanan', bestSellersByCategory.makanan.all)}
+                            className="bg-gray-50/50 p-5 rounded-2xl border border-gray-100 text-left transition-all hover:shadow-md hover:border-red-200"
+                        >
+                            <h4 className="text-[10px] font-bold text-red-600 uppercase mb-3 tracking-widest pl-1">🍽️ Makanan Terlaris</h4>
                             <div className="h-48">
                                 <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart layout="vertical" data={bestSellersByCategory.makanan} margin={{ left: -20, right: 30 }}>
+                                    <BarChart layout="vertical" data={bestSellersByCategory.makanan.top} margin={{ left: -20, right: 30 }}>
                                         <XAxis type="number" hide />
                                         <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={100} tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 'bold' }} />
                                         <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
@@ -459,29 +534,73 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
                                     </BarChart>
                                 </ResponsiveContainer>
                             </div>
-                        </div>
+                            <p className="mt-3 text-[11px] font-semibold text-red-500">Klik untuk lihat semua produk</p>
+                        </button>
 
-                        {/* Minuman */}
-                        <div className="bg-gray-50/50 p-5 rounded-2xl border border-gray-100">
-                            <h4 className="text-[10px] font-bold text-blue-600 uppercase mb-3 tracking-widest pl-1">Minuman Terlaris</h4>
+                        {/* Kopi */}
+                        <button
+                            type="button"
+                            onClick={() => openCategoryPreview('Kopi Terlaris', 'Semua produk kopi dalam periode filter', bestSellersByCategory.kopi.all)}
+                            className="bg-amber-50/50 p-5 rounded-2xl border border-amber-100 text-left transition-all hover:shadow-md hover:border-amber-200"
+                        >
+                            <h4 className="text-[10px] font-bold text-amber-800 uppercase mb-3 tracking-widest pl-1">☕ Kopi Terlaris</h4>
                             <div className="h-48">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart layout="vertical" data={bestSellersByCategory.minuman} margin={{ left: -20, right: 30 }}>
-                                        <XAxis type="number" hide />
-                                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={100} tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 'bold' }} />
-                                        <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
-                                        <Bar dataKey="value" fill="#3b82f6" radius={[0, 6, 6, 0]} barSize={12} />
-                                    </BarChart>
-                                </ResponsiveContainer>
+                                {bestSellersByCategory.kopi.top.length > 0 ? (
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart layout="vertical" data={bestSellersByCategory.kopi.top} margin={{ left: -20, right: 30 }}>
+                                            <XAxis type="number" hide />
+                                            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={100} tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 'bold' }} />
+                                            <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
+                                            <Bar dataKey="value" fill="#92400e" radius={[0, 6, 6, 0]} barSize={12} />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                ) : (
+                                    <div className="h-full flex flex-col items-center justify-center gap-2 text-amber-400">
+                                        <span className="text-3xl">☕</span>
+                                        <p className="text-xs font-medium">Belum ada data kopi</p>
+                                    </div>
+                                )}
                             </div>
-                        </div>
+                            <p className="mt-3 text-[11px] font-semibold text-amber-700">Klik untuk lihat semua produk</p>
+                        </button>
+
+                        {/* Non-Kopi */}
+                        <button
+                            type="button"
+                            onClick={() => openCategoryPreview('Non-Kopi Terlaris', 'Semua produk non-kopi dalam periode filter', bestSellersByCategory.nonKopi.all)}
+                            className="bg-cyan-50/50 p-5 rounded-2xl border border-cyan-100 text-left transition-all hover:shadow-md hover:border-cyan-200"
+                        >
+                            <h4 className="text-[10px] font-bold text-cyan-700 uppercase mb-3 tracking-widest pl-1">🥤 Non-Kopi Terlaris</h4>
+                            <div className="h-48">
+                                {bestSellersByCategory.nonKopi.top.length > 0 ? (
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart layout="vertical" data={bestSellersByCategory.nonKopi.top} margin={{ left: -20, right: 30 }}>
+                                            <XAxis type="number" hide />
+                                            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={100} tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 'bold' }} />
+                                            <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
+                                            <Bar dataKey="value" fill="#06b6d4" radius={[0, 6, 6, 0]} barSize={12} />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                ) : (
+                                    <div className="h-full flex flex-col items-center justify-center gap-2 text-cyan-400">
+                                        <span className="text-3xl">🥤</span>
+                                        <p className="text-xs font-medium">Belum ada data non-kopi</p>
+                                    </div>
+                                )}
+                            </div>
+                            <p className="mt-3 text-[11px] font-semibold text-cyan-700">Klik untuk lihat semua produk</p>
+                        </button>
 
                         {/* Snack */}
-                        <div className="bg-gray-50/50 p-5 rounded-2xl border border-gray-100">
-                            <h4 className="text-[10px] font-bold text-orange-600 uppercase mb-3 tracking-widest pl-1">Snack Terlaris</h4>
+                        <button
+                            type="button"
+                            onClick={() => openCategoryPreview('Snack Terlaris', 'Semua produk snack dalam periode filter', bestSellersByCategory.snack.all)}
+                            className="bg-gray-50/50 p-5 rounded-2xl border border-gray-100 text-left transition-all hover:shadow-md hover:border-orange-200"
+                        >
+                            <h4 className="text-[10px] font-bold text-orange-600 uppercase mb-3 tracking-widest pl-1">🍟 Snack Terlaris</h4>
                             <div className="h-48">
                                 <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart layout="vertical" data={bestSellersByCategory.snack} margin={{ left: -20, right: 30 }}>
+                                    <BarChart layout="vertical" data={bestSellersByCategory.snack.top} margin={{ left: -20, right: 30 }}>
                                         <XAxis type="number" hide />
                                         <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={100} tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 'bold' }} />
                                         <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
@@ -489,14 +608,19 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
                                     </BarChart>
                                 </ResponsiveContainer>
                             </div>
-                        </div>
+                            <p className="mt-3 text-[11px] font-semibold text-orange-600">Klik untuk lihat semua produk</p>
+                        </button>
 
-                        {/* Produk */}
-                        <div className="bg-gray-50/50 p-5 rounded-2xl border border-gray-100">
-                            <h4 className="text-[10px] font-bold text-purple-600 uppercase mb-3 tracking-widest pl-1">Produk Kemasan Terlaris</h4>
+                        {/* Produk - spans 2 cols on xl */}
+                        <button
+                            type="button"
+                            onClick={() => openCategoryPreview('Produk Kemasan Terlaris', 'Semua produk kemasan dalam periode filter', bestSellersByCategory.produk.all)}
+                            className="bg-gray-50/50 p-5 rounded-2xl border border-gray-100 xl:col-span-2 text-left transition-all hover:shadow-md hover:border-purple-200"
+                        >
+                            <h4 className="text-[10px] font-bold text-purple-600 uppercase mb-3 tracking-widest pl-1">📦 Produk Kemasan Terlaris</h4>
                             <div className="h-48">
                                 <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart layout="vertical" data={bestSellersByCategory.produk} margin={{ left: -20, right: 30 }}>
+                                    <BarChart layout="vertical" data={bestSellersByCategory.produk.top} margin={{ left: -20, right: 30 }}>
                                         <XAxis type="number" hide />
                                         <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={100} tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 'bold' }} />
                                         <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
@@ -504,7 +628,8 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
                                     </BarChart>
                                 </ResponsiveContainer>
                             </div>
-                        </div>
+                            <p className="mt-3 text-[11px] font-semibold text-purple-600">Klik untuk lihat semua produk</p>
+                        </button>
                     </div>
                 </div>
             )}
@@ -675,6 +800,67 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
                     </table>
                 </div>
             </div>
+
+            {selectedCategoryPreview && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[95] flex items-center justify-center p-4 animate-in fade-in duration-300">
+                    <div className="bg-white rounded-3xl w-full max-w-3xl max-h-[90vh] shadow-2xl overflow-hidden">
+                        <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+                            <div>
+                                <h3 className="font-bold text-gray-800">{selectedCategoryPreview.title}</h3>
+                                <p className="text-sm text-gray-500">{selectedCategoryPreview.subtitle}</p>
+                                <p className="text-xs text-gray-400 mt-1">
+                                    Periode: {startDate || '...'} s/d {endDate || '...'}
+                                </p>
+                            </div>
+                            <Button variant="ghost" size="icon" onClick={() => setSelectedCategoryPreview(null)}>
+                                <X className="w-5 h-5" />
+                            </Button>
+                        </div>
+
+                        <div className="bg-gray-100 p-6 overflow-y-auto max-h-[calc(90vh-88px)]">
+                            <div className="bg-white mx-auto max-w-2xl min-h-[70vh] shadow-sm border border-gray-200 p-8">
+                                <div className="border-b border-gray-200 pb-4 mb-6">
+                                    <h4 className="text-2xl font-bold text-gray-900">{selectedCategoryPreview.title}</h4>
+                                    <p className="text-sm text-gray-500 mt-1">
+                                        {selectedCategoryPreview.items.length} produk dalam kategori ini
+                                    </p>
+                                    <p className="text-xs text-gray-400 mt-2">
+                                        Periode laporan: {startDate || '...'} s/d {endDate || '...'}
+                                    </p>
+                                </div>
+
+                                {selectedCategoryPreview.items.length === 0 ? (
+                                    <div className="flex items-center justify-center min-h-[40vh] text-gray-400 text-sm">
+                                        Belum ada produk pada kategori ini untuk periode filter sekarang.
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3">
+                                        {selectedCategoryPreview.items.map((item, index) => (
+                                            <div
+                                                key={`${selectedCategoryPreview.title}-${item.name}-${index}`}
+                                                className="flex items-center justify-between border-b border-gray-100 pb-3"
+                                            >
+                                                <div className="pr-4">
+                                                    <p className="text-sm font-semibold text-gray-900">
+                                                        {index + 1}. {item.name}
+                                                    </p>
+                                                    <p className="text-xs text-gray-400 uppercase tracking-wide">
+                                                        {(item.category || 'tanpa kategori').replace(/-/g, ' ')}
+                                                    </p>
+                                                </div>
+                                                <div className="text-right shrink-0">
+                                                    <p className="text-lg font-bold text-gray-900">{item.value}</p>
+                                                    <p className="text-xs text-gray-400">Qty Terjual</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Receipt Preview Modal */}
             {showReceiptPreview && (

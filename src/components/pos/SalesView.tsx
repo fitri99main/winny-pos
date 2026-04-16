@@ -49,6 +49,48 @@ export interface SalesReturn {
     syncStatus?: 'synced' | 'pending' | 'syncing';
 }
 
+const formatDateForInput = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+const parseSaleDate = (value: string | Date | null | undefined) => {
+    if (!value) return null;
+
+    if (value instanceof Date) {
+        return new Date(value.getTime());
+    }
+
+    const raw = String(value).trim();
+    if (!raw) return null;
+
+    const match = raw.match(
+        /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2})(?::(\d{2}))?(?::(\d{2}))?)?/
+    );
+
+    if (match) {
+        const [, year, month, day, hours = '0', minutes = '0', seconds = '0'] = match;
+        return new Date(
+            Number(year),
+            Number(month) - 1,
+            Number(day),
+            Number(hours),
+            Number(minutes),
+            Number(seconds)
+        );
+    }
+
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const normalizeDateOnly = (value: string | Date | null | undefined) => {
+    const parsed = parseSaleDate(value);
+    return parsed ? formatDateForInput(parsed) : '';
+};
+
 // --- Initial Data ---
 
 export const INITIAL_SALES: SalesOrder[] = [
@@ -113,6 +155,10 @@ const INITIAL_RETURNS: SalesReturn[] = [];
 
 interface SalesViewProps {
     initialTab?: 'history' | 'returns';
+    initialDateFilter?: {
+        start: string;
+        end: string;
+    };
     currentBranchId?: string;
     onModeChange?: (mode: 'history' | 'returns') => void;
     onExit?: () => void;
@@ -135,6 +181,7 @@ interface SalesViewProps {
 
 export function SalesView({
     initialTab = 'history',
+    initialDateFilter,
     currentBranchId,
     onModeChange,
     onExit,
@@ -157,9 +204,8 @@ export function SalesView({
     const [activeTab, setActiveTab] = useState<'history' | 'returns'>(initialTab);
     // Date Filter State
     const [dateFilter, setDateFilter] = useState({
-        // Fix: Use Local Time for default date to avoid UTC "yesterday" issue in early morning (WIB)
-        start: new Date().toLocaleDateString('en-CA'), // Returns YYYY-MM-DD in local time
-        end: new Date().toLocaleDateString('en-CA')
+        start: initialDateFilter?.start || formatDateForInput(new Date()),
+        end: initialDateFilter?.end || formatDateForInput(new Date())
     });
 
     // Stats State
@@ -197,14 +243,11 @@ export function SalesView({
             // Branch check
             if (currentBranchId && sale.branchId && String(sale.branchId) !== String(currentBranchId)) return sum;
 
-            const saleDate = new Date(sale.date);
-            const saleDateStr = sale.date.split('T')[0]; // Simple string check if format is ISO
+            const saleDate = parseSaleDate(sale.date);
+            if (!saleDate) return sum;
 
             if (statsPeriod === 'daily') {
-                // Check YYYY-MM-DD
-                // Assuming sale.date is standard timestamp string
-                const d = new Date(sale.date);
-                if (d.getDate() !== now.getDate() || d.getMonth() !== now.getMonth() || d.getFullYear() !== now.getFullYear()) return sum;
+                if (saleDate.getDate() !== now.getDate() || saleDate.getMonth() !== now.getMonth() || saleDate.getFullYear() !== now.getFullYear()) return sum;
             } else if (statsPeriod === 'monthly') {
                 if (saleDate.getMonth() !== currentMonth || saleDate.getFullYear() !== currentYear) return sum;
             } else if (statsPeriod === 'yearly') {
@@ -312,6 +355,15 @@ export function SalesView({
         setActiveTab(initialTab);
     }, [initialTab]);
 
+    useEffect(() => {
+        if (!initialDateFilter) return;
+
+        setDateFilter({
+            start: initialDateFilter.start,
+            end: initialDateFilter.end,
+        });
+    }, [initialDateFilter?.start, initialDateFilter?.end]);
+
     const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
     const [selectedOrder, setSelectedOrder] = useState<SalesOrder | null>(null);
     const [returnReason, setReturnReason] = useState('');
@@ -374,20 +426,14 @@ export function SalesView({
 
     function processDateFilter(dateStr: string) {
         if (!dateFilter.start && !dateFilter.end) return true;
-        const saleDate = new Date(dateStr);
-        saleDate.setHours(0, 0, 0, 0); // Compare dates only
+        const saleDate = normalizeDateOnly(dateStr);
+        if (!saleDate) return false;
 
         if (dateFilter.start) {
-            // Force Local Time parsing by replacing - with / (Browser standard behavior for Local vs UTC)
-            const startDate = new Date(dateFilter.start.replace(/-/g, '/'));
-            startDate.setHours(0, 0, 0, 0);
-            if (saleDate < startDate) return false;
+            if (saleDate < dateFilter.start) return false;
         }
         if (dateFilter.end) {
-            // Force Local Time parsing by replacing - with /
-            const endDate = new Date(dateFilter.end.replace(/-/g, '/'));
-            endDate.setHours(0, 0, 0, 0);
-            if (saleDate > endDate) return false;
+            if (saleDate > dateFilter.end) return false;
         }
         return true;
     }

@@ -1,36 +1,36 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
     Clock as ClockIcon, Fingerprint, UserCheck, XCircle, RefreshCw, 
-    ArrowLeft, ShieldCheck, Zap, User, Users, CheckCircle,
-    AlertCircle, Camera, LogOut, Delete, ChevronRight
+    ArrowLeft, ShieldCheck, Users, CheckCircle,
+    AlertCircle, LogOut
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { fingerprint, FingerprintResult } from '../../lib/fingerprint';
-import { useBarcodeScanner } from '../../hooks/useBarcodeScanner';
 import { toast } from 'sonner';
 import { Employee } from '../employees/EmployeesView';
 
-type KioskMode = 'PIN' | 'SCANNING' | 'RESULT';
+type KioskMode = 'SCANNING' | 'RESULT';
 
 export function AttendanceKiosk() {
+    const KIOSK_FP_THRESHOLD = 9.5;
+    const KIOSK_FP_AMBIGUITY_GAP = 0.5;
+    const KIOSK_FP_AMBIGUITY_MIN = 4.5;
+    const KIOSK_MIN_REGISTERED_SCANS = 2;
     const navigate = useNavigate();
-    const [mode, setMode] = useState<KioskMode>('PIN');
-    const [pinInput, setPinInput] = useState('');
-    const [activeEmployee, setActiveEmployee] = useState<Employee | null>(null);
+    const [mode, setMode] = useState<KioskMode>('SCANNING');
     
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [logs, setLogs] = useState<any[]>([]);
     const [schedules, setSchedules] = useState<any[]>([]);
-    const [fpStatus, setFpStatus] = useState<string>('Initializing...');
+    const [fpStatus, setFpStatus] = useState<string>('Menghubungkan Scanner...');
     const [isProcessing, setIsProcessing] = useState(false);
     
     const [todayStats, setTodayStats] = useState({ present: 0, late: 0, total: 0 });
 
     const employeesRef = useRef<Employee[]>([]);
-    const modeRef = useRef<KioskMode>('PIN');
+    const modeRef = useRef<KioskMode>('SCANNING');
     const processingRef = useRef(false);
-    const scanningTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     useEffect(() => { modeRef.current = mode; }, [mode]);
 
@@ -49,8 +49,12 @@ export function AttendanceKiosk() {
 
     useEffect(() => {
         fetchData();
-        const subscription = supabase.channel('kiosk_attendance').on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_logs' }, fetchData).subscribe();
-        return () => { subscription.unsubscribe(); };
+        const attendanceSubscription = supabase.channel('kiosk_attendance').on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_logs' }, fetchData).subscribe();
+        const employeeSubscription = supabase.channel('kiosk_attendance_employees').on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, fetchData).subscribe();
+        return () => {
+            attendanceSubscription.unsubscribe();
+            employeeSubscription.unsubscribe();
+        };
     }, []);
 
     useEffect(() => {
@@ -61,10 +65,8 @@ export function AttendanceKiosk() {
     }, [logs, schedules]);
 
     const resetKiosk = () => {
-        setMode('PIN');
-        setPinInput('');
-        setActiveEmployee(null);
-        if (scanningTimeoutRef.current) clearTimeout(scanningTimeoutRef.current);
+        setMode('SCANNING');
+        setFpStatus('Tempel Jari...');
     };
 
     const processAttendance = async (employee: Employee) => {
@@ -111,44 +113,122 @@ export function AttendanceKiosk() {
         } catch (err: any) { toast.error('Gagal: ' + err.message); resetKiosk(); } finally { setIsProcessing(false); processingRef.current = false; }
     };
 
-    const handlePinSubmit = () => {
-        if (employees.length === 0) return;
-        const emp = employees.find(e => (e.pin ? String(e.pin) : String(e.id)).trim() === pinInput.trim());
-        if (emp) {
-            setPinInput(''); setActiveEmployee(emp); setMode('SCANNING');
-            toast.success(`PIN Benar: ${emp.name}`);
-            if (scanningTimeoutRef.current) clearTimeout(scanningTimeoutRef.current);
-            scanningTimeoutRef.current = setTimeout(() => { if (modeRef.current === 'SCANNING') { setMode('PIN'); setActiveEmployee(null); } }, 20000);
-        } else { toast.error('PIN tidak ditemukan'); setPinInput(''); }
+    const findBestFingerprintMatch = (scanTemplate: string) => {
+        const registeredEmployees = employeesRef.current.filter(e => e.fingerprint_template);
+        if (registeredEmployees.length === 0) {
+            return {
+                employee: null,
+                message: 'Belum ada data sidik jari karyawan yang terdaftar di database.'
+            };
+        }
+
+        const matches = registeredEmployees
+            .map(emp => ({
+                emp,
+                score: fingerprint.calculateBestSimilarity(emp.fingerprint_template!, scanTemplate),
+                scanCount: emp.fingerprint_template!.split('|||').filter(Boolean).length
+            }))
+            .sort((a, b) => b.score - a.score);
+
+        const bestMatch = matches[0];
+        const secondBest = matches[1];
+
+        if (bestMatch && bestMatch.scanCount < KIOSK_MIN_REGISTERED_SCANS) {
+            return {
+                employee: null,
+                message: `Fingerprint ${bestMatch.emp.name} masih lemah (${bestMatch.scanCount} scan). Karyawan ini perlu daftar ulang minimal ${KIOSK_MIN_REGISTERED_SCANS} scan.`
+            };
+        }
+
+        if (!bestMatch || bestMatch.score < KIOSK_FP_THRESHOLD) {
+            if (bestMatch && bestMatch.score >= 4.0) {
+                return {
+                    employee: null,
+                    message: `Jari hampir cocok dengan ${bestMatch.emp.name} (${bestMatch.score.toFixed(1)}%). Tekan lebih mantap pada sensor.`
+                };
+            }
+
+            return {
+                employee: null,
+                message: bestMatch
+                    ? `Sidik jari belum dikenali. Kecocokan tertinggi ${bestMatch.score.toFixed(1)}% dengan ${bestMatch.emp.name}, butuh minimal ${KIOSK_FP_THRESHOLD.toFixed(1)}%.`
+                    : 'Sidik jari belum dikenali. Pastikan data fingerprint karyawan sudah terdaftar.'
+            };
+        }
+
+        const gap = secondBest ? (bestMatch.score - secondBest.score) : 100;
+        const isAmbiguous = !!secondBest &&
+            bestMatch.score >= KIOSK_FP_AMBIGUITY_MIN &&
+            gap < KIOSK_FP_AMBIGUITY_GAP &&
+            bestMatch.score < 25;
+
+        if (isAmbiguous) {
+            return {
+                employee: null,
+                message: `Hasil ambigu antara ${bestMatch.emp.name} dan ${secondBest.emp.name}. Ulangi scan dengan posisi jari lebih pas.`
+            };
+        }
+
+        return {
+            employee: bestMatch.emp,
+            message: `Cocok dengan ${bestMatch.emp.name} (${bestMatch.score.toFixed(1)}%)`
+        };
+    };
+
+    const handleResetScanner = async () => {
+        setFpStatus('Mereset Scanner...');
+        await fingerprint.hardReset();
+        resetKiosk();
+        toast.success('Scanner fingerprint direset.');
     };
 
     useEffect(() => {
-        if (mode !== 'SCANNING' || !activeEmployee) { fingerprint.stopCapture(); return; }
+        if (mode !== 'SCANNING') { fingerprint.stopCapture(); return; }
         let isRunning = true;
+        setFpStatus('Menghubungkan Scanner...');
+
         const callback = (status: string, result?: FingerprintResult) => {
             if (!isRunning || modeRef.current !== 'SCANNING') return;
+
             if (status === 'SUCCESS' && result?.success && result.template) {
-                if (fingerprint.calculateBestSimilarity(activeEmployee.fingerprint_template!, result.template!) >= 10.5) processAttendance(activeEmployee);
-                else { toast.error('Sidik jari salah.'); setTimeout(() => { if (isRunning && modeRef.current === 'SCANNING') fingerprint.startCapture(callback, 'CAPTURE'); }, 1500); }
-            } else { setFpStatus(status === 'WAITING_FOR_FINGER' ? 'Tempel Jari...' : status); }
+                const matched = findBestFingerprintMatch(result.template);
+
+                if (matched.employee) {
+                    setFpStatus(`Cocok: ${matched.employee.name}`);
+                    processAttendance(matched.employee);
+                } else {
+                    setFpStatus('Jari Tidak Cocok');
+                    toast.error(matched.message, { duration: 4000 });
+                    setTimeout(() => {
+                        if (isRunning && modeRef.current === 'SCANNING') fingerprint.startCapture(callback, 'CAPTURE');
+                    }, 1500);
+                }
+            } else if (status === 'ERROR') {
+                setFpStatus(result?.message || 'Scanner Error');
+            } else {
+                const statusMap: Record<string, string> = {
+                    'WAITING_FOR_FINGER': 'Tempel Jari...',
+                    'ALAT_TERDETEKSI': 'Alat Terdeteksi',
+                    'MENYIAPKAN_SCANNER': 'Menyiapkan Scanner...',
+                    'MENYIAPKAN_ALAT': 'Menyiapkan Alat...',
+                    'MENCARI_ALAT': 'Mencari Perangkat...',
+                    'MEMULIHKAN_ALAT_SIBUK': 'Scanner Sibuk, Memulihkan...',
+                    'SCANNER_INIT': 'Inisialisasi...'
+                };
+                setFpStatus(statusMap[status] || status);
+            }
         };
         fingerprint.startCapture(callback, 'CAPTURE');
         return () => { isRunning = false; fingerprint.stopCapture(); };
-    }, [mode, activeEmployee]);
-
-    useBarcodeScanner({ onScan: (code) => { if (modeRef.current === 'PIN') { const emp = employees.find(e => e.barcode === code || `EMP-${e.id}` === code); if (emp) processAttendance(emp); } }, enabled: mode === 'PIN' });
+    }, [mode, KIOSK_FP_THRESHOLD, KIOSK_FP_AMBIGUITY_GAP, KIOSK_FP_AMBIGUITY_MIN]);
 
     const [currentTime, setCurrentTime] = useState(new Date());
     useEffect(() => { const t = setInterval(() => setCurrentTime(new Date()), 1000); return () => clearInterval(t); }, []);
 
     const [lastScanResult, setLastScanResult] = useState<{ success: boolean; name: string; time: string; type: 'IN' | 'OUT'; status: string; } | null>(null);
-
-    // Auto-submit PIN when 6 digits are reached
-    useEffect(() => {
-        if (pinInput.length === 6 && mode === 'PIN') {
-            handlePinSubmit();
-        }
-    }, [pinInput, mode]);
+    const totalEmployees = employees.length;
+    const activeEmployees = employees.filter(e => e.status === 'Active').length;
+    const registeredFingerprintCount = employees.filter(e => !!e.fingerprint_template).length;
 
     return (
         <div className="min-h-screen w-full bg-[#020617] text-white font-sans flex flex-col relative overflow-hidden">
@@ -182,34 +262,13 @@ export function AttendanceKiosk() {
                     {/* Compact Hero Card */}
                     <div className="h-[480px] bg-white/[0.03] backdrop-blur-3xl border border-white/[0.08] rounded-[40px] p-8 md:p-12 flex flex-col items-center justify-center relative shadow-2xl ring-1 ring-white/5 overflow-hidden shrink-0">
                         
-                        {mode === 'PIN' && (
-                            <div className="w-full max-w-sm space-y-10 animate-in fade-in zoom-in-95 duration-500">
-                                <div className="text-center space-y-3">
-                                    <h2 className="text-4xl md:text-5xl font-black tracking-tight">Presensi <span className="text-white/40">Kiosk</span></h2>
-                                    <p className="text-slate-400 text-sm font-medium">Masukan PIN untuk absen</p>
+                        {mode === 'SCANNING' && (
+                            <div className="animate-in fade-in zoom-in-95 duration-500 flex flex-col items-center w-full max-w-md">
+                                <div className="text-center space-y-3 mb-10">
+                                    <h2 className="text-4xl md:text-5xl font-black tracking-tight">Presensi <span className="text-white/40">Fingerprint</span></h2>
+                                    <p className="text-slate-400 text-sm font-medium">Karyawan cukup tempel jari pada scanner USB U4500</p>
                                 </div>
-                                <div className="flex justify-center items-center gap-4">
-                                    {[...Array(6)].map((_, i) => (
-                                        <div key={i} className={`w-3.5 h-3.5 rounded-full border-2 transition-all duration-300 ${i < pinInput.length ? 'bg-blue-500 border-blue-400 scale-125 shadow-[0_0_15px_rgba(59,130,246,0.6)]' : 'border-slate-800 bg-slate-900/50'}`} />
-                                    ))}
-                                </div>
-                                <div className="grid grid-cols-3 gap-3">
-                                    {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(num => (
-                                        <button key={num} onClick={() => pinInput.length < 6 && setPinInput(p => p + num)} className="h-16 md:h-20 bg-white/[0.03] hover:bg-blue-600/20 active:bg-blue-600 rounded-[24px] text-2xl font-black transition-all border border-white/5">{num}</button>
-                                    ))}
-                                    <button onClick={() => setPinInput('')} className="h-16 md:h-18 flex items-center justify-center text-slate-500 font-black hover:text-rose-400 uppercase text-[9px] tracking-widest">Clear</button>
-                                    <button onClick={() => pinInput.length < 6 && setPinInput(p => p + '0')} className="h-16 md:h-20 bg-white/[0.03] hover:bg-blue-600/20 active:bg-blue-600 rounded-[24px] text-2xl font-black transition-all border border-white/5">0</button>
-                                    <button onClick={() => setPinInput(p => p.slice(0, -1))} className="h-16 md:h-18 flex items-center justify-center text-slate-500 font-black hover:text-white"><Delete className="w-6 h-6" /></button>
-                                </div>
-                                <button onClick={handlePinSubmit} disabled={pinInput.length < 1} className="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white rounded-[24px] font-black text-lg shadow-xl shadow-blue-500/20 active:scale-[0.98] transition-all disabled:opacity-20 flex items-center justify-center gap-3">LANJUTKAN <ChevronRight className="w-5 h-5" /></button>
-                            </div>
-                        )}
 
-                        {mode === 'SCANNING' && activeEmployee && (
-                            <div className="animate-in fade-in zoom-in-95 duration-500 flex flex-col items-center">
-                                <div className="w-24 h-24 rounded-3xl bg-blue-600/10 flex items-center justify-center text-4xl font-black text-blue-400 mb-6 border border-white/5">{activeEmployee.name.charAt(0)}</div>
-                                <h2 className="text-4xl font-black mb-2 leading-none text-center">Halo, {activeEmployee.name}</h2>
-                                <p className="text-slate-400 text-sm mb-12 font-medium">Silakan tempelkan jari Anda</p>
                                 <div className="relative">
                                     <div className="w-48 h-48 rounded-full bg-blue-500/5 flex items-center justify-center border border-white/5 relative">
                                         <Fingerprint className="w-24 h-24 text-blue-500 animate-pulse" />
@@ -217,7 +276,42 @@ export function AttendanceKiosk() {
                                     </div>
                                     <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-8 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg">{fpStatus}</div>
                                 </div>
-                                <button onClick={resetKiosk} className="mt-16 text-slate-500 hover:text-white font-black uppercase text-[10px] tracking-widest flex items-center gap-2"><ArrowLeft className="w-4 h-4" /> Batal</button>
+
+                                <div className="mt-12 w-full space-y-3">
+                                    <div className="bg-white/[0.03] border border-white/10 rounded-3xl p-4 flex items-start gap-3">
+                                        <AlertCircle className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
+                                        <div>
+                                            <p className="text-xs font-black uppercase tracking-widest text-slate-300">Scanner Siap</p>
+                                            <p className="text-sm text-slate-400 mt-1">
+                                                {registeredFingerprintCount > 0
+                                                    ? `${registeredFingerprintCount} dari ${totalEmployees} karyawan sudah punya data sidik jari.`
+                                                    : 'Belum ada karyawan yang punya data sidik jari terdaftar.'}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-3 gap-3">
+                                        <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-3">
+                                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Total</p>
+                                            <p className="text-xl font-black text-white mt-1">{totalEmployees}</p>
+                                        </div>
+                                        <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-3">
+                                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Aktif</p>
+                                            <p className="text-xl font-black text-emerald-400 mt-1">{activeEmployees}</p>
+                                        </div>
+                                        <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-3">
+                                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">FP</p>
+                                            <p className="text-xl font-black text-blue-400 mt-1">{registeredFingerprintCount}</p>
+                                        </div>
+                                    </div>
+
+                                    <button
+                                        onClick={handleResetScanner}
+                                        className="w-full py-4 bg-white/[0.04] hover:bg-white/[0.08] text-white rounded-[24px] font-black text-sm border border-white/10 transition-all flex items-center justify-center gap-3"
+                                    >
+                                        <RefreshCw className="w-4 h-4" /> RESET SCANNER
+                                    </button>
+                                </div>
                             </div>
                         )}
 

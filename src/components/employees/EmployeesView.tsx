@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Plus, Search, Edit, Trash2, Mail, Phone, Briefcase, CreditCard, Printer, X, Settings2, Zap, AlertCircle, ExternalLink, RefreshCw, Shuffle } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Plus, Search, Edit, Trash2, Mail, Phone, Briefcase, CreditCard, Printer, X, Settings2, Zap, AlertCircle, ExternalLink, RefreshCw, Shuffle, CheckCircle } from 'lucide-react';
 import { Button } from '../ui/button';
 import { QRCard } from '../ui/QRCard';
 import { toast } from 'sonner';
@@ -46,6 +46,9 @@ export function EmployeesView({
     onEmployeeCRUD = async () => { },
     onDepartmentCRUD = async () => { }
 }: EmployeesViewProps) {
+    const ENROLL_TARGET_SCANS = 3;
+    const ENROLL_MIN_SCANS = 1;
+    const ENROLL_RECOMMENDED_SCANS = 2;
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [isDeptModalOpen, setIsDeptModalOpen] = useState(false);
     const [formData, setFormData] = useState<Partial<Employee>>({});
@@ -57,9 +60,56 @@ export function EmployeesView({
     const [fpStatus, setFpStatus] = useState('');
     const [fpError, setFpError] = useState<string | null>(null);
     const [enrollmentQuality, setEnrollmentQuality] = useState<number | null>(null);
+    const [fingerprintHealth, setFingerprintHealth] = useState<'verified' | 'weak' | 'unknown' | null>(null);
+    const [isPreparingFingerprint, setIsPreparingFingerprint] = useState(false);
+    const [isPersistingFingerprint, setIsPersistingFingerprint] = useState(false);
+    const [isTestingFingerprint, setIsTestingFingerprint] = useState(false);
+    const [fpDebugLog, setFpDebugLog] = useState<string[]>([]);
     const [retryCount, setRetryCount] = useState(0);
     const [enrollmentStage, setEnrollmentStage] = useState(0); // 0: None, 1, 2, 3: Stages
     const [tempTemplates, setTempTemplates] = useState<string[]>([]);
+    const enrollmentStageRef = useRef(0);
+    const isScanningRef = useRef(false);
+    const restartEnrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const fingerprintWaitTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const formDataRef = useRef(formData);
+
+    useEffect(() => {
+        enrollmentStageRef.current = enrollmentStage;
+    }, [enrollmentStage]);
+
+    useEffect(() => {
+        isScanningRef.current = isScanning;
+    }, [isScanning]);
+
+    useEffect(() => {
+        formDataRef.current = formData;
+    }, [formData]);
+
+    const pushFpDebug = (message: string) => {
+        const now = new Date();
+        const timestamp = `${now.toLocaleTimeString('id-ID', { hour12: false })}.${String(now.getMilliseconds()).padStart(3, '0')}`;
+        setFpDebugLog(prev => [`${timestamp} - ${message}`, ...prev].slice(0, 8));
+    };
+
+    const clearFingerprintWaitTimeout = () => {
+        if (fingerprintWaitTimeoutRef.current) {
+            clearTimeout(fingerprintWaitTimeoutRef.current);
+            fingerprintWaitTimeoutRef.current = null;
+        }
+    };
+
+    const armFingerprintWaitTimeout = () => {
+        clearFingerprintWaitTimeout();
+        fingerprintWaitTimeoutRef.current = setTimeout(() => {
+            const port = fingerprint.getCurrentPort();
+            const msg = `Scanner sudah siap di port ${port}, tetapi belum menerima sampel sidik jari. Coba tekan jari lebih rata/kuat, bersihkan sensor, atau reset alat.`;
+            setFpError(msg);
+            setIsScanning(false);
+            setIsPreparingFingerprint(false);
+            pushFpDebug(`Timeout tunggu sampel jari di port ${port}`);
+        }, 12000);
+    };
 
     const handleFpRetry = () => {
         fingerprint.forceResetBusy();
@@ -156,10 +206,165 @@ export function EmployeesView({
 
     const handleFingerprintEnroll = async (useMock: boolean = false) => {
         console.log(`Memulai Enrollment Fingerprint Multi-Scan... (${useMock ? 'SIMULASI' : 'REAL'})`);
-        setIsScanning(true);
-        setFpStatus(useMock ? 'Simulasi: Tempel Jari...' : 'Menghubungkan ke Scanner...');
-        setEnrollmentStage(1);
+        pushFpDebug('Tombol daftar fingerprint ditekan');
+        if (restartEnrollTimeoutRef.current) {
+            clearTimeout(restartEnrollTimeoutRef.current);
+            restartEnrollTimeoutRef.current = null;
+        }
+        clearFingerprintWaitTimeout();
+        setFpError(null);
+        setIsPreparingFingerprint(true);
+        try {
+            setFpStatus('Menyiapkan Scanner...');
+            pushFpDebug('Memulai stopCapture');
+            await fingerprint.stopCapture();
+            pushFpDebug('Membersihkan status busy scanner');
+            fingerprint.forceResetBusy();
+            await new Promise(r => setTimeout(r, 1500));
+            setEnrollmentQuality(null);
+            setTempTemplates([]);
+            setFormData(prev => ({ ...prev, fingerprint_template: undefined }));
+            setIsScanning(true);
+            setFpStatus(useMock ? 'Simulasi: Tempel Jari...' : 'Menghubungkan ke Scanner...');
+            setEnrollmentStage(1);
+            pushFpDebug('Scanner siap, menunggu startCapture');
+            toast.info('Scanner fingerprint sedang disiapkan...');
+        } catch (err: any) {
+            setFpError(err?.message || 'Gagal menyiapkan scanner fingerprint.');
+            setFpStatus('');
+            setIsScanning(false);
+            setIsPreparingFingerprint(false);
+            pushFpDebug(`Persiapan scanner gagal: ${err?.message || 'unknown error'}`);
+        }
+    };
+
+    const resetFingerprintEnrollmentState = (clearTemplate: boolean = false) => {
+        pushFpDebug(clearTemplate ? 'Reset fingerprint + hapus template lokal' : 'Reset sesi fingerprint');
+        if (restartEnrollTimeoutRef.current) {
+            clearTimeout(restartEnrollTimeoutRef.current);
+            restartEnrollTimeoutRef.current = null;
+        }
+        clearFingerprintWaitTimeout();
+        fingerprint.stopCapture();
+        fingerprint.forceResetBusy();
+        setIsPreparingFingerprint(false);
+        setIsScanning(false);
+        setFpStatus('');
+        setFpError(null);
+        setEnrollmentStage(0);
         setTempTemplates([]);
+        if (clearTemplate) setFingerprintHealth(null);
+        if (clearTemplate) {
+            setEnrollmentQuality(null);
+            setFormData(prev => ({ ...prev, fingerprint_template: undefined }));
+        }
+        setIsTestingFingerprint(false);
+    };
+
+    const persistFingerprintTemplate = async (template: string, quality: number, scanCount: number = ENROLL_TARGET_SCANS) => {
+        const updatedData = { ...formDataRef.current, fingerprint_template: template };
+        setFormData(updatedData);
+        setEnrollmentQuality(quality);
+        setFingerprintHealth(scanCount >= ENROLL_RECOMMENDED_SCANS ? 'unknown' : 'weak');
+        pushFpDebug(`Template selesai dibuat, kualitas ${quality}%`);
+
+        if (!updatedData.id) {
+            if (scanCount < ENROLL_RECOMMENDED_SCANS) {
+                toast.warning(`Sidik jari disimpan dari ${scanCount} scan saja. Sebaiknya ulangi minimal ${ENROLL_RECOMMENDED_SCANS} scan agar lebih akurat.`);
+            }
+            pushFpDebug('Karyawan baru belum punya ID, menunggu Simpan Data');
+            toast.success('Pendaftaran Sukses! Klik Simpan Data untuk membuat karyawan baru.');
+            return;
+        }
+
+        try {
+            setIsPersistingFingerprint(true);
+            setFpStatus('Menyimpan Sidik Jari...');
+            pushFpDebug(`Menyimpan fingerprint ke database untuk karyawan #${updatedData.id}`);
+            await onEmployeeCRUD('update', updatedData);
+            if (scanCount < ENROLL_RECOMMENDED_SCANS) {
+                toast.warning(`Sidik jari tersimpan dari ${scanCount} scan saja. Sebaiknya daftar ulang dengan minimal ${ENROLL_RECOMMENDED_SCANS} scan.`);
+            }
+            pushFpDebug('Fingerprint berhasil disimpan ke database');
+            toast.success('Sidik jari berhasil dipindai dan langsung disimpan.');
+        } catch (err: any) {
+            setFpError(err?.message || 'Gagal menyimpan sidik jari ke database.');
+            pushFpDebug(`Gagal simpan fingerprint: ${err?.message || 'unknown error'}`);
+            toast.error('Sidik jari berhasil dipindai, tetapi gagal disimpan ke database.');
+        } finally {
+            setIsPersistingFingerprint(false);
+            setFpStatus('');
+        }
+    };
+
+    const finalizeFingerprintEnrollment = async (templates: string[]) => {
+        if (!templates || templates.length < ENROLL_MIN_SCANS) {
+            toast.error('Belum ada hasil scan yang bisa disimpan.');
+            return;
+        }
+
+        if (templates.length < ENROLL_RECOMMENDED_SCANS) {
+            const confirmed = window.confirm(
+                `Sidik jari ini baru direkam ${templates.length} scan. Hasil seperti ini sering lemah dan bisa gagal dikenali di kiosk. Tetap simpan sebagai mode darurat?`
+            );
+            if (!confirmed) {
+                pushFpDebug('Simpan darurat dibatalkan oleh user');
+                return;
+            }
+            pushFpDebug('Simpan darurat dikonfirmasi oleh user');
+        }
+
+        const finalTemplate = templates.join('|||');
+        const estimatedQuality = Math.min(100, Math.round((finalTemplate.length / (templates.length * 500)) * 100));
+        clearFingerprintWaitTimeout();
+        if (restartEnrollTimeoutRef.current) {
+            clearTimeout(restartEnrollTimeoutRef.current);
+            restartEnrollTimeoutRef.current = null;
+        }
+        await fingerprint.stopCapture();
+        setIsScanning(false);
+        setIsTestingFingerprint(false);
+        setEnrollmentStage(0);
+        setFpStatus('');
+        pushFpDebug(`Finalisasi enrollment dengan ${templates.length} scan`);
+        await persistFingerprintTemplate(finalTemplate, estimatedQuality, templates.length);
+    };
+
+    const handleFingerprintTest = async () => {
+        const currentTemplate = formDataRef.current.fingerprint_template;
+        if (!currentTemplate) {
+            toast.error('Belum ada sidik jari tersimpan untuk diuji.');
+            return;
+        }
+
+        if (restartEnrollTimeoutRef.current) {
+            clearTimeout(restartEnrollTimeoutRef.current);
+            restartEnrollTimeoutRef.current = null;
+        }
+
+        clearFingerprintWaitTimeout();
+        setFpError(null);
+        setIsTestingFingerprint(true);
+        setIsPreparingFingerprint(true);
+        setFpStatus('Menyiapkan Uji Sidik Jari...');
+        pushFpDebug('Mode uji sidik jari dimulai');
+
+        try {
+            await fingerprint.stopCapture();
+            pushFpDebug('Mode uji: membersihkan status busy scanner');
+            fingerprint.forceResetBusy();
+            await new Promise(r => setTimeout(r, 1500));
+            setIsScanning(true);
+            setFpStatus('Tempel jari untuk pengujian...');
+            setEnrollmentStage(1);
+        } catch (err: any) {
+            setFpError(err?.message || 'Gagal menyiapkan pengujian sidik jari.');
+            setIsPreparingFingerprint(false);
+            setIsScanning(false);
+            setIsTestingFingerprint(false);
+            setFpStatus('');
+            pushFpDebug(`Gagal memulai mode uji: ${err?.message || 'unknown error'}`);
+        }
     };
 
     // Correctly handle Enrollment UI and Lifecycle via useEffect
@@ -167,79 +372,139 @@ export function EmployeesView({
         if (!isScanning) return;
         
         let isRunningSync = true;
-        const useMock = false; // Mocking is usually for testing
+        pushFpDebug('Effect enroll aktif');
 
         const callback = (status: string, result?: FingerprintResult) => {
             if (!isRunningSync) return;
+            setIsPreparingFingerprint(false);
+            pushFpDebug(`Callback SDK: ${status}`);
             
             if (status === 'SUCCESS' && result?.success && result.template) {
+                clearFingerprintWaitTimeout();
                 const quality = Math.min(100, Math.round(((result.template?.length || 0) / 500) * 100));
+                pushFpDebug(`Scan sukses, panjang template ${result.template.length}`);
+
+                if (isTestingFingerprint) {
+                    const currentTemplate = formDataRef.current.fingerprint_template;
+                    const score = currentTemplate ? fingerprint.calculateBestSimilarity(currentTemplate, result.template) : 0;
+                    setEnrollmentQuality(Math.min(100, Math.round(score * 6)));
+                    setFingerprintHealth(score >= 9.5 ? 'verified' : 'weak');
+                    setIsScanning(false);
+                    setIsTestingFingerprint(false);
+                    setEnrollmentStage(0);
+                    setFpStatus(`Hasil uji: ${score.toFixed(1)}%`);
+                    pushFpDebug(`Mode uji selesai dengan skor ${score.toFixed(1)}%`);
+
+                    if (score >= 9.5) {
+                        toast.success(`Sidik jari cocok (${score.toFixed(1)}%).`);
+                    } else if (score >= 4.0) {
+                        toast.warning(`Sidik jari hampir cocok (${score.toFixed(1)}%). Pertimbangkan daftar ulang.`);
+                    } else {
+                        toast.error(`Sidik jari lemah/tidak cocok (${score.toFixed(1)}%). Sebaiknya daftar ulang.`);
+                    }
+                    return;
+                }
                 
                 setTempTemplates(prev => {
                     const newTemplates = [...prev, result.template!];
-                    const nextStage = newTemplates.length + 1;
+                    const completedScan = newTemplates.length;
+                    const nextStage = completedScan + 1;
                     
-                    if (newTemplates.length < 3) {
+                    if (completedScan < ENROLL_TARGET_SCANS) {
                         setEnrollmentStage(nextStage);
-                        setFpStatus(`Scan ke-${newTemplates.length} Sukses! Angkat Jari...`);
-                        toast.success(`Scan ${newTemplates.length}/3 Berhasil!`);
+                        setFpStatus(`Scan ke-${completedScan}/${ENROLL_TARGET_SCANS} Sukses! Angkat Jari...`);
+                        pushFpDebug(`Scan ${completedScan}/${ENROLL_TARGET_SCANS} berhasil, menjadwalkan scan berikutnya`);
+                        toast.success(`Scan ${completedScan}/${ENROLL_TARGET_SCANS} Berhasil!`);
                         
-                        setTimeout(() => {
-                            if (isRunningSync) fingerprint.startCapture(callback, 'ENROLL');
+                        if (restartEnrollTimeoutRef.current) {
+                            clearTimeout(restartEnrollTimeoutRef.current);
+                        }
+                        restartEnrollTimeoutRef.current = setTimeout(() => {
+                            if (isRunningSync && isScanningRef.current) {
+                                pushFpDebug(`Memulai ulang startCapture untuk scan ${nextStage}/${ENROLL_TARGET_SCANS}`);
+                                fingerprint.startCapture(callback, 'ENROLL');
+                            }
                         }, 3000);
                     } else {
-                        const finalTemplate = newTemplates.join('|||');
-                        setFormData(prev => ({ ...prev, fingerprint_template: finalTemplate }));
-                        setEnrollmentQuality(quality);
-                        setEnrollmentStage(0);
-                        setFpStatus('');
-                        setIsScanning(false);
-                        toast.success('Pendaftaran Sukses!');
+                        pushFpDebug('Semua scan selesai, lanjut simpan template');
+                        void finalizeFingerprintEnrollment(newTemplates);
                     }
                     return newTemplates;
                 });
             } else if (status === 'ERROR') {
+                clearFingerprintWaitTimeout();
                 setFpError(result?.message || 'Gagal mendaftar.');
                 setIsScanning(false);
+                setIsTestingFingerprint(false);
                 setEnrollmentStage(0);
+                setTempTemplates([]);
+                pushFpDebug(`SDK error: ${result?.message || 'Gagal mendaftar'}`);
+                if (restartEnrollTimeoutRef.current) {
+                    clearTimeout(restartEnrollTimeoutRef.current);
+                    restartEnrollTimeoutRef.current = null;
+                }
             } else {
+                const currentStage = Math.max(1, enrollmentStageRef.current);
                 const statusMap: Record<string, string> = {
-                    'WAITING_FOR_FINGER': `Tempel Jari (Scan ke-${enrollmentStage}/3)`,
+                    'WAITING_FOR_FINGER': `Tempel Jari (Scan ke-${currentStage}/3)`,
                     'ALAT_TERDETEKSI': 'Alat Terdeteksi...',
                     'MENYIAPKAN_ALAT': 'Menyiapkan Alat...',
                     'MEMULIHKAN_ALAT_SIBUK': 'Hardware Sibuk: Memulihkan...',
                 };
                 setFpStatus(statusMap[status] || status);
+                if (status === 'WAITING_FOR_FINGER') {
+                    pushFpDebug(`Scanner standby, menunggu jari di port ${fingerprint.getCurrentPort()}`);
+                    armFingerprintWaitTimeout();
+                }
             }
         };
 
         const handleVisibilityChange = () => {
             if (document.hidden) {
                 isRunningSync = false;
+                pushFpDebug('Tab disembunyikan, stopCapture dipanggil');
+                if (restartEnrollTimeoutRef.current) {
+                    clearTimeout(restartEnrollTimeoutRef.current);
+                    restartEnrollTimeoutRef.current = null;
+                }
+                clearFingerprintWaitTimeout();
                 fingerprint.stopCapture();
             } else {
                 isRunningSync = true;
-                fingerprint.startCapture(callback, 'ENROLL');
+                if (isScanningRef.current) {
+                    pushFpDebug('Tab aktif kembali, startCapture dipanggil ulang');
+                    fingerprint.startCapture(callback, 'ENROLL');
+                }
             }
         };
 
         document.addEventListener('visibilitychange', handleVisibilityChange);
+        pushFpDebug('Memanggil startCapture pertama');
         fingerprint.startCapture(callback, 'ENROLL');
 
         return () => {
             isRunningSync = false;
+            pushFpDebug('Cleanup effect enroll');
+            if (restartEnrollTimeoutRef.current) {
+                clearTimeout(restartEnrollTimeoutRef.current);
+                restartEnrollTimeoutRef.current = null;
+            }
+            clearFingerprintWaitTimeout();
             document.removeEventListener('visibilitychange', handleVisibilityChange);
             fingerprint.stopCapture();
         };
-    }, [isScanning, enrollmentStage]);
+    }, [isScanning]);
 
     const handleResetHardware = async () => {
         setFpStatus('MEMULIHKAN_ALAT_SIBUK');
         setFpError(null);
+        clearFingerprintWaitTimeout();
+        pushFpDebug('Reset hardware manual ditekan');
         await fingerprint.hardReset();
         await new Promise(r => setTimeout(r, 2500));
         toast.success('Hardware scanner direset total.');
         setFpStatus('');
+        pushFpDebug('Reset hardware manual selesai');
     };
 
     const filteredEmployees = (employees || []).filter(emp =>
@@ -247,6 +512,10 @@ export function EmployeesView({
         (emp.position || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (emp.department || '').toLowerCase().includes(searchQuery.toLowerCase())
     );
+    const likelyWbfDriverConflict = !!fpError && fpError.includes('belum menerima sampel sidik jari');
+    const totalEmployees = employees.length;
+    const activeEmployees = employees.filter(emp => emp.status === 'Active').length;
+    const registeredFingerprintEmployees = employees.filter(emp => !!emp.fingerprint_template).length;
 
     return (
         <div className="p-8 h-full bg-gray-50/50 flex flex-col">
@@ -254,6 +523,20 @@ export function EmployeesView({
                 <div>
                     <h2 className="text-2xl font-bold text-gray-800">Manajemen Karyawan</h2>
                     <p className="text-gray-500 font-medium">Kelola data, jabatan, dan struktur departemen.</p>
+                    <div className="flex flex-wrap gap-2 mt-3">
+                        <div className="px-3 py-2 rounded-2xl bg-white border border-gray-200 shadow-sm">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">Total Karyawan</p>
+                            <p className="text-lg font-black text-gray-800 leading-none mt-1">{totalEmployees}</p>
+                        </div>
+                        <div className="px-3 py-2 rounded-2xl bg-emerald-50 border border-emerald-100 shadow-sm">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-emerald-500">Aktif</p>
+                            <p className="text-lg font-black text-emerald-700 leading-none mt-1">{activeEmployees}</p>
+                        </div>
+                        <div className="px-3 py-2 rounded-2xl bg-blue-50 border border-blue-100 shadow-sm">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-blue-500">Fingerprint</p>
+                            <p className="text-lg font-black text-blue-700 leading-none mt-1">{registeredFingerprintEmployees}</p>
+                        </div>
+                    </div>
                 </div>
                 <div className="flex gap-2">
                     <Button variant="outline" onClick={() => setIsDeptModalOpen(true)} className="gap-2 border-dashed">
@@ -262,7 +545,7 @@ export function EmployeesView({
                     <Button variant="outline" onClick={handleRandomizeAllOffDays} className="gap-2 text-orange-600 border-orange-200 hover:bg-orange-50">
                         <Shuffle className="w-4 h-4" /> Acak Libur
                     </Button>
-                    <Button onClick={() => { setFormData({ offDays: [] }); setIsFormOpen(true); }} className="gap-2 shadow-lg shadow-primary/20">
+                    <Button onClick={() => { resetFingerprintEnrollmentState(); setFormData({ offDays: [] }); setIsFormOpen(true); }} className="gap-2 shadow-lg shadow-primary/20">
                         <Plus className="w-4 h-4" /> Tambah Karyawan
                     </Button>
                 </div>
@@ -338,6 +621,7 @@ export function EmployeesView({
                                         <button onClick={() => setSelectedCard(emp)} className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-100 transition-colors" title="Cetak ID Card"><CreditCard className="w-4 h-4" /></button>
                                         <button
                                             onClick={() => {
+                                                resetFingerprintEnrollmentState();
                                                 setFormData({
                                                     ...emp,
                                                     offDays: Array.isArray(emp.offDays) ? emp.offDays : []
@@ -365,6 +649,7 @@ export function EmployeesView({
                     onMouseDown={(e) => {
                         if (e.target === e.currentTarget) {
                             console.log('[EmployeesView] Form Backdrop MouseDown');
+                            resetFingerprintEnrollmentState();
                             setIsFormOpen(false);
                         }
                     }}
@@ -490,31 +775,60 @@ export function EmployeesView({
                                                         <Zap className={`w-4 h-4 ${formData.fingerprint_template ? 'text-emerald-500' : 'text-blue-400'}`} />
                                                     </div>
                                                 </div>
+                                                {formData.fingerprint_template && fingerprintHealth && (
+                                                    <div className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide border self-center ${
+                                                        fingerprintHealth === 'verified'
+                                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                            : fingerprintHealth === 'weak'
+                                                                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                                                : 'bg-slate-50 text-slate-600 border-slate-200'
+                                                    }`}>
+                                                        {fingerprintHealth === 'verified' ? 'Verified' : fingerprintHealth === 'weak' ? 'Weak' : 'Unknown'}
+                                                    </div>
+                                                )}
                                                 <div className="flex gap-1">
                                                     <button
                                                         type="button"
-                                                        onClick={() => {
+                                                        onClick={async () => {
                                                             setFpError(null);
-                                                            handleFingerprintEnroll(false);
+                                                            await handleFingerprintEnroll(false);
                                                         }}
-                                                        disabled={isScanning}
+                                                        disabled={isPreparingFingerprint || isScanning || isPersistingFingerprint || isTestingFingerprint}
                                                         className={`px-3 rounded-xl font-bold text-[9px] uppercase transition-all flex items-center gap-1.5 ${isScanning
                                                             ? 'bg-blue-100 text-blue-400'
                                                             : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95'
                                                             }`}
                                                     >
-                                                        {isScanning ? (
+                                                        {isPreparingFingerprint || isScanning || isPersistingFingerprint || isTestingFingerprint ? (
                                                             <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
                                                         ) : <Zap className="w-3 h-3" />}
-                                                        {isScanning ? 'Scan...' : (formData.fingerprint_template ? 'Reset' : 'Daftar')}
+                                                        {isPreparingFingerprint ? 'Siapkan...' : isScanning ? 'Scan...' : isPersistingFingerprint ? 'Simpan...' : (formData.fingerprint_template ? 'Reset' : 'Daftar')}
                                                     </button>
-                                                    
+
+                                                    {formData.fingerprint_template && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={handleFingerprintTest}
+                                                            disabled={isPreparingFingerprint || isScanning || isPersistingFingerprint || isTestingFingerprint}
+                                                            className="px-3 rounded-xl font-bold text-[9px] uppercase transition-all flex items-center gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95 disabled:bg-emerald-100 disabled:text-emerald-400"
+                                                            title="Uji kecocokan sidik jari tersimpan"
+                                                        >
+                                                            {isTestingFingerprint ? (
+                                                                <div className="w-3 h-3 border-2 border-emerald-200 border-t-transparent rounded-full animate-spin" />
+                                                            ) : (
+                                                                <CheckCircle className="w-3 h-3" />
+                                                            )}
+                                                            {isTestingFingerprint ? 'Uji...' : 'Uji'}
+                                                        </button>
+                                                    )}
+                                                     
                                                     {formData.fingerprint_template && (
                                                         <button
                                                             type="button"
                                                             onClick={async () => {
                                                                 if (confirm('Hapus data sidik jari ini secara PERMANEN? Karyawan tidak akan bisa absen biometrik sampai didaftarkan kembali.')) {
                                                                     try {
+                                                                        resetFingerprintEnrollmentState(true);
                                                                         const updatedData = { ...formData, fingerprint_template: null };
                                                                         // Direct save to DB if employee exists
                                                                         if (formData.id) {
@@ -550,6 +864,17 @@ export function EmployeesView({
                                                         </div>
                                                     )}
 
+                                                    {likelyWbfDriverConflict && (
+                                                        <div className="flex flex-col gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl animate-in slide-in-from-top-1">
+                                                            <p className="text-[10px] font-black text-amber-700 leading-tight">
+                                                                Gejala ini sangat mirip konflik driver U4500 `WBF` dengan SDK DigitalPersona `Legacy`.
+                                                            </p>
+                                                            <p className="text-[10px] font-semibold text-amber-700/90 leading-tight">
+                                                                Solusi: uninstall `U.are.U 4500 Fingerprint Reader (WBF)` dari Device Manager, lalu install driver HID DigitalPersona 4500 `Non-WBF / Legacy`.
+                                                            </p>
+                                                        </div>
+                                                    )}
+
                                                     <button
                                                         type="button"
                                                         onClick={handleResetHardware}
@@ -562,19 +887,42 @@ export function EmployeesView({
                                             </div>
 
                                             {/* Enrollment Progress & Quality Indicator */}
-                                            {(isScanning || fpStatus || enrollmentQuality !== null) && !fpError && (
+                                            {(isPreparingFingerprint || isScanning || isPersistingFingerprint || fpStatus || enrollmentQuality !== null) && !fpError && (
                                                 <div className="mt-3 space-y-2 animate-in fade-in slide-in-from-top-1">
-                                                    {isScanning && (
+                                                    {(isPreparingFingerprint || isScanning || isPersistingFingerprint || fpStatus) && (
                                                         <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 text-blue-700 rounded-xl border border-blue-100 mb-2">
                                                             <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
                                                             <span className="text-[10px] font-black uppercase tracking-tight">{fpStatus}</span>
+                                                        </div>
+                                                    )}
+
+                                                    {!isTestingFingerprint && tempTemplates.length >= ENROLL_MIN_SCANS && (
+                                                        <div className="flex items-center justify-between gap-3 px-3 py-2 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-100">
+                                                            <div className="min-w-0">
+                                                                <p className="text-[10px] font-black uppercase tracking-tight">
+                                                                    {tempTemplates.length}/{ENROLL_TARGET_SCANS} scan sudah tersimpan
+                                                                </p>
+                                                                <p className="text-[10px] font-semibold text-emerald-700/90">
+                                                                    {tempTemplates.length < ENROLL_RECOMMENDED_SCANS
+                                                                        ? `Hasil ${tempTemplates.length} scan masih berisiko lemah. Disarankan minimal ${ENROLL_RECOMMENDED_SCANS} scan.`
+                                                                        : 'Jika scan berikutnya sulit, Anda bisa simpan hasil saat ini.'}
+                                                                </p>
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => void finalizeFingerprintEnrollment(tempTemplates)}
+                                                                disabled={isPersistingFingerprint}
+                                                                className="shrink-0 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:bg-emerald-100 disabled:text-emerald-400"
+                                                            >
+                                                                {tempTemplates.length < ENROLL_RECOMMENDED_SCANS ? 'Simpan Darurat' : 'Simpan Sekarang'}
+                                                            </button>
                                                         </div>
                                                     )}
                                                     
                                                     {enrollmentQuality !== null && (
                                                         <div className="space-y-1">
                                                             <div className="flex justify-between items-center text-[9px] font-black uppercase text-blue-500 tracking-widest pl-1">
-                                                                <span>Kualitas Jari (Density)</span>
+                                                                <span>{isTestingFingerprint ? 'Skor Uji Sidik Jari' : 'Kualitas Jari (Density)'}</span>
                                                                 <span className={enrollmentQuality > 70 ? 'text-emerald-500' : enrollmentQuality > 40 ? 'text-orange-500' : 'text-red-500'}>
                                                                     {enrollmentQuality}% {enrollmentQuality > 80 ? 'Perfect' : enrollmentQuality > 50 ? 'Good' : 'Poor'}
                                                                 </span>
@@ -587,6 +935,28 @@ export function EmployeesView({
                                                             </div>
                                                         </div>
                                                     )}
+                                                </div>
+                                            )}
+
+                                            {fpDebugLog.length > 0 && (
+                                                <div className="mt-3 p-3 bg-slate-950 rounded-xl border border-slate-800">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-300">Debug Fingerprint</p>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setFpDebugLog([])}
+                                                            className="text-[9px] font-bold text-slate-400 hover:text-white"
+                                                        >
+                                                            Clear
+                                                        </button>
+                                                    </div>
+                                                    <div className="space-y-1 max-h-28 overflow-y-auto pr-1">
+                                                        {fpDebugLog.map((entry, index) => (
+                                                            <div key={`${entry}-${index}`} className="text-[10px] font-mono text-slate-300 break-words">
+                                                                {entry}
+                                                            </div>
+                                                        ))}
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
@@ -647,7 +1017,7 @@ export function EmployeesView({
                             )}
 
                             <div className="flex flex-col-reverse md:flex-row justify-end gap-2.5 pt-4 border-t border-gray-50">
-                                <Button type="button" variant="outline" className="h-11 md:h-12 rounded-xl px-6 font-bold w-full md:w-auto text-sm" onClick={() => setIsFormOpen(false)}>Batal</Button>
+                                <Button type="button" variant="outline" className="h-11 md:h-12 rounded-xl px-6 font-bold w-full md:w-auto text-sm" onClick={() => { resetFingerprintEnrollmentState(); setIsFormOpen(false); }}>Batal</Button>
                                 <Button type="submit" className="h-11 md:h-12 rounded-xl px-8 shadow-lg shadow-primary/10 font-bold w-full md:w-auto text-sm">Simpan Data</Button>
                             </div>
                         </form>

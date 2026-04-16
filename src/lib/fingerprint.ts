@@ -31,6 +31,37 @@ class FingerprintService {
     private stopPromise: Promise<void> | null = null;
     private lastStopTimestamp: number = 0; // NEW: Prevent rapid re-start
     private executionMutex: Promise<void> = Promise.resolve(); // NEW: Strict execution queue
+    private readonly preferredPort = 52181;
+
+    private describeDevice(device: any): string {
+        if (device === null || device === undefined) return '';
+        if (typeof device === 'string') return device;
+        try {
+            return JSON.stringify(device);
+        } catch {
+            return String(device);
+        }
+    }
+
+    private pickBestDevice(devices: any[]): any {
+        if (!devices || devices.length === 0) return null;
+
+        const preferredPatterns = [/05BA/i, /000A/i, /U\.?are\.?U/i, /4500/i, /DigitalPersona/i, /Crossmatch/i];
+        const avoidPatterns = [/Synaptics/i, /06CB/i, /00B7/i, /VFS7552/i];
+
+        const scored = devices.map(device => {
+            const description = this.describeDevice(device);
+            let score = 0;
+            if (preferredPatterns.some(pattern => pattern.test(description))) score += 100;
+            if (avoidPatterns.some(pattern => pattern.test(description))) score -= 100;
+            return { device, description, score };
+        }).sort((a, b) => b.score - a.score);
+
+        const best = scored[0];
+        console.log('[Fp Service] Enumerated devices:', scored.map(item => `${item.description} [score=${item.score}]`).join(', '));
+        console.log('[Fp Service] Selected device:', best?.description || '(none)');
+        return best?.device ?? devices[0];
+    }
 
     private async runLocked<T>(task: () => Promise<T>): Promise<T> {
         let release: () => void;
@@ -301,7 +332,7 @@ class FingerprintService {
     async refreshDevices() {
         try {
             const devices = await this.withTimeout(this.reader.enumerateDevices() as Promise<any[]>, 10000, 'Refresh devices timed out');
-            if (devices && (devices as any[]).length > 0) { this.cachedDevice = (devices as any[])[0]; return devices; }
+            if (devices && (devices as any[]).length > 0) { this.cachedDevice = this.pickBestDevice(devices as any[]); return devices; }
             this.cachedDevice = null;
             return [];
         } catch (err) {
@@ -361,26 +392,46 @@ class FingerprintService {
                     const modules = await this.loadDevicesModule();
                     const isHttps = window.location.protocol === 'https:';
                     
-                    // PORT ROTATION: Try alternative port if busy
-                    const basePorts = isHttps ? [52182, 52181] : [52181, 52182, 8080];
-                    const portsToTry = retryCount > 0 ? [...basePorts].reverse() : basePorts;
+                    // Prefer the HID local service port and give it multiple chances before trying fallbacks.
+                    const basePorts = isHttps ? [52182, 52181] : [this.preferredPort, this.preferredPort, this.preferredPort, 52182, 8080];
+                    const portsToTry = retryCount > 0
+                        ? [this.preferredPort, this.preferredPort, ...basePorts.filter(p => p !== this.preferredPort)]
+                        : basePorts;
                     
                     let success = false;
-                    for (const port of portsToTry) {
+                    let lastPortError = '';
+                    for (let index = 0; index < portsToTry.length; index++) {
+                        const port = portsToTry[index];
                         try {
-                            safeOnStatusUpdate(`Mencoba Port ${port}...`);
+                            const attemptLabel = portsToTry.filter(p => p === port).length > 1
+                                ? ` (percobaan ${portsToTry.slice(0, index + 1).filter(p => p === port).length})`
+                                : '';
+                            safeOnStatusUpdate(`Mencoba Port ${port}${attemptLabel}...`);
+                            // Give the service a moment before probing enumerateDevices.
+                            await new Promise(r => setTimeout(r, port === this.preferredPort ? 1500 + (index * 800) : 900));
                             await this.initReader(port);
                             // Enumerate devices quickly
-                            const devices = await this.withTimeout(this.reader.enumerateDevices() as Promise<any[]>, 2500, 'Port limit');
+                            const devices = await this.withTimeout(
+                                this.reader.enumerateDevices() as Promise<any[]>,
+                                port === this.preferredPort ? 9000 : 4500,
+                                `Port ${port} enumerate timeout`
+                            );
+                            this.cachedDevice = this.pickBestDevice(devices as any[]);
                             success = true;
                             break;
                         } catch (e: any) {
+                            lastPortError = `Port ${port}: ${e.message || 'Unknown error'}`;
                             console.warn(`[Fp Service] Port ${port} probe failed: ${e.message}`);
+                            await new Promise(r => setTimeout(r, 900));
                         }
                     }
                     
                     if (!success) {
-                        throw new Error(isHttps ? 'Masalah Sertifikat SSL (HTTPS). Buka https://127.0.0.1:52182 lalu klik "Advanced" & "Proceed".' : 'Layanan Fingerprint tidak aktif.');
+                        throw new Error(
+                            isHttps
+                                ? `Masalah Sertifikat SSL (HTTPS). Buka https://127.0.0.1:52182 lalu klik "Advanced" & "Proceed". ${lastPortError}`.trim()
+                                : `Layanan Fingerprint tidak aktif atau scanner belum siap. ${lastPortError}`.trim()
+                        );
                     }
                     this.initialized = true;
                 }
@@ -393,13 +444,17 @@ class FingerprintService {
                     if (!devices || (devices as any[]).length === 0) {
                         throw new Error('Alat tidak terdeteksi. Cabut dan pasang kembali USB.');
                     }
-                    device = devices[0];
+                    device = this.pickBestDevice(devices as any[]);
                     this.cachedDevice = device;
                 }
 
                 if (this.currentRequestId !== currentId) return cleanup();
 
                 const { SampleFormat } = this.getDpModule('devices');
+                const selectedDeviceDescription = this.describeDevice(device);
+                if (selectedDeviceDescription) {
+                    safeOnStatusUpdate(`Menggunakan Alat: ${selectedDeviceDescription}`);
+                }
                 safeOnStatusUpdate('Mengaktifkan Scanner...');
                 
                 try {
