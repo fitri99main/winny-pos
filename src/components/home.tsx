@@ -40,6 +40,12 @@ import { toast } from 'sonner';
 
 type ModuleType = 'dashboard' | 'users' | 'contacts' | 'products' | 'purchases' | 'pos' | 'kds' | 'reports' | 'accounting' | 'settings' | 'employees' | 'attendance' | 'payroll' | 'branches' | 'shifts' | 'performance_indicators' | 'inventory' | 'session_history' | 'promos';
 
+const formatLocalDateForInput = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 
 function Home() {
@@ -78,6 +84,7 @@ function Home() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [contacts, setContacts] = useState<ContactData[]>([]);
   const fetchTransactionsDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const todayLocal = formatLocalDateForInput(new Date());
 
   const debouncedFetchTransactions = () => {
     if (fetchTransactionsDebounceRef.current) {
@@ -1315,7 +1322,7 @@ function Home() {
     // 1. Journal Entry
     const creditAcc = po.payment_method === 'Transfer' ? '102' : '101'; // Bank vs Kas
     await supabase.from('journal_entries').insert([{
-      date: po.date || new Date().toISOString().split('T')[0],
+      date: po.date || formatLocalDateForInput(new Date()),
       description: `Pembelian Bahan: ${po.purchase_no || ''} (${po.supplier_name || ''})`,
       debit_account: '501', // Beban Pembelian
       credit_account: creditAcc,
@@ -1746,7 +1753,7 @@ function Home() {
 
         // 1. Revenue Entry
         const { error: revError } = await supabase.from('journal_entries').insert([{
-          date: new Date().toISOString().split('T')[0],
+          date: formatLocalDateForInput(new Date()),
           description: `Penjualan ${orderNo}`,
           debit_account: debitAcc,
           credit_account: '401', // Pendapatan Penjualan
@@ -1770,7 +1777,7 @@ function Home() {
         const totalCost = items.reduce((acc, item) => acc + ((item.cost || 0) * (item.quantity || 0)), 0);
         if (totalCost > 0) {
           const { error: hppError } = await supabase.from('journal_entries').insert([{
-            date: new Date().toISOString().split('T')[0],
+            date: formatLocalDateForInput(new Date()),
             description: `HPP Penjualan ${orderNo}`,
             debit_account: '501', // Beban Pembelian / HPP
             credit_account: '104', // Persediaan
@@ -2790,6 +2797,7 @@ function Home() {
           returns={returns}
           products={products}
           ingredients={inventoryIngredients}
+          currentBranchId={currentBranchId}
           voucherStats={voucherStats}
           storeSettings={storeSettings}
           onNavigate={(module, tab) => {
@@ -2916,7 +2924,7 @@ function Home() {
             onOpenCashier={() => setIsCashierOpen(true)}
             onClearTableStatus={handleClearTableStatus}
             initialTab={salesViewTab}
-            initialDateFilter={{ start: '2026-04-06', end: '2026-04-06' }}
+            initialDateFilter={{ start: todayLocal, end: todayLocal }}
             currentBranchId={currentBranchId}
             onModeChange={(mode) => setSalesViewTab(mode)}
             onExit={() => setActiveModule('dashboard')}
@@ -3140,6 +3148,7 @@ function Home() {
           returns={returns}
           products={products}
           ingredients={inventoryIngredients}
+          currentBranchId={currentBranchId}
           voucherStats={voucherStats}
           onNavigate={(module) => setActiveModule(module as ModuleType)}
         />

@@ -14,12 +14,30 @@ import {
     Wifi
 } from 'lucide-react';
 import { ContactData } from '../contacts/ContactsView';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
+import { supabase } from '../../lib/supabase';
 
 import { SalesOrder, SalesReturn } from '../pos/SalesView';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar } from 'recharts';
+
+interface CashierSessionReceipt {
+    id: string;
+    employee_name?: string | null;
+    opened_at: string;
+    closed_at?: string | null;
+    starting_cash?: number | string | null;
+    cash_sales?: number | string | null;
+    expected_cash?: number | string | null;
+    actual_cash?: number | string | null;
+    difference?: number | string | null;
+    status?: string | null;
+}
+
+const CLOSED_SESSION_PREVIEW_LIMIT = 15;
+const CASHIER_SESSION_FETCH_LIMIT = 100;
+const CASHIER_SESSION_CACHE_MS = 60_000;
 
 export interface DashboardViewProps {
     contacts: ContactData[];
@@ -27,6 +45,7 @@ export interface DashboardViewProps {
     returns: SalesReturn[];
     products: any[];
     ingredients: any[];
+    currentBranchId?: string;
     voucherStats?: { total: number; used: number; available: number };
     storeSettings?: any;
     onNavigate: (module: string, tab?: any) => void;
@@ -38,6 +57,7 @@ export function DashboardView({
     returns = [], 
     products = [], 
     ingredients = [], 
+    currentBranchId,
     voucherStats = { total: 0, used: 0, available: 0 }, 
     storeSettings,
     onNavigate 
@@ -48,6 +68,190 @@ export function DashboardView({
 
     const [reportStartDate, setReportStartDate] = useState(todayStr);
     const [reportEndDate, setReportEndDate] = useState(todayStr);
+    const [cashierSessions, setCashierSessions] = useState<CashierSessionReceipt[]>([]);
+    const [selectedSessionId, setSelectedSessionId] = useState('');
+    const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+    const lastCashierSessionFetchRef = useRef<{ branchId: string; fetchedAt: number }>({
+        branchId: '',
+        fetchedAt: 0
+    });
+    const [cashProofSummary, setCashProofSummary] = useState({
+        systemCash: 0,
+        qrisSales: 0,
+        openingCash: 0,
+        totalCashSystem: 0,
+        actualCashierCash: 0,
+        difference: 0,
+        sessionCount: 0
+    });
+
+    const parseTransactionDate = (value: string | null | undefined) => {
+        if (!value) return null;
+
+        const raw = String(value).trim();
+        if (!raw) return null;
+
+        const match = raw.match(
+            /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2})(?::(\d{2}))?(?::(\d{2}))?)?/
+        );
+
+        if (match) {
+            const [, year, month, day, hours = '0', minutes = '0', seconds = '0'] = match;
+            return new Date(
+                Number(year),
+                Number(month) - 1,
+                Number(day),
+                Number(hours),
+                Number(minutes),
+                Number(seconds)
+            );
+        }
+
+        const parsed = new Date(raw);
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+    };
+
+    const formatDateOnly = (value: Date) => {
+        const year = value.getFullYear();
+        const month = String(value.getMonth() + 1).padStart(2, '0');
+        const day = String(value.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+
+    const getSessionStatus = (session: CashierSessionReceipt) => String(session.status || '').trim().toLowerCase();
+
+    const loadCashierSessions = async ({ force = false }: { force?: boolean } = {}) => {
+        if (!currentBranchId) {
+            setCashierSessions([]);
+            setSelectedSessionId('');
+            return;
+        }
+
+        const hasRecentCache =
+            !force &&
+            cashierSessions.length > 0 &&
+            lastCashierSessionFetchRef.current.branchId === currentBranchId &&
+            Date.now() - lastCashierSessionFetchRef.current.fetchedAt < CASHIER_SESSION_CACHE_MS;
+
+        if (hasRecentCache) {
+            return;
+        }
+
+        if (isLoadingSessions) {
+            return;
+        }
+
+        setIsLoadingSessions(true);
+        try {
+            const { data, error } = await supabase
+                .from('cashier_sessions')
+                .select('id, employee_name, opened_at, closed_at, starting_cash, cash_sales, expected_cash, actual_cash, difference, status')
+                .eq('branch_id', currentBranchId)
+                .order('opened_at', { ascending: false })
+                .limit(CASHIER_SESSION_FETCH_LIMIT);
+
+            if (error) throw error;
+
+            const sessions = (data || []).map(session => ({
+                ...session,
+                id: String(session.id)
+            }));
+
+            setCashierSessions(sessions);
+            lastCashierSessionFetchRef.current = {
+                branchId: currentBranchId,
+                fetchedAt: Date.now()
+            };
+
+            const visibleSessions = [
+                ...sessions.filter(session => getSessionStatus(session) === 'open'),
+                ...sessions.filter(session => getSessionStatus(session) === 'closed').slice(0, CLOSED_SESSION_PREVIEW_LIMIT)
+            ];
+
+            if (visibleSessions.length === 0) {
+                setSelectedSessionId('');
+                return;
+            }
+
+            setSelectedSessionId(previousSessionId => {
+                const hasPrevious = visibleSessions.some(session => session.id === previousSessionId);
+                return hasPrevious ? previousSessionId : visibleSessions[0].id;
+            });
+        } catch (err) {
+            console.error('Failed to fetch cashier sessions for receipt proof:', err);
+            setCashierSessions([]);
+            setSelectedSessionId('');
+        } finally {
+            setIsLoadingSessions(false);
+        }
+    };
+
+    const selectedSession = useMemo(
+        () => cashierSessions.find(session => String(session.id) === String(selectedSessionId)) || null,
+        [cashierSessions, selectedSessionId]
+    );
+
+    const displayedCashierSessions = useMemo(() => {
+        const sortedSessions = [...cashierSessions].sort(
+            (a, b) => new Date(b.opened_at).getTime() - new Date(a.opened_at).getTime()
+        );
+        const openSessions = sortedSessions.filter(session => getSessionStatus(session) === 'open');
+        const closedSessions = sortedSessions
+            .filter(session => getSessionStatus(session) === 'closed')
+            .slice(0, CLOSED_SESSION_PREVIEW_LIMIT);
+        const visibleSessions = [...openSessions, ...closedSessions];
+
+        if (selectedSessionId && !visibleSessions.some(session => session.id === selectedSessionId)) {
+            const selected = sortedSessions.find(session => session.id === selectedSessionId);
+            if (selected) {
+                return [selected, ...visibleSessions];
+            }
+        }
+
+        return visibleSessions;
+    }, [cashierSessions, selectedSessionId]);
+
+    const hiddenClosedSessionsCount = Math.max(
+        cashierSessions.filter(session => getSessionStatus(session) === 'closed').length -
+        displayedCashierSessions.filter(session => getSessionStatus(session) === 'closed').length,
+        0
+    );
+
+    const selectedSessionEnd = selectedSession?.closed_at || new Date().toISOString();
+
+    useEffect(() => {
+        if (!currentBranchId) {
+            setCashierSessions([]);
+            setSelectedSessionId('');
+            lastCashierSessionFetchRef.current = {
+                branchId: '',
+                fetchedAt: 0
+            };
+            return;
+        }
+
+        void loadCashierSessions();
+    }, [currentBranchId]);
+
+    useEffect(() => {
+        if (!showDailyReceipt || !currentBranchId) return;
+        void loadCashierSessions();
+    }, [showDailyReceipt, currentBranchId]);
+
+    useEffect(() => {
+        if (!selectedSession) return;
+
+        const openedAt = new Date(selectedSession.opened_at);
+        const closedAt = new Date(selectedSessionEnd);
+
+        if (!Number.isNaN(openedAt.getTime())) {
+            setReportStartDate(formatDateOnly(openedAt));
+        }
+
+        if (!Number.isNaN(closedAt.getTime())) {
+            setReportEndDate(formatDateOnly(closedAt));
+        }
+    }, [selectedSession, selectedSessionEnd]);
 
     // --- Real Stats Calculation ---
     const salesToday = (sales || []).filter(s => s && s.date && s.date.startsWith(todayStr) && s.status !== 'Returned');
@@ -174,15 +378,26 @@ export function DashboardView({
 
     // --- Daily Receipt Calculations (Filtered by Date Range) ---
     const reportSales = useMemo(() => {
+        if (selectedSession) {
+            const openedAt = new Date(selectedSession.opened_at).getTime();
+            const closedAt = new Date(selectedSessionEnd).getTime();
+
+            return (sales || []).filter(s => {
+                if (!s || !s.date || s.status === 'Returned') return false;
+                const saleDate = parseTransactionDate(s.date);
+                if (!saleDate) return false;
+                const saleTime = saleDate.getTime();
+                return saleTime >= openedAt && saleTime <= closedAt;
+            });
+        }
+
         return (sales || []).filter(s => {
             if (!s || !s.date || s.status === 'Returned') return false;
             const saleDate = s.date.split('T')[0];
             return saleDate >= reportStartDate && saleDate <= reportEndDate;
         });
-    }, [sales, reportStartDate, reportEndDate]);
+    }, [sales, reportStartDate, reportEndDate, selectedSession, selectedSessionEnd]);
 
-    const dailyTax = useMemo(() => reportSales.reduce((acc, s) => acc + (s.tax || 0), 0), [reportSales]);
-    const dailyDiscount = useMemo(() => reportSales.reduce((acc, s) => acc + (s.discount || 0), 0), [reportSales]);
     const paymentBreakdown = useMemo(() => {
         const counts: Record<string, number> = {};
         reportSales.forEach(s => {
@@ -193,8 +408,112 @@ export function DashboardView({
         return Object.entries(counts).map(([name, total]) => ({ name, total }));
     }, [reportSales]);
 
-    const dailyNetTotal = useMemo(() => reportSales.reduce((acc, s) => acc + (s.totalAmount || 0), 0), [reportSales]);
-    const subtotalGross = dailyNetTotal + dailyDiscount - dailyTax;
+    const paymentMethodSummary = useMemo(() => {
+        return paymentBreakdown.reduce(
+            (summary, item) => {
+                const methodName = String(item.name || '').toLowerCase();
+                const total = Number(item.total || 0);
+
+                if (methodName.includes('tunai') || methodName.includes('cash')) {
+                    summary.cash += total;
+                } else if (methodName.includes('qris') || methodName.includes('digital')) {
+                    summary.qris += total;
+                }
+
+                return summary;
+            },
+            { cash: 0, qris: 0 }
+        );
+    }, [paymentBreakdown]);
+
+    useEffect(() => {
+        if (!showDailyReceipt) {
+            setCashProofSummary({
+                systemCash: 0,
+                qrisSales: 0,
+                openingCash: 0,
+                totalCashSystem: 0,
+                actualCashierCash: 0,
+                difference: 0,
+                sessionCount: 0
+            });
+            return;
+        }
+
+        if (!selectedSession) {
+            setCashProofSummary({
+                systemCash: 0,
+                qrisSales: 0,
+                openingCash: 0,
+                totalCashSystem: 0,
+                actualCashierCash: 0,
+                difference: 0,
+                sessionCount: 0
+            });
+            return;
+        }
+
+        const fallbackSystemCash = paymentMethodSummary.cash;
+
+        const openingCash = Number(selectedSession.starting_cash || 0);
+        const systemCash = Number(selectedSession.cash_sales ?? fallbackSystemCash);
+        const qrisSales = paymentMethodSummary.qris;
+        const totalCashSystem = Number(selectedSession.expected_cash ?? (openingCash + systemCash));
+        const actualCashierCash = Number(selectedSession.actual_cash || 0);
+        const difference = Number(selectedSession.difference ?? (actualCashierCash - totalCashSystem));
+
+        setCashProofSummary({
+            systemCash,
+            qrisSales,
+            openingCash,
+            totalCashSystem,
+            actualCashierCash,
+            difference,
+            sessionCount: 1
+        });
+    }, [showDailyReceipt, selectedSession, paymentMethodSummary]);
+
+    const selectedSessionLabel = selectedSession
+        ? `${selectedSession.employee_name || 'Kasir'} • ${new Date(selectedSession.opened_at).toLocaleString('id-ID', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        })}`
+        : '';
+
+    const selectedSessionRangeLabel = selectedSession
+        ? `${new Date(selectedSession.opened_at).toLocaleString('id-ID', {
+            day: '2-digit',
+            month: 'long',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        })} s/d ${new Date(selectedSessionEnd).toLocaleString('id-ID', {
+            day: '2-digit',
+            month: 'long',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        })}`
+        : '';
+
+    const selectedSessionStatusLabel = selectedSession
+        ? (getSessionStatus(selectedSession) === 'closed' ? 'Tutup' : 'Open')
+        : '';
+
+    const formatSessionOptionLabel = (session: CashierSessionReceipt) => {
+        const statusLabel = getSessionStatus(session) === 'closed' ? 'Tutup' : 'Open';
+        const openedAtLabel = new Date(session.opened_at).toLocaleString('id-ID', {
+            day: '2-digit',
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+
+        return `${session.employee_name || 'Kasir'} • ${openedAtLabel} • ${statusLabel}`;
+    };
 
     const handlePrint = () => {
         window.print();
@@ -266,6 +585,11 @@ export function DashboardView({
                 <div className="flex items-center gap-3">
                     <Button
                         onClick={() => setShowDailyReceipt(true)}
+                        onMouseEnter={() => {
+                            if (!cashierSessions.length && !isLoadingSessions) {
+                                void loadCashierSessions();
+                            }
+                        }}
                         className="bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold px-4 h-9 rounded-xl shadow-lg shadow-orange-200 flex items-center gap-2 transition-all active:scale-95"
                     >
                         <Printer className="w-4 h-4" />
@@ -482,21 +806,41 @@ export function DashboardView({
                         {/* Header Modal (Hidden on Print) */}
                         <div className="p-6 border-b border-gray-100 flex items-center justify-between print:hidden">
                             <div className="flex-1 mr-4">
-                                <h3 className="font-bold text-gray-800">Bukti Fisik Transaksi</h3>
-                                <div className="flex items-center gap-2 mt-2">
-                                    <input 
-                                        type="date" 
-                                        value={reportStartDate} 
-                                        onChange={(e) => setReportStartDate(e.target.value)}
-                                        className="text-xs px-2 py-1 border rounded-md focus:ring-1 focus:ring-orange-500 outline-none"
-                                    />
-                                    <span className="text-[10px] font-bold text-gray-400">s/d</span>
-                                    <input 
-                                        type="date" 
-                                        value={reportEndDate} 
-                                        onChange={(e) => setReportEndDate(e.target.value)}
-                                        className="text-xs px-2 py-1 border rounded-md focus:ring-1 focus:ring-orange-500 outline-none"
-                                    />
+                                <h3 className="font-bold text-gray-800">Ringkasan Tutup Kasir</h3>
+                                <div className="mt-2 space-y-2">
+                                    <p className="text-[11px] text-gray-500">
+                                        Pilih shift kasir untuk lihat bukti kas secara ringkas.
+                                    </p>
+                                    <select
+                                        value={selectedSessionId}
+                                        onChange={(e) => setSelectedSessionId(e.target.value)}
+                                        className="w-full text-[11px] px-3 py-2.5 border rounded-md focus:ring-1 focus:ring-orange-500 outline-none bg-white"
+                                        disabled={(isLoadingSessions && displayedCashierSessions.length === 0) || displayedCashierSessions.length === 0}
+                                    >
+                                        {isLoadingSessions && displayedCashierSessions.length === 0 && <option>Memuat shift kasir...</option>}
+                                        {!isLoadingSessions && displayedCashierSessions.length === 0 && <option>Tidak ada shift kasir</option>}
+                                        {displayedCashierSessions.map((session) => (
+                                            <option key={session.id} value={session.id}>
+                                                {formatSessionOptionLabel(session)}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {hiddenClosedSessionsCount > 0 && (
+                                        <div className="text-[10px] text-gray-400">
+                                            Menampilkan shift aktif dan {CLOSED_SESSION_PREVIEW_LIMIT} shift tutup terbaru. {hiddenClosedSessionsCount} shift lain disembunyikan.
+                                        </div>
+                                    )}
+                                    {isLoadingSessions && displayedCashierSessions.length > 0 && (
+                                        <div className="text-[10px] text-gray-400">
+                                            Memperbarui daftar kasir...
+                                        </div>
+                                    )}
+                                    {selectedSession && (
+                                        <div className="text-[11px] text-gray-500 leading-relaxed">
+                                            <div>{selectedSessionLabel}</div>
+                                            <div>{selectedSessionStatusLabel} • {selectedSessionRangeLabel}</div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                             <Button variant="ghost" size="icon" onClick={() => setShowDailyReceipt(false)}>
@@ -524,13 +868,20 @@ export function DashboardView({
                                     {storeSettings?.address && <p className="text-[11px] whitespace-pre-line">{storeSettings.address}</p>}
                                     {storeSettings?.phone && <p className="text-[11px]">Telp: {storeSettings.phone}</p>}
                                     <div className="py-2">--------------------------------</div>
-                                    <h5 className="font-bold text-sm">LAPORAN TRANSAKSI</h5>
+                                    <h5 className="font-bold text-sm">RINGKASAN TUTUP KASIR</h5>
                                     <p className="text-[11px] font-bold">
-                                        {reportStartDate === reportEndDate 
-                                            ? new Date(reportStartDate).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-                                            : `${new Date(reportStartDate).toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' })} s/d ${new Date(reportEndDate).toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' })}`
-                                        }
+                                        {selectedSessionRangeLabel || (
+                                            reportStartDate === reportEndDate
+                                                ? new Date(reportStartDate).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+                                                : `${new Date(reportStartDate).toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' })} s/d ${new Date(reportEndDate).toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' })}`
+                                        )}
                                     </p>
+                                    {selectedSession && (
+                                        <>
+                                            <p className="text-[11px]">Kasir: {selectedSession.employee_name || 'Kasir'}</p>
+                                            <p className="text-[11px]">Status: {selectedSessionStatusLabel}</p>
+                                        </>
+                                    )}
                                     <div className="py-1">================================</div>
                                 </div>
 
@@ -543,37 +894,47 @@ export function DashboardView({
                                         <span>Total Transaksi:</span>
                                         <span>{reportSales.length}</span>
                                     </div>
+                                    <div className="flex justify-between">
+                                        <span>Tunai:</span>
+                                        <span>Rp {cashProofSummary.systemCash.toLocaleString('id-ID')}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span>QRis:</span>
+                                        <span>Rp {cashProofSummary.qrisSales.toLocaleString('id-ID')}</span>
+                                    </div>
                                     <div className="flex justify-between font-bold border-t border-gray-200 mt-2 pt-1">
                                         <span>TOTAL BERSIH (NET):</span>
                                         <span>Rp {(reportSales.reduce((acc, s) => acc + (s.totalAmount || 0), 0)).toLocaleString('id-ID')}</span>
-                                    </div>
-                                    
-                                    {/* Tax/Discount Details */}
-                                    <div className="flex justify-between mt-1 text-gray-500">
-                                        <span>Subtotal Kotor:</span>
-                                        <span>{subtotalGross.toLocaleString('id-ID')}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span>Total Pajak (+):</span>
-                                        <span>{dailyTax.toLocaleString('id-ID')}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span>Total Diskon (-):</span>
-                                        <span>{dailyDiscount.toLocaleString('id-ID')}</span>
                                     </div>
                                 </div>
 
                                 <div className="py-2 text-center">--------------------------------</div>
 
-                                {/* Payment Breakdown */}
                                 <div className="space-y-1 text-[12px]">
-                                    <span className="font-bold tracking-tighter uppercase">DETAIL PEMBAYARAN</span>
-                                    {paymentBreakdown.map((m, idx) => (
-                                        <div key={idx} className="flex justify-between">
-                                            <span>{m.name.toUpperCase()}:</span>
-                                            <span>{m.total.toLocaleString('id-ID')}</span>
-                                        </div>
-                                    ))}
+                                    <div className="flex justify-between">
+                                        <span className="font-bold tracking-tighter uppercase">BUKTI FISIK KAS</span>
+                                        <span>{cashProofSummary.sessionCount} sesi</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span>Tunai System:</span>
+                                        <span>{cashProofSummary.systemCash.toLocaleString('id-ID')}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span>Modal Awal:</span>
+                                        <span>{cashProofSummary.openingCash.toLocaleString('id-ID')}</span>
+                                    </div>
+                                    <div className="flex justify-between font-bold border-t border-gray-200 mt-2 pt-1">
+                                        <span>Total:</span>
+                                        <span>{cashProofSummary.totalCashSystem.toLocaleString('id-ID')}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span>Kas Fisik Kasir:</span>
+                                        <span>{cashProofSummary.actualCashierCash.toLocaleString('id-ID')}</span>
+                                    </div>
+                                    <div className="flex justify-between font-bold">
+                                        <span>Selisih:</span>
+                                        <span>{cashProofSummary.difference.toLocaleString('id-ID')}</span>
+                                    </div>
                                 </div>
 
                                 <div className="py-4 text-center">--------------------------------</div>
