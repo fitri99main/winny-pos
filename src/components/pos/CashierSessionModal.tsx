@@ -318,6 +318,8 @@ export function CashierSessionModal({
     };
 
     const formatPrice = (val: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(val || 0);
+    const cashDifference = (Number(actualCash) || 0) - (closingData?.expected_cash || 0);
+    const hasActualCash = actualCash.trim().length > 0;
 
     return (
         <>
@@ -339,7 +341,7 @@ export function CashierSessionModal({
                         <DialogDescription className="text-gray-500 mt-1 font-medium">
                             {mode === 'open' 
                                 ? 'Silakan masukkan modal awal di laci kasir untuk hari ini.' 
-                                : 'Ringkasan keuangan dan rekonsiliasi kas untuk sesi ini.'
+                                : 'Cek total kas lalu masukkan hitungan fisik kasir.'
                             }
                         </DialogDescription>
                     </DialogHeader>
@@ -370,55 +372,43 @@ export function CashierSessionModal({
                             ) : (
                                 <>
                                     {!settings?.require_blind_close && (
-                                    <div className="p-4 bg-blue-50/50 rounded-2xl border border-blue-100 space-y-4">
-                                        <div className="flex justify-between items-end border-b border-blue-200/20 pb-3">
+                                    <div className="p-4 bg-blue-50/60 rounded-2xl border border-blue-100 space-y-4">
+                                        <div className="flex items-center justify-between">
                                             <div>
-                                                <span className="text-blue-600 font-bold text-[10px] uppercase tracking-widest block">Status</span>
-                                                <div className="flex gap-3 text-xs mt-1 font-bold">
-                                                    <span className="text-green-700">{closingData?.completed_count || 0} Selesai</span>
-                                                    <span className="text-orange-700">{closingData?.pending_count || 0} Menunggu</span>
-                                                </div>
+                                                <span className="text-blue-600 font-bold text-[10px] uppercase tracking-widest block">Ringkas</span>
+                                                <span className="text-xs text-blue-900 font-semibold">
+                                                    {closingData?.completed_count || 0} selesai • {closingData?.pending_count || 0} pending
+                                                </span>
                                             </div>
                                             <div className="text-right">
-                                                <span className="text-blue-600 font-bold text-[10px] uppercase tracking-widest block">Total Net</span>
+                                                <span className="text-blue-600 font-bold text-[10px] uppercase tracking-widest block">Penjualan</span>
                                                 <span className="text-blue-900 font-bold text-lg">{formatPrice(closingData?.total_sales)}</span>
                                             </div>
                                         </div>
 
-                                        {/* [NEW] Main Category Breakdown View */}
-                                        {(closingData?.category_summary || []).length > 0 && (
-                                            <div className="py-2 border-b border-blue-200/20">
-                                                <span className="text-blue-500 font-bold text-[9px] uppercase tracking-widest block mb-2">Ringkasan Kategori</span>
-                                                <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
-                                                    {closingData?.category_summary.map((c: any, i: number) => (
-                                                        <div key={i} className="flex justify-between items-center text-[11px]">
-                                                            <span className="text-gray-500 font-medium truncate max-w-[100px]">{c.category}</span>
-                                                            <span className="text-blue-900 font-bold">{formatPrice(c.amount)}</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
+                                        <div className="grid grid-cols-2 gap-3 text-[11px]">
+                                            <div className="rounded-xl bg-white/80 border border-blue-100 px-3 py-2">
+                                                <span className="text-blue-500/90 block font-bold uppercase tracking-wide">Tunai</span>
+                                                <span className="font-bold text-blue-950">{formatPrice(closingData?.cash_sales)}</span>
                                             </div>
-                                        )}
-
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div className="pt-1">
-                                                <span className="text-blue-500/80 block text-[9px] font-bold uppercase">PENERIMAAN TUNAI</span>
-                                                <span className="font-bold text-blue-900">{formatPrice(closingData?.cash_sales)}</span>
+                                            <div className="rounded-xl bg-white/80 border border-blue-100 px-3 py-2">
+                                                <span className="text-blue-500/90 block font-bold uppercase tracking-wide">Non Tunai</span>
+                                                <span className="font-bold text-blue-950">{formatPrice(closingData?.non_cash_sales)}</span>
                                             </div>
-                                            <div className="pt-1">
-                                                <span className="text-blue-500/80 block text-[9px] font-bold uppercase">PENERIMAAN NON-TUNAI</span>
-                                                <span className="font-bold text-blue-900">{formatPrice(closingData?.non_cash_sales)}</span>
+                                            <div className="rounded-xl bg-white/80 border border-blue-100 px-3 py-2">
+                                                <span className="text-blue-500/90 block font-bold uppercase tracking-wide">Modal</span>
+                                                <span className="font-bold text-blue-950">{formatPrice(parseFloat(session?.starting_cash) || 0)}</span>
                                             </div>
-                                            <div className="pt-1 col-span-2">
-                                                <span className="text-blue-500/80 block text-[9px] font-bold uppercase tracking-tight">TOTAL SEHARUSNYA</span>
-                                                <span className="font-bold text-blue-950 text-base">{formatPrice(closingData?.expected_cash)}</span>
+                                            <div className="rounded-xl bg-blue-600 text-white px-3 py-2">
+                                                <span className="block font-bold uppercase tracking-wide text-[10px] text-blue-100">Seharusnya</span>
+                                                <span className="font-bold text-base">{formatPrice(closingData?.expected_cash)}</span>
                                             </div>
                                         </div>
                                     </div>
                                     )}
 
                                     <div className="space-y-3">
-                                        <Label className="text-sm font-bold text-gray-700">Total Uang Tunai Aktual (Hitungan Fisik)</Label>
+                                        <Label className="text-sm font-bold text-gray-700">Kas Fisik di Laci</Label>
                                         <div className="relative">
                                             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">Rp</span>
                                             <Input
@@ -432,14 +422,14 @@ export function CashierSessionModal({
                                         </div>
                                     </div>
 
-                                    {!settings?.require_blind_close && actualCash && (
+                                    {!settings?.require_blind_close && hasActualCash && (
                                         <div className={`p-4 rounded-2xl border flex items-center justify-between ${
-                                            (parseFloat(actualCash) - (closingData?.expected_cash || 0)) === 0
+                                            cashDifference === 0
                                                 ? 'bg-green-50 border-green-100 text-green-700'
                                                 : 'bg-red-50 border-red-100 text-red-700'
                                             }`}>
-                                            <span className="text-xs font-bold uppercase tracking-wider">Selisih (Variance)</span>
-                                            <span className="text-lg font-bold">{formatPrice(parseFloat(actualCash) - (closingData?.expected_cash || 0))}</span>
+                                            <span className="text-xs font-bold uppercase tracking-wider">Selisih Kas</span>
+                                            <span className="text-lg font-bold">{formatPrice(cashDifference)}</span>
                                         </div>
                                     )}
                                 </>
