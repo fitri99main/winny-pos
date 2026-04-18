@@ -37,7 +37,8 @@ export function OrderPanel({
   return (
     <div className="h-full flex flex-col frosted-glass rounded-3xl border border-white/50 overflow-hidden">
       {/* Header */}
-      <div className="p-4 border-b border-gray-200/50">
+      <div className="p-4 border-b border-gray-200/50 bg-orange-50/70">
+        <p className="text-[10px] font-black uppercase tracking-[0.25em] text-orange-500 mb-1">Panel Keranjang</p>
         <h2 className="text-xl font-bold text-pos-charcoal">Pesanan Saat Ini</h2>
         <p className="text-xs text-gray-500 mt-1">
           {items.length} {items.length === 1 ? 'item' : 'item'}

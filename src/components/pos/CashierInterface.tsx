@@ -102,6 +102,7 @@ export function CashierInterface({
   onAutoPaymentProcessed,
   topSellingProducts = []
 }: CashierInterfaceProps) {
+  const cashierLayoutVersion = 'Split Layout v6';
   // console.log('CashierInterface Props:', { productsLength: products?.length, categoriesLength: categories?.length }); 
   // Removed verbose log to prevent crash on undefined properties
   const [viewMode, setViewMode] = useState<'tables' | 'pos'>(
@@ -820,9 +821,12 @@ export function CashierInterface({
   return (
     <div className="h-full flex flex-col bg-pos-cream noise-texture overflow-hidden relative">
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden pb-16 md:pb-20">
+      <div
+        className="flex-1 overflow-hidden pb-6 md:pb-8 min-w-0"
+        style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) clamp(220px, 36vw, 420px)' }}
+      >
         {/* Left: Product Grid (75%) */}
-        <div className="flex-[0.75] flex flex-col p-3 md:p-4 lg:p-5 overflow-hidden">
+        <div className="min-w-0 flex flex-col p-2 md:p-4 lg:p-5 overflow-hidden bg-white/35 rounded-r-[28px] border-r border-orange-100">
           {/* Header */}
           <div className="flex items-center gap-3 mb-4">
             {onBack && (
@@ -839,6 +843,9 @@ export function CashierInterface({
                 <ArrowLeft className="w-5 h-5" />
               </button>
             )}
+            <div className="shrink-0 rounded-full bg-red-500 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-white shadow-lg">
+              {cashierLayoutVersion}
+            </div>
             <div className="w-10 h-10 bg-pos-coral rounded-xl flex items-center justify-center shadow-lg shadow-orange-200 shrink-0">
               <ShoppingCart className="w-6 h-6 text-white" />
             </div>
@@ -945,6 +952,11 @@ export function CashierInterface({
           </div>
 
           {/* Search Bar */}
+          <div className="mb-3 rounded-2xl bg-blue-50 border border-blue-100 px-4 py-2">
+            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-500">Panel Produk</p>
+            <p className="text-xs font-semibold text-blue-700">Semua produk tampil di sisi kiri</p>
+          </div>
+
           <div className="mb-4">
             <SearchBar
               searchQuery={searchQuery}
@@ -964,7 +976,10 @@ export function CashierInterface({
 
           {/* Product Grid */}
           <div className="flex-1 overflow-y-auto">
-            <div className="grid grid-cols-4 gap-2 md:gap-3 pb-6">
+            <div
+              className="gap-2 md:gap-3 pb-6"
+              style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(128px, 1fr))' }}
+            >
               {filteredProducts.filter(p => p && p.id).map((product) => (
                 <ProductTile
                   key={product.id}
@@ -988,37 +1003,37 @@ export function CashierInterface({
         </div>
 
         {/* Right: Order Panel (25%) */}
-        <div className="flex-[0.25] p-3 pl-0 flex flex-col gap-2">
-
-
-          <OrderPanel
-            items={orderItems}
-            subtotal={subtotal}
-            discount={orderDiscount}
-            total={total}
-            tax={taxAmount}
-            service={serviceAmount}
-            onQuantityChange={handleQuantityChange}
-            onRemoveItem={handleRemoveItem}
-            onNotesChange={handleNotesChange}
+        <div className="min-w-0 p-2 md:p-3 pl-2 md:pl-3 flex flex-col gap-2 overflow-hidden bg-orange-50/60 border-l-2 border-orange-200">
+          <QuickActionsBar
+            embedded
+            hasItems={orderItems.length > 0}
+            onManualItemClick={() => setManualItemModalOpen(true)}
+            onDiscountClick={() => setDiscountModalOpen(true)}
+            onSplitBillClick={handleSplitBill}
+            onHoldOrderClick={handleHoldOrder}
+            onPaymentClick={() => {
+              setIsSplitPayment(false);
+              setPaymentModalOpen(true);
+            }}
+            onHeldOrdersClick={() => setHeldOrdersModalOpen(true)}
+            heldCount={heldOrders.length}
           />
+
+          <div className="flex-1 min-h-0">
+            <OrderPanel
+              items={orderItems}
+              subtotal={subtotal}
+              discount={orderDiscount}
+              total={total}
+              tax={taxAmount}
+              service={serviceAmount}
+              onQuantityChange={handleQuantityChange}
+              onRemoveItem={handleRemoveItem}
+              onNotesChange={handleNotesChange}
+            />
+          </div>
         </div>
       </div>
-
-      {/* Quick Actions Bar */}
-      <QuickActionsBar
-        hasItems={orderItems.length > 0}
-        onManualItemClick={() => setManualItemModalOpen(true)}
-        onDiscountClick={() => setDiscountModalOpen(true)}
-        onSplitBillClick={handleSplitBill}
-        onHoldOrderClick={handleHoldOrder}
-        onPaymentClick={() => {
-          setIsSplitPayment(false);
-          setPaymentModalOpen(true);
-        }}
-        onHeldOrdersClick={() => setHeldOrdersModalOpen(true)}
-        heldCount={heldOrders.length}
-      />
 
       {/* Modals */}
       <ManualItemModal
