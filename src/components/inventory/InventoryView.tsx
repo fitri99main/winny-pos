@@ -95,6 +95,42 @@ export function InventoryView({
         reason: ''
     });
 
+    const getUnitOptionValue = (unitOption: any) => {
+        const abbreviation = String(unitOption?.abbreviation || '').trim();
+        const name = String(unitOption?.name || '').trim();
+        return abbreviation || name;
+    };
+
+    const getUnitOptionLabel = (unitOption: any) => {
+        const abbreviation = String(unitOption?.abbreviation || '').trim();
+        const name = String(unitOption?.name || '').trim();
+        return abbreviation ? `${name} (${abbreviation})` : name;
+    };
+
+    const normalizeUnitValue = (value?: string) => {
+        const rawValue = String(value || '').trim();
+        if (!rawValue) return '';
+
+        const matchedUnit = units.find((unitOption) => {
+            const optionValue = getUnitOptionValue(unitOption).toLowerCase();
+            const abbreviation = String(unitOption?.abbreviation || '').trim().toLowerCase();
+            const name = String(unitOption?.name || '').trim().toLowerCase();
+            const compareValue = rawValue.toLowerCase();
+
+            return compareValue === optionValue || compareValue === abbreviation || compareValue === name;
+        });
+
+        return matchedUnit ? getUnitOptionValue(matchedUnit) : rawValue;
+    };
+
+    const openEditModal = (ingredient: Ingredient) => {
+        setEditFormData({
+            ...ingredient,
+            unit: normalizeUnitValue(ingredient.unit)
+        });
+        setIsEditModalOpen(true);
+    };
+
     const handleAddIngredient = async (e: React.FormEvent) => {
         e.preventDefault();
         await onIngredientAction('create', {
@@ -117,7 +153,7 @@ export function InventoryView({
         await onIngredientAction('update', {
             id: editFormData.id,
             name: editFormData.name,
-            unit: editFormData.unit,
+            unit: normalizeUnitValue(editFormData.unit),
             category: editFormData.category,
             min_stock: editFormData.min_stock,
             cost_per_unit: editFormData.cost_per_unit,
@@ -246,7 +282,7 @@ export function InventoryView({
                                         <td className="px-8 py-5">
                                             <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <button
-                                                    onClick={() => { setEditFormData(ing); setIsEditModalOpen(true); }}
+                                                    onClick={() => openEditModal(ing)}
                                                     className="p-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors"
                                                     title="Edit Data"
                                                 >
@@ -363,7 +399,11 @@ export function InventoryView({
                                             required
                                         >
                                             <option value="">Pilih Satuan...</option>
-                                            {units.map(u => <option key={u.id} value={u.abbreviation}>{u.name} ({u.abbreviation})</option>)}
+                                            {units.map(u => (
+                                                <option key={u.id} value={getUnitOptionValue(u)}>
+                                                    {getUnitOptionLabel(u)}
+                                                </option>
+                                            ))}
                                         </select>
                                     </div>
                                 </div>
@@ -435,12 +475,16 @@ export function InventoryView({
                                         <label className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Satuan/Unit</label>
                                         <select
                                             className="w-full p-4 bg-gray-50 border border-gray-100 rounded-[20px] outline-none"
-                                            value={editFormData.unit || ''}
+                                            value={normalizeUnitValue(editFormData.unit)}
                                             onChange={e => setEditFormData({ ...editFormData, unit: e.target.value })}
                                             required
                                         >
                                             <option value="">Pilih Satuan...</option>
-                                            {units.map(u => <option key={u.id} value={u.abbreviation}>{u.name} ({u.abbreviation})</option>)}
+                                            {units.map(u => (
+                                                <option key={u.id} value={getUnitOptionValue(u)}>
+                                                    {getUnitOptionLabel(u)}
+                                                </option>
+                                            ))}
                                         </select>
                                     </div>
                                 </div>

@@ -251,27 +251,62 @@ function Home() {
 
   // Inventory Handlers
   const handleIngredientCRUD = async (action: 'create' | 'update' | 'delete', data: any) => {
+    const buildIngredientPayload = (rawData: any) => {
+      const payload: Record<string, any> = {
+        last_updated: formatLocalDateForInput(new Date())
+      };
+
+      if (rawData.name !== undefined) payload.name = String(rawData.name || '').trim();
+      if (rawData.unit !== undefined) payload.unit = String(rawData.unit || '').trim();
+      if (rawData.category !== undefined) payload.category = String(rawData.category || '').trim();
+      if (rawData.current_stock !== undefined) payload.current_stock = Number(rawData.current_stock || 0);
+      if (rawData.min_stock !== undefined) payload.min_stock = Number(rawData.min_stock || 0);
+      if (rawData.cost_per_unit !== undefined) payload.cost_per_unit = Number(rawData.cost_per_unit || 0);
+      if (rawData.branch_id !== undefined) payload.branch_id = rawData.branch_id;
+
+      return payload;
+    };
+
     try {
       if (action === 'create') {
-        // Ensure numeric types
-        const payload = {
+        const payload = buildIngredientPayload({
           ...data,
-          current_stock: Number(data.current_stock || 0),
-          min_stock: Number(data.min_stock || 0),
-          cost_per_unit: Number(data.cost_per_unit || 0),
+          current_stock: data.current_stock ?? 0,
           branch_id: currentBranchId
-        };
-        const { error } = await supabase.from('ingredients').insert([payload]);
+        });
+
+        const { data: insertedIngredient, error } = await supabase
+          .from('ingredients')
+          .insert([payload])
+          .select()
+          .single();
         if (error) throw error;
+
+        if (insertedIngredient) {
+          setInventoryIngredients(prev =>
+            [...prev, insertedIngredient].sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+          );
+        }
         toast.success('Bahan baku berhasil ditambahkan');
       } else if (action === 'update') {
-        const { id, ...payload } = data;
-        const { error } = await supabase.from('ingredients').update(payload).eq('id', id);
+        const { id } = data;
+        const payload = buildIngredientPayload(data);
+        const { data: updatedIngredient, error } = await supabase
+          .from('ingredients')
+          .update(payload)
+          .eq('id', id)
+          .select()
+          .single();
         if (error) throw error;
+
+        setInventoryIngredients(prev =>
+          prev.map(item => item.id === id ? { ...item, ...(updatedIngredient || payload) } : item)
+        );
         toast.success('Bahan baku berhasil diupdate');
       } else if (action === 'delete') {
         const { error } = await supabase.from('ingredients').delete().eq('id', data.id);
         if (error) throw error;
+        setInventoryIngredients(prev => prev.filter(item => item.id !== data.id));
         toast.success('Bahan baku berhasil dihapus');
       }
       // Proactive re-fetch for immediate feedback
