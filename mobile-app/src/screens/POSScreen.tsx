@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useState, useMemo, useEffect, useCallback, memo } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, FlatList, Image, Modal, Alert, StyleSheet, useWindowDimensions, ActivityIndicator, Linking } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, FlatList, Image, Modal, Alert, StyleSheet, useWindowDimensions, ActivityIndicator, Linking, I18nManager } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
@@ -82,12 +82,8 @@ export default function POSScreen() {
     const route = useRoute<any>();
     const { tableNumber, tableNo, waiterName: initialWaiter } = route.params || {};
     const { width, height } = useWindowDimensions();
-    const isLandscape = width > height;
     const isTablet = Math.min(width, height) >= 600;
-    const isLargeTablet = Math.min(width, height) >= 800;
     const isSmallDevice = width < 480;
-    // [FULL SCREEN FOR FOLDABLES] Heighten threshold to 900 to keep 100% menu width on Samsung Fold 3 (unfolded width ~674px)
-    const isSideBySide = width >= 900;
 
 
     const [searchQuery, setSearchQuery] = useState('');
@@ -203,6 +199,14 @@ export default function POSScreen() {
     }, []);
 
     const { permissions, isDisplayOnly, loading: sessionLoading, isSessionActive, currentSession, branchName, branchAddress, branchPhone, isAdmin, storeSettings, currentBranchId, userName } = useSession();
+    const mobileLayoutVersion = 'Mobile Split v3';
+    const isSideBySide = isTablet || width >= 700;
+    const cartPanelWidth = isSideBySide ? (isTablet ? Math.min(Math.max(width * 0.32, 240), 340) : Math.min(Math.max(width * 0.4, 160), 210)) : 0;
+    const splitRowDirection = I18nManager.isRTL ? 'row-reverse' : 'row';
+    const estimatedProductPanelWidth = isSideBySide ? Math.max(width - cartPanelWidth, 220) : width;
+    const productGridColumns = isSideBySide
+        ? (estimatedProductPanelWidth >= 900 ? 4 : estimatedProductPanelWidth >= 560 ? 3 : estimatedProductPanelWidth >= 300 ? 2 : 1)
+        : (isSmallDevice ? 3 : 4);
 
     // Force Display Mode (Order Only) if user has the permission or role
     useEffect(() => {
@@ -382,21 +386,24 @@ export default function POSScreen() {
 
                     if (multiplier > 0) {
                         count = Math.floor(totalAmount / multiplier);
+                    }
+
                     console.log(`[POSScreen] WiFi Voucher Logic: total=${totalAmount}, min=${minAmount}, mult=${multiplier}, count=${count}`);
 
                     if (count > 0) {
                         wifiVoucher = await WifiVoucherService.getVoucherForSale(sale.id, currentBranchId || '1', count);
+                    }
+
                     if (wifiVoucher) {
                         console.log('[POSScreen] WiFi Vouchers result:', wifiVoucher);
                     } else {
                         console.warn('[POSScreen] WiFi Voucher fetch returned null/empty.');
                     }
+                } catch (e) {
+                    console.error('[POSScreen] Failed to fetch WiFi voucher:', e);
                 }
-            } catch (e) {
-                console.error('[POSScreen] Failed to fetch WiFi voucher:', e);
             }
         }
-    }
 
         return {
             order_no: sale.order_no,
@@ -1117,6 +1124,56 @@ export default function POSScreen() {
         setDiscountReason(discount.reason || '');
     };
 
+    const openManualItemFlow = (closePaymentFirst = false) => {
+        if (storeSettings?.enable_manager_auth) {
+            setManagerAuthTitle('Otorisasi Item Manual');
+            setPendingAction(() => () => {
+                if (closePaymentFirst) setShowPaymentModal(false);
+                setShowManualItemModal(true);
+            });
+            setShowManagerAuth(true);
+            return;
+        }
+
+        if (closePaymentFirst) setShowPaymentModal(false);
+        setShowManualItemModal(true);
+    };
+
+    const openDiscountFlow = (closePaymentFirst = false) => {
+        if (storeSettings?.enable_manager_auth) {
+            setManagerAuthTitle('Otorisasi Diskon');
+            setPendingAction(() => () => {
+                if (closePaymentFirst) setShowPaymentModal(false);
+                setShowDiscountModal(true);
+            });
+            setShowManagerAuth(true);
+            return;
+        }
+
+        if (closePaymentFirst) setShowPaymentModal(false);
+        setShowDiscountModal(true);
+    };
+
+    const openSplitFlow = (closePaymentFirst = false) => {
+        if (closePaymentFirst) setShowPaymentModal(false);
+        setShowSplitBillModal(true);
+    };
+
+    const openHoldFlow = (closePaymentFirst = false) => {
+        if (storeSettings?.enable_manager_auth) {
+            setManagerAuthTitle('Otorisasi Hold Order');
+            setPendingAction(() => () => {
+                if (closePaymentFirst) setShowPaymentModal(false);
+                setShowHoldNoteModal(true);
+            });
+            setShowManagerAuth(true);
+            return;
+        }
+
+        if (closePaymentFirst) setShowPaymentModal(false);
+        setShowHoldNoteModal(true);
+    };
+
     const printKdsTickets = async (items: any[], orderNoToPrint: string, printNote: string = '') => {
         if (!items || items.length === 0) return;
         
@@ -1307,8 +1364,9 @@ export default function POSScreen() {
             return;
         }
 
+        let orderNoText = '';
+
         try {
-            let orderNoText = '';
             if (!currentBranchId) {
             Alert.alert('Error', 'Data cabang belum dimuat. Silakan tunggu atau login ulang.');
             return;
@@ -1877,16 +1935,29 @@ export default function POSScreen() {
                 {/* Search Bar */}
                 <View style={[styles.searchContainer, { paddingVertical: 2 }]}>
                     <TextInput
-                        style={[styles.searchInput, { paddingVertical: 4, fontSize: 12, borderRadius: 8 }, isTablet && { width: 400, alignSelf: 'center' }]}
+                        style={[styles.searchInput, { paddingVertical: 4, fontSize: 12, borderRadius: 8 }, isTablet && !isSideBySide && { width: 400, alignSelf: 'center' }]}
                         placeholder="Cari produk..."
                         value={searchQuery}
                         onChangeText={setSearchQuery}
                     />
                 </View>
 
+                <View style={{ paddingHorizontal: 12, paddingBottom: 6 }}>
+                    <View style={{ alignSelf: 'flex-start', backgroundColor: '#dc2626', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
+                        <Text style={{ color: 'white', fontSize: 11, fontWeight: '800' }}>{mobileLayoutVersion}</Text>
+                    </View>
+                </View>
+
                 {/* Main POS Row (Split View in WideScreen/Landscape) */}
-                <View style={[styles.flex1, isSideBySide && { flexDirection: 'row' }]}>
-                    <View style={[styles.flex1, isSideBySide && { flex: 0.6 }]}>
+                <View style={[styles.flex1, isSideBySide && { flexDirection: splitRowDirection, alignItems: 'stretch' }]}>
+                    <View style={[styles.flex1, isSideBySide && { flex: 1, minWidth: 0, backgroundColor: 'white' }]}>
+                        {isSideBySide && (
+                            <View style={{ paddingHorizontal: 12, paddingBottom: 8 }}>
+                                <View style={{ alignSelf: 'flex-start', backgroundColor: '#dbeafe', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
+                                    <Text style={{ color: '#1d4ed8', fontSize: 11, fontWeight: '800' }}>PANEL PRODUK</Text>
+                                </View>
+                            </View>
+                        )}
                         {/* Categories Top Bar */}
                         <View style={[
                             styles.categoryContainer,
@@ -1939,27 +2010,27 @@ export default function POSScreen() {
                     ) : (
                         <FlatList
                                 data={filteredProducts}
-                                key={isSideBySide ? "wide-4col" : (isSmallDevice ? "compact-3col" : "mobile-4col")}
-                                numColumns={isSideBySide ? 4 : (isSmallDevice ? 3 : 4)}
+                                key={isSideBySide ? `wide-${productGridColumns}col` : (isSmallDevice ? "compact-3col" : "mobile-4col")}
+                                numColumns={productGridColumns}
                             keyExtractor={(item) => item.id.toString()}
                             showsVerticalScrollIndicator={true}
                             windowSize={5}
                             initialNumToRender={15}
                             maxToRenderPerBatch={10}
-                            removeClippedSubviews={true}
-                            columnWrapperStyle={{ 
+                            removeClippedSubviews={false}
+                            columnWrapperStyle={productGridColumns > 1 ? {
                                 gap: isTablet ? 12 : 8,
                                 paddingHorizontal: isTablet ? 16 : 8,
                                 marginBottom: isTablet ? 12 : 8
-                            }}
+                            } : undefined}
                             contentContainerStyle={[
                                 styles.productListContent, 
                                 { paddingBottom: 150 }
-                            ]}
+                             ]}
                              renderItem={({ item }) => {
-                                 const numCols = isSideBySide ? 4 : (isSmallDevice ? 3 : 4);
+                                 const numCols = productGridColumns;
                                  return (
-                                     <View style={{ flex: 1, maxWidth: `${100 / numCols}%` }}>
+                                     <View style={numCols === 1 ? { width: '100%', paddingHorizontal: isTablet ? 16 : 8, marginBottom: isTablet ? 12 : 8 } : { flex: 1, maxWidth: `${100 / numCols}%` }}>
                                          <ProductCard 
                                              item={item} 
                                              isTablet={isTablet} 
@@ -1973,14 +2044,71 @@ export default function POSScreen() {
                     )}
                     </View>
 
-                    {/* Right Column: Mini Cart (Wide Screen Only) */}
-                    {isSideBySide && !isDisplayOnly && (
-                        <View style={{ flex: 0.4, backgroundColor: 'white', borderLeftWidth: 1, borderLeftColor: '#f3f4f6', height: '100%' }}>
+                    {/* Right Column: Cashier Cart */}
+                    {isSideBySide && (
+                        <View style={{ width: cartPanelWidth, minWidth: cartPanelWidth, maxWidth: cartPanelWidth, flexShrink: 0, backgroundColor: 'white', borderLeftWidth: I18nManager.isRTL ? 0 : 1, borderRightWidth: I18nManager.isRTL ? 1 : 0, borderLeftColor: '#f3f4f6', borderRightColor: '#f3f4f6', height: '100%' }}>
+                            <View style={{ paddingHorizontal: 16, paddingTop: 12, backgroundColor: '#f9fafb' }}>
+                                <View style={{ alignSelf: 'flex-start', backgroundColor: '#ffedd5', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
+                                    <Text style={{ color: '#c2410c', fontSize: 11, fontWeight: '800' }}>PANEL KERANJANG</Text>
+                                </View>
+                            </View>
                             <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: '#f3f4f6', backgroundColor: '#f9fafb', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#1f2937' }}>🛒 Pesanan</Text>
                                 <TouchableOpacity onPress={clearCart}>
                                     <Text style={{ fontSize: 12, color: '#ef4444', fontWeight: 'bold' }}>Bersihkan</Text>
                                 </TouchableOpacity>
+                            </View>
+                            <View style={{ paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#fafafa', borderBottomWidth: 1, borderBottomColor: '#f3f4f6', gap: 8 }}>
+                                <View style={{ flexDirection: 'row', gap: 8 }}>
+                                    <TouchableOpacity
+                                        style={{ flex: 1, backgroundColor: 'white', borderRadius: 10, borderWidth: 1, borderColor: '#e5e7eb', padding: 10 }}
+                                        onPress={() => {
+                                            setManualTableInput(selectedTable === '-' ? '' : selectedTable);
+                                            setShowTableManualModal(true);
+                                        }}
+                                    >
+                                        <Text style={{ fontSize: 10, color: '#6b7280', fontWeight: 'bold', marginBottom: 4 }}>MEJA</Text>
+                                        <Text style={{ fontSize: 14, color: '#111827', fontWeight: '700' }}>{selectedTable}</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={{ flex: 1.2, backgroundColor: 'white', borderRadius: 10, borderWidth: 1, borderColor: '#e5e7eb', padding: 10 }}
+                                        onPress={() => setShowWaiterModal(true)}
+                                    >
+                                        <Text style={{ fontSize: 10, color: '#6b7280', fontWeight: 'bold', marginBottom: 4 }}>PELAYAN</Text>
+                                        <Text numberOfLines={1} style={{ fontSize: 14, color: selectedWaiter ? '#111827' : '#94a3b8', fontWeight: '700' }}>
+                                            {selectedWaiter || 'Pilih pelayan'}
+                                        </Text>
+                                    </TouchableOpacity>
+                                </View>
+                                <TouchableOpacity
+                                    style={{ backgroundColor: 'white', borderRadius: 10, borderWidth: 1, borderColor: '#e5e7eb', padding: 10 }}
+                                    onPress={() => setShowMemberLoginModal(true)}
+                                >
+                                    <Text style={{ fontSize: 10, color: '#6b7280', fontWeight: 'bold', marginBottom: 4 }}>PELANGGAN</Text>
+                                    <Text numberOfLines={1} style={{ fontSize: 14, color: '#111827', fontWeight: '700' }}>{customerName}</Text>
+                                </TouchableOpacity>
+                                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                                    {!storeSettings?.restrict_manual_item || isAdmin ? (
+                                        <TouchableOpacity style={{ minWidth: '47%', flex: 1, backgroundColor: '#fff7ed', borderRadius: 10, paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: '#fed7aa' }} onPress={() => openManualItemFlow()}>
+                                            <Text style={{ fontSize: 11, fontWeight: '800', color: '#c2410c' }}>Manual</Text>
+                                        </TouchableOpacity>
+                                    ) : null}
+                                    {!storeSettings?.restrict_discount || isAdmin ? (
+                                        <TouchableOpacity style={{ minWidth: '47%', flex: 1, backgroundColor: '#eff6ff', borderRadius: 10, paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: '#bfdbfe' }} onPress={() => openDiscountFlow()}>
+                                            <Text style={{ fontSize: 11, fontWeight: '800', color: '#1d4ed8' }}>Diskon</Text>
+                                        </TouchableOpacity>
+                                    ) : null}
+                                    {!storeSettings?.restrict_split_bill || isAdmin ? (
+                                        <TouchableOpacity style={{ minWidth: '47%', flex: 1, backgroundColor: '#ecfeff', borderRadius: 10, paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: '#a5f3fc' }} onPress={() => openSplitFlow()}>
+                                            <Text style={{ fontSize: 11, fontWeight: '800', color: '#0f766e' }}>Pisah</Text>
+                                        </TouchableOpacity>
+                                    ) : null}
+                                    {!storeSettings?.restrict_hold_order || isAdmin ? (
+                                        <TouchableOpacity style={{ minWidth: '47%', flex: 1, backgroundColor: '#f5f3ff', borderRadius: 10, paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: '#ddd6fe' }} onPress={() => openHoldFlow()}>
+                                            <Text style={{ fontSize: 11, fontWeight: '800', color: '#6d28d9' }}>Hold</Text>
+                                        </TouchableOpacity>
+                                    ) : null}
+                                </View>
                             </View>
                             <ScrollView style={{ flex: 1, padding: 12 }}>
                                 {cart.map((item) => (
@@ -1989,12 +2117,33 @@ export default function POSScreen() {
                                             <View style={{ flex: 1 }}>
                                                 <Text style={{ fontSize: 13, fontWeight: '600', color: '#111827' }} numberOfLines={1}>{item.name}</Text>
                                                 <Text style={{ fontSize: 12, color: '#ea580c', fontWeight: 'bold', marginTop: 2 }}>{formatCurrency(item.price)}</Text>
+                                                <TextInput
+                                                    style={{
+                                                        marginTop: 8,
+                                                        backgroundColor: '#fff7ed',
+                                                        borderWidth: 1,
+                                                        borderColor: '#fed7aa',
+                                                        borderRadius: 8,
+                                                        paddingHorizontal: 10,
+                                                        paddingVertical: 6,
+                                                        fontSize: 11,
+                                                        color: '#9a3412'
+                                                    }}
+                                                    placeholder="Catatan item..."
+                                                    placeholderTextColor="#fdba74"
+                                                    value={item.notes}
+                                                    onChangeText={(text) => updateNote(item.id, text)}
+                                                />
                                             </View>
                                             <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc', borderRadius: 8, padding: 2, borderWidth: 1, borderColor: '#e2e8f0' }}>
                                                 <TouchableOpacity onPress={() => removeFromCart(item.id)} style={{ paddingHorizontal: 8, paddingVertical: 4 }}><Text style={{ fontSize: 16, fontWeight: 'bold', color: '#64748b' }}>-</Text></TouchableOpacity>
                                                 <Text style={{ fontWeight: 'bold', marginHorizontal: 4, minWidth: 20, textAlign: 'center' }}>{item.quantity}</Text>
                                                 <TouchableOpacity onPress={() => addToCart(item)} style={{ paddingHorizontal: 8, paddingVertical: 4 }}><Text style={{ fontSize: 16, fontWeight: 'bold', color: '#ea580c' }}>+</Text></TouchableOpacity>
                                             </View>
+                                        </View>
+                                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 }}>
+                                            <Text style={{ fontSize: 11, color: '#64748b' }}>{item.quantity} x {formatCurrency(item.price)}</Text>
+                                            <Text style={{ fontSize: 12, fontWeight: '800', color: '#111827' }}>{formatCurrency(item.price * item.quantity)}</Text>
                                         </View>
                                     </View>
                                 ))}
@@ -2056,40 +2205,10 @@ export default function POSScreen() {
                     paymentMethods={paymentMethods}
                     onClose={() => setShowPaymentModal(false)}
                     onConfirm={handlePaymentConfirm}
-                    onManualItem={() => {
-                        if (storeSettings?.enable_manager_auth) {
-                            setManagerAuthTitle('Otorisasi Item Manual');
-                            setPendingAction(() => () => { setShowPaymentModal(false); setShowManualItemModal(true); });
-                            setShowManagerAuth(true);
-                        } else {
-                            setShowPaymentModal(false);
-                            setShowManualItemModal(true);
-                        }
-                    }}
-                    onDiscount={() => {
-                        if (storeSettings?.enable_manager_auth) {
-                            setManagerAuthTitle('Otorisasi Diskon');
-                            setPendingAction(() => () => { setShowPaymentModal(false); setShowDiscountModal(true); });
-                            setShowManagerAuth(true);
-                        } else {
-                            setShowPaymentModal(false);
-                            setShowDiscountModal(true);
-                        }
-                    }}
-                    onSplitBill={() => { setShowPaymentModal(false); setShowSplitBillModal(true); }}
-                        onHold={() => {
-                            if (storeSettings?.enable_manager_auth) {
-                                setManagerAuthTitle('Otorisasi Hold Order');
-                                setPendingAction(() => () => { 
-                                    setShowPaymentModal(false); 
-                                    setShowHoldNoteModal(true);
-                                });
-                                setShowManagerAuth(true);
-                            } else {
-                                setShowPaymentModal(false);
-                                setShowHoldNoteModal(true);
-                            }
-                        }}
+                    onManualItem={() => openManualItemFlow(true)}
+                    onDiscount={() => openDiscountFlow(true)}
+                    onSplitBill={() => openSplitFlow(true)}
+                    onHold={() => openHoldFlow(true)}
                 />
 
                 <ManagerAuthModal
@@ -2463,15 +2582,7 @@ export default function POSScreen() {
                                 {!isDisplayOnly && (!storeSettings?.restrict_manual_item || isAdmin) && (
                                     <TouchableOpacity 
                                         style={styles.quickActionBtn} 
-                                        onPress={() => {
-                                            if (storeSettings?.enable_manager_auth) {
-                                                setManagerAuthTitle('Otorisasi Item Manual');
-                                                setPendingAction(() => () => setShowManualItemModal(true));
-                                                setShowManagerAuth(true);
-                                            } else {
-                                                setShowManualItemModal(true);
-                                            }
-                                        }}
+                                        onPress={() => openManualItemFlow()}
                                     >
                                         <Text style={styles.quickActionIcon}>➕</Text>
                                         <Text style={styles.quickActionText}>Manual</Text>
@@ -2482,22 +2593,14 @@ export default function POSScreen() {
                                         {(!storeSettings?.restrict_discount || isAdmin) && (
                                             <TouchableOpacity 
                                                 style={styles.quickActionBtn} 
-                                                onPress={() => {
-                                                    if (storeSettings?.enable_manager_auth) {
-                                                        setManagerAuthTitle('Otorisasi Diskon');
-                                                        setPendingAction(() => () => setShowDiscountModal(true));
-                                                        setShowManagerAuth(true);
-                                                    } else {
-                                                        setShowDiscountModal(true);
-                                                    }
-                                                }}
+                                                onPress={() => openDiscountFlow()}
                                             >
                                                 <Text style={styles.quickActionIcon}>🏷️</Text>
                                                 <Text style={styles.quickActionText}>Diskon</Text>
                                             </TouchableOpacity>
                                         )}
                                         {(!storeSettings?.restrict_split_bill || isAdmin) && (
-                                            <TouchableOpacity style={styles.quickActionBtn} onPress={() => setShowSplitBillModal(true)}>
+                                            <TouchableOpacity style={styles.quickActionBtn} onPress={() => openSplitFlow()}>
                                                 <Text style={styles.quickActionIcon}>✂️</Text>
                                                 <Text style={styles.quickActionText}>Pisah</Text>
                                             </TouchableOpacity>
@@ -2507,17 +2610,7 @@ export default function POSScreen() {
                                 {!isDisplayOnly && (!storeSettings?.restrict_hold_order || isAdmin) && (
                                     <TouchableOpacity 
                                         style={styles.quickActionBtn} 
-                                        onPress={() => {
-                                            if (storeSettings?.enable_manager_auth) {
-                                                setManagerAuthTitle('Otorisasi Hold Order');
-                                                setPendingAction(() => () => {
-                                                    setShowHoldNoteModal(true);
-                                                });
-                                                setShowManagerAuth(true);
-                                            } else {
-                                                setShowHoldNoteModal(true);
-                                            }
-                                        }}
+                                        onPress={() => openHoldFlow()}
                                     >
                                         <Text style={styles.quickActionIcon}>⏸️</Text>
                                         <Text style={styles.quickActionText}>Hold</Text>
