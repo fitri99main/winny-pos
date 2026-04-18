@@ -9,7 +9,7 @@ import {
     AlertTriangle,
     MoreVertical,
     CheckCircle2,
-    Filter
+    Trash2
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -183,6 +183,19 @@ export function InventoryView({
         setStockForm({ quantity: 0, reason: '' });
     };
 
+    const handleDeleteIngredient = async (ingredient: Ingredient) => {
+        const isConfirmed = window.confirm(`Hapus bahan baku "${ingredient.name}"?`);
+        if (!isConfirmed) return;
+
+        await onIngredientAction('delete', { id: ingredient.id });
+
+        if (selectedIngredient?.id === ingredient.id) {
+            setSelectedIngredient(null);
+            setIsStockModalOpen(false);
+            setIsStockCardOpen(false);
+        }
+    };
+
     const filteredIngredients = ingredients.filter(ing =>
         (!currentBranchId || String(ing.branch_id) === String(currentBranchId) || !ing.branch_id) &&
         (ing.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -308,6 +321,13 @@ export function InventoryView({
                                                     title="Lihat Kartu Stok"
                                                 >
                                                     <History className="w-5 h-5" />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDeleteIngredient(ing)}
+                                                    className="p-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors"
+                                                    title="Hapus Bahan"
+                                                >
+                                                    <Trash2 className="w-5 h-5" />
                                                 </button>
                                             </div>
                                         </td>
