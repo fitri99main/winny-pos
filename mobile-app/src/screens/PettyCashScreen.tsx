@@ -4,8 +4,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { ChevronLeft, Wallet, Lock, Unlock, History, Plus, ArrowUpCircle, ArrowDownCircle, Printer } from 'lucide-react-native';
 import { PrinterManager } from '../lib/PrinterManager';
-import { PettyCashService, PettyCashSession, PettyCashTransaction } from '../lib/PettyCashService';
+import { PettyCashService, PettyCashSession, PettyCashTransaction, getPettyCashErrorMessage, isPettyCashSchemaMissingError } from '../lib/PettyCashService';
 import { useSession } from '../context/SessionContext';
+import { supabase } from '../lib/supabase';
 
 export default function PettyCashScreen() {
     const navigation = useNavigation();
@@ -50,8 +51,12 @@ export default function PettyCashScreen() {
             const history = await PettyCashService.getSessions(currentBranchId);
             setSessions(history);
         } catch (error) {
-            console.error('Error fetching petty cash:', error);
-            Alert.alert('Error', 'Gagal memuat data Kas Kecil');
+            if (isPettyCashSchemaMissingError(error)) {
+                console.warn('Petty cash module is not available in the database yet.');
+            } else {
+                console.error('Error fetching petty cash:', error);
+            }
+            Alert.alert('Error', getPettyCashErrorMessage(error, 'Gagal memuat data Kas Kecil'));
         } finally {
             setLoading(false);
         }
@@ -73,7 +78,7 @@ export default function PettyCashScreen() {
             setShowOpenModal(false);
             fetchData();
         } catch (error: any) {
-            Alert.alert('Error', error.message || 'Gagal membuka Kas Kecil');
+            Alert.alert('Error', getPettyCashErrorMessage(error, 'Gagal membuka Kas Kecil'));
         }
     };
 
@@ -100,11 +105,14 @@ export default function PettyCashScreen() {
             // 2. Close session
             await PettyCashService.closeSession(activeSession.id, finalPhysical);
             
-            Alert.alert('Sukses', 'Kas Kecil ditutup & direkonsiliasi');
+            Alert.alert(
+                'Sukses', 
+                'Kas Kecil ditutup & direkonsiliasi. Sesi Anda telah berakhir.',
+                [{ text: 'OK', onPress: () => supabase.auth.signOut() }]
+            );
             setShowCloseModal(false);
-            fetchData();
         } catch (error) {
-            Alert.alert('Error', 'Gagal menutup Kas Kecil');
+            Alert.alert('Error', getPettyCashErrorMessage(error, 'Gagal menutup Kas Kecil'));
         }
     };
 
@@ -117,7 +125,7 @@ export default function PettyCashScreen() {
             setShowAdjustModal(false);
             fetchData();
         } catch (error) {
-            Alert.alert('Error', 'Gagal memperbarui saldo');
+            Alert.alert('Error', getPettyCashErrorMessage(error, 'Gagal memperbarui saldo'));
         }
     };
 
@@ -141,7 +149,7 @@ export default function PettyCashScreen() {
             setShowManualModal(false);
             fetchData();
         } catch (error) {
-            Alert.alert('Error', 'Gagal mencatat transaksi');
+            Alert.alert('Error', getPettyCashErrorMessage(error, 'Gagal mencatat transaksi'));
         }
     };
 

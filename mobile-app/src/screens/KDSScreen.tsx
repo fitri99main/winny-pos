@@ -30,7 +30,7 @@ export default function KDSScreen() {
     }, []);
 
     useEffect(() => {
-        if (!currentBranchId || isNaN(Number(currentBranchId))) return;
+        if (!currentBranchId) return;
 
         fetchActiveOrders();
 
@@ -43,11 +43,20 @@ export default function KDSScreen() {
                 { event: '*', schema: 'public', table: 'sales' }, 
                 (payload) => {
                     const newRow = payload.new as any;
-                    // Manual filter for branch_id
-                    if (newRow && String(newRow.branch_id) === String(currentBranchId)) {
-                        console.log('[KDSScreen] Sales change detected:', payload.eventType);
+                    const eventType = payload.eventType;
+
+                    console.log('[KDSScreen] Real-time Sales Event Received:', {
+                        event: eventType,
+                        row_id: newRow?.id,
+                        row_branch: newRow?.branch_id,
+                        current_app_branch: currentBranchId
+                    });
+
+                    // Manual filter for branch_id (safer than Postgres filter string)
+                    if (newRow && String(newRow.branch_id || '').trim() === String(currentBranchId || '').trim()) {
+                        console.log('[KDSScreen] Match found! Refreshing orders...');
                         fetchActiveOrders();
-                    } else if (payload.eventType === 'DELETE' || !payload.new) {
+                    } else if (eventType === 'DELETE') {
                         fetchActiveOrders();
                     }
                 }
@@ -81,10 +90,10 @@ export default function KDSScreen() {
     }, [currentBranchId]);
 
     const fetchActiveOrders = async () => {
-        if (!currentBranchId || isNaN(Number(currentBranchId))) return;
+        if (!currentBranchId) return;
         
         try {
-            // Fetch sales with items that are not yet completed
+            // Loosened status filter: Fetch ALL orders to identify what's hiding them
             const { data, error } = await supabase
                 .from('sales')
                 .select(`
@@ -92,15 +101,17 @@ export default function KDSScreen() {
                     items:sale_items(*)
                 `)
                 .eq('branch_id', currentBranchId)
-                .in('status', ['Pending', 'Paid', 'Preparing', 'Ready'])
-                .order('date', { ascending: true });
+                .neq('status', 'Completed') // Only active orders
+                .order('date', { ascending: false })
+                .limit(50);
 
             if (error) throw error;
 
-            console.log('KDS Orders fetched:', data?.length);
+            console.log('[KDS] Raw orders fetched:', data?.length);
             setOrders(data || []);
         } catch (error) {
             console.error('Error fetching KDS orders:', error);
+            showToast('Gagal memuat data: ' + (error as any).message, 'error');
         } finally {
             setLoading(false);
         }
@@ -139,10 +150,11 @@ export default function KDSScreen() {
                 throw error;
             }
             
-            // Re-fetch will be triggered by subscription, but optimistic update keeps UI snappy
+            console.log('[KDS] Item status updated successfully');
         } catch (error: any) {
             console.error('Error updating item status:', error);
-            Alert.alert('Gagal', 'Tidak bisa memperbarui status. Periksa koneksi internet Anda.');
+            const msg = error.message || 'Periksa koneksi internet Anda';
+            Alert.alert('Gagal Update', `Tidak bisa mengubah status item: ${msg}`);
         }
     };
 
@@ -176,13 +188,11 @@ export default function KDSScreen() {
 
             console.log('[KDS] Completing order:', orderIdToComplete);
             
-            // Perform update with a timeout-like behavior or just standard await
             const { error } = await supabase
                 .from('sales')
                 .update({ 
                     status: 'Completed',
-                    waiting_time: waitingTime,
-                    // Ensure the update timestamp is recorded if needed
+                    waiting_time: waitingTime
                 })
                 .eq('id', orderIdToComplete);
 
@@ -196,18 +206,41 @@ export default function KDSScreen() {
             setSelectedOrderId(null);
         } catch (error: any) {
             console.error('Error completing order:', error);
-            Alert.alert('Gagal', 'Gagal menyelesaikan pesanan. Silakan coba lagi.');
-            // Revert orders if not already done by error check above
+            const msg = error.message || 'Koneksi terganggu';
+            Alert.alert('Gagal Selesai', `Gagal menyimpan status pesanan: ${msg}`);
             setOrders(originalOrders);
         } finally {
             setCompleting(false);
         }
     };
 
+    const determineTarget = (item: any) => {
+        // Robust Heuristic: Matches Web version
+        const nameLow = (item.product_name || item.name || '').toLowerCase();
+        const categoryLow = (item.category || '').toLowerCase();
+
+        const isDrink = [
+            'minum', 'drink', 'beverage', 'juice', 'jus', 'tea', 'teh', 'coffee', 'kopi', 
+            'susu', 'milk', 'water', 'air', 'mineral', 'soda', 'cola', 'coke', 'sprite', 'fanta',
+            'beer', 'bir', 'wine', 'cocktail', 'mocktail', 'smoothie', 'shake', 'milo', 
+            'boba', 'thai tea', 'green tea', 'lemongrass', 'jeruk', 'lemon', 'alpukat', 'mangga', 
+            'strawberry', 'jahe', 'madu', 'sirup', 'cendol', 'dawet', 'wedang', 'gembira', 'arak',
+            'espresso', 'latte', 'cappuccino', 'frappe'
+        ].some(k => categoryLow.includes(k) || nameLow.includes(k)) || 
+        nameLow.startsWith('es ') || nameLow.startsWith('ice ') || 
+        nameLow.includes(' es ') || nameLow.includes(' ice ') ||
+        nameLow.includes(' panas') || nameLow.includes(' hot') || 
+        nameLow.includes(' dingin') || nameLow.includes(' cold');
+
+        return isDrink ? 'Bar' : 'Kitchen';
+    };
+
     const filteredOrders = orders.map(order => {
         const items = (order.items || []).filter((item: any) => {
             if (filter === 'All') return true;
-            return item.target === filter;
+            // Use existing target or fallback to smart determination
+            const finalTarget = item.target || determineTarget(item);
+            return finalTarget === filter;
         });
         return { ...order, items };
     }).filter(order => order.items.length > 0);
@@ -245,7 +278,7 @@ export default function KDSScreen() {
                     isSmallDevice && { marginBottom: 12 }
                 ]}>
                     {order.items.map((item: any, index: number) => (
-                        <View key={item.id || index} style={styles.itemRow}>
+                        <View key={`item-${item.id || index}-${index}`} style={styles.itemRow}>
                             <View style={styles.itemMain}>
                                 <View style={[
                                     styles.quantityBadge, 
@@ -327,7 +360,18 @@ export default function KDSScreen() {
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
                     <Text style={styles.backButtonText}>&lsaquo;</Text>
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Monitor Pesanan</Text>
+                <View style={{ flex: 1 }}>
+                    <Text style={styles.headerTitle}>Monitor Pesanan</Text>
+                    <Text style={{ fontSize: 10, color: '#64748b' }}>Cabang: {currentBranchId || 'Tidak Diketahui'} • Total: {orders.length} Data</Text>
+                </View>
+                <TouchableOpacity 
+                    onPress={() => {
+                        fetchActiveOrders();
+                    }} 
+                    style={{ backgroundColor: '#f1f5f9', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12 }}
+                >
+                    <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#ea580c' }}>Segarkan</Text>
+                </TouchableOpacity>
             </View>
 
             <View style={styles.tabsContainer}>
@@ -356,7 +400,7 @@ export default function KDSScreen() {
                 <FlatList
                     data={filteredOrders}
                     renderItem={renderOrderItem}
-                    keyExtractor={(item, index) => (item?.id ?? index).toString()}
+                    keyExtractor={(item, index) => `order-${item?.id || index}-${index}`}
                     contentContainerStyle={[
                         styles.listContent,
                         isSmallDevice && { padding: 8 }

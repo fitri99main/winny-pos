@@ -21,13 +21,18 @@ interface SessionHistory {
     user_name?: string;
 }
 
-export function SessionHistoryView() {
+interface SessionHistoryViewProps {
+    branchId?: string | null;
+}
+
+export function SessionHistoryView({ branchId }: SessionHistoryViewProps) {
     const [sessions, setSessions] = useState<SessionHistory[]>([]);
     const [filteredSessions, setFilteredSessions] = useState<SessionHistory[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
+    const [datePreset, setDatePreset] = useState<'today' | '7days' | '30days' | 'custom'>('today');
     const [statusFilter, setStatusFilter] = useState<'All' | 'Open' | 'Closed'>('All');
     const [selectedSession, setSelectedSession] = useState<SessionHistory | null>(null);
     const [selectedCategorySummary, setSelectedCategorySummary] = useState<{ category: string; amount: number }[]>([]);
@@ -41,21 +46,54 @@ export function SessionHistoryView() {
 
     const fetchCategorySummary = async (openedAt: string, closedAt: string | null) => {
         try {
-            const query = supabase.from('sales').select('id').gte('created_at', openedAt);
-            if (closedAt) query.lte('created_at', closedAt);
-            
-            const { data: sales } = await query;
-            const saleIds = sales?.map(s => s.id) || [];
+            let allSales: any[] = [];
+            let from = 0;
+            const pageSize = 1000;
+            let hasMore = true;
+
+            while (hasMore) {
+                const query = supabase.from('sales').select('id').gte('created_at', openedAt);
+                if (closedAt) query.lte('created_at', closedAt);
+                query.range(from, from + pageSize - 1);
+
+                const { data, error } = await query;
+                if (error) throw error;
+                if (data && data.length > 0) {
+                    allSales = [...allSales, ...data];
+                    if (data.length < pageSize) hasMore = false;
+                    else from += pageSize;
+                } else {
+                    hasMore = false;
+                }
+            }
+            const saleIds = allSales.map(s => s.id);
             
             if (saleIds.length === 0) {
                 setSelectedCategorySummary([]);
                 return;
             }
 
-            const { data: items } = await supabase
-                .from('sale_items')
-                .select('category, quantity, price')
-                .in('sale_id', saleIds);
+            let allItems: any[] = [];
+            let itemFrom = 0;
+            let itemHasMore = true;
+
+            while (itemHasMore) {
+                const { data: itemPage, error: itemsError } = await supabase
+                    .from('sale_items')
+                    .select('category, quantity, price')
+                    .in('sale_id', saleIds)
+                    .range(itemFrom, itemFrom + pageSize - 1);
+                
+                if (itemsError) throw itemsError;
+                if (itemPage && itemPage.length > 0) {
+                    allItems = [...allItems, ...itemPage];
+                    if (itemPage.length < pageSize) itemHasMore = false;
+                    else itemFrom += pageSize;
+                } else {
+                    itemHasMore = false;
+                }
+            }
+            const items = allItems;
             
             if (items) {
                 const summaryMap: { [key: string]: number } = {};
@@ -78,27 +116,65 @@ export function SessionHistoryView() {
 
     useEffect(() => {
         fetchSessions();
-    }, []);
+
+        // Subscribe to realtime updates for cashier sessions
+        const channel = supabase
+            .channel('cashier_sessions_changes')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'cashier_sessions' }, () => {
+                fetchSessions();
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [branchId]);
 
     useEffect(() => {
         applyFilters();
-    }, [sessions, searchQuery, dateFrom, dateTo, statusFilter]);
+    }, [sessions, searchQuery, dateFrom, dateTo, statusFilter, datePreset]);
 
     const fetchSessions = async () => {
+        console.log('SessionHistoryView: Fetching sessions for branchId:', branchId);
         setLoading(true);
         try {
-            const { data, error } = await supabase
-                .from('cashier_sessions')
-                .select('*')
-                .order('opened_at', { ascending: false });
+            let allSessions: any[] = [];
+            let from = 0;
+            const pageSize = 1000;
+            let hasMore = true;
 
-            if (error) throw error;
+            while (hasMore) {
+                let query = supabase
+                    .from('cashier_sessions')
+                    .select('*')
+                    .order('opened_at', { ascending: false });
+                
+                if (branchId) {
+                    query = query.eq('branch_id', branchId);
+                }
 
-            const sessionsWithNames = data?.map(s => ({
+                const { data, error } = await query.range(from, from + pageSize - 1);
+
+                if (error) throw error;
+
+                if (data && data.length > 0) {
+                    allSessions = [...allSessions, ...data];
+                    if (data.length < pageSize) {
+                        hasMore = false;
+                    } else {
+                        from += pageSize;
+                    }
+                } else {
+                    hasMore = false;
+                }
+            }
+
+            const sessionsWithNames = allSessions.map(s => ({
                 ...s,
                 user_name: s.employee_name || 'Unknown'
-            })) || [];
+            }));
 
+            console.log(`SessionHistoryView: Loaded ${sessionsWithNames.length} sessions`);
             setSessions(sessionsWithNames);
         } catch (error: any) {
             console.error('Error fetching sessions:', error);
@@ -120,16 +196,32 @@ export function SessionHistoryView() {
         }
 
         // Filter by date range
-        if (dateFrom) {
-            filtered = filtered.filter(s => new Date(s.opened_at) >= new Date(dateFrom));
-        }
-        if (dateTo) {
-            filtered = filtered.filter(s => new Date(s.opened_at) <= new Date(dateTo + 'T23:59:59'));
+        if (datePreset === 'today') {
+            const start = new Date();
+            start.setHours(0, 0, 0, 0);
+            filtered = filtered.filter(s => new Date(s.opened_at) >= start);
+        } else if (datePreset === '7days') {
+            const start = new Date();
+            start.setDate(start.getDate() - 6);
+            start.setHours(0, 0, 0, 0);
+            filtered = filtered.filter(s => new Date(s.opened_at) >= start);
+        } else if (datePreset === '30days') {
+            const start = new Date();
+            start.setDate(start.getDate() - 29);
+            start.setHours(0, 0, 0, 0);
+            filtered = filtered.filter(s => new Date(s.opened_at) >= start);
+        } else if (datePreset === 'custom') {
+            if (dateFrom) {
+                filtered = filtered.filter(s => new Date(s.opened_at) >= new Date(dateFrom));
+            }
+            if (dateTo) {
+                filtered = filtered.filter(s => new Date(s.opened_at) <= new Date(dateTo + 'T23:59:59'));
+            }
         }
 
         // Filter by status
         if (statusFilter !== 'All') {
-            filtered = filtered.filter(s => s.status === statusFilter);
+            filtered = filtered.filter(s => s.status?.toLowerCase() === statusFilter.toLowerCase());
         }
 
         setFilteredSessions(filtered);
@@ -203,10 +295,12 @@ export function SessionHistoryView() {
 
     // Calculate summary stats
     const totalSessions = filteredSessions.length;
-    const closedSessionsCount = filteredSessions.filter(s => s.status === 'Closed').length;
-    const totalSales = filteredSessions.reduce((sum, s) => sum + s.total_sales, 0);
-    const totalVariance = filteredSessions.filter(s => s.status === 'Closed').reduce((sum, s) => sum + (s.difference || 0), 0);
+    const closedSessionsCount = filteredSessions.filter(s => s.status?.toLowerCase() === 'closed').length;
+    const totalSales = filteredSessions.reduce((sum, s) => sum + (Number(s.total_sales) || 0), 0);
+    const totalVariance = filteredSessions.filter(s => s.status?.toLowerCase() === 'closed').reduce((sum, s) => sum + (Number(s.difference) || 0), 0);
     const avgVariance = closedSessionsCount > 0 ? totalVariance / closedSessionsCount : 0;
+
+    console.log('Stats Calculated:', { totalSessions, closedSessionsCount, totalSales, totalVariance, avgVariance });
 
     const confirmDelete = (session: SessionHistory) => {
         setSessionToDelete(session);
@@ -322,62 +416,83 @@ export function SessionHistoryView() {
                     </div>
                 </div>
 
-                <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-100 dark:border-gray-700">
-                    <div className="flex items-center gap-4">
-                        <div className={`w-12 h-12 rounded-xl ${avgVariance >= 0 ? 'bg-green-50 dark:bg-green-900/20' : 'bg-red-50 dark:bg-red-900/20'} flex items-center justify-center`}>
-                            <TrendingUp className={`w-6 h-6 ${avgVariance >= 0 ? 'text-green-600' : 'text-red-600'}`} />
-                        </div>
-                        <div>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">Avg Variance</p>
-                            <p className={`text-2xl font-bold ${avgVariance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                {formatCurrency(avgVariance)}
-                            </p>
-                        </div>
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-3xl border border-gray-100 dark:border-gray-700 shadow-sm">
+                    <div className="w-12 h-12 bg-red-50 dark:bg-red-900/20 rounded-2xl flex items-center justify-center mb-4 text-red-600 dark:text-red-400">
+                        <AlertTriangle className="w-6 h-6" />
                     </div>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Total Selisih</p>
+                    <h3 className={`text-2xl font-bold mt-1 ${totalVariance < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(totalVariance)}
+                    </h3>
                 </div>
             </div>
 
             {/* Filters */}
-            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-100 dark:border-gray-700 space-y-4">
-                <h3 className="font-bold text-gray-800 dark:text-white">Filter</h3>
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-100 dark:border-gray-700 space-y-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <h3 className="font-bold text-gray-800 dark:text-white">Filter Data</h3>
+                    <div className="flex bg-gray-100 dark:bg-gray-900 p-1 rounded-xl">
+                        {[
+                            { id: 'today', label: 'Hari Ini' },
+                            { id: '7days', label: '7 Hari' },
+                            { id: '30days', label: '30 Hari' },
+                            { id: 'custom', label: 'Rentang' }
+                        ].map((p) => (
+                            <button
+                                key={p.id}
+                                onClick={() => setDatePreset(p.id as any)}
+                                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${datePreset === p.id 
+                                    ? 'bg-white dark:bg-gray-800 text-primary shadow-sm' 
+                                    : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                {p.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div>
-                        <label className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 block">Dari Tanggal</label>
-                        <input
-                            type="date"
-                            value={dateFrom}
-                            onChange={(e) => setDateFrom(e.target.value)}
-                            className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 text-gray-800 dark:text-white focus:ring-2 focus:ring-primary/20 outline-none"
-                        />
-                    </div>
-                    <div>
-                        <label className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 block">Sampai Tanggal</label>
-                        <input
-                            type="date"
-                            value={dateTo}
-                            onChange={(e) => setDateTo(e.target.value)}
-                            className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 text-gray-800 dark:text-white focus:ring-2 focus:ring-primary/20 outline-none"
-                        />
-                    </div>
-                    <div>
-                        <label className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 block">Status</label>
+                    {datePreset === 'custom' && (
+                        <>
+                            <div>
+                                <label className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 block">Dari Tanggal</label>
+                                <input
+                                    type="date"
+                                    value={dateFrom}
+                                    onChange={(e) => setDateFrom(e.target.value)}
+                                    className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 text-gray-800 dark:text-white focus:ring-2 focus:ring-primary/20 outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 block">Sampai Tanggal</label>
+                                <input
+                                    type="date"
+                                    value={dateTo}
+                                    onChange={(e) => setDateTo(e.target.value)}
+                                    className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 text-gray-800 dark:text-white focus:ring-2 focus:ring-primary/20 outline-none"
+                                />
+                            </div>
+                        </>
+                    )}
+                    <div className={datePreset !== 'custom' ? 'md:col-span-1' : ''}>
+                        <label className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 block">Status Shift</label>
                         <select
                             value={statusFilter}
                             onChange={(e) => setStatusFilter(e.target.value as any)}
-                            className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 text-gray-800 dark:text-white focus:ring-2 focus:ring-primary/20 outline-none"
+                            className="w-full px-4 py-2 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 text-gray-800 dark:text-white focus:ring-2 focus:ring-primary/20 outline-none font-bold"
                         >
-                            <option value="All">Semua</option>
-                            <option value="Open">Buka</option>
-                            <option value="Closed">Tutup</option>
+                            <option value="All">Semua Status</option>
+                            <option value="Open">Masih Buka</option>
+                            <option value="Closed">Sudah Tutup</option>
                         </select>
                     </div>
-                    <div>
-                        <label className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 block">Cari</label>
+                    <div className={datePreset !== 'custom' ? 'md:col-span-2' : 'md:col-span-1'}>
+                        <label className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 block">Cari Kasir</label>
                         <div className="relative">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                             <input
                                 type="text"
-                                placeholder="Cari kasir..."
+                                placeholder="Cari nama kasir atau ID sesi..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 className="w-full pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 text-gray-800 dark:text-white focus:ring-2 focus:ring-primary/20 outline-none"

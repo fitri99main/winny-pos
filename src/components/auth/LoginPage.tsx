@@ -31,11 +31,6 @@ export default function LoginPage() {
 
         try {
             if (isSignUp) {
-                // ... (Sign up logic remains same, abstracted for brevity but effectively inside the existing block if I don't change logic structure too much)
-                // Actually user only complains about spinning, so likely Login flow.
-                // Keeping existing sign up logic structure by just copying the block or using the original content if I can.
-                // Re-writing the block to be safe.
-
                 // 1. PRE-REGISTRATION CHECK
                 setStatusText('Mengecek data karyawan...');
                 const { data: existingProfiles, error: checkError } = await supabase
@@ -55,7 +50,7 @@ export default function LoginPage() {
 
                 setStatusText('Mendaftarkan akun...');
                 const { error } = await supabase.auth.signUp({
-                    email,
+                    email: email.trim(),
                     password,
                     options: { data: { name: name, role: matchedProfile.role || 'Cashier' } }
                 });
@@ -70,12 +65,20 @@ export default function LoginPage() {
                 setIsSignUp(false);
 
             } else {
+                console.log('[Login] Starting login for:', email.trim());
                 setStatusText('Memverifikasi kredensial...');
-                const { error } = await supabase.auth.signInWithPassword({
-                    email,
+                const { data, error } = await supabase.auth.signInWithPassword({
+                    email: email.trim(),
                     password,
                 });
-                if (error) throw error;
+
+                console.log('[Login] signInWithPassword returned:', { hasError: !!error, hasSession: !!data?.session });
+
+                if (error) {
+                    console.warn('[Login] Gagal:', error.message);
+                    throw error;
+                }
+
                 setStatusText('Login berhasil! Mengalihkan...');
                 toast.success('Selamat datang kembali!');
 

@@ -1,5 +1,6 @@
 import * as React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Switch, ActivityIndicator, ScrollView, Alert, Platform, useWindowDimensions, Animated, Modal, TextInput } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Switch, ActivityIndicator, ScrollView, Alert, Platform, useWindowDimensions, Animated, Modal, TextInput, StatusBar } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PrinterManager } from '../lib/PrinterManager';
@@ -8,20 +9,18 @@ import { supabase } from '../lib/supabase';
 import { useSession } from '../context/SessionContext';
 import CashierSessionModal from '../components/CashierSessionModal';
 import ConfirmExitModal from '../components/ConfirmExitModal';
+import StatusModal from '../components/StatusModal';
 import { 
     ChevronLeft, 
     ChevronRight, 
     Printer, 
     User, 
     Users,
-    Store, 
     Monitor, 
     ShoppingCart, 
-    Lock, 
     LogOut, 
     Bell, 
     Info, 
-    LayoutDashboard,
     Trash2,
     RefreshCw,
     Bluetooth,
@@ -32,9 +31,11 @@ import {
     Database,
     CheckCircle2,
     XCircle,
-    FileText,
-    Type,
-    BarChart3
+    X,
+    BarChart3,
+    Lock,
+    Pencil,
+    Store
 } from 'lucide-react-native';
 import SalesReportModal from '../components/SalesReportModal';
 import { OfflineService } from '../lib/OfflineService';
@@ -86,7 +87,6 @@ export default function SettingsScreen() {
     const isLandscape = width > height;
     const isSmallDevice = width < 380;
     const [posFlow, setPosFlow] = React.useState<'table' | 'direct'>('table');
-    const [cashierMode, setCashierMode] = React.useState<boolean>(false);
     const [loading, setLoading] = React.useState(false); // DEFAULT TO FALSE FOR INSTANT OPEN
     const loadingRef = React.useRef(true);
     
@@ -96,9 +96,9 @@ export default function SettingsScreen() {
     }, [loading]);
     const [isScanning, setIsScanning] = React.useState(false);
     const [discoveredDevices, setDiscoveredDevices] = React.useState<Device[]>([]);
-    const [selectedPrinters, setSelectedPrinters] = React.useState<{receipt: string | null, kitchen: string | null, bar: string | null, report: string | null}>({ receipt: null, kitchen: null, bar: null, report: null });
-    const [configuringPrinterType, setConfiguringPrinterType] = React.useState<'receipt' | 'kitchen' | 'bar' | 'report'>('receipt');
-    const [autoPrint, setAutoPrint] = React.useState<boolean>(false);
+    const [selectedPrinters, setSelectedPrinters] = React.useState<{receipt: string | null, report: string | null, kitchen: string | null, bar: string | null}>({ receipt: null, report: null, kitchen: null, bar: null });
+    const [configuringPrinterType, setConfiguringPrinterType] = React.useState<'receipt' | 'report'>('receipt');
+    const [receiptPrintMode, setReceiptPrintMode] = React.useState<'auto' | 'manual'>('manual');
     const { isAdmin, currentSession, isSessionActive, checkSession, requireMandatorySession, permissions, currentBranchId, storeSettings: sessionSettings, branchName, branchAddress, branchPhone, userName } = useSession();
     const [showSessionModal, setShowSessionModal] = React.useState(false);
     const [sessionMode, setSessionMode] = React.useState<'open' | 'close'>('open');
@@ -112,20 +112,20 @@ export default function SettingsScreen() {
     const [offlineQueueCount, setOfflineQueueCount] = React.useState<number>(0);
     const [isSyncing, setIsSyncing] = React.useState(false);
     const [forcedOffline, setForcedOffline] = React.useState<boolean>(false);
-    const [productionSettings, setProductionSettings] = React.useState({
-        showTableLarge: true,
-        showCustomer: true,
-        showWaiter: true,
-        showTime: true,
-        showCashier: true,
-        doubleHeightItems: true
-    });
     const [printerStatus, setPrinterStatus] = React.useState<Record<string, 'connected' | 'disconnected' | 'connecting'>>({});
     const [enableReceipt, setEnableReceipt] = React.useState<boolean>(true);
     const [enableKitchen, setEnableKitchen] = React.useState<boolean>(true);
     const [enableBar, setEnableBar] = React.useState<boolean>(true);
+    const [showClearCacheConfirm, setShowClearCacheConfirm] = React.useState(false);
+    const [enableHoldPrinting, setEnableHoldPrinting] = React.useState<boolean>(false);
+    const [autoPreviewReceipt, setAutoPreviewReceipt] = React.useState<boolean>(false);
+
+    const [showManualModal, setShowManualModal] = React.useState(false);
+    const [manualType, setManualType] = React.useState<'receipt' | 'report' | 'kitchen' | 'bar'>('receipt');
+    const [manualAddress, setManualAddress] = React.useState('');
 
     const [fullSettings, setFullSettings] = React.useState<any>(null);
+    const [statusModal, setStatusModal] = React.useState({ visible: false, title: '', message: '', type: 'success' as any });
     const [toast, setToast] = React.useState<{ visible: boolean; message: string; submessage?: string; type: 'success' | 'info' | 'error' }>({ visible: false, message: '', type: 'success' });
     const toastOpacity = React.useRef(new Animated.Value(0)).current;
     const toastTranslateY = React.useRef(new Animated.Value(-20)).current;
@@ -159,12 +159,6 @@ export default function SettingsScreen() {
         setOfflineQueueCount(queue.length);
     };
 
-    React.useEffect(() => {
-        if (permissions?.includes('pos_order_only')) {
-            setCashierMode(false);
-        }
-    }, [permissions]);
-
     const loadSettings = async () => {
         try {
             console.log('[SettingsScreen] loadSettings: START');
@@ -197,52 +191,62 @@ export default function SettingsScreen() {
             // This is the key optimization: no more sequential awaits
             const [
                 savedFlow, 
-                savedCashMode, 
                 savedPrinters, 
                 isForced, 
                 savedAutoPrint, 
-                savedProdSettings,
+                savedReceiptPrintMode,
                 savedEnableReceipt,
+                savedKitchenPrinters,
                 savedEnableKitchen,
-                savedEnableBar
+                savedEnableBar,
+                savedEnableHoldPrinting
             ] = await Promise.all([
                 AsyncStorage.getItem('pos_flow'),
-                AsyncStorage.getItem('cashier_mode'),
                 Promise.all([
                     PrinterManager.getSelectedPrinter('receipt').catch(() => null),
-                    PrinterManager.getSelectedPrinter('kitchen').catch(() => null),
-                    PrinterManager.getSelectedPrinter('bar').catch(() => null),
                     PrinterManager.getSelectedPrinter('report').catch(() => null)
                 ]),
                 OfflineService.getForcedOfflineMode().catch(() => false),
                 AsyncStorage.getItem('auto_print').catch(() => 'true'),
-                AsyncStorage.getItem('production_settings').catch(() => null),
+                AsyncStorage.getItem('post_payment_receipt_mode').catch(() => null),
                 AsyncStorage.getItem('enable_receipt_printing').catch(() => 'true'),
+                Promise.all([
+                    PrinterManager.getSelectedPrinter('kitchen').catch(() => null),
+                    PrinterManager.getSelectedPrinter('bar').catch(() => null)
+                ]),
                 AsyncStorage.getItem('enable_kitchen_printing').catch(() => 'true'),
-                AsyncStorage.getItem('enable_bar_printing').catch(() => 'true')
+                AsyncStorage.getItem('enable_bar_printing').catch(() => 'true'),
+                AsyncStorage.getItem('enable_hold_printing').catch(() => 'false')
             ]);
  
             // Apply results
-            // Apply results in one go to minimize re-renders
             if (savedFlow) setPosFlow(savedFlow as any);
-            if (savedCashMode !== null) setCashierMode(savedCashMode === 'true');
             setSelectedPrinters({
                 receipt: savedPrinters[0],
-                kitchen: savedPrinters[1],
-                bar: savedPrinters[2],
-                report: savedPrinters[3]
+                report: savedPrinters[1],
+                kitchen: (savedKitchenPrinters as any)[0],
+                bar: (savedKitchenPrinters as any)[1]
             });
+            
+            setEnableReceipt(savedEnableReceipt !== 'false');
+            if (savedEnableKitchen !== null) setEnableKitchen(savedEnableKitchen === 'true');
+            if (savedEnableBar !== null) setEnableBar(savedEnableBar === 'true');
+            if (savedEnableHoldPrinting !== null) setEnableHoldPrinting(savedEnableHoldPrinting === 'true');
+
+            const savedAutoPreview = await AsyncStorage.getItem('auto_preview_receipt');
+            if (savedAutoPreview !== null) setAutoPreviewReceipt(savedAutoPreview === 'true');
             setForcedOffline(!!isForced);
-            setAutoPrint(savedAutoPrint === 'true');
-            if (savedProdSettings) setProductionSettings(JSON.parse(savedProdSettings));
+            setReceiptPrintMode(
+                savedReceiptPrintMode === 'auto' || savedReceiptPrintMode === 'manual'
+                    ? savedReceiptPrintMode
+                    : (savedAutoPrint === 'true' ? 'auto' : 'manual')
+            );
 
             if (sessionSettings) {
                 setFullSettings(sessionSettings);
             }
 
             setEnableReceipt(savedEnableReceipt !== 'false');
-            setEnableKitchen(savedEnableKitchen !== 'false');
-            setEnableBar(savedEnableBar !== 'false');
 
             // EXIT CRITICAL LOADING ASAP
             setLoading(false);
@@ -260,11 +264,11 @@ export default function SettingsScreen() {
 
     const updatePrinterStatuses = React.useCallback(async () => {
         const statuses: Record<string, any> = {};
-        const { receipt, kitchen, bar, report } = selectedPrinters;
+        const { receipt, report, kitchen, bar } = selectedPrinters;
         if (receipt) statuses[receipt] = PrinterManager.getConnectionStatus(receipt);
+        if (report) statuses[report] = PrinterManager.getConnectionStatus(report);
         if (kitchen) statuses[kitchen] = PrinterManager.getConnectionStatus(kitchen);
         if (bar) statuses[bar] = PrinterManager.getConnectionStatus(bar);
-        if (report) statuses[report] = PrinterManager.getConnectionStatus(report);
         setPrinterStatus(statuses);
     }, [selectedPrinters]);
 
@@ -280,8 +284,8 @@ export default function SettingsScreen() {
     }, []);
 
     const handleRefreshAllPrinters = async () => {
-        const { receipt, kitchen, bar, report } = selectedPrinters;
-        if (!receipt && !kitchen && !bar && !report) {
+        const { receipt, report } = selectedPrinters;
+        if (!receipt && !report) {
             showToast('Tidak ada printer', 'Tambahkan printer terlebih dahulu', 'info');
             return;
         }
@@ -291,9 +295,9 @@ export default function SettingsScreen() {
         // Use Promise.all with individual timeouts or catch to keep UI alive
         await Promise.allSettled([
             receipt ? PrinterManager.checkConnection(receipt) : Promise.resolve(),
+            report ? PrinterManager.checkConnection(report) : Promise.resolve(),
             kitchen ? PrinterManager.checkConnection(kitchen) : Promise.resolve(),
-            bar ? PrinterManager.checkConnection(bar) : Promise.resolve(),
-            report ? PrinterManager.checkConnection(report) : Promise.resolve()
+            bar ? PrinterManager.checkConnection(bar) : Promise.resolve()
         ]);
         
         updatePrinterStatuses();
@@ -310,13 +314,7 @@ export default function SettingsScreen() {
         }
     };
 
-    const updateProductionSetting = async (key: string, value: any) => {
-        const newSettings = { ...productionSettings, [key]: value as any };
-        setProductionSettings(newSettings);
-        await AsyncStorage.setItem('production_settings', JSON.stringify(newSettings));
-    };
-
-    const startScan = async (type: 'receipt' | 'kitchen' | 'bar' | 'report') => {
+    const startScan = async (type: 'receipt' | 'report') => {
         setIsScanning(true);
         setConfiguringPrinterType(type);
         setDiscoveredDevices([]);
@@ -351,26 +349,35 @@ export default function SettingsScreen() {
             
             setSelectedPrinters(prev => {
                 if (configuringPrinterType === 'receipt') return { ...prev, receipt: device.id };
+                if (configuringPrinterType === 'report') return { ...prev, report: device.id };
                 if (configuringPrinterType === 'kitchen') return { ...prev, kitchen: device.id };
                 if (configuringPrinterType === 'bar') return { ...prev, bar: device.id };
-                if (configuringPrinterType === 'report') return { ...prev, report: device.id };
                 return prev;
             });
             
             setDiscoveredDevices([]);
-            const typeLabel = configuringPrinterType === 'receipt' ? 'Kasir' : 
-                             configuringPrinterType === 'kitchen' ? 'Dapur' : 
-                             configuringPrinterType === 'bar' ? 'Bar' : 'Laporan';
-            Alert.alert(
-                'Printer Terpilih', 
-                `Printer ${typeLabel}: ${device.name || device.id} berhasil dipilih.`
-            );
+            let typeLabel = 'Kasir';
+            if (configuringPrinterType === 'report') typeLabel = 'Laporan';
+            if (configuringPrinterType === 'kitchen') typeLabel = 'Dapur';
+            if (configuringPrinterType === 'bar') typeLabel = 'Bar';
+
+            setStatusModal({
+                visible: true,
+                title: 'Printer Terpilih',
+                message: `Printer ${typeLabel}: ${device.name || device.id} berhasil dipilih.`,
+                type: 'success'
+            });
         } catch (e: any) {
-            Alert.alert('Error', 'Gagal memilih printer: ' + e.message);
+            setStatusModal({
+                visible: true,
+                title: 'Error',
+                message: 'Gagal memilih printer: ' + e.message,
+                type: 'warning'
+            });
         }
     };
 
-    const handleTestPrint = async (type: 'receipt' | 'kitchen' | 'bar' | 'report' = 'receipt') => {
+    const handleTestPrint = async (type: 'receipt' | 'report' = 'receipt') => {
         try {
             await PrinterManager.testPrint(type);
             Alert.alert('Sukses', `Test print ${type} berhasil dikirim.`);
@@ -387,10 +394,52 @@ export default function SettingsScreen() {
         }
     };
 
-    const handleForgetPrinter = async (type: 'receipt' | 'kitchen' | 'bar' | 'report') => {
-        const typeLabel = type === 'receipt' ? 'Kasir' : 
-                         type === 'kitchen' ? 'Dapur' : 
-                         type === 'bar' ? 'Bar' : 'Laporan';
+    const handleManualSave = async () => {
+        if (!manualAddress.trim()) return;
+        
+        // Basic MAC validation
+        const macRegex = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
+        const cleanMAC = manualAddress.trim().toUpperCase();
+        
+        if (!macRegex.test(cleanMAC)) {
+            Alert.alert('Format Salah', 'Gunakan format MAC Address yang benar (e.g., AA:BB:CC:DD:EE:FF)');
+            return;
+        }
+
+        try {
+            await PrinterManager.saveSelectedPrinter(cleanMAC, manualType);
+            setSelectedPrinters(prev => ({ ...prev, [manualType]: cleanMAC }));
+            setShowManualModal(false);
+            setManualAddress('');
+            Alert.alert('Sukses', `MAC Address untuk ${manualType === 'receipt' ? 'Kasir' : (manualType === 'kitchen' ? 'Dapur' : (manualType === 'bar' ? 'Bar' : 'Laporan'))} berhasil disimpan.`);
+        } catch (e) {
+            console.error('Error saving manual printer:', e);
+            Alert.alert('Error', 'Gagal menyimpan MAC Address');
+        }
+    };
+
+    const toggleHoldPrinting = async (val: boolean) => {
+        try {
+            setEnableHoldPrinting(val);
+            await AsyncStorage.setItem('enable_hold_printing', val ? 'true' : 'false');
+            showToast(val ? 'Cetak Hold diaktifkan' : 'Cetak Hold dinonaktifkan', undefined, 'success');
+        } catch (e) {
+            console.error('Error saving hold printing setting:', e);
+        }
+    };
+
+    const toggleAutoPreview = async (val: boolean) => {
+        try {
+            setAutoPreviewReceipt(val);
+            await AsyncStorage.setItem('auto_preview_receipt', val ? 'true' : 'false');
+            showToast(val ? 'Pratinjau Otomatis Aktif' : 'Pratinjau Otomatis Mati', undefined, 'success');
+        } catch (e) {
+            console.error('Error saving auto preview setting:', e);
+        }
+    };
+
+    const handleForgetPrinter = async (type: 'receipt' | 'report') => {
+        const typeLabel = type === 'receipt' ? 'Kasir' : 'Laporan';
         Alert.alert(
             `Hapus Printer ${typeLabel}`,
             `Apakah Anda yakin ingin menghapus printer ${typeLabel}?`,
@@ -403,9 +452,9 @@ export default function SettingsScreen() {
                         await PrinterManager.forgetSelectedPrinter(type);
                         setSelectedPrinters(prev => {
                             if (type === 'receipt') return { ...prev, receipt: null };
+                            if (type === 'report') return { ...prev, report: null };
                             if (type === 'kitchen') return { ...prev, kitchen: null };
                             if (type === 'bar') return { ...prev, bar: null };
-                            if (type === 'report') return { ...prev, report: null };
                             return prev;
                         });
                         Alert.alert('Sukses', 'Printer berhasil dihapus.');
@@ -427,9 +476,13 @@ export default function SettingsScreen() {
                 setEnableBar(value);
                 await AsyncStorage.setItem('enable_bar_printing', value.toString());
             }
+
+            let label = 'Struk';
+            if (type === 'kitchen') label = 'Dapur';
+            if (type === 'bar') label = 'Bar';
             
             showToast(
-                `Printer ${type === 'receipt' ? 'Kasir' : type === 'kitchen' ? 'Dapur' : 'Bar'} ${value ? 'Aktif' : 'Nonaktif'}`,
+                `Printer ${label} ${value ? 'Aktif' : 'Nonaktif'}`,
                 value ? 'Siap digunakan' : 'Cetak akan dilewati secara otomatis',
                 'info'
             );
@@ -439,21 +492,15 @@ export default function SettingsScreen() {
     };
 
 
-    const toggleAutoPrint = async (value: boolean) => {
-        setAutoPrint(value);
+    const saveReceiptPrintMode = async (value: 'auto' | 'manual') => {
+        setReceiptPrintMode(value);
         try {
-            await AsyncStorage.setItem('auto_print', value.toString());
+            await Promise.all([
+                AsyncStorage.setItem('post_payment_receipt_mode', value),
+                AsyncStorage.setItem('auto_print', String(value === 'auto'))
+            ]);
         } catch (e) {
-            console.error('Error saving auto_print:', e);
-        }
-    };
-
-    const toggleCashierMode = async (value: boolean) => {
-        setCashierMode(value);
-        try {
-            await AsyncStorage.setItem('cashier_mode', value.toString());
-        } catch (e) {
-            console.error('Error saving cashier_mode:', e);
+            console.error('Error saving post-payment receipt mode:', e);
         }
     };
 
@@ -536,28 +583,23 @@ export default function SettingsScreen() {
         }
     };
 
-    const handleClearCache = async () => {
-        Alert.alert(
-            "Bersihkan Cache",
-            "Data produk & pelanggan akan dimuat ulang dari server. Lanjutkan?",
-            [
-                { text: "Batal", style: "cancel" },
-                { 
-                    text: "Ya, Bersihkan", 
-                    onPress: async () => {
-                        const keys = [
-                            `cached_products_`,
-                            `cached_categories_`,
-                            `pos_cart_draft`,
-                        ];
-                        // Note: currentBranchId might be needed for precise keys, 
-                        // but let's clear the standard ones.
-                        await AsyncStorage.clear(); 
-                        Alert.alert('Sukses', 'Cache dibersihkan. Silakan muat ulang halaman POS.');
-                    } 
-                }
-            ]
-        );
+    const handleClearCache = () => {
+        setShowClearCacheConfirm(true);
+    };
+
+    const confirmClearCache = async () => {
+        setShowClearCacheConfirm(false);
+        try {
+            await AsyncStorage.clear();
+            setStatusModal({
+                visible: true,
+                title: 'Cache Bersih',
+                message: 'Semua data cache telah dibersihkan. Aplikasi akan memuat data terbaru dari server.',
+                type: 'success'
+            });
+        } catch (e) {
+            showToast('Gagal bersihkan cache', 'error');
+        }
     };
 
     const handleUpdatePassword = async () => {
@@ -586,8 +628,55 @@ export default function SettingsScreen() {
         }
     };
 
+    const renderManualModal = () => (
+        <Modal
+            visible={showManualModal}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => setShowManualModal(false)}
+        >
+            <TouchableOpacity 
+                activeOpacity={1} 
+                style={styles.manualModalOverlay} 
+                onPress={() => setShowManualModal(false)}
+            >
+                <View style={styles.modalContentSmall}>
+                    <View style={styles.modalHeaderSmall}>
+                        <Text style={styles.modalTitleSmall}>
+                            Input MAC Address {manualType === 'receipt' ? 'Kasir' : (manualType === 'kitchen' ? 'Dapur' : (manualType === 'bar' ? 'Bar' : 'Laporan'))}
+                        </Text>
+                        <TouchableOpacity onPress={() => setShowManualModal(false)}>
+                            <X size={20} color="#64748b" />
+                        </TouchableOpacity>
+                    </View>
+                    
+                    <View style={{ padding: 16 }}>
+                        <Text style={{ fontSize: 13, color: '#64748b', marginBottom: 12 }}>
+                            Masukkan MAC Address Bluetooth (e.g. 66:22:90:3A:4E:51). Anda bisa menemukannya di struk Self-Test printer.
+                        </Text>
+                        
+                        <TextInput
+                            style={styles.manualInput}
+                            placeholder="AA:BB:CC:DD:EE:FF"
+                            value={manualAddress}
+                            onChangeText={setManualAddress}
+                            autoCapitalize="characters"
+                            autoCorrect={false}
+                        />
+                        
+                        <TouchableOpacity style={styles.saveBtnModal} onPress={handleManualSave}>
+                            <Text style={styles.saveBtnTextModal}>Simpan MAC Address</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </TouchableOpacity>
+        </Modal>
+    );
+
     return (
         <SafeAreaView style={styles.container}>
+            <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
+            {renderManualModal()}
             <View style={[
                 styles.header,
                 isSmallDevice && { paddingVertical: 10, paddingHorizontal: 12 }
@@ -599,6 +688,9 @@ export default function SettingsScreen() {
                     styles.headerTitle,
                     isSmallDevice && { fontSize: 16 }
                 ]}>Pengaturan</Text>
+                <View style={{ position: 'absolute', right: 16 }}>
+                    <Text style={{ fontSize: 10, color: '#94a3b8', fontWeight: 'bold' }}>VER 1.3.1-PRO</Text>
+                </View>
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -609,9 +701,9 @@ export default function SettingsScreen() {
                         <View style={styles.card}>
                             <SettingItem 
                                 icon={Store} 
-                                label="Profil Toko" 
+                                label="Pengaturan Toko" 
                                 subtitle="Nama, alamat & telp outlet"
-                                onPress={() => navigation.navigate('StoreSettings' as never)} 
+                                onPress={() => (navigation as any).navigate('StoreSettings')} 
                                 isSmallDevice={isSmallDevice}
                             />
                             <View style={styles.divider} />
@@ -619,7 +711,7 @@ export default function SettingsScreen() {
                                 icon={Users} 
                                 label="Daftar Pelayan" 
                                 subtitle="Kelola data karyawan & pelayan"
-                                onPress={() => navigation.navigate('EmployeeSettings' as never)} 
+                                onPress={() => (navigation as any).navigate('EmployeeSettings')} 
                                 isSmallDevice={isSmallDevice}
                             />
                         </View>
@@ -636,16 +728,6 @@ export default function SettingsScreen() {
                                 type="switch"
                                 value={fullSettings?.require_mandatory_session ?? true}
                                 onToggle={(val: boolean) => toggleSetting('require_mandatory_session', val)}
-                                isSmallDevice={isSmallDevice}
-                            />
-                            <View style={styles.divider} />
-                            <SettingItem 
-                                icon={Printer} 
-                                label="Cetak Dapur/Bar Saat Hold" 
-                                subtitle="Otomatis cetak tiket dapur/bar saat Hold pesanan"
-                                type="switch"
-                                value={fullSettings?.print_kds_on_hold ?? false}
-                                onToggle={(val: boolean) => toggleSetting('print_kds_on_hold', val)}
                                 isSmallDevice={isSmallDevice}
                             />
                             <View style={styles.divider} />
@@ -711,30 +793,6 @@ export default function SettingsScreen() {
                             </TouchableOpacity>
                         </View>
                     </View>
-
-                {/* Mode Aplikasi */}
-                <View style={[styles.section, isLandscape && { width: '48.5%' }]}>
-                    <Text style={styles.sectionTitle}>Mode & Keamanan</Text>
-                    <View style={styles.card}>
-                        <SettingItem 
-                            icon={LayoutDashboard} 
-                            label="Mode Kasir Lengkap" 
-                            subtitle="Aktifkan fitur pembayaran mobile"
-                            type="switch"
-                            value={cashierMode}
-                            onToggle={toggleCashierMode}
-                            isSmallDevice={isSmallDevice}
-                        />
-                        <View style={styles.divider} />
-                        <SettingItem 
-                            icon={Lock} 
-                            label="Ubah Password" 
-                            subtitle="Ganti password akun Anda"
-                            onPress={() => setShowPasswordModal(true)} 
-                            isSmallDevice={isSmallDevice}
-                        />
-                    </View>
-                </View>
 
                 {/* Koneksi & Offline */}
                 <View style={[styles.section, isLandscape && { width: '48.5%' }]}>
@@ -803,16 +861,23 @@ export default function SettingsScreen() {
                         <View style={isLandscape ? { flexDirection: 'row', flexWrap: 'wrap' } : null}>
                             {[
                                 { id: 'receipt', label: 'Printer Kasir (Struk)', value: selectedPrinters.receipt },
+                                { id: 'report', label: 'Printer Laporan (Keuangan)', value: selectedPrinters.report },
                                 { id: 'kitchen', label: 'Printer Dapur (Makanan)', value: selectedPrinters.kitchen },
-                                { id: 'bar', label: 'Printer Bar (Minuman)', value: selectedPrinters.bar },
-                                { id: 'report', label: 'Printer Laporan (Keuangan)', value: selectedPrinters.report }
+                                { id: 'bar', label: 'Printer Bar (Minuman)', value: selectedPrinters.bar }
                             ].map((printer, index) => (
                                 <View key={printer.id} style={isLandscape ? { width: '50.0%', borderRightWidth: (index % 2 === 0) ? 1 : 0, borderRightColor: '#f1f5f9' } : null}>
                                     {index > 0 && !isLandscape && <View style={styles.divider} />}
                                     <View style={[styles.printerItem, isLandscape && { paddingHorizontal: 12 }]}>
                                         <View style={styles.printerHeader}>
                                             <View style={styles.printerStatusRow}>
-                                                <Bluetooth size={20} color={printer.value ? '#ea580c' : '#9ca3af'} />
+                                                <Bluetooth 
+                                                    size={20} 
+                                                    color={
+                                                        printer.value 
+                                                            ? (printerStatus[printer.value] === 'connected' ? '#22c55e' : '#ea580c') 
+                                                            : '#9ca3af'
+                                                    } 
+                                                />
                                                 <View style={{ marginLeft: 12, flex: 1 }}>
                                                     <Text style={[styles.settingLabel, { fontSize: 13 }]}>{printer.label}</Text>
                                                     <Text style={styles.printerNameText} numberOfLines={1}>{printer.value || 'Belum ada printer'}</Text>
@@ -823,8 +888,8 @@ export default function SettingsScreen() {
                                                 <Switch 
                                                     value={
                                                         printer.id === 'receipt' ? enableReceipt : 
-                                                        (printer.id === 'kitchen' ? enableKitchen : 
-                                                        (printer.id === 'bar' ? enableBar : true))
+                                                        printer.id === 'kitchen' ? enableKitchen : 
+                                                        printer.id === 'bar' ? enableBar : true
                                                     }
                                                     onValueChange={(val) => {
                                                         if (printer.id === 'report') return;
@@ -839,14 +904,21 @@ export default function SettingsScreen() {
 
                                         <View style={styles.printerActions}>
                                             {printer.value && (
-                                                <View style={[styles.statusBadgeSmall, { marginRight: 'auto', marginLeft: 0 }]}>
+                                                <View style={[
+                                                    styles.statusBadgeSmall, 
+                                                    { marginRight: 'auto', marginLeft: 0 },
+                                                    printerStatus[printer.value] === 'connected' && { backgroundColor: '#f0fdf4', borderColor: '#dcfce7', borderWidth: 1 }
+                                                ]}>
                                                     <View style={{ 
                                                         width: 6, 
                                                         height: 6, 
                                                         borderRadius: 3, 
                                                         backgroundColor: printerStatus[printer.value] === 'connected' ? '#22c55e' : (printerStatus[printer.value] === 'connecting' ? '#f59e0b' : '#ef4444') 
                                                     }} />
-                                                    <Text style={styles.statusTextSmall}>
+                                                    <Text style={[
+                                                        styles.statusTextSmall,
+                                                        printerStatus[printer.value] === 'connected' && { color: '#16a34a' }
+                                                    ]}>
                                                         {printerStatus[printer.value] === 'connected' ? 'Connected' : (printerStatus[printer.value] === 'connecting' ? 'Connecting...' : 'Disconnected')}
                                                     </Text>
                                                 </View>
@@ -872,6 +944,18 @@ export default function SettingsScreen() {
                                                 </TouchableOpacity>
                                             )}
                                             <TouchableOpacity 
+                                                style={[styles.scanBtnSmall, { backgroundColor: '#64748b', marginRight: 4 }]} 
+                                                onPress={() => {
+                                                    setManualType(printer.id as any);
+                                                    setManualAddress(printer.value || '');
+                                                    setShowManualModal(true);
+                                                }}
+                                            >
+                                                <Pencil size={12} color="#fff" />
+                                                <Text style={styles.scanBtnTextSmall}>Manual</Text>
+                                            </TouchableOpacity>
+
+                                            <TouchableOpacity 
                                                 style={[styles.scanBtnSmall, isScanning && configuringPrinterType === printer.id && { backgroundColor: '#cbd5e1' }]} 
                                                 onPress={() => startScan(printer.id as any)}
                                                 disabled={isScanning}
@@ -894,8 +978,8 @@ export default function SettingsScreen() {
                                 <ActivityIndicator size="small" color="#f97316" style={{ marginBottom: 4 }} />
                                 <Text style={styles.scanProgressText}>Mencari untuk {
                                     configuringPrinterType === 'receipt' ? 'Kasir' : 
-                                    configuringPrinterType === 'kitchen' ? 'Dapur' : 
-                                    configuringPrinterType === 'bar' ? 'Bar' : 'Laporan'
+                                    (configuringPrinterType === 'report' ? 'Laporan' : 
+                                    (configuringPrinterType === 'kitchen' ? 'Dapur' : 'Bar'))
                                 }...</Text>
                             </View>
                         )}
@@ -919,69 +1003,38 @@ export default function SettingsScreen() {
                             </View>
                         )}
 
+                        <View style={styles.divider} />
+                        <View style={styles.divider} />
                         <SettingItem 
                             icon={Printer} 
-                            label="Cetak Struk Otomatis" 
-                            subtitle="Cetak saat pembayaran selesai"
+                            label="Cetak Kasir Otomatis" 
+                            subtitle="Struk langsung dicetak setelah pembayaran"
                             type="switch"
-                            value={autoPrint}
-                            onToggle={toggleAutoPrint}
+                            value={receiptPrintMode === 'auto'}
+                            onToggle={(val: boolean) => saveReceiptPrintMode(val ? 'auto' : 'manual')}
+                            isSmallDevice={isSmallDevice}
                         />
-                    </View>
-                </View>
 
-                {/* Produksi (Dapur & Bar) Template */}
-                <View style={[styles.section, isLandscape && { width: '48.5%' }]}>
-                    <Text style={styles.sectionTitle}>Produksi (Dapur & Bar)</Text>
-                    <View style={styles.card}>
-                        <SettingItem 
-                            icon={FileText} 
-                            label="Nomor Meja Besar" 
-                            subtitle="Tampilkan Meja lebih mencolok"
-                            type="switch"
-                            value={productionSettings.showTableLarge}
-                            onToggle={(v: boolean) => updateProductionSetting('showTableLarge', v)}
-                        />
                         <View style={styles.divider} />
                         <SettingItem 
-                            icon={User} 
-                            label="Tampilkan Pelanggan" 
+                            icon={Monitor} 
+                            label="Pratinjau Struk (Preview)" 
+                            subtitle="Tampilkan struk di layar sebelum cetak ke kertas"
                             type="switch"
-                            value={productionSettings.showCustomer}
-                            onToggle={(v: boolean) => updateProductionSetting('showCustomer', v)}
+                            value={autoPreviewReceipt}
+                            onToggle={toggleAutoPreview}
+                            isSmallDevice={isSmallDevice}
                         />
+
                         <View style={styles.divider} />
                         <SettingItem 
-                            icon={User} 
-                            label="Tampilkan Kasir" 
+                            icon={Printer} 
+                            label="Cetak Dapur/Bar saat Hold" 
+                            subtitle="Kirim pesanan ke dapur saat klik Simpan (Hold)"
                             type="switch"
-                            value={productionSettings.showCashier ?? true}
-                            onToggle={(v: boolean) => updateProductionSetting('showCashier', v)}
-                        />
-                        <View style={styles.divider} />
-                        <SettingItem 
-                            icon={User} 
-                            label="Tampilkan Pelayan" 
-                            type="switch"
-                            value={productionSettings.showWaiter}
-                            onToggle={(v: boolean) => updateProductionSetting('showWaiter', v)}
-                        />
-                        <View style={styles.divider} />
-                        <SettingItem 
-                            icon={Clock} 
-                            label="Tampilkan Waktu" 
-                            type="switch"
-                            value={productionSettings.showTime}
-                            onToggle={(v: boolean) => updateProductionSetting('showTime', v)}
-                        />
-                        <View style={styles.divider} />
-                        <SettingItem 
-                            icon={Type} 
-                            label="Item Tinggi (Double)" 
-                            subtitle="Font 2x lipat untuk nama item"
-                            type="switch"
-                            value={productionSettings.doubleHeightItems}
-                            onToggle={(v: boolean) => updateProductionSetting('doubleHeightItems', v)}
+                            value={enableHoldPrinting}
+                            onToggle={toggleHoldPrinting}
+                            isSmallDevice={isSmallDevice}
                         />
                     </View>
                 </View>
@@ -1046,7 +1099,7 @@ export default function SettingsScreen() {
                     styles.toastContainer,
                     { 
                         opacity: toastOpacity,
-                        transform: [{ translateY: toastTranslateY }]
+                        transform: [{ translateY: toastTranslateY }] as any
                     }
                 ]}>
                     <View style={[
@@ -1192,6 +1245,23 @@ export default function SettingsScreen() {
                 receiptPaperWidth={fullSettings?.receipt_paper_width || '58mm'}
                 storeSettings={sessionSettings}
             />
+            <ConfirmExitModal 
+                visible={showClearCacheConfirm}
+                onClose={() => setShowClearCacheConfirm(false)}
+                onConfirm={confirmClearCache}
+                title="Bersihkan Cache?"
+                message="Data produk & pelanggan akan dimuat ulang. Anda harus login kembali."
+                confirmText="Bersihkan"
+                cancelText="Batal"
+                iconType="trash"
+            />
+            <StatusModal 
+                visible={statusModal.visible}
+                onClose={() => setStatusModal({ ...statusModal, visible: false })}
+                title={statusModal.title}
+                message={statusModal.message}
+                type={statusModal.type}
+            />
         </SafeAreaView>
     );
 }
@@ -1274,6 +1344,33 @@ const styles = StyleSheet.create({
         fontSize: 11,
         color: '#94a3b8',
         marginTop: 2,
+    },
+    printModeRow: {
+        flexDirection: 'row',
+        gap: 8,
+        marginTop: 10,
+    },
+    printModeChip: {
+        flex: 1,
+        paddingVertical: 10,
+        borderRadius: 12,
+        backgroundColor: '#f8fafc',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    printModeChipActive: {
+        backgroundColor: '#fff7ed',
+        borderColor: '#fb923c',
+    },
+    printModeChipText: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#64748b',
+    },
+    printModeChipTextActive: {
+        color: '#c2410c',
     },
     divider: {
         height: 1,
@@ -1551,7 +1648,56 @@ const styles = StyleSheet.create({
         minWidth: 36,
         textAlign: 'center',
     },
-    // Toast Styles
+    // Manual Modal Styles
+    manualModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20
+    },
+    modalContentSmall: {
+        backgroundColor: '#fff',
+        borderRadius: 20,
+        width: '100%',
+        maxWidth: 400,
+        overflow: 'hidden'
+    },
+    modalHeaderSmall: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9'
+    },
+    modalTitleSmall: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#1e293b'
+    },
+    manualInput: {
+        backgroundColor: '#f8fafc',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        borderRadius: 12,
+        padding: 14,
+        fontSize: 16,
+        fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+        color: '#1e293b',
+        marginBottom: 16
+    },
+    saveBtnModal: {
+        backgroundColor: '#ea580c',
+        padding: 16,
+        borderRadius: 12,
+        alignItems: 'center'
+    },
+    saveBtnTextModal: {
+        color: '#fff',
+        fontWeight: 'bold',
+        fontSize: 14
+    },
     toastContainer: {
         position: 'absolute',
         top: Platform.OS === 'ios' ? 60 : 40,

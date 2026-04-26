@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
+import { supabase } from '../../lib/supabase';
 import { FileText, Download, FileSpreadsheet, Printer, TrendingUp, DollarSign, ShoppingBag, CreditCard, Search, Calendar, Filter, X, ShoppingCart } from 'lucide-react';
 import { SalesOrder, SalesReturn } from '../pos/SalesView';
 import { Button } from '../ui/button';
@@ -17,6 +18,7 @@ interface ReportsViewProps {
     purchaseReturns: any[];
     paymentMethods: any[];
     storeSettings?: any;
+    branchId?: string;
 }
 
 const formatDateForInput = (date: Date) => {
@@ -49,7 +51,11 @@ const normalizeDateValue = (value: unknown) => {
     return raw;
 };
 
-export function ReportsView({ sales, returns, purchases = [], purchaseReturns = [], paymentMethods, storeSettings }: ReportsViewProps) {
+export function ReportsView({ sales: initialSales, returns: initialReturns, purchases: initialPurchases = [], purchaseReturns: initialPurchaseReturns = [], paymentMethods, storeSettings, branchId }: ReportsViewProps) {
+    const [realSales, setRealSales] = useState<SalesOrder[]>([]);
+    const [realReturns, setRealReturns] = useState<SalesReturn[]>([]);
+    const [realPurchases, setRealPurchases] = useState<any[]>([]);
+    const [isLoadingRealData, setIsLoadingRealData] = useState(false);
     console.log("ReportsView - Version 1.0.2 - Filter Updated");
     const [reportType, setReportType] = useState<'sales' | 'purchases'>('sales');
 
@@ -82,9 +88,9 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
             start.setDate(now.getDate() - 1);
             end.setDate(now.getDate() - 1);
         } else if (type === 'week') {
-            start.setDate(now.getDate() - 7);
+            start.setDate(now.getDate() - 6);
         } else if (type === 'month') {
-            start.setMonth(now.getMonth() - 1);
+            start.setDate(now.getDate() - 29);
         }
 
         const formatDate = (d: Date) => formatDateForInput(d);
@@ -92,8 +98,121 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
         setEndDate(formatDate(end));
     };
 
+    const fetchRealData = async () => {
+        if (!branchId || !startDate || !endDate) return;
+        setIsLoadingRealData(true);
+        try {
+            // 1. Fetch Sales with Pagination
+            let allSales: any[] = [];
+            let from = 0;
+            const pageSize = 1000;
+            let hasMore = true;
+
+            while (hasMore) {
+                const { data, error } = await supabase
+                    .from('sales')
+                    .select('*, items:sale_items(*, product:product_id(category))')
+                    .eq('branch_id', branchId)
+                    .gte('date', startDate + 'T00:00:00')
+                    .lte('date', endDate + 'T23:59:59')
+                    .order('date', { ascending: false })
+                    .range(from, from + pageSize - 1);
+
+                if (error) throw error;
+                if (data && data.length > 0) {
+                    allSales = [...allSales, ...data];
+                    if (data.length < pageSize) hasMore = false;
+                    else from += pageSize;
+                } else {
+                    hasMore = false;
+                }
+            }
+
+            const formattedSales = allSales.map(s => ({
+                ...s,
+                orderNo: s.order_no,
+                totalAmount: Number(s.total_amount || 0),
+                paymentMethod: s.payment_method,
+                customerName: s.customer_name,
+                cashierName: s.cashier_name,
+                waiterName: s.waiter_name,
+                productDetails: (s.items || []).map((i: any) => ({
+                    name: i.product_name,
+                    quantity: i.quantity,
+                    price: i.price,
+                    category: i.product?.category
+                }))
+            }));
+            setRealSales(formattedSales);
+
+            // 2. Fetch Returns with Pagination
+            let allReturns: any[] = [];
+            let retFrom = 0;
+            let retHasMore = true;
+
+            while (retHasMore) {
+                const { data: retPage, error: retError } = await supabase
+                    .from('sales_returns')
+                    .select('*')
+                    .gte('date', startDate + 'T00:00:00')
+                    .lte('date', endDate + 'T23:59:59')
+                    .range(retFrom, retFrom + pageSize - 1);
+                
+                if (retError) throw retError;
+
+                if (retPage && retPage.length > 0) {
+                    allReturns = [...allReturns, ...retPage];
+                    if (retPage.length < pageSize) retHasMore = false;
+                    else retFrom += pageSize;
+                } else {
+                    retHasMore = false;
+                }
+            }
+            setRealReturns(allReturns.map(r => ({
+                ...r,
+                refundAmount: Number(r.refund_amount || 0)
+            })));
+
+            // 3. Fetch Purchases with Pagination
+            let allPurchases: any[] = [];
+            let purFrom = 0;
+            let purHasMore = true;
+
+            while (purHasMore) {
+                const { data: purPage, error: purError } = await supabase
+                    .from('purchases')
+                    .select('*')
+                    .eq('branch_id', branchId)
+                    .gte('date', startDate + 'T00:00:00')
+                    .lte('date', endDate + 'T23:59:59')
+                    .range(purFrom, purFrom + pageSize - 1);
+                
+                if (purError) throw purError;
+
+                if (purPage && purPage.length > 0) {
+                    allPurchases = [...allPurchases, ...purPage];
+                    if (purPage.length < pageSize) purHasMore = false;
+                    else purFrom += pageSize;
+                } else {
+                    purHasMore = false;
+                }
+            }
+            setRealPurchases(allPurchases);
+
+        } catch (err) {
+            console.error('Error fetching real data:', err);
+            toast.error('Gagal mengambil data lengkap');
+        } finally {
+            setIsLoadingRealData(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchRealData();
+    }, [startDate, endDate, branchId]);
+
     const filteredSales = useMemo(() => {
-        return sales.filter(s => {
+        return realSales.filter(s => {
             const matchesSearch = s.orderNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 (s.customerName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                 (s.cashierName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -101,39 +220,34 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
 
             const matchesMethod = methodFilter === 'All' || s.paymentMethod === methodFilter;
 
-            const saleDate = normalizeDateValue(s.date);
-            const matchesStartDate = !startDate || saleDate >= startDate;
-            const matchesEndDate = !endDate || saleDate <= endDate;
-
-            return matchesSearch && matchesMethod && matchesStartDate && matchesEndDate;
+            return matchesSearch && matchesMethod;
         });
-    }, [sales, searchQuery, methodFilter, startDate, endDate]);
+    }, [realSales, searchQuery, methodFilter]);
 
     const filteredReturns = useMemo(() => {
-        return returns.filter(r => {
-            const saleDate = normalizeDateValue(r.date);
-            const matchesStartDate = !startDate || saleDate >= startDate;
-            const matchesEndDate = !endDate || saleDate <= endDate;
-            return matchesStartDate && matchesEndDate;
-        });
-    }, [returns, startDate, endDate]);
+        return realReturns;
+    }, [realReturns]);
 
     const filteredPurchases = useMemo(() => {
-        return (purchases || []).filter(p => {
+        return realPurchases.filter(p => {
             const matchesSearch = (p.purchase_no || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                 (p.supplier_name || '').toLowerCase().includes(searchQuery.toLowerCase());
             
-            const pDate = normalizeDateValue(p.date);
-            const matchesStartDate = !startDate || pDate >= startDate;
-            const matchesEndDate = !endDate || pDate <= endDate;
-            
-            return matchesSearch && matchesStartDate && matchesEndDate;
+            return matchesSearch;
         });
-    }, [purchases, searchQuery, startDate, endDate]);
+    }, [realPurchases, searchQuery]);
 
-    const totalSales = filteredSales.reduce((sum, s) => sum + (s.status === 'Completed' ? s.totalAmount : 0), 0);
+    const isCompletedSale = (status: string) => {
+        const PAID_STATUSES = ['completed', 'selesai', 'paid', 'served', 'success', 'settlement', 'capture', 'ready'];
+        return PAID_STATUSES.includes((status || '').toLowerCase());
+    };
+
+    const totalSales = filteredSales.reduce((sum, s) => sum + (isCompletedSale(s.status) ? s.totalAmount : 0), 0);
+
     const totalPurchases = filteredPurchases.reduce((sum, p) => sum + (p.total_amount || 0), 0);
-    const totalTransactions = filteredSales.filter(s => s.status === 'Completed').length;
+        const totalTransactions = filteredSales.filter(s => isCompletedSale(s.status)).length;
+
+
     const totalPurchaseTrans = filteredPurchases.length;
     const totalReturned = filteredSales.filter(s => s.status === 'Returned').length;
     const totalRefunded = filteredReturns.reduce((sum, r) => sum + r.refundAmount, 0);
@@ -149,7 +263,8 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
 
     // Calculate Sales by Payment Method
     const salesByPaymentMethod = useMemo(() => {
-        const completedSales = filteredSales.filter(s => s.status === 'Completed');
+        const completedSales = filteredSales.filter(s => isCompletedSale(s.status));
+
         const breakdown = (paymentMethods || []).map(method => {
             const methodSales = completedSales.filter(s => s.paymentMethod === method.name);
             const total = methodSales.reduce((sum, s) => sum + s.totalAmount, 0);
@@ -183,7 +298,8 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
         const productCounts: Record<string, { name: string, value: number, category: string }> = {};
 
         filteredSales.forEach(sale => {
-            if (sale.status !== 'Completed') return;
+                        if (!isCompletedSale(sale.status)) return;
+
             (sale.productDetails || []).forEach(item => {
                 if (!item.name) return;
                 const key = item.name;
@@ -708,9 +824,9 @@ export function ReportsView({ sales, returns, purchases = [], purchaseReturns = 
                 <div className="px-8 py-6 border-b border-gray-50 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <h3 className="font-bold text-gray-800 text-lg">Riwayat Transaksi</h3>
-                        {filteredSales.length < sales.length && (
+                        {filteredSales.length < realSales.length && (
                             <span className="text-xs font-bold text-primary bg-primary/5 px-2 py-1 rounded-full animate-in fade-in zoom-in duration-300">
-                                Menampilkan {filteredSales.length} dari {sales.length}
+                                Menampilkan {filteredSales.length} dari {realSales.length}
                             </span>
                         )}
                     </div>

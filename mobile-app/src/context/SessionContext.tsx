@@ -2,6 +2,9 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { supabase } from '../lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+const ACTIVE_BRANCH_STORAGE_KEY = 'mobile_current_branch_id';
+const PREFERRED_BRANCH_NAME = 'winny coffee pnk';
+
 interface SessionContextType {
     currentSession: any | null;
     authSession: any | null;
@@ -40,6 +43,33 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const isCheckingRef = React.useRef(false);
     const lastCheckTimeRef = React.useRef(0);
 
+    const resolveOperationalBranchId = async (preferredBranchId = '') => {
+        // [FIX] Removed expensive O(N*5) branch scoring logic which caused freezes for Administrators.
+        // Instead, we just fetch branch list and apply simple priority.
+        const { data: branches, error } = await supabase
+            .from('branches')
+            .select('id, name')
+            .order('id');
+
+        if (error || !branches || branches.length === 0) {
+            return preferredBranchId || '';
+        }
+
+        // 1. Priority: User's Profile branch or Cached branch
+        if (preferredBranchId && branches.some(b => String(b.id) === preferredBranchId)) {
+            return preferredBranchId;
+        }
+
+        // 2. Priority: Default Branch Name
+        const preferredByName = branches.find(
+            (branch) => String(branch.name || '').trim().toLowerCase() === PREFERRED_BRANCH_NAME
+        );
+        if (preferredByName) return String(preferredByName.id);
+
+        // 3. Fallback: First branch
+        return String(branches[0].id);
+    };
+
     const checkSession = async (showLoading = true, force = false) => {
         const now = Date.now();
         // Throttle rapid calls unless it's a forced full update
@@ -71,12 +101,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             
             if (sessionError) {
                 console.warn('[SessionContext] getSession error:', sessionError.message);
-                // [FIX] Explicitly handle "Refresh Token Not Found" to prevent infinite loops/hangs
-                if (sessionError.message.includes('Refresh Token Not Found') || sessionError.message.includes('invalid refresh token')) {
-                    console.error('[SessionContext] PERMANENT AUTH FAILURE: Session is stale. Clearing storage.');
-                    await supabase.auth.signOut();
-                    // Optional: Manually clear potential stale items if signOut fails or is partial
-                    try { await AsyncStorage.multiRemove(['supabase.auth.token', 'sb-access-token', 'sb-refresh-token']); } catch (e) {}
+                const isStale = sessionError.message.includes('Refresh Token Not Found') || 
+                                sessionError.message.includes('invalid refresh token') ||
+                                sessionError.message.includes('session_not_found');
+                
+                if (isStale) {
+                    console.error('[SessionContext] PERMANENT AUTH FAILURE: Session is stale. Aggressive clearing...');
+                    try {
+                        await supabase.auth.signOut();
+                        // Aggressive cleanup of all possible auth-related keys
+                        const keys = await AsyncStorage.getAllKeys();
+                        const authKeys = keys.filter(k => k.includes('supabase.auth') || k.includes('sb-') || k.includes('token'));
+                        if (authKeys.length > 0) {
+                            await AsyncStorage.multiRemove(authKeys);
+                        }
+                    } catch (e) {
+                        console.warn('[SessionContext] Cleanup error:', e);
+                    }
                     
                     setAuthSession(null);
                     setCurrentSession(null);
@@ -128,27 +169,22 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             const name = profileData?.full_name || profileData?.name || user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'User';
             setUserName(name);
             
-            let bId = profileData?.branch_id ? String(profileData.branch_id) : '';
-            
-            // If branch_id is still empty but user is logged in, try to find a default
-            if (!bId || bId === '') {
-                // Prioritize 'Winny Coffee PNK' (ID 7) if it exists, otherwise use first available
-                const { data: pnkBranch } = await supabase.from('branches').select('id').eq('id', 7).maybeSingle();
-                if (pnkBranch) {
-                    bId = '7';
-                } else {
-                    const { data: branches } = await supabase.from('branches').select('id').limit(1);
-                    if (branches && branches.length > 0) {
-                        bId = String(branches[0].id);
-                    } else {
-                        bId = '1'; // Absolute fallback
-                    }
-                }
+            const cachedBranchId = await AsyncStorage.getItem(ACTIVE_BRANCH_STORAGE_KEY);
+            const preferredBranchId = profileData?.branch_id
+                ? String(profileData.branch_id)
+                : (cachedBranchId || currentBranchId || '');
+            let bId = await resolveOperationalBranchId(preferredBranchId);
+
+            if (!bId) {
+                bId = preferredBranchId;
             }
             
             if (bId !== currentBranchId) {
                 console.log('[SessionContext] setting currentBranchId to:', bId);
                 setCurrentBranchId(bId);
+            }
+            if (bId) {
+                await AsyncStorage.setItem(ACTIVE_BRANCH_STORAGE_KEY, bId);
             }
 
             // Process Settings
@@ -240,11 +276,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange((event, session) => {
             console.log('[SessionContext] Auth event:', event, 'User:', session?.user?.email);
             
+            if (event === 'SIGNED_OUT') {
+                setAuthSession(null);
+                setCurrentSession(null);
+                setLoading(false);
+                return;
+            }
+
             // Deduplicate: If we are already checking or it's the INITIAL_SESSION event
             // which is handled by our mount useEffect, we skip to avoid race conditions
             if (event === 'INITIAL_SESSION' && isCheckingRef.current) return;
             
-            checkSession(false); // Don't block screen for background auth changes
+            checkSession(false, true); // Force check on other auth changes
         });
 
         // 2. Realtime session changes - Only once on mount

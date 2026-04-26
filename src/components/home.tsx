@@ -377,6 +377,10 @@ function Home() {
   // --- Master Data State ---
 
 
+
+
+
+
   // --- Accounting State ---
   const [accounts, setAccounts] = useState<any[]>([]);
   const [journalEntries, setJournalEntries] = useState<any[]>([]);
@@ -398,7 +402,6 @@ function Home() {
   });
 
   // --- WiFi Voucher State ---
-
   const fetchVoucherStats = async () => {
     if (!currentBranchId) return;
     const stats = await WifiVoucherService.getCounts(currentBranchId);
@@ -407,14 +410,12 @@ function Home() {
 
   useEffect(() => {
     fetchVoucherStats();
-    // Refresh stats every 30 seconds or when branch changes
     const interval = setInterval(fetchVoucherStats, 30000);
     return () => clearInterval(interval);
   }, [currentBranchId]);
 
   // --- Master Data Integration ---
   const fetchGlobalData = async () => {
-    // Fetch data that doesn't depend on branch
     const safeFetch = async (promise: any, name: string) => {
       try {
         const res = await promise;
@@ -437,8 +438,7 @@ function Home() {
       safeFetch(supabase.from('payment_methods').select('*').order('name'), 'payment_methods')
     ]);
 
-    const [categoriesRes, unitsRes, brandsRes, contactsRes,
-      branchesRes, shiftsRes, settingsRes, paymentsRes] = results;
+    const [categoriesRes, unitsRes, brandsRes, contactsRes, branchesRes, shiftsRes, settingsRes, paymentsRes] = results;
 
     if (categoriesRes.data) setCategories(categoriesRes.data);
     if (unitsRes.data) setUnits(unitsRes.data);
@@ -446,15 +446,11 @@ function Home() {
     if (contactsRes.data) setContacts(contactsRes.data);
     if (branchesRes.data) {
       setBranches(branchesRes.data);
-      // Initialize branch if needed (or validate existing one)
       if (branchesRes.data.length > 0) {
-        // If currentBranchId is set but not found in fetched branches, reset to default
         const isValid = branchesRes.data.find(b => String(b.id) === currentBranchId);
-
         if (!currentBranchId || !isValid) {
           const defaultBranchId = String(branchesRes.data[0].id);
           setCurrentBranchId(defaultBranchId);
-          // localStorage will be updated by useEffect
         }
       }
     }
@@ -467,28 +463,21 @@ function Home() {
     try {
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
       const { data, error } = await supabase
         .from('sale_items')
-        .select('product_name, quantity, sales!inner(date)')
-        .eq('branch_id', branchId)
+        .select('product_name, quantity, sales!inner(date, branch_id)')
+        .eq('sales.branch_id', branchId)
         .gte('sales.date', thirtyDaysAgo.toISOString());
-
       if (error) throw error;
-
       const counts: Record<string, number> = {};
       (data || []).forEach(item => {
         const name = item.product_name;
-        if (name) {
-          counts[name] = (counts[name] || 0) + (Number(item.quantity) || 1);
-        }
+        if (name) counts[name] = (counts[name] || 0) + (Number(item.quantity) || 1);
       });
-
       const sorted = Object.entries(counts)
         .sort(([, a], [, b]) => b - a)
-        .slice(0, 50) // Get top 50 names
+        .slice(0, 50)
         .map(([name]) => name);
-
       setTopSellingProducts(sorted);
     } catch (err) {
       console.error('Error fetching top products:', err);
@@ -497,7 +486,6 @@ function Home() {
 
   const fetchBranchData = async (branchId: string) => {
     if (!branchId) return;
-
     const safeFetch = async (promise: any, name: string) => {
       try {
         const res = await promise;
@@ -508,43 +496,33 @@ function Home() {
         return { data: null, error: err };
       }
     };
+    const minDate = new Date();
+    minDate.setDate(minDate.getDate() - 45);
+    minDate.setHours(0, 0, 0, 0);
 
     const results = await Promise.all([
       safeFetch(supabase.from('products').select('*').eq('branch_id', branchId).order('sort_order', { ascending: true }), 'products'),
-      safeFetch(supabase.from('shift_schedules').select('*').order('date'), 'schedules'), // Needs JS filtering or relation update
+      safeFetch(supabase.from('shift_schedules').select('*').order('date'), 'schedules'), 
       safeFetch(supabase.from('tables').select('*').eq('branch_id', branchId).order('number'), 'tables'),
       safeFetch(supabase.from('ingredients').select('*').eq('branch_id', branchId).order('name'), 'ingredients'),
-      safeFetch(supabase.from('stock_movements').select('*').eq('branch_id', branchId).order('date', { ascending: false }), 'movements'),
+      safeFetch(supabase.from('stock_movements').select('*').eq('branch_id', branchId).gte('date', minDate.toISOString()).order('date', { ascending: false }).limit(500), 'movements'),
     ]);
-
     const [productsRes, schedulesRes, tablesRes, ingredientsRes, movementsRes] = results;
-
-    if (productsRes.data) {
-      setProducts(productsRes.data);
-    }
-
-    // Filter schedules for employees in this branch (done in employees fetch usually, or here if we have employees list?)
-    // For now, setting all schedules. Ideally should filter.
+    if (productsRes.data) setProducts(productsRes.data);
     if (schedulesRes.data) setShiftSchedules(schedulesRes.data);
-
     if (tablesRes.data) setTables(tablesRes.data);
     if (ingredientsRes.data) setInventoryIngredients(ingredientsRes.data);
     if (movementsRes.data) setInventoryHistory(movementsRes.data);
 
-    // Fetch Performance Indicators
     const { data: indicatorsData } = await supabase.from('performance_indicators').select('*').or(`branch_id.eq.${branchId},branch_id.is.null`).order('created_at', { ascending: true });
     if (indicatorsData) setPerformanceIndicators(indicatorsData);
-
-    // Fetch Performance Evaluations
     const { data: evaluationsData } = await supabase.from('performance_evaluations').select('*').eq('branch_id', branchId).order('evaluation_date', { ascending: false });
     if (evaluationsData) setPerformanceEvaluations(evaluationsData);
-
-
-
-
-
-
   };
+
+
+
+
 
   useEffect(() => {
     fetchGlobalData();
@@ -573,7 +551,6 @@ function Home() {
     }
 
     // Subscribe to branch-specific changes
-    // Note: receiving all events then re-fetching filtered is acceptable for now.
     const branchChannels = [
       supabase.channel('products_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
       supabase.channel('schedules_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'shift_schedules' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
@@ -583,7 +560,6 @@ function Home() {
       supabase.channel('employee_assessments').on('postgres_changes', { event: '*', schema: 'public', table: 'employee_assessments' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
       supabase.channel('assessment_criteria').on('postgres_changes', { event: '*', schema: 'public', table: 'assessment_criteria' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
       supabase.channel('wifi_vouchers_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'wifi_vouchers' }, () => fetchVoucherStats()).subscribe(),
-
     ];
 
     return () => {
@@ -594,9 +570,12 @@ function Home() {
   // --- Purchases Integration ---
   const fetchPurchases = async () => {
     if (!currentBranchId) return;
-    const { data: pData } = await supabase.from('purchases').select('*').eq('branch_id', currentBranchId).order('created_at', { ascending: false });
-    // Returns likely need filtering by purchase -> branch, but for now assuming 'purchase_returns' might be global or we fetch all and filter in JS if branch link isn't direct. 
-    // Actually assuming purchases are filtered, returns for them should be relevant.
+    
+    const minDate = new Date();
+    minDate.setDate(minDate.getDate() - 45);
+    minDate.setHours(0, 0, 0, 0);
+
+    const { data: pData } = await supabase.from('purchases').select('*').eq('branch_id', currentBranchId).gte('date', minDate.toISOString()).order('created_at', { ascending: false });
     const { data: rData } = await supabase.from('purchase_returns').select('*').order('created_at', { ascending: false });
 
     if (pData) setPurchases(pData);
@@ -659,7 +638,9 @@ function Home() {
             // [NEW] Respect disable_web_kiosk_notifications for Web App
             // Suppress auto-open and popups for Display/Kiosk orders
             const isDisplayOrder = !latestOrder.waiter_name || latestOrder.waiter_name === 'Kiosk' || latestOrder.waiter_name === 'User Display';
-            const shouldSuppress = storeSettings?.disable_web_kiosk_notifications || isDisplayOrder;
+            // [UPDATED] Always suppress for web dashboard as requested
+            const shouldSuppress = true;
+
 
             if (shouldSuppress) {
               console.log('[Polling] Suppression active for display/settings. Skipping UI alerts.');
@@ -723,6 +704,12 @@ function Home() {
     let salesData: any[] = [];
     let from = 0;
 
+    // Optimize: Only fetch the last 45 days to keep the app fast.
+    // Older data can be fetched specifically in reports if needed.
+    const minDate = new Date();
+    minDate.setDate(minDate.getDate() - 45);
+    minDate.setHours(0, 0, 0, 0);
+
     while (true) {
       const { data: pageData, error: salesError } = await supabase
         .from('sales')
@@ -734,6 +721,7 @@ function Home() {
           )
         `)
         .eq('branch_id', currentBranchId)
+        .gte('date', minDate.toISOString())
         .order('date', { ascending: false })
         .range(from, from + pageSize - 1); // Sort by Payment Time (Date) not Creation Time
 
@@ -1059,7 +1047,9 @@ function Home() {
           const isKioskOrder = (newOrder.status === 'Unpaid' || newOrder.status === 'Pending') && 
                               (!newOrder.waiter_name || newOrder.waiter_name === 'Kiosk' || newOrder.waiter_name === 'User Display');
           // Show notification for all incoming orders (respect suppression setting or specifically ignore Display/Kiosk)
-          const shouldSuppress = storeSettings?.disable_web_kiosk_notifications || isKioskOrder;
+          // [UPDATED] Always suppress for web version to avoid interruptions as requested
+          const shouldSuppress = true;
+
           
           if (!shouldSuppress) {
             toast.info(`Pesanan Masuk: ${formattedSale.orderNo}`);
@@ -1411,6 +1401,7 @@ function Home() {
         if (table === 'purchases' && insertedData?.status === 'Completed') {
           await syncPurchaseWithAccounting(insertedData);
         }
+        return insertedData;
       } else if (action === 'update') {
         const { error } = await supabase.from(table).update(data).eq('id', data.id);
         if (error) throw error;
@@ -1426,6 +1417,7 @@ function Home() {
         }
         
         toast.success(`Data berhasil diperbarui`);
+        return true;
       } else if (action === 'delete') {
         // [NEW] Sync Deletion to Accounting
         if (table === 'purchases') {
@@ -1445,18 +1437,19 @@ function Home() {
             
             if (archiveError) throw archiveError;
             toast.success(`Produk diarsipkan karena memiliki riwayat stok/penjualan`);
-            return;
+            return true;
           }
           throw error;
         }
         toast.success(`Data berhasil dihapus`);
+        return true;
       }
     } catch (err: any) {
       console.error(`Error ${action} ${table}:`, err);
       toast.error(`Gagal memproses data: ${err.message || ''}`);
+      throw err;
     }
   };
-  // const [receiptSettings, setReceiptSettings] = useState({ ... }); // REMOVED - Using storeSettings
 
   const [pendingOrders, setPendingOrders] = useState<any[]>([]);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -1697,18 +1690,20 @@ function Home() {
             saleData = data;
           }
 
-          // Items - Mapping from productDetails
-          // CAUTION: productDetails might lack product_id. We'll try to use 'id' if present (casted) or 0.
-          const itemsPayload = (sale.productDetails || []).map((item: any) => ({
-            sale_id: saleData.id,
-            product_id: item.id || 0, // Best effort fallback
-            product_name: item.name,
-            quantity: item.quantity,
-            price: item.price,
-            cost: 0,
-            variant_id: null,
-            note: ''
-          }));
+          // Items - Snapshot HPP saat transaksi (Metode Snapshot HPP)
+          const itemsPayload = (sale.productDetails || []).map((item: any) => {
+            const matchedProd = products.find((p: any) => p.id === item.id || p.name === item.name);
+            return {
+              sale_id: saleData.id,
+              product_id: item.id || (matchedProd ? matchedProd.id : null),
+              product_name: item.name,
+              quantity: item.quantity,
+              price: item.price,
+              cost: (matchedProd && matchedProd.cost) ? matchedProd.cost : (item.cost || 0),
+              variant_id: null,
+              note: ''
+            };
+          });
 
           const { error: itemsError } = await supabase.from('sale_items').insert(itemsPayload);
           if (itemsError) throw itemsError;
@@ -1900,7 +1895,7 @@ function Home() {
         if (!finalOrderNo) {
           if (isOnline) {
             const mode = storeSettings?.invoice_mode || 'auto';
-            const prefix = storeSettings?.invoice_prefix || 'INV';
+            const prefix = storeSettings?.invoice_prefix || 'ORD';
             const lastNumber = Number(storeSettings?.invoice_last_number) || 0;
 
             if (mode === 'auto') {
@@ -2938,9 +2933,6 @@ function Home() {
           ingredients={inventoryIngredients}
         />
       );
-
-
-
       case 'kds': return <KDSView orders={pendingOrders} onUpdateStatus={handleKDSUpdate} />;
       case 'pos':
         return (
@@ -2953,7 +2945,7 @@ function Home() {
             contacts={contacts}
             employees={employees}
             paymentMethods={paymentMethods}
-            tables={tables} // Pass tables for occupancy check
+            tables={tables}
             onDeleteSale={handleDeleteSale}
             onDeleteSales={handleDeleteSales}
             onOpenCashier={() => setIsCashierOpen(true)}
@@ -2964,29 +2956,41 @@ function Home() {
             onModeChange={(mode) => setSalesViewTab(mode)}
             onExit={() => setActiveModule('dashboard')}
             settings={storeSettings}
-            userRole={role || ''}
+            userRole={role}
           />
         );
-      case 'reports': return <ReportsView sales={sales} returns={returns} purchases={purchases} purchaseReturns={purchaseReturns} paymentMethods={paymentMethods} storeSettings={storeSettings} />;
-      case 'accounting': return (
-        <AccountingView
-          accounts={accounts}
-          transactions={journalEntries}
-          sales={sales}
-          onAddAccount={handleAddAccount}
-          onUpdateAccount={handleUpdateAccount}
-          onDeleteAccount={handleDeleteAccount}
-          onAddTransaction={handleAddJournalEntry}
-          onDeleteTransaction={handleDeleteJournalEntry}
-          onResetTransactions={handleResetJournalEntries}
-          onPurchaseCRUD={(target, action, data) => handleMasterDataCRUD(target, action, data)}
-          onRefresh={fetchAccounting}
-          onBack={() => setActiveModule('payroll')}
-          currentBranchId={currentBranchId}
-          purchases={purchases}
-        />
-      );
-      case 'session_history': return <SessionHistoryView />;
+      case 'reports':
+        return (
+          <ReportsView
+            sales={sales}
+            returns={returns}
+            purchases={purchases}
+            purchaseReturns={purchaseReturns}
+            paymentMethods={paymentMethods}
+            storeSettings={storeSettings}
+            branchId={currentBranchId}
+          />
+        );
+      case 'accounting':
+        return (
+          <AccountingView
+            onAddAccount={handleAddAccount}
+            onUpdateAccount={handleUpdateAccount}
+            onDeleteAccount={handleDeleteAccount}
+            onAddTransaction={handleAddJournalEntry}
+            onDeleteTransaction={handleDeleteJournalEntry}
+            onResetTransactions={handleResetJournalEntries}
+            onPurchaseCRUD={(target, action, data) => handleMasterDataCRUD(target, action, data)}
+            onRefresh={fetchAccounting}
+            onBack={() => setActiveModule('payroll')}
+            currentBranchId={currentBranchId}
+            purchases={purchases}
+            sales={sales}
+            accounts={accounts}
+            transactions={journalEntries}
+          />
+        );
+      case 'session_history': return <SessionHistoryView branchId={currentBranchId} />;
       case 'employees': return (
         <EmployeesView
           employees={employees}
@@ -2997,9 +3001,6 @@ function Home() {
           onDepartmentCRUD={handleDepartmentCRUD}
         />
       );
-
-
-
       case 'performance_indicators': return (
         <PerformanceIndicatorMasterView 
           indicators={performanceIndicators}
@@ -3025,7 +3026,6 @@ function Home() {
                 if (error) throw error;
                 toast.success('Indikator berhasil dihapus');
               }
-              // Refresh data
               const { data: fresh } = await supabase.from('performance_indicators').select('*').or(`branch_id.eq.${currentBranchId},branch_id.is.null`).order('created_at', { ascending: true });
               if (fresh) setPerformanceIndicators(fresh);
             } catch (err: any) {
@@ -3052,21 +3052,16 @@ function Home() {
                   if (detailsError) throw detailsError;
                 }
                 
-                // --- [NEW] Automatic Payroll Synchronization ---
                 await syncPerformanceToPayroll(data, Number(employeeId));
-
                 toast.success('Perhitungan nilai berhasil disimpan');
               } else if (action === 'update') {
                 const { id, details, employeeId, ...rest } = data;
-                
-                // 1. Update main record
                 const { error: evalError } = await supabase.from('performance_evaluations').update({
                   ...rest,
                   employee_id: Number(employeeId)
                 }).eq('id', id);
                 if (evalError) throw evalError;
 
-                // 2. Refresh Details
                 if (details && Array.isArray(details)) {
                   await supabase.from('performance_evaluation_details').delete().eq('evaluation_id', id);
                   const detailsPayload = details.map((d: any) => ({
@@ -3077,16 +3072,13 @@ function Home() {
                   if (detailsError) throw detailsError;
                 }
 
-                // 3. Sync to Payroll
                 await syncPerformanceToPayroll(data, Number(employeeId));
-
                 toast.success('Perhitungan nilai berhasil diperbarui');
               } else if (action === 'delete') {
                 const { error } = await supabase.from('performance_evaluations').delete().eq('id', data.id);
                 if (error) throw error;
                 toast.success('Riwayat perhitungan dihapus');
               }
-              // Refresh evaluations
               const { data: fresh } = await supabase.from('performance_evaluations').select('*').eq('branch_id', currentBranchId).order('evaluation_date', { ascending: false });
               if (fresh) setPerformanceEvaluations(fresh);
             } catch (err: any) {
@@ -3095,16 +3087,12 @@ function Home() {
           }}
         />
       );
-
       case 'attendance':
-        // [FINAL ALIGNMENT] Show logs from ALL branches in the Admin context
-        // This ensures localhost and IP see the same 2 logs regardless of active branch
         const filteredLogs = attendanceLogs.filter(log => 
-          employees.length === 0 || // Fallback
+          employees.length === 0 || 
           employees.some(e => String(e.id) === String(log.employee_id) || e.name === log.employeeName) ||
-          true // Always show in Admin view for consistency
+          true
         );
-        
         return (
           <AttendanceView 
             logs={filteredLogs} 
@@ -3121,7 +3109,6 @@ function Home() {
           />
         );
       case 'payroll':
-        // [FIX] Robust ID Matching: Use String(id) to prevent Number/BigInt mismatch after refresh 
         const filteredPayroll = payrollData.filter(p => 
           employees.some(e => String(e.id) === String(p.employee_id) || e.name === p.employeeName)
         );
@@ -3129,8 +3116,8 @@ function Home() {
           <PayrollView
             payroll={filteredPayroll}
             setPayroll={setPayrollData}
-            employees={employees} // Pass real employees for dropdown
-            evaluations={performanceEvaluations} // Pass evaluations for auto-sync
+            employees={employees}
+            evaluations={performanceEvaluations}
             onPayrollAction={handlePayrollAction}
             settings={storeSettings}
           />
@@ -3185,7 +3172,11 @@ function Home() {
           ingredients={inventoryIngredients}
           currentBranchId={currentBranchId}
           voucherStats={voucherStats}
-          onNavigate={(module) => setActiveModule(module as ModuleType)}
+          storeSettings={storeSettings}
+          onNavigate={(module, tab) => {
+            setActiveModule(module as ModuleType);
+            if (tab) setSalesViewTab(tab);
+          }}
         />
       );
     }
@@ -3350,29 +3341,9 @@ function Home() {
                 title={isOnline ? "Klik untuk Paksa Offline" : "Klik untuk Coba Online"}
                 onClick={() => {
                   const currentForce = localStorage.getItem('force_offline') === 'true';
-                  // If currently Online, we want to Force Offline (true).
-                  // If currently Offline, we want to Unforce (false) to try to connect.
-                  // However, better logic is: Simply toggle the Force Offline flag based on INTENT.
-                  // If user clicks GREEN (Online), they want OFFLINE -> set force=true.
-                  // If user clicks RED (Offline), they want ONLINE -> set force=false.
-
-                  // But wait, if internet is down, it shows RED. Clicking it sets force=false (correct).
-                  // If force is ALREADY false (internet is just down), clicking it does nothing visible but that's fine.
-
-                  // Simpler: Just toggle force_offline based on current state? 
-                  // No, use the visual cues.
-
                   const targetForce = isOnline ? 'true' : 'false';
-
-                  // Special Case: If it IS offline, and we click it, we assume user wants to go ONLINE.
-                  // Even if force_offline was NOT set (just natural offline), setting it to false is safe.
-
                   localStorage.setItem('force_offline', targetForce);
                   window.dispatchEvent(new Event('force-offline-change'));
-
-                  // Also must dispatch storage event manually for other tabs if needed? 
-                  // window.dispatchEvent(new StorageEvent('storage', { key: 'force_offline', newValue: targetForce }));
-
                   if (targetForce === 'true') {
                     toast.warning('Mode Offline Diaktifkan Manual');
                   } else {

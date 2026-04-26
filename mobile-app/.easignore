@@ -1,0 +1,14 @@
+node_modules
+.expo
+dist
+android
+ios
+*.txt
+*.log
+build_log*
+doctor_*
+expo_*
+tsc_*
+typescript_errors*
+.idea
+.git

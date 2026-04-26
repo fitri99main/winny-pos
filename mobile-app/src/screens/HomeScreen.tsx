@@ -1,16 +1,18 @@
 import * as React from 'react';
-import { View, Text, TouchableOpacity, ScrollView, SafeAreaView, StyleSheet, useWindowDimensions, TextInput, ActivityIndicator, Alert, Modal, Image, BackHandler } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, useWindowDimensions, TextInput, ActivityIndicator, Alert, Modal, Image, BackHandler } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSession } from '../context/SessionContext';
 import CashierSessionModal from '../components/CashierSessionModal';
 import ConfirmExitModal from '../components/ConfirmExitModal';
-import { Settings, LogOut, Wifi, WifiOff, Trash2, RefreshCw, Printer, Clock, Store, BarChart3, Scissors } from 'lucide-react-native';
+import { Settings, LogOut, Wifi, WifiOff, Trash2, RefreshCw, Printer, Clock, Store, BarChart3, Scissors, PieChart } from 'lucide-react-native';
 import { OfflineService } from '../lib/OfflineService';
-import ManagerAuthModal from '../components/ManagerAuthModal';
 import SalesReportModal from '../components/SalesReportModal';
 import ModernToast from '../components/ModernToast';
+import CashierClosingSummaryModal from '../components/CashierClosingSummaryModal';
+import { PrinterManager } from '../lib/PrinterManager';
 
 export default function HomeScreen() {
     const navigation = useNavigation();
@@ -21,7 +23,7 @@ export default function HomeScreen() {
     const isWide = width >= 600; 
 
     const [loading, setLoading] = React.useState(true);
-    const { currentSession, isSessionActive, requireMandatorySession, checkSession, isDisplayOnly, loading: sessionLoading, branchName, userName, currentBranchId, storeSettings, isAdmin } = useSession();
+    const { currentSession, isSessionActive, requireMandatorySession, checkSession, isDisplayOnly, loading: sessionLoading, branchName, branchAddress, branchPhone, userName, currentBranchId, storeSettings, isAdmin } = useSession();
     const [showSessionModal, setShowSessionModal] = React.useState(false);
     const [sessionMode, setSessionMode] = React.useState<'open' | 'close'>('open');
     const [showExitModal, setShowExitModal] = React.useState(false);
@@ -34,9 +36,6 @@ export default function HomeScreen() {
     const [fetchingPending, setFetchingPending] = React.useState(false);
     const [isOnline, setIsOnline] = React.useState(true);
     const [isManualOffline, setIsManualOffline] = React.useState(false);
-    const [showManagerAuth, setShowManagerAuth] = React.useState(false);
-    const [managerAuthTitle, setManagerAuthTitle] = React.useState('Otorisasi Manager');
-    const [pendingAction, setPendingAction] = React.useState<(() => void) | null>(null);
     const [realtimeStatus, setRealtimeStatus] = React.useState<string>('CONNECTING...');
     const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
     const [orderToDelete, setOrderToDelete] = React.useState<any>(null);
@@ -44,6 +43,11 @@ export default function HomeScreen() {
     const [toastMessage, setToastMessage] = React.useState('');
     const [toastType, setToastType] = React.useState<'success' | 'info' | 'error'>('success');
     const [showSalesReport, setShowSalesReport] = React.useState(false);
+    const [showCurrentSummary, setShowCurrentSummary] = React.useState(false);
+    const [summaryData, setSummaryData] = React.useState<any>(null);
+    const [summaryLoading, setSummaryLoading] = React.useState(false);
+    const [offlineCount, setOfflineCount] = React.useState(0);
+    const [isSyncing, setIsSyncing] = React.useState(false);
 
     const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
         setToastMessage(message);
@@ -111,13 +115,6 @@ export default function HomeScreen() {
         }, 1000);
     }, [fetchPendingOrders]);
 
-    const handleManagerAuthSuccess = () => {
-        if (pendingAction) {
-            pendingAction();
-            setPendingAction(null);
-        }
-    };
-
     const performDelete = async (order: any) => {
         try {
             const { error: itemsError } = await supabase.from('sale_items').delete().eq('sale_id', order.id);
@@ -143,16 +140,165 @@ export default function HomeScreen() {
     const onConfirmDelete = () => {
         setShowDeleteConfirm(false);
         if (!orderToDelete) return;
-        if (storeSettings?.enable_manager_auth) {
-            setManagerAuthTitle('Otorisasi Hapus Pesanan');
-            setPendingAction(() => () => performDelete(orderToDelete));
-            setShowManagerAuth(true);
-        } else {
-            performDelete(orderToDelete);
-        }
+        performDelete(orderToDelete);
     };
 
     const handleOpenSalesReport = () => setShowSalesReport(true);
+
+    const handleViewCurrentSummary = async () => {
+        if (!isSessionActive || !currentSession) {
+            Alert.alert('Info', 'Belum ada shift aktif.');
+            return;
+        }
+        setSummaryLoading(true);
+        setShowCurrentSummary(true);
+        try {
+            const openedAt = new Date(currentSession.opened_at).toISOString();
+            let allSales: any[] = [];
+            let from = 0;
+            const pageSize = 1000;
+            let hasMore = true;
+
+            while (hasMore) {
+                const { data, error } = await supabase
+                    .from('sales')
+                    .select('*')
+                    .eq('branch_id', currentBranchId)
+                    .gte('date', openedAt)
+                    .range(from, from + pageSize - 1);
+
+                if (error) throw error;
+                if (data && data.length > 0) {
+                    allSales = [...allSales, ...data];
+                    if (data.length < pageSize) hasMore = false;
+                    else from += pageSize;
+                } else {
+                    hasMore = false;
+                }
+            }
+
+            const sales = allSales;
+
+            let cash = 0;
+            let nonCash = 0;
+            let total = 0;
+            let completedCount = 0;
+            let paySummary: Record<string, number> = {};
+            let catSummary: Record<string, number> = {};
+
+            sales?.forEach(sale => {
+                const status = (sale.status || '').toLowerCase();
+                const isPaid = ['completed', 'selesai', 'paid', 'served', 'success', 'settlement', 'capture'].includes(status);
+                
+                if (isPaid) {
+                    completedCount++;
+                    const amount = (sale.paid_amount || sale.total_amount || 0);
+                    total += amount;
+                    const method = (sale.payment_method || 'Tunai').trim();
+                    paySummary[method] = (paySummary[method] || 0) + amount;
+
+                    const lowerMethod = method.toLowerCase();
+                    if (lowerMethod === 'tunai' || lowerMethod === 'cash') cash += amount;
+                    else nonCash += amount;
+                }
+            });
+
+            // Categories
+            const saleIds = sales?.map(s => s.id) || [];
+            if (saleIds.length > 0) {
+                const { data: allProducts } = await supabase.from('products').select('id, name, category');
+                const productCatMap: Record<string, string> = {};
+                allProducts?.forEach(p => { productCatMap[p.name || ''] = (p.category || 'LAINNYA').toUpperCase(); });
+
+                let allItems: any[] = [];
+                let itemFrom = 0;
+                let itemHasMore = true;
+
+                while (itemHasMore) {
+                    const { data: itemsPage, error: itemError } = await supabase
+                        .from('sale_items')
+                        .select('product_name, quantity, price')
+                        .in('sale_id', saleIds)
+                        .range(itemFrom, itemFrom + pageSize - 1);
+                    
+                    if (itemError) throw itemError;
+
+                    if (itemsPage && itemsPage.length > 0) {
+                        allItems = [...allItems, ...itemsPage];
+                        if (itemsPage.length < pageSize) itemHasMore = false;
+                        else itemFrom += pageSize;
+                    } else {
+                        itemHasMore = false;
+                    }
+                }
+                
+                const items = allItems;
+                if (items) {
+                    items.forEach(item => {
+                        const name = item.product_name || 'Produk';
+                        const cat = productCatMap[name] || 'LAINNYA';
+                        const amount = Number(item.quantity) * Number(item.price);
+                        if (amount > 0) {
+                            catSummary[cat] = (catSummary[cat] || 0) + amount;
+                        }
+                    });
+                }
+            }
+
+            setSummaryData({
+                cash_sales: cash,
+                non_cash_sales: nonCash,
+                total_sales: total,
+                total_orders: completedCount,
+                expected_cash: currentSession.starting_cash + cash,
+                starting_cash: currentSession.starting_cash,
+                employee_name: currentSession.employee_name,
+                opened_at: currentSession.opened_at,
+                payment_summary: Object.entries(paySummary).map(([method, amount]) => ({ method, amount })),
+                category_summary: Object.entries(catSummary).map(([name, amount]) => ({ name, amount }))
+            });
+        } catch (err) {
+            console.error('Error fetching current summary:', err);
+            Alert.alert('Error', 'Gagal memuat ringkasan.');
+        } finally {
+            setSummaryLoading(false);
+        }
+    };
+
+    const handlePrintSummary = async () => {
+        if (!summaryData) return;
+        try {
+            const { data: settings } = await supabase.from('store_settings').select('*').single();
+            const reportData = {
+                shopName: settings?.store_name || 'WINNY COFFEE PNK',
+                address: settings?.address || '',
+                phone: settings?.phone || '',
+                dateRange: `${new Date(summaryData.opened_at).toLocaleString('id-ID')} - ${new Date().toLocaleString('id-ID')}`,
+                totalOrders: summaryData.total_orders,
+                totalSales: summaryData.total_sales,
+                totalTax: 0,
+                totalDiscount: 0,
+                paymentSummary: summaryData.payment_summary,
+                categorySummary: summaryData.category_summary.map((c: any) => ({ category: c.name, amount: c.amount })),
+                productSummary: [],
+                openingBalance: summaryData.starting_cash,
+                cashTotal: summaryData.cash_sales,
+                qrTotal: summaryData.non_cash_sales,
+                expectedCash: summaryData.expected_cash,
+                actualCash: 0,
+                variance: 0,
+                generatedBy: summaryData.employee_name,
+                showLogo: true,
+                receiptLogoUrl: settings?.receipt_logo_url || settings?.logo_url,
+                address: settings?.address || branchAddress,
+                phone: settings?.phone || branchPhone,
+                paperWidth: settings?.receipt_paper_width === '80mm' ? 48 : 32
+            };
+            await PrinterManager.printSalesReport(reportData);
+        } catch (err) {
+            Alert.alert('Printer Error', 'Gagal mencetak.');
+        }
+    };
 
     React.useEffect(() => {
         const checkConn = async () => {
@@ -163,11 +309,39 @@ export default function HomeScreen() {
                 const online = await OfflineService.checkConnectivity();
                 setIsOnline(online);
             }
+            // Update offline count
+            const queue = await OfflineService.getOfflineQueue();
+            setOfflineCount(queue.length);
         };
         checkConn();
         const interval = setInterval(checkConn, 15000);
         return () => clearInterval(interval);
     }, []);
+
+    const handleSyncNow = async () => {
+        if (offlineCount === 0) return;
+        if (!isOnline) {
+            Alert.alert('Offline', 'Tidak dapat sinkronisasi saat offline.');
+            return;
+        }
+
+        try {
+            setIsSyncing(true);
+            const result = await OfflineService.syncQueue();
+            const queue = await OfflineService.getOfflineQueue();
+            setOfflineCount(queue.length);
+            
+            if (result.failed === 0) {
+                showToast(`Berhasil sinkronisasi ${result.success} transaksi`, 'success');
+            } else {
+                showToast(`Sinkronisasi selesai: ${result.success} berhasil, ${result.failed} gagal.`, 'error');
+            }
+        } catch (error: any) {
+            showToast('Gagal sinkronisasi: ' + error.message, 'error');
+        } finally {
+            setIsSyncing(false);
+        }
+    };
 
     React.useEffect(() => {
         if (!currentBranchId) return;
@@ -175,16 +349,36 @@ export default function HomeScreen() {
         let isActive = true;
         const connect = () => {
             if (!isActive) return;
+            // Use a more standard channel name
             channel = supabase.channel(`home_sync_${currentBranchId}_${Date.now()}`);
             channel
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'sales', filter: `branch_id=eq.${currentBranchId}` }, async (payload: any) => {
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' }, async (payload: any) => {
                     const newRow = payload.new as any;
-                    if (payload.eventType === 'INSERT') {
-                        if (!isDisplayOnly && (newRow.status === 'Pending' || newRow.status === 'Unpaid')) {
-                            setNewOrderNotif({ visible: true, orderId: newRow.id, tableNo: newRow.table_no || 'Tanpa Meja', orderNo: newRow.order_no || String(newRow.id), itemCount: 0 });
+                    const eventType = payload.eventType;
+
+                    console.log('[HomeScreen] Real-time Sales Event Received:', {
+                        event: eventType,
+                        row_id: newRow?.id,
+                        row_branch: newRow?.branch_id,
+                        current_app_branch: currentBranchId
+                    });
+
+                    // Manual filter for branch_id (safer than Postgres filter string)
+                    if (newRow && String(newRow.branch_id || '').trim() === String(currentBranchId || '').trim()) {
+                        console.log(`[HomeScreen] Sales ${eventType} detected for branch ${currentBranchId}`);
+                        
+                        if (eventType === 'INSERT' || eventType === 'UPDATE') {
+                            if (!isDisplayOnly && (newRow.status === 'Pending' || newRow.status === 'Unpaid')) {
+                                console.log(`[HomeScreen] Auto-jumping to POS for ${eventType}:`, newRow.id);
+                                // @ts-ignore
+                                navigation.navigate('POS', { orderId: newRow.id });
+                            }
                         }
+                        debouncedFetchPending();
+                    } else if (eventType === 'DELETE') {
+                        // For deletes, we refresh the list just in case
+                        debouncedFetchPending();
                     }
-                    debouncedFetchPending();
                 })
                 .subscribe((status: string) => {
                     if (!isActive) return;
@@ -265,6 +459,11 @@ export default function HomeScreen() {
                     {/* 2. History Orders Button */}
                     <TouchableOpacity style={[styles.logoutButton, isSmallDevice && { width: 42, height: 42 }]} onPress={() => navigation.navigate('History' as never)}>
                         <Text style={[styles.logoutButtonIcon, isSmallDevice && { fontSize: 18 }]}>🕒</Text>
+                        {offlineCount > 0 && (
+                            <View style={styles.badge}>
+                                <Text style={styles.badgeText}>{offlineCount}</Text>
+                            </View>
+                        )}
                     </TouchableOpacity>
 
                     {/* 3. Session History Button (RESTORED) */}
@@ -300,12 +499,32 @@ export default function HomeScreen() {
                         </TouchableOpacity>
                     )}
 
+                    {/* 8. Ringkasan Button (NEW) */}
+                    {isSessionActive && (
+                        <TouchableOpacity style={[styles.logoutButton, { backgroundColor: '#ea580c15' }, isSmallDevice && { width: 42, height: 42 }]} onPress={handleViewCurrentSummary}>
+                            <PieChart size={18} color="#ea580c" />
+                        </TouchableOpacity>
+                    )}
+
                     {/* 7. Logout Button */}
                     <TouchableOpacity style={[styles.logoutButton, { backgroundColor: '#ef444420' }, isSmallDevice && { width: 42, height: 42 }]} onPress={handleLogout}>
                         <Text style={[styles.logoutButtonIcon, isSmallDevice && { fontSize: 18 }]}>🔌</Text>
                     </TouchableOpacity>
                 </View>
             </View>
+
+            {offlineCount > 0 && (
+                <TouchableOpacity 
+                    style={[styles.syncBanner, isSyncing && { opacity: 0.7 }]} 
+                    onPress={handleSyncNow}
+                    disabled={isSyncing}
+                >
+                    <RefreshCw size={14} color="white" style={isSyncing ? { transform: [{ rotate: '45deg' }] } : null} />
+                    <Text style={styles.syncBannerText}>
+                        {isSyncing ? 'Sedang Sinkronisasi...' : `Ada ${offlineCount} transaksi offline. Ketuk untuk Sinkronisasi.`}
+                    </Text>
+                </TouchableOpacity>
+            )}
 
             <TouchableOpacity style={styles.directMenuButton} onPress={handleDirectMenu}>
                 <Text style={styles.directMenuIcon}>🛒</Text>
@@ -347,6 +566,34 @@ export default function HomeScreen() {
                     contentContainerStyle={{ paddingBottom: 100 }}
                 >
                     {renderHeader()}
+
+                    {/* Menu Utama / Produksi Section (NEW) */}
+                    <View style={[styles.menuSection, isSmallDevice && { paddingHorizontal: 12, marginTop: 10 }]}>
+                        <Text style={styles.sectionTitle}>Monitor Produksi</Text>
+                        <View style={{ flexDirection: 'row', gap: 12 }}>
+                            <TouchableOpacity 
+                                style={[styles.kdsButton, { backgroundColor: '#ea580c' }]} 
+                                onPress={() => navigation.navigate('KDS' as never, { initialFilter: 'Kitchen' } as never)}
+                            >
+                                <Text style={styles.kdsIcon}>🍳</Text>
+                                <View>
+                                    <Text style={styles.kdsTitle}>Monitor Dapur</Text>
+                                    <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)' }}>Update pesanan makanan</Text>
+                                </View>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity 
+                                style={[styles.kdsButton, { backgroundColor: '#3b82f6' }]} 
+                                onPress={() => navigation.navigate('KDS' as never, { initialFilter: 'Bar' } as never)}
+                            >
+                                <Text style={styles.kdsIcon}>☕</Text>
+                                <View>
+                                    <Text style={styles.kdsTitle}>Monitor Bar</Text>
+                                    <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)' }}>Update pesanan minuman</Text>
+                                </View>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
                     
                     {/* Pending Orders Section (GRID v1.2-FOLD) */}
                     {!isDisplayOnly && pendingOrders.length > 0 && (
@@ -416,27 +663,6 @@ export default function HomeScreen() {
                         </View>
                     )}
 
-                    {!isDisplayOnly && (
-                        <View style={[styles.menuSection, isSmallDevice && { paddingHorizontal: 12 }]}>
-                            <Text style={styles.sectionTitle}>Monitor Produksi</Text>
-                            <View style={{ flexDirection: 'row', gap: 15 }}>
-                                <TouchableOpacity style={[styles.kdsButton, { backgroundColor: '#ea580c' }]} onPress={() => navigation.navigate('KDS' as never)}>
-                                    <Text style={styles.kdsIcon}>👨‍🍳</Text>
-                                    <View>
-                                        <Text style={styles.kdsTitle}>Dapur</Text>
-                                        <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 10 }}>Produksi Makanan</Text>
-                                    </View>
-                                </TouchableOpacity>
-                                <TouchableOpacity style={[styles.kdsButton, { backgroundColor: '#2563eb' }]} onPress={() => navigation.navigate('KDS' as never)}>
-                                    <Text style={styles.kdsIcon}>☕</Text>
-                                    <View>
-                                        <Text style={styles.kdsTitle}>Bar</Text>
-                                        <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 10 }}>Produksi Minuman</Text>
-                                    </View>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    )}
                 </ScrollView>
             </View>
 
@@ -446,9 +672,17 @@ export default function HomeScreen() {
             <ConfirmExitModal visible={showDeleteConfirm} onClose={() => setShowDeleteConfirm(false)} onConfirm={onConfirmDelete} title="Hapus Pesanan?" message="Data akan dihapus permanen" confirmText="Hapus" cancelText="Batal" iconType="trash" />
             <ConfirmExitModal visible={showLogoutModal} onClose={() => setShowLogoutModal(false)} onConfirm={confirmLogout} title="Logout" message="Keluar ke login?" confirmText="Keluar" iconType="logout" />
             <CashierSessionModal visible={showSessionModal} onClose={() => setShowSessionModal(false)} mode={sessionMode} session={currentSession} onComplete={checkSession} currentBranchId={currentBranchId} />
-            <ManagerAuthModal visible={showManagerAuth} title={managerAuthTitle} onClose={() => setShowManagerAuth(false)} onSuccess={handleManagerAuthSuccess} />
             <ModernToast visible={toastVisible} message={toastMessage} type={toastType} onHide={() => setToastVisible(false)} />
             <SalesReportModal visible={showSalesReport} onClose={() => setShowSalesReport(false)} currentBranchId={currentBranchId} branchName={branchName} userName={userName} storeSettings={storeSettings} />
+            
+            <CashierClosingSummaryModal 
+                visible={showCurrentSummary}
+                onClose={() => setShowCurrentSummary(false)}
+                data={summaryData}
+                loading={summaryLoading}
+                onPrint={handlePrintSummary}
+                title="Ringkasan Shift Aktif"
+            />
         </SafeAreaView>
     );
 }
@@ -477,4 +711,38 @@ const styles = StyleSheet.create({
     kdsButton: { flex: 1, flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 15, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 5 },
     kdsIcon: { fontSize: 20, marginRight: 12 },
     kdsTitle: { color: 'white', fontWeight: 'bold', fontSize: 14 },
+    badge: {
+        position: 'absolute',
+        top: -5,
+        right: -5,
+        backgroundColor: '#ef4444',
+        borderRadius: 10,
+        minWidth: 20,
+        height: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 4,
+        borderWidth: 2,
+        borderColor: 'white'
+    },
+    badgeText: {
+        color: 'white',
+        fontSize: 10,
+        fontWeight: 'bold'
+    },
+    syncBanner: {
+        backgroundColor: '#f59e0b',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 8,
+        borderRadius: 12,
+        marginTop: 16,
+        gap: 8
+    },
+    syncBannerText: {
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: 12
+    }
 });

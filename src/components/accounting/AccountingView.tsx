@@ -1,6 +1,7 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { supabase } from '../../lib/supabase';
 import { useAuth } from '../auth/AuthProvider';
-import { Calculator, TrendingUp, TrendingDown, DollarSign, Wallet, FileText, Plus, BookOpen, LayoutDashboard, Settings, Edit, Trash2, Download, CalendarCheck, History, Lock, Unlock, Loader2, ShoppingCart, Search, Eye } from 'lucide-react';
+import { Calculator, TrendingUp, TrendingDown, DollarSign, Wallet, FileText, Plus, BookOpen, LayoutDashboard, Settings, Edit, Trash2, Download, CalendarCheck, History, Lock, Unlock, Loader2, ShoppingCart, Search, Eye, X } from 'lucide-react';
 import { PettyCashService, PettyCashSession, PettyCashTransaction } from '../../lib/PettyCashService';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -17,6 +18,7 @@ interface Account {
     code: string;
     name: string;
     type: AccountType;
+    parent_code?: string;
 }
 
 interface JournalEntry {
@@ -32,7 +34,280 @@ interface JournalEntry {
 
 // --- Sub-Components ---
 
-function JournalTab({ transactions, accounts, onAddTransaction, onDeleteTransaction, onResetTransactions, onRefresh, role }: {
+// ============================================================
+// TAB LAPORAN HPP - Snapshot Harga Pokok Penjualan
+// ============================================================
+function HppReportTab({ startDate, endDate, currentBranchId }: { startDate: string; endDate: string; currentBranchId: string }) {
+    const [loading, setLoading] = useState(false);
+    const [hasLoaded, setHasLoaded] = useState(false);
+    const [monthlyData, setMonthlyData] = useState<any[]>([]);
+    const [productData, setProductData] = useState<any[]>([]);
+    const [viewMode, setViewMode] = useState<'monthly' | 'product'>('monthly');
+    const [searchProduct, setSearchProduct] = useState('');
+    const fetchingRef = useRef(false);
+
+    const formatCurrency = (n: number) => `Rp ${Math.round(n || 0).toLocaleString('id-ID')}`;
+    const formatPct = (n: number) => isNaN(n) || !isFinite(n) ? '0%' : `${n.toFixed(1)}%`;
+
+    const fetchData = async () => {
+        if (fetchingRef.current) return;
+        fetchingRef.current = true;
+        setLoading(true);
+        console.log('[HPP] Manual Fetching data for:', { startDate, endDate, currentBranchId });
+        try {
+            let allItems: any[] = [];
+            let from = 0;
+            const pageSize = 1000;
+            let hasMore = true;
+            let pageCount = 0;
+            const MAX_PAGES = 30; 
+
+            while (hasMore && pageCount < MAX_PAGES) {
+                const { data, error } = await supabase
+                    .from('sale_items')
+                    .select(`
+                        product_name, quantity, price, cost, 
+                        sales!inner(created_at, date, status, branch_id, total_amount)
+                    `)
+                    .gte('sales.date', startDate)
+                    .lte('sales.date', endDate)
+                    .eq(currentBranchId ? 'sales.branch_id' : 'sales.branch_id', currentBranchId || 'sales.branch_id')
+                    .range(from, from + pageSize - 1);
+
+                if (error) throw error;
+                
+                if (data && data.length > 0) {
+                    const statusOkItems = data.filter((item: any) => {
+                        const s = item.sales;
+                        return ['paid', 'completed', 'selesai', 'served', 'success'].includes((s?.status || '').toLowerCase());
+                    });
+                    allItems = [...allItems, ...statusOkItems];
+                    if (data.length < pageSize) hasMore = false;
+                    else from += pageSize;
+                } else {
+                    hasMore = false;
+                }
+                pageCount++;
+            }
+
+            const monthMap: Record<string, { revenue: number; hpp: number; count: number }> = {};
+            const productMap: Record<string, { revenue: number; hpp: number; qty: number }> = {};
+
+            allItems.forEach((item: any) => {
+                const saleDate = item.sales?.date || item.sales?.created_at || '';
+                const month = saleDate.substring(0, 7); 
+                const qty = Number(item.quantity) || 0;
+                const price = Number(item.price) || 0;
+                const cost = Number(item.cost) || 0;
+                const revenue = qty * price;
+                const hpp = qty * cost;
+
+                if (month) {
+                    if (!monthMap[month]) monthMap[month] = { revenue: 0, hpp: 0, count: 0 };
+                    monthMap[month].revenue += revenue;
+                    monthMap[month].hpp += hpp;
+                    monthMap[month].count += qty;
+                }
+
+                const pName = item.product_name || 'Produk';
+                if (!productMap[pName]) productMap[pName] = { revenue: 0, hpp: 0, qty: 0 };
+                productMap[pName].revenue += revenue;
+                productMap[pName].hpp += hpp;
+                productMap[pName].qty += qty;
+            });
+
+            setMonthlyData(Object.entries(monthMap).map(([month, d]) => ({ month, ...d, grossProfit: d.revenue - d.hpp, margin: d.revenue > 0 ? ((d.revenue - d.hpp) / d.revenue) * 100 : 0 })).sort((a, b) => a.month.localeCompare(b.month)));
+            setProductData(Object.entries(productMap).map(([name, d]) => ({ name, ...d, grossProfit: d.revenue - d.hpp, margin: d.revenue > 0 ? ((d.revenue - d.hpp) / d.revenue) * 100 : 0 })).sort((a, b) => b.grossProfit - a.grossProfit));
+            setHasLoaded(true);
+        } catch (err: any) {
+            console.error('[HPP] Error:', err);
+            toast.error('Gagal memuat: ' + err.message);
+        } finally {
+            setLoading(false);
+            fetchingRef.current = false;
+        }
+    };
+
+    if (!hasLoaded && !loading) {
+        return (
+            <div className="flex flex-col items-center justify-center h-96 bg-white rounded-2xl border border-dashed border-gray-300 animate-in fade-in">
+                <TrendingDown className="w-12 h-12 text-gray-300 mb-4" />
+                <h3 className="text-lg font-bold text-gray-800">Laporan Harga Pokok Penjualan (HPP)</h3>
+                <p className="text-gray-500 mb-6 text-center max-w-md">Klik tombol di bawah untuk memproses data HPP periode {startDate} s/d {endDate}.</p>
+                <Button onClick={fetchData} className="flex items-center gap-2 px-8 py-6 rounded-2xl text-lg font-bold shadow-lg shadow-primary/20">
+                    <Calculator className="w-5 h-5" /> Tampilkan Laporan
+                </Button>
+            </div>
+        );
+    }
+
+    if (loading) return <div className="flex flex-col justify-center items-center h-96 bg-white rounded-2xl border shadow-sm"><Loader2 className="animate-spin w-10 h-10 text-primary mb-4" /><p className="text-gray-500 font-medium animate-pulse">Memproses data transaksi...</p></div>;
+
+    const totalRevenue = monthlyData.reduce((s, r) => s + r.revenue, 0);
+    const totalHpp = monthlyData.reduce((s, r) => s + r.hpp, 0);
+    const totalGross = totalRevenue - totalHpp;
+    const avgMargin = totalRevenue > 0 ? (totalGross / totalRevenue) * 100 : 0;
+
+    const filteredProducts = productData.filter(p => p.name.toLowerCase().includes(searchProduct.toLowerCase()));
+
+    const getMonthLabel = (m: string) => {
+        const d = new Date(m + '-01');
+        return d.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+    };
+
+    return (
+        <div className="space-y-6 animate-in fade-in">
+            {/* Summary Cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white p-5 rounded-2xl border shadow-sm">
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Total Penjualan</p>
+                    <p className="text-xl font-black text-gray-800">{formatCurrency(totalRevenue)}</p>
+                </div>
+                <div className="bg-white p-5 rounded-2xl border shadow-sm">
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Total HPP</p>
+                    <p className="text-xl font-black text-red-600">{formatCurrency(totalHpp)}</p>
+                </div>
+                <div className="bg-white p-5 rounded-2xl border shadow-sm border-green-200">
+                    <p className="text-xs font-bold text-green-500 uppercase tracking-wider mb-1">Laba Kotor</p>
+                    <p className="text-xl font-black text-green-700">{formatCurrency(totalGross)}</p>
+                </div>
+                <div className="bg-gradient-to-br from-primary to-orange-600 p-5 rounded-2xl text-white shadow-md">
+                    <p className="text-xs font-bold opacity-80 uppercase tracking-wider mb-1">Margin Rata-Rata</p>
+                    <p className="text-3xl font-black">{formatPct(avgMargin)}</p>
+                </div>
+            </div>
+
+            {/* View Toggle */}
+            <div className="flex items-center gap-3">
+                <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
+                    <button onClick={() => setViewMode('monthly')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${viewMode === 'monthly' ? 'bg-white text-primary shadow-sm' : 'text-gray-500'}`}>Per Bulan</button>
+                    <button onClick={() => setViewMode('product')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${viewMode === 'product' ? 'bg-white text-primary shadow-sm' : 'text-gray-500'}`}>Per Produk</button>
+                </div>
+                {viewMode === 'product' && (
+                    <input
+                        type="text"
+                        placeholder="Cari produk..."
+                        value={searchProduct}
+                        onChange={e => setSearchProduct(e.target.value)}
+                        className="border rounded-xl px-4 py-2 text-sm flex-1 max-w-xs outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                )}
+                <button onClick={fetchData} className="ml-auto text-xs text-gray-400 border px-3 py-2 rounded-xl hover:bg-gray-50 flex items-center gap-1 font-bold">
+                    ↻ Refresh
+                </button>
+            </div>
+
+            {/* Monthly Table */}
+            {viewMode === 'monthly' && (
+                <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
+                    <div className="p-4 border-b bg-gray-50">
+                        <h3 className="font-bold text-gray-800">Laporan HPP per Bulan</h3>
+                        <p className="text-xs text-gray-400 mt-1">Angka HPP diambil dari snapshot harga pokok saat transaksi terjadi — tidak akan berubah walau HPP produk diperbarui bulan depan.</p>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead className="bg-gray-50 text-gray-500 font-bold">
+                                <tr>
+                                    <th className="px-4 py-3 text-left">Bulan</th>
+                                    <th className="px-4 py-3 text-right">Penjualan</th>
+                                    <th className="px-4 py-3 text-right text-red-500">HPP</th>
+                                    <th className="px-4 py-3 text-right text-green-600">Laba Kotor</th>
+                                    <th className="px-4 py-3 text-right">Margin</th>
+                                    <th className="px-4 py-3 text-right">Qty Terjual</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-50">
+                                {monthlyData.length === 0 && (
+                                    <tr><td colSpan={6} className="p-8 text-center text-gray-400">Tidak ada data HPP pada periode ini. Pastikan kolom cost sudah terisi di tabel sale_items.</td></tr>
+                                )}
+                                {monthlyData.map(row => (
+                                    <tr key={row.month} className="hover:bg-gray-50">
+                                        <td className="px-4 py-3 font-bold text-gray-700">{getMonthLabel(row.month)}</td>
+                                        <td className="px-4 py-3 text-right font-mono">{formatCurrency(row.revenue)}</td>
+                                        <td className="px-4 py-3 text-right font-mono text-red-600">{formatCurrency(row.hpp)}</td>
+                                        <td className="px-4 py-3 text-right font-mono font-bold text-green-700">{formatCurrency(row.grossProfit)}</td>
+                                        <td className="px-4 py-3 text-right">
+                                            <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                                                row.margin >= 50 ? 'bg-green-100 text-green-700' :
+                                                row.margin >= 30 ? 'bg-yellow-100 text-yellow-700' :
+                                                'bg-red-100 text-red-700'
+                                            }`}>{formatPct(row.margin)}</span>
+                                        </td>
+                                        <td className="px-4 py-3 text-right text-gray-500">{Math.round(row.count).toLocaleString()}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                            {monthlyData.length > 1 && (
+                                <tfoot className="bg-gray-800 text-white font-black">
+                                    <tr>
+                                        <td className="px-4 py-3">TOTAL</td>
+                                        <td className="px-4 py-3 text-right">{formatCurrency(totalRevenue)}</td>
+                                        <td className="px-4 py-3 text-right text-red-300">{formatCurrency(totalHpp)}</td>
+                                        <td className="px-4 py-3 text-right text-green-300">{formatCurrency(totalGross)}</td>
+                                        <td className="px-4 py-3 text-right"><span className="px-2 py-1 bg-white/10 rounded-full text-xs">{formatPct(avgMargin)}</span></td>
+                                        <td className="px-4 py-3 text-right"></td>
+                                    </tr>
+                                </tfoot>
+                            )}
+                        </table>
+                    </div>
+                </div>
+            )}
+
+            {/* Product Table */}
+            {viewMode === 'product' && (
+                <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
+                    <div className="p-4 border-b bg-gray-50">
+                        <h3 className="font-bold text-gray-800">Laporan HPP per Produk</h3>
+                        <p className="text-xs text-gray-400 mt-1">Diurutkan berdasarkan Laba Kotor tertinggi. Produk dengan margin rendah perlu evaluasi HPP atau harga jual.</p>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead className="bg-gray-50 text-gray-500 font-bold">
+                                <tr>
+                                    <th className="px-4 py-3 text-left">#</th>
+                                    <th className="px-4 py-3 text-left">Nama Produk</th>
+                                    <th className="px-4 py-3 text-right">Qty</th>
+                                    <th className="px-4 py-3 text-right">Penjualan</th>
+                                    <th className="px-4 py-3 text-right text-red-500">HPP</th>
+                                    <th className="px-4 py-3 text-right text-green-600">Laba Kotor</th>
+                                    <th className="px-4 py-3 text-right">Margin</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-50">
+                                {filteredProducts.length === 0 && (
+                                    <tr><td colSpan={7} className="p-8 text-center text-gray-400">Tidak ada data produk ditemukan.</td></tr>
+                                )}
+                                {filteredProducts.map((row, idx) => (
+                                    <tr key={row.name} className="hover:bg-gray-50">
+                                        <td className="px-4 py-3 text-gray-400 text-xs">{idx + 1}</td>
+                                        <td className="px-4 py-3 font-bold text-gray-700">{row.name}</td>
+                                        <td className="px-4 py-3 text-right text-gray-500">{Math.round(row.qty).toLocaleString()}</td>
+                                        <td className="px-4 py-3 text-right font-mono">{formatCurrency(row.revenue)}</td>
+                                        <td className="px-4 py-3 text-right font-mono text-red-600">{formatCurrency(row.hpp)}</td>
+                                        <td className="px-4 py-3 text-right font-mono font-bold text-green-700">{formatCurrency(row.grossProfit)}</td>
+                                        <td className="px-4 py-3 text-right">
+                                            <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                                                row.margin >= 50 ? 'bg-green-100 text-green-700' :
+                                                row.margin >= 30 ? 'bg-yellow-100 text-yellow-700' :
+                                                row.hpp === 0 ? 'bg-gray-100 text-gray-400' :
+                                                'bg-red-100 text-red-700'
+                                            }`}>
+                                                {row.hpp === 0 ? 'HPP=0' : formatPct(row.margin)}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function JournalTab({ transactions, accounts, onAddTransaction, onDeleteTransaction, onResetTransactions, onRefresh, role, searchQuery = '', onSearchChange }: {
     transactions: JournalEntry[],
     accounts: Account[],
     onAddTransaction: (tx: JournalEntry) => void,
@@ -40,6 +315,8 @@ function JournalTab({ transactions, accounts, onAddTransaction, onDeleteTransact
     onResetTransactions: () => void;
     onRefresh?: () => void;
     role?: string;
+    searchQuery?: string;
+    onSearchChange?: (val: string) => void;
 }) {
     const [formData, setFormData] = useState({ date: new Date().toISOString().split('T')[0] || '', desc: '', debit: '', credit: '', amount: '' });
 
@@ -119,8 +396,28 @@ function JournalTab({ transactions, accounts, onAddTransaction, onDeleteTransact
 
             {/* Journal Table */}
             <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="p-4 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
-                    <h3 className="font-bold text-gray-800">Riwayat Jurnal Umum</h3>
+                <div className="p-4 bg-gray-50 border-b border-gray-100 flex flex-col md:flex-row justify-between items-center gap-4">
+                    <div className="flex items-center gap-4 w-full md:w-auto">
+                        <h3 className="font-bold text-gray-800 whitespace-nowrap">Riwayat Jurnal Umum</h3>
+                        <div className="relative flex-1 md:w-64">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input 
+                                type="text"
+                                placeholder="Cari akun atau keterangan..."
+                                className="w-full pl-9 pr-4 py-1.5 bg-white border rounded-lg text-xs focus:ring-2 focus:ring-primary/20"
+                                value={searchQuery}
+                                onChange={(e) => onSearchChange?.(e.target.value)}
+                            />
+                            {searchQuery && (
+                                <button 
+                                    onClick={() => onSearchChange?.('')}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
+                                >
+                                    <X className="w-3 h-3 text-gray-400" />
+                                </button>
+                            )}
+                        </div>
+                    </div>
                     {/* Fallback: Allow if role is missing (undefined/null/empty) OR if Administrator/Owner */}
                     {(!role || ['administrator', 'owner'].includes(role.toLowerCase())) && (
                         <button
@@ -941,10 +1238,12 @@ function PurchaseHistoryTab({ purchases, onCRUD }: {
     const [viewingPurchase, setViewingPurchase] = useState<any>(null);
     const [editingPurchase, setEditingPurchase] = useState<any>(null);
 
-    const filtered = purchases.filter(p => 
-        p.purchase_no?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.supplier_name?.toLowerCase().includes(searchQuery.toLowerCase())
-    ).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const filtered = useMemo(() => {
+        return purchases.filter(p => 
+            p.purchase_no?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            p.supplier_name?.toLowerCase().includes(searchQuery.toLowerCase())
+        ).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    }, [purchases, searchQuery]);
 
     const handleDelete = async (id: any) => {
         if (confirm('Anda yakin ingin menghapus data pembelian ini? Tindakan ini tidak dapat dibatalkan.')) {
@@ -968,6 +1267,28 @@ function PurchaseHistoryTab({ purchases, onCRUD }: {
         }
     };
 
+    const flatPurchases = useMemo(() => {
+        const rows: any[] = [];
+        filtered.forEach(p => {
+            const items = p.items_list || [];
+            if (items.length === 0) {
+                rows.push({ ...p, itemName: '-', itemPrice: 0, itemQty: 0, itemUnit: '-', isFirst: true });
+            } else {
+                items.forEach((item: any, idx: number) => {
+                    rows.push({
+                        ...p,
+                        itemName: item.name,
+                        itemPrice: item.price,
+                        itemQty: item.quantity,
+                        itemUnit: item.unit || '-',
+                        isFirst: idx === 0
+                    });
+                });
+            }
+        });
+        return rows;
+    }, [filtered]);
+
     return (
         <div className="space-y-6 animate-in fade-in">
             {/* Header / Filter */}
@@ -990,47 +1311,50 @@ function PurchaseHistoryTab({ purchases, onCRUD }: {
                     <table className="w-full text-sm">
                         <thead className="bg-gray-50 text-gray-500 font-bold">
                             <tr>
+                                <th className="px-6 py-4 text-left">No. Faktur</th>
                                 <th className="px-6 py-4 text-left">Tanggal</th>
-                                <th className="px-6 py-4 text-left">No. PO</th>
                                 <th className="px-6 py-4 text-left">Supplier</th>
-                                <th className="px-6 py-4 text-right">Total Amount</th>
-                                <th className="px-6 py-4 text-center">Status</th>
+                                <th className="px-6 py-4 text-left">Item</th>
+                                <th className="px-6 py-4 text-right">Harga</th>
+                                <th className="px-6 py-4 text-center">Jumlah</th>
+                                <th className="px-6 py-4">kg/satuan</th>
+                                <th className="px-6 py-4 text-right">Total</th>
                                 <th className="px-6 py-4 text-center">Aksi</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                            {filtered.map(p => (
-                                <tr key={p.id} className="hover:bg-gray-50 transition-colors">
+                            {flatPurchases.map((p, idx) => (
+                                <tr key={`${p.id}-${idx}`} className="hover:bg-gray-50 transition-colors">
+                                    <td className="px-6 py-4 font-mono font-medium text-blue-600">{p.purchase_no}</td>
                                     <td className="px-6 py-4 text-gray-600">{p.date}</td>
-                                    <td className="px-6 py-4 font-bold text-gray-800">{p.purchase_no}</td>
-                                    <td className="px-6 py-4 text-gray-700">{p.supplier_name}</td>
-                                    <td className="px-6 py-4 text-right font-black text-gray-900">Rp {p.total_amount?.toLocaleString()}</td>
-                                    <td className="px-6 py-4 text-center">
-                                        <span className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase ${
-                                            p.status === 'Paid' ? 'bg-green-100 text-green-700' : 
-                                            p.status === 'Pending' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-700'
-                                        }`}>
-                                            {p.status}
-                                        </span>
-                                    </td>
+                                    <td className="px-6 py-4 font-bold text-gray-700">{p.supplier_name}</td>
+                                    <td className="px-6 py-4 text-gray-700">{p.itemName}</td>
+                                    <td className="px-6 py-4 text-right">Rp {(p.itemPrice || 0).toLocaleString()}</td>
+                                    <td className="px-6 py-4 text-center font-bold">{p.itemQty}</td>
+                                    <td className="px-6 py-4 text-gray-400">{p.itemUnit}</td>
+                                    <td className="px-6 py-4 text-right font-black text-gray-900">Rp {((p.itemPrice || 0) * (p.itemQty || 0)).toLocaleString()}</td>
                                     <td className="px-6 py-4">
                                         <div className="flex justify-center gap-2">
-                                            <button onClick={() => setViewingPurchase(p)} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100" title="Detail Items">
-                                                <Eye className="w-4 h-4" />
-                                            </button>
-                                            <button onClick={() => setEditingPurchase(p)} className="p-2 bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100" title="Edit Data">
-                                                <Edit className="w-4 h-4" />
-                                            </button>
-                                            <button onClick={() => handleDelete(p.id)} className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100" title="Hapus">
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
+                                            {p.isFirst && (
+                                                <>
+                                                    <button onClick={() => setViewingPurchase(p)} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100" title="Detail Items">
+                                                        <Eye className="w-4 h-4" />
+                                                    </button>
+                                                    <button onClick={() => setEditingPurchase(p)} className="p-2 bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100" title="Edit Data">
+                                                        <Edit className="w-4 h-4" />
+                                                    </button>
+                                                    <button onClick={() => handleDelete(p.id)} className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100" title="Hapus">
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>
                             ))}
-                            {filtered.length === 0 && (
+                            {flatPurchases.length === 0 && (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-12 text-center text-gray-400 italic">Tidak ada rincian pembelian ditemukan.</td>
+                                    <td colSpan={9} className="px-6 py-12 text-center text-gray-400 italic">Tidak ada rincian pembelian ditemukan.</td>
                                 </tr>
                             )}
                         </tbody>
@@ -1146,7 +1470,7 @@ function AccountManagementTab({ accounts, getBalance, onAddAccount, onUpdateAcco
     onUpdateAccount: (acc: Account) => void,
     onDeleteAccount: (code: string) => void
 }) {
-    const [formData, setFormData] = useState<Account>({ code: '', name: '', type: 'Asset' });
+    const [formData, setFormData] = useState<Account>({ code: '', name: '', type: 'Asset', parent_code: '' });
     const [isEditing, setIsEditing] = useState(false);
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -1169,7 +1493,7 @@ function AccountManagementTab({ accounts, getBalance, onAddAccount, onUpdateAcco
             onAddAccount(formData);
             toast.success('Akun baru berhasil ditambahkan');
         }
-        setFormData({ code: '', name: '', type: 'Asset' });
+        setFormData({ code: '', name: '', type: 'Asset', parent_code: '' });
     };
 
     const handleEdit = (acc: Account) => {
@@ -1215,10 +1539,36 @@ function AccountManagementTab({ accounts, getBalance, onAddAccount, onUpdateAcco
                             <option value="Expense">Expense (Beban)</option>
                         </select>
                     </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Grup / Induk Akun (Sub-Akun Dari)</label>
+                        <select 
+                            className="w-full p-2 border rounded-lg" 
+                            value={formData.parent_code || ''} 
+                            onChange={e => {
+                                const pCode = e.target.value;
+                                const parent = accounts.find(a => a.code === pCode);
+                                setFormData({ 
+                                    ...formData, 
+                                    parent_code: pCode || undefined,
+                                    type: parent ? parent.type : formData.type 
+                                });
+                            }}
+                        >
+                            <option value="">-- Akun Utama (Tidak ada Induk) --</option>
+                            {accounts
+                                .filter(a => a.code !== formData.code)
+                                .sort((a,b) => a.code.localeCompare(b.code))
+                                .map(acc => (
+                                    <option key={acc.code} value={acc.code}>{acc.code} - {acc.name}</option>
+                                ))
+                            }
+                        </select>
+                        <p className="text-[10px] text-gray-400 mt-1 italic">Pilih induk jika ini adalah bagian dari akun lain (misal: ASET TETAP di bawah ASET).</p>
+                    </div>
                     <div className="flex gap-2">
                         <Button type="submit" className="w-full">{isEditing ? 'Simpan Perubahan' : 'Tambah Akun'}</Button>
                         {isEditing && (
-                            <Button type="button" variant="outline" onClick={() => { setIsEditing(false); setFormData({ code: '', name: '', type: 'Asset' }); }}>Batal</Button>
+                            <Button type="button" variant="outline" onClick={() => { setIsEditing(false); setFormData({ code: '', name: '', type: 'Asset', parent_code: '' }); }}>Batal</Button>
                         )}
                     </div>
                 </form>
@@ -1240,38 +1590,65 @@ function AccountManagementTab({ accounts, getBalance, onAddAccount, onUpdateAcco
                             </tr>
                         </thead>
                         <tbody>
-                            {accounts.sort((a, b) => a.code.localeCompare(b.code)).map(acc => (
-                                <tr key={acc.code} className="border-b hover:bg-gray-50 font-medium">
-                                    <td className="px-4 py-3 text-blue-600">{acc.code}</td>
-                                    <td className="px-4 py-3">{acc.name}</td>
-                                    <td className="px-4 py-3">
-                                        <span className={`px-2 py-1 rounded-full text-xs border ${acc.type === 'Asset' ? 'bg-green-50 text-green-700 border-green-200' :
-                                            acc.type === 'Liability' ? 'bg-red-50 text-red-700 border-red-200' :
-                                                acc.type === 'Equity' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                                                    acc.type === 'Income' ? 'bg-teal-50 text-teal-700 border-teal-200' :
-                                                        'bg-orange-50 text-orange-700 border-orange-200'
-                                            }`}>
-                                            {acc.type}
-                                        </span>
-                                    </td>
-                                    <td className="px-4 py-3 text-right font-mono">
-                                        Rp {getBalance(acc.code).toLocaleString()}
-                                    </td>
-                                    <td className="px-4 py-3 flex justify-center gap-2">
-                                        <button onClick={() => handleEdit(acc)} className="p-1 hover:bg-blue-50 text-blue-600 rounded">
-                                            <Edit className="w-4 h-4" />
-                                        </button>
-                                        <button
-                                            onClick={() => handleDelete(acc.code)}
-                                            className={`p-1 rounded ${getBalance(acc.code) !== 0 ? 'text-gray-300 cursor-not-allowed' : 'hover:bg-red-50 text-red-600'}`}
-                                            disabled={getBalance(acc.code) !== 0}
-                                            title={getBalance(acc.code) !== 0 ? "Tidak bisa hapus akun yang memiliki saldo/transaksi" : "Hapus Master Akun"}
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
+                            {(() => {
+                                // Hierarchical Sorting (Recursive for Multi-level)
+                                const buildHierarchy = (parentCode: string | undefined = undefined, level: number = 0): any[] => {
+                                    return accounts
+                                        .filter(a => (parentCode === undefined ? !a.parent_code : a.parent_code === parentCode))
+                                        .sort((a, b) => a.code.localeCompare(b.code))
+                                        .reduce((acc: any[], curr) => {
+                                            acc.push({ ...curr, level });
+                                            const children = buildHierarchy(curr.code, level + 1);
+                                            return [...acc, ...children];
+                                        }, []);
+                                };
+
+                                const hierarchicalAccounts = buildHierarchy();
+
+                                return hierarchicalAccounts.map(acc => {
+                                    const hasChildren = accounts.some(a => a.parent_code === acc.code);
+                                    const isSubAccount = !!acc.parent_code;
+                                    const level = acc.level || 0;
+                                    
+                                    return (
+                                        <tr key={acc.code} className={`border-b hover:bg-gray-50 font-medium ${hasChildren ? 'bg-blue-50/20' : isSubAccount ? 'bg-gray-50/30' : ''}`}>
+                                            <td className={`px-4 py-3 ${hasChildren ? 'font-bold text-primary' : isSubAccount ? 'text-gray-400 italic' : 'text-blue-600'}`} style={{ paddingLeft: `${level * 2 + 1}rem` }}>
+                                                {isSubAccount && <span className="mr-2">└</span>}
+                                                {acc.code}
+                                            </td>
+                                            <td className={`px-4 py-3 ${hasChildren ? 'font-black text-gray-900' : isSubAccount ? 'text-gray-600' : 'font-bold text-gray-800'}`}>
+                                                {acc.name}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <span className={`px-2 py-1 rounded-full text-[10px] border ${acc.type === 'Asset' ? 'bg-green-50 text-green-700 border-green-200' :
+                                                    acc.type === 'Liability' ? 'bg-red-50 text-red-700 border-red-200' :
+                                                        acc.type === 'Equity' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                                            acc.type === 'Income' ? 'bg-teal-50 text-teal-700 border-teal-200' :
+                                                                'bg-orange-50 text-orange-700 border-orange-200'
+                                                    }`}>
+                                                    {acc.type}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3 text-right font-mono">
+                                                Rp {getBalance(acc.code).toLocaleString()}
+                                            </td>
+                                            <td className="px-4 py-3 flex justify-center gap-2">
+                                                <button onClick={() => handleEdit(acc)} className="p-1 hover:bg-blue-50 text-blue-600 rounded">
+                                                    <Edit className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDelete(acc.code)}
+                                                    className={`p-1 rounded ${getBalance(acc.code) !== 0 ? 'text-gray-300 cursor-not-allowed' : 'hover:bg-red-50 text-red-600'}`}
+                                                    disabled={getBalance(acc.code) !== 0}
+                                                    title={getBalance(acc.code) !== 0 ? "Tidak bisa hapus akun yang memiliki saldo/transaksi" : "Hapus Master Akun"}
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                });
+                            })()}
                         </tbody>
                     </table>
                 </div>
@@ -1317,6 +1694,11 @@ export function AccountingView({
 }: AccountingViewProps) {
     const { user, role } = useAuth();
     const [activeTab, setActiveTab] = useState('overview');
+    const [journalSearch, setJournalSearch] = useState('');
+    
+    const [realSales, setRealSales] = useState<any[]>([]);
+    const [realPurchases, setRealPurchases] = useState<any[]>([]);
+    const [isLoadingRealData, setIsLoadingRealData] = useState(false);
 
 
     // --- Date Filtering State ---
@@ -1337,14 +1719,98 @@ export function AccountingView({
         });
     }, [transactions, accounts, startDate, endDate]);
 
+    const fetchRealData = async () => {
+        if (!currentBranchId || !startDate || !endDate) return;
+        setIsLoadingRealData(true);
+        try {
+            // 1. Fetch Sales with Pagination
+            let allSales: any[] = [];
+            let from = 0;
+            const pageSize = 1000;
+            let hasMore = true;
+
+            while (hasMore) {
+                const { data, error } = await supabase
+                    .from('sales')
+                    .select('*')
+                    .eq('branch_id', currentBranchId)
+                    .gte('date', startDate + 'T00:00:00')
+                    .lte('date', endDate + 'T23:59:59')
+                    .order('date', { ascending: false })
+                    .range(from, from + pageSize - 1);
+
+                if (error) throw error;
+                if (data && data.length > 0) {
+                    allSales = [...allSales, ...data];
+                    if (data.length < pageSize) hasMore = false;
+                    else from += pageSize;
+                } else {
+                    hasMore = false;
+                }
+            }
+            setRealSales(allSales);
+
+            // 2. Fetch Purchases with Pagination
+            let allPurchases: any[] = [];
+            let purFrom = 0;
+            let purHasMore = true;
+
+            while (purHasMore) {
+                const { data: purPage, error: purError } = await supabase
+                    .from('purchases')
+                    .select('*')
+                    .eq('branch_id', currentBranchId)
+                    .gte('date', startDate + 'T00:00:00')
+                    .lte('date', endDate + 'T23:59:59')
+                    .range(purFrom, purFrom + pageSize - 1);
+                
+                if (purError) throw purError;
+
+                if (purPage && purPage.length > 0) {
+                    allPurchases = [...allPurchases, ...purPage];
+                    if (purPage.length < pageSize) purHasMore = false;
+                    else purFrom += pageSize;
+                } else {
+                    purHasMore = false;
+                }
+            }
+            setRealPurchases(allPurchases);
+
+        } catch (err) {
+            console.error('Error fetching real data in AccountingView:', err);
+        } finally {
+            setIsLoadingRealData(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchRealData();
+    }, [startDate, endDate, currentBranchId]);
+
     // --- Filtered Transactions for Reports ---
     const filteredTransactions = useMemo(() => {
         return transactions.filter(tx => {
             if (!tx.date) return false;
             const txDate = String(tx.date).split('T')[0];
-            return txDate >= startDate && txDate <= endDate;
+            const matchesDate = txDate >= startDate && txDate <= endDate;
+            
+            if (!matchesDate) return false;
+
+            if (journalSearch) {
+                const search = journalSearch.toLowerCase();
+                const debitName = accounts.find(a => a.code === tx.debitAccount)?.name?.toLowerCase() || '';
+                const creditName = accounts.find(a => a.code === tx.creditAccount)?.name?.toLowerCase() || '';
+                
+                return tx.debitAccount.toLowerCase().includes(search) ||
+                       tx.creditAccount.toLowerCase().includes(search) ||
+                       debitName.includes(search) ||
+                       creditName.includes(search) ||
+                       (tx.description || '').toLowerCase().includes(search);
+            }
+
+            return true;
         });
-    }, [transactions, startDate, endDate]);
+    }, [transactions, startDate, endDate, journalSearch, accounts]);
 
     // --- CRUD Actions (Wrappers) ---
     const addAccount = (acc: Account) => onAddAccount(acc);
@@ -1382,12 +1848,12 @@ export function AccountingView({
 
     // [NEW] Calculate Revenue directly from POS Sales for accuracy
     const posRevenueTotal = useMemo(() => {
-        return sales.filter(s => {
-            if (!s.date) return false;
-            const sDate = String(s.date).split('T')[0];
-            return sDate >= startDate && sDate <= endDate && (s.status === 'Paid' || s.status === 'Completed');
-        }).reduce((sum, s) => sum + (Number(s.total_amount || s.totalAmount || 0)), 0);
-    }, [sales, startDate, endDate]);
+        const PAID_STATUSES = ['paid', 'completed', 'selesai', 'settlement', 'served', 'capture', 'success', 'ready'];
+        return realSales.filter(s => {
+            const status = (s.status || '').toLowerCase();
+            return PAID_STATUSES.includes(status);
+        }).reduce((sum, s) => sum + (Number(s.total_amount || 0)), 0);
+    }, [realSales]);
 
     const totalRevenueFromJournals = accounts.filter(a => a.type === 'Income').reduce((sum, acc) => sum + getDisplayBalance(acc.code), 0);
     
@@ -1472,75 +1938,253 @@ export function AccountingView({
         }
     };
 
-    const exportBalanceSheetToExcel = () => {
+    const exportFinancialPositionToExcel = () => {
         try {
-            const assetAccounts = accounts.filter(a => a.type === 'Asset');
-            const liabilityAccounts = accounts.filter(a => a.type === 'Liability');
-            const equityAccounts = accounts.filter(a => a.type === 'Equity');
+            const groups = {
+                asetLancar: accounts.filter(a => a.type === 'Asset' && (parseInt(a.code.replace(/\D/g, '')) || 0) < 120),
+                asetTetap: accounts.filter(a => a.type === 'Asset' && (parseInt(a.code.replace(/\D/g, '')) || 0) >= 120),
+                utangLancar: accounts.filter(a => a.type === 'Liability' && (parseInt(a.code.replace(/\D/g, '')) || 0) < 220),
+                utangJangkaPanjang: accounts.filter(a => a.type === 'Liability' && (parseInt(a.code.replace(/\D/g, '')) || 0) >= 220),
+                ekuitas: accounts.filter(a => a.type === 'Equity')
+            };
+
+            const totalAsetLancar = groups.asetLancar.reduce((s, a) => s + getDisplayBalance(a.code), 0);
+            const totalAsetTetap = groups.asetTetap.reduce((s, a) => s + getDisplayBalance(a.code), 0);
+            const totalUtangLancar = groups.utangLancar.reduce((s, a) => s + getDisplayBalance(a.code), 0);
+            const totalUtangJangkaPanjang = groups.utangJangkaPanjang.reduce((s, a) => s + getDisplayBalance(a.code), 0);
+            const totalEkuitas = groups.ekuitas.reduce((s, a) => s + getDisplayBalance(a.code), 0) + netProfit;
 
             const data = [
-                { 'Kategori': 'AKTIVA (ASSETS)', 'Kode': '', 'Nama': '', 'Jumlah': '' },
-                ...assetAccounts.map(a => ({ 'Kategori': '', 'Kode': a.code, 'Nama': a.name, 'Jumlah': getDisplayBalance(a.code) })),
-                { 'Kategori': 'Total Aktiva', 'Kode': '', 'Nama': '', 'Jumlah': assetAccounts.reduce((s, a) => s + getDisplayBalance(a.code), 0) },
-                { 'Kategori': '', 'Kode': '', 'Nama': '', 'Jumlah': '' },
-                { 'Kategori': 'KEWAJIBAN & EKUITAS', 'Kode': '', 'Nama': '', 'Jumlah': '' },
-                ...liabilityAccounts.map(a => ({ 'Kategori': 'Kewajiban', 'Kode': a.code, 'Nama': a.name, 'Jumlah': getDisplayBalance(a.code) })),
-                ...equityAccounts.map(a => ({ 'Kategori': 'Ekuitas', 'Kode': a.code, 'Nama': a.name, 'Jumlah': getDisplayBalance(a.code) })),
-                { 'Kategori': 'Laba Tahun Berjalan', 'Kode': '', 'Nama': '', 'Jumlah': netProfit },
-                { 'Kategori': 'Total Pasiva', 'Kode': '', 'Nama': '', 'Jumlah': liabilityAccounts.reduce((s, a) => s + getDisplayBalance(a.code), 0) + equityAccounts.reduce((s, a) => s + getDisplayBalance(a.code), 0) + netProfit }
+                { 'Kategori': 'ASET', 'Nama': '', 'Jumlah': '' },
+                { 'Kategori': 'ASET LANCAR', 'Nama': '', 'Jumlah': '' },
+                ...groups.asetLancar.map(a => ({ 'Kategori': '', 'Nama': a.name, 'Jumlah': getDisplayBalance(a.code) })),
+                { 'Kategori': 'TOTAL ASET LANCAR', 'Nama': '', 'Jumlah': totalAsetLancar },
+                { 'Kategori': '', 'Nama': '', 'Jumlah': '' },
+                { 'Kategori': 'ASET TETAP', 'Nama': '', 'Jumlah': '' },
+                ...groups.asetTetap.map(a => ({ 'Kategori': '', 'Nama': a.name, 'Jumlah': getDisplayBalance(a.code) })),
+                { 'Kategori': 'TOTAL ASET TETAP', 'Nama': '', 'Jumlah': totalAsetTetap },
+                { 'Kategori': 'TOTAL ASET', 'Nama': '', 'Jumlah': totalAsetLancar + totalAsetTetap },
+                { 'Kategori': '', 'Nama': '', 'Jumlah': '' },
+                { 'Kategori': 'KEWAJIBAN DAN MODAL', 'Nama': '', 'Jumlah': '' },
+                { 'Kategori': 'UTANG LANCAR', 'Nama': '', 'Jumlah': '' },
+                ...groups.utangLancar.map(a => ({ 'Kategori': '', 'Nama': a.name, 'Jumlah': getDisplayBalance(a.code) })),
+                { 'Kategori': 'TOTAL UTANG LANCAR', 'Nama': '', 'Jumlah': totalUtangLancar },
+                { 'Kategori': '', 'Nama': '', 'Jumlah': '' },
+                { 'Kategori': 'UTANG JANGKA PANJANG', 'Nama': '', 'Jumlah': '' },
+                ...groups.utangJangkaPanjang.map(a => ({ 'Kategori': '', 'Nama': a.name, 'Jumlah': getDisplayBalance(a.code) })),
+                { 'Kategori': 'TOTAL UTANG JANGKA PANJANG', 'Nama': '', 'Jumlah': totalUtangJangkaPanjang },
+                { 'Kategori': 'TOTAL UTANG', 'Nama': '', 'Jumlah': totalUtangLancar + totalUtangJangkaPanjang },
+                { 'Kategori': '', 'Nama': '', 'Jumlah': '' },
+                { 'Kategori': 'EKUITAS', 'Nama': '', 'Jumlah': '' },
+                ...groups.ekuitas.map(a => ({ 'Kategori': '', 'Nama': a.name, 'Jumlah': getDisplayBalance(a.code) })),
+                { 'Kategori': 'Laba Tahun Berjalan', 'Nama': '', 'Jumlah': netProfit },
+                { 'Kategori': 'TOTAL EKUITAS', 'Nama': '', 'Jumlah': totalEkuitas },
+                { 'Kategori': 'TOTAL UTANG DAN MODAL', 'Nama': '', 'Jumlah': totalUtangLancar + totalUtangJangkaPanjang + totalEkuitas }
             ];
 
             const worksheet = XLSX.utils.json_to_sheet(data);
             const workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, worksheet, "Neraca");
-            XLSX.writeFile(workbook, `Neraca_${startDate}_to_${endDate}.xlsx`);
-            toast.success('Laporan Neraca berhasil diunduh (Excel)');
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Posisi Keuangan");
+            XLSX.writeFile(workbook, `Posisi_Keuangan_${startDate}_to_${endDate}.xlsx`);
+            toast.success('Laporan Posisi Keuangan berhasil diunduh (Excel)');
         } catch (error) {
             toast.error('Gagal mengekspor laporan');
         }
     };
 
-    const exportBalanceSheetToPDF = () => {
+    const exportFinancialPositionToPDF = () => {
         try {
             const doc = new jsPDF();
             doc.setFontSize(18);
-            doc.text('LAPORAN NERACA', 105, 20, { align: 'center' });
+            doc.text('LAPORAN POSISI KEUANGAN', 105, 20, { align: 'center' });
             doc.setFontSize(11);
             doc.text(`Periode: ${startDate} s/d ${endDate}`, 105, 28, { align: 'center' });
 
-            const assetData = accounts.filter(a => a.type === 'Asset').map(a => [a.code, a.name, `Rp ${getDisplayBalance(a.code).toLocaleString()}`]);
-            const liabilityData = accounts.filter(a => a.type === 'Liability').map(a => [a.code, a.name, `Rp ${getDisplayBalance(a.code).toLocaleString()}`]);
-            const equityData = accounts.filter(a => a.type === 'Equity').map(a => [a.code, a.name, `Rp ${getDisplayBalance(a.code).toLocaleString()}`]);
+            const groups = {
+                asetLancar: accounts.filter(a => a.type === 'Asset' && (parseInt(a.code.replace(/\D/g, '')) || 0) < 120),
+                asetTetap: accounts.filter(a => a.type === 'Asset' && (parseInt(a.code.replace(/\D/g, '')) || 0) >= 120),
+                utangLancar: accounts.filter(a => a.type === 'Liability' && (parseInt(a.code.replace(/\D/g, '')) || 0) < 220),
+                utangJangkaPanjang: accounts.filter(a => a.type === 'Liability' && (parseInt(a.code.replace(/\D/g, '')) || 0) >= 220),
+                ekuitas: accounts.filter(a => a.type === 'Equity')
+            };
+
+            const totalAsetLancar = groups.asetLancar.reduce((s, a) => s + getDisplayBalance(a.code), 0);
+            const totalAsetTetap = groups.asetTetap.reduce((s, a) => s + getDisplayBalance(a.code), 0);
+            const totalUtangLancar = groups.utangLancar.reduce((s, a) => s + getDisplayBalance(a.code), 0);
+            const totalUtangJangkaPanjang = groups.utangJangkaPanjang.reduce((s, a) => s + getDisplayBalance(a.code), 0);
+            const totalEkuitas = groups.ekuitas.reduce((s, a) => s + getDisplayBalance(a.code), 0) + netProfit;
+
+            const body = [
+                [{ content: 'ASET', colSpan: 3, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } }],
+                [{ content: 'ASET LANCAR', colSpan: 3, styles: { fontStyle: 'bold', textColor: [100, 100, 100] } }],
+                ...groups.asetLancar.map(a => [a.code, a.name, `Rp ${getDisplayBalance(a.code).toLocaleString()}`]),
+                [{ content: 'TOTAL ASET LANCAR', colSpan: 2, styles: { fontStyle: 'bold' } }, { content: `Rp ${totalAsetLancar.toLocaleString()}`, styles: { fontStyle: 'bold' } }],
+                
+                [{ content: 'ASET TETAP', colSpan: 3, styles: { fontStyle: 'bold', textColor: [100, 100, 100] } }],
+                ...groups.asetTetap.map(a => [a.code, a.name, `Rp ${getDisplayBalance(a.code).toLocaleString()}`]),
+                [{ content: 'TOTAL ASET TETAP', colSpan: 2, styles: { fontStyle: 'bold' } }, { content: `Rp ${totalAsetTetap.toLocaleString()}`, styles: { fontStyle: 'bold' } }],
+                
+                [{ content: 'TOTAL ASET', colSpan: 2, styles: { fontStyle: 'bold', fillColor: [220, 220, 220] } }, { content: `Rp ${(totalAsetLancar + totalAsetTetap).toLocaleString()}`, styles: { fontStyle: 'bold', fillColor: [220, 220, 220] } }],
+                
+                [{ content: 'KEWAJIBAN DAN MODAL', colSpan: 3, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } }],
+                [{ content: 'UTANG LANCAR', colSpan: 3, styles: { fontStyle: 'bold', textColor: [100, 100, 100] } }],
+                ...groups.utangLancar.map(a => [a.code, a.name, `Rp ${getDisplayBalance(a.code).toLocaleString()}`]),
+                [{ content: 'TOTAL UTANG LANCAR', colSpan: 2, styles: { fontStyle: 'bold' } }, { content: `Rp ${totalUtangLancar.toLocaleString()}`, styles: { fontStyle: 'bold' } }],
+
+                [{ content: 'UTANG JANGKA PANJANG', colSpan: 3, styles: { fontStyle: 'bold', textColor: [100, 100, 100] } }],
+                ...groups.utangJangkaPanjang.map(a => [a.code, a.name, `Rp ${getDisplayBalance(a.code).toLocaleString()}`]),
+                [{ content: 'TOTAL UTANG JANGKA PANJANG', colSpan: 2, styles: { fontStyle: 'bold' } }, { content: `Rp ${totalUtangJangkaPanjang.toLocaleString()}`, styles: { fontStyle: 'bold' } }],
+                [{ content: 'TOTAL UTANG', colSpan: 2, styles: { fontStyle: 'bold' } }, { content: `Rp ${(totalUtangLancar + totalUtangJangkaPanjang).toLocaleString()}`, styles: { fontStyle: 'bold' } }],
+
+                [{ content: 'EKUITAS', colSpan: 3, styles: { fontStyle: 'bold', textColor: [100, 100, 100] } }],
+                ...groups.ekuitas.map(a => [a.code, a.name, `Rp ${getDisplayBalance(a.code).toLocaleString()}`]),
+                ['-', 'Laba Tahun Berjalan', `Rp ${netProfit.toLocaleString()}`],
+                [{ content: 'TOTAL EKUITAS', colSpan: 2, styles: { fontStyle: 'bold' } }, { content: `Rp ${totalEkuitas.toLocaleString()}`, styles: { fontStyle: 'bold' } }],
+                
+                [{ content: 'TOTAL UTANG DAN MODAL', colSpan: 2, styles: { fontStyle: 'bold', fillColor: [220, 220, 220] } }, { content: `Rp ${(totalUtangLancar + totalUtangJangkaPanjang + totalEkuitas).toLocaleString()}`, styles: { fontStyle: 'bold', fillColor: [220, 220, 220] } }],
+            ];
 
             autoTable(doc, {
                 startY: 40,
-                head: [['Kode', 'Aktiva (Assets)', 'Jumlah']],
-                body: [
-                    ...assetData,
-                    [{ content: 'Total Aktiva', colSpan: 2, styles: { fontStyle: 'bold' } }, { content: `Rp ${accounts.filter(a => a.type === 'Asset').reduce((s, a) => s + getDisplayBalance(a.code), 0).toLocaleString()}`, styles: { fontStyle: 'bold' } }]
-                ],
-                theme: 'striped',
-                headStyles: { fillColor: [37, 99, 235] }
+                head: [['Kode', 'Uraian', 'Jumlah']],
+                body: body,
+                theme: 'plain',
+                styles: { fontSize: 9 },
+                columnStyles: { 2: { halign: 'right' } }
             });
 
-            autoTable(doc, {
-                startY: (doc as any).lastAutoTable.finalY + 10,
-                head: [['Kode', 'Kewajiban & Ekuitas', 'Jumlah']],
-                body: [
-                    ...liabilityData,
-                    ...equityData,
-                    ['-', 'Laba Tahun Berjalan', `Rp ${netProfit.toLocaleString()}`],
-                    [{ content: 'Total Pasiva', colSpan: 2, styles: { fontStyle: 'bold' } }, { content: `Rp ${(accounts.filter(a => a.type === 'Liability' || a.type === 'Equity').reduce((s, a) => s + getDisplayBalance(a.code), 0) + netProfit).toLocaleString()}`, styles: { fontStyle: 'bold' } }]
-                ],
-                theme: 'striped',
-                headStyles: { fillColor: [75, 85, 99] }
-            });
-
-            doc.save(`Neraca_${startDate}_to_${endDate}.pdf`);
-            toast.success('Laporan Neraca berhasil diunduh (PDF)');
+            doc.save(`Posisi_Keuangan_${startDate}_to_${endDate}.pdf`);
+            toast.success('Laporan Posisi Keuangan berhasil diunduh (PDF)');
         } catch (error) {
             toast.error('Gagal mengekspor laporan');
         }
+    };
+
+    const renderFinancialPosition = () => {
+        const renderAccountRows = (parentCode: string | undefined, level: number = 0): { rows: React.ReactNode[], subTotal: number } => {
+            let total = 0;
+            const children = accounts.filter(a => a.parent_code === parentCode).sort((a, b) => a.code.localeCompare(b.code));
+            
+            const rows = children.flatMap(acc => {
+                const balance = getDisplayBalance(acc.code);
+                const subHierarchy = renderAccountRows(acc.code, level + 1);
+                const currentTotal = balance + subHierarchy.subTotal;
+                total += currentTotal;
+
+                const hasChildren = accounts.some(a => a.parent_code === acc.code);
+
+                return [
+                    <div key={acc.code} className={`${hasChildren ? 'mt-4' : ''}`}>
+                        <div className={`flex justify-between py-1 border-b border-dashed border-gray-100 ${hasChildren ? 'font-bold text-gray-800' : 'text-sm text-gray-600'}`} style={{ paddingLeft: `${level * 1.5}rem` }}>
+                            <span>{acc.code} - {acc.name}</span>
+                            <span>Rp {currentTotal.toLocaleString()}</span>
+                        </div>
+                        {subHierarchy.rows}
+                    </div>
+                ];
+            });
+
+            return { rows, subTotal: total };
+        };
+
+        const assetSections = renderAccountRows(undefined).rows.filter((_, i) => {
+            const acc = accounts.filter(a => !a.parent_code).sort((a, b) => a.code.localeCompare(b.code))[i];
+            return acc?.type === 'Asset';
+        });
+
+        const liabilitySections = renderAccountRows(undefined).rows.filter((_, i) => {
+            const acc = accounts.filter(a => !a.parent_code).sort((a, b) => a.code.localeCompare(b.code))[i];
+            return acc?.type === 'Liability';
+        });
+
+        const equitySections = renderAccountRows(undefined).rows.filter((_, i) => {
+            const acc = accounts.filter(a => !a.parent_code).sort((a, b) => a.code.localeCompare(b.code))[i];
+            return acc?.type === 'Equity';
+        });
+
+        const totalAset = accounts.filter(a => a.type === 'Asset').reduce((s, a) => s + getDisplayBalance(a.code), 0);
+        const totalUtang = accounts.filter(a => a.type === 'Liability').reduce((s, a) => s + getDisplayBalance(a.code), 0);
+        const totalEkuitasWithoutProfit = accounts.filter(a => a.type === 'Equity').reduce((s, a) => s + getDisplayBalance(a.code), 0);
+        const totalEkuitas = totalEkuitasWithoutProfit + netProfit;
+
+        return (
+            <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4">
+                <div className="flex justify-between items-center mb-8">
+                    <div>
+                        <h2 className="text-2xl font-bold text-gray-900 uppercase tracking-widest">
+                            Laporan Posisi Keuangan
+                        </h2>
+                        <p className="text-gray-500">WinPOS Enterprise • Per {endDate}</p>
+                    </div>
+                    <div className="flex gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex items-center gap-2 border-green-200 text-green-700 hover:bg-green-50"
+                            onClick={exportFinancialPositionToExcel}
+                        >
+                            <Download className="w-4 h-4" /> Excel
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex items-center gap-2 border-red-200 text-red-700 hover:bg-red-50"
+                            onClick={exportFinancialPositionToPDF}
+                        >
+                            <FileText className="w-4 h-4" /> PDF
+                        </Button>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                    {/* SISI AKTIVA (ASET) */}
+                    <div className="space-y-6">
+                        <h3 className="font-black text-lg text-blue-700 border-b-2 border-blue-700 pb-1 uppercase">Aktiva (Aset)</h3>
+                        <div className="space-y-4">
+                            {assetSections}
+                        </div>
+                        <div className="flex justify-between font-black text-xl text-white bg-blue-600 p-4 rounded-xl shadow-sm">
+                            <span>TOTAL ASET</span>
+                            <span>Rp {totalAset.toLocaleString()}</span>
+                        </div>
+                    </div>
+
+                    {/* SISI PASIVA (KEWAJIBAN & EKUITAS) */}
+                    <div className="space-y-8">
+                        <div>
+                            <h3 className="font-black text-lg text-red-700 border-b-2 border-red-700 pb-1 uppercase">Kewajiban (Utang)</h3>
+                            <div className="mt-4 space-y-4">
+                                {liabilitySections}
+                            </div>
+                            <div className="flex justify-between font-bold text-gray-900 mt-4 p-3 bg-gray-50 rounded-lg border">
+                                <span>TOTAL UTANG</span>
+                                <span>Rp {totalUtang.toLocaleString()}</span>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 className="font-black text-lg text-emerald-700 border-b-2 border-emerald-700 pb-1 uppercase">Ekuitas & Modal</h3>
+                            <div className="mt-4 space-y-4">
+                                {equitySections}
+                                <div className="flex justify-between text-sm py-1 border-b border-dashed border-gray-100 text-blue-600 font-medium">
+                                    <span>Laba Tahun Berjalan (Net Profit)</span>
+                                    <span>Rp {netProfit.toLocaleString()}</span>
+                                </div>
+                            </div>
+                            <div className="flex justify-between font-bold text-gray-900 mt-4 p-3 bg-gray-50 rounded-lg border">
+                                <span>TOTAL EKUITAS</span>
+                                <span>Rp {totalEkuitas.toLocaleString()}</span>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-between font-black text-xl text-white bg-gray-800 p-4 rounded-xl shadow-sm">
+                            <span>TOTAL PASIVA</span>
+                            <span>Rp {(totalUtang + totalEkuitas).toLocaleString()}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
     };
 
     const renderOverview = () => (
@@ -1625,7 +2269,7 @@ export function AccountingView({
                             variant="outline"
                             size="sm"
                             className="flex items-center gap-2 border-green-200 text-green-700 hover:bg-green-50"
-                            onClick={type === 'income' ? exportIncomeStatementToExcel : exportBalanceSheetToExcel}
+                            onClick={type === 'income' ? exportIncomeStatementToExcel : exportFinancialPositionToExcel}
                         >
                             <Download className="w-4 h-4" /> Excel
                         </Button>
@@ -1633,7 +2277,7 @@ export function AccountingView({
                             variant="outline"
                             size="sm"
                             className="flex items-center gap-2 border-red-200 text-red-700 hover:bg-red-50"
-                            onClick={type === 'income' ? exportIncomeStatementToPDF : exportBalanceSheetToPDF}
+                            onClick={type === 'income' ? exportIncomeStatementToPDF : exportFinancialPositionToPDF}
                         >
                             <FileText className="w-4 h-4" /> PDF
                         </Button>
@@ -1736,12 +2380,14 @@ export function AccountingView({
         );
     }
 
+
     const tabs = [
         { id: 'overview', label: 'Ringkasan', icon: LayoutDashboard },
         { id: 'journal', label: 'Jurnal Umum', icon: Plus },
         { id: 'pettycash', label: 'Kas Kecil', icon: Wallet },
         { id: 'purchase_history', label: 'Riwayat Pembelian', icon: ShoppingCart },
         { id: 'ledger', label: 'Buku Besar', icon: BookOpen },
+        { id: 'hpp', label: 'Laporan HPP', icon: TrendingDown },
         { id: 'income', label: 'Laba Rugi', icon: TrendingUp },
         { id: 'balance', label: 'Neraca', icon: FileText },
         { id: 'accounts', label: 'Daftar Akun', icon: Settings },
@@ -1819,6 +2465,8 @@ export function AccountingView({
                         onDeleteTransaction={(id) => onDeleteTransaction(id)}
                         onResetTransactions={() => onResetTransactions()}
                         role={role || ''}
+                        searchQuery={journalSearch}
+                        onSearchChange={setJournalSearch}
                     />
                 )}
                 {activeTab === 'pettycash' && (
@@ -1833,7 +2481,7 @@ export function AccountingView({
                     />
                 )}
                 {activeTab === 'purchase_history' && (
-                    <PurchaseHistoryTab purchases={purchases} onCRUD={onPurchaseCRUD} />
+                    <PurchaseHistoryTab purchases={realPurchases} onCRUD={onPurchaseCRUD} />
                 )}
 
                 {activeTab === 'ledger' && (
@@ -1843,17 +2491,33 @@ export function AccountingView({
                         <p className="text-gray-500">Pilih akun untuk melihat detail pergerakan saldo periode {startDate} s/d {endDate}.</p>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-8 text-left">
                             {accounts.map(acc => (
-                                <div key={acc.code} className="p-4 border rounded-xl hover:bg-gray-50 cursor-pointer group">
+                                <div 
+                                    key={acc.code} 
+                                    onClick={() => {
+                                        setJournalSearch(acc.code);
+                                        setActiveTab('journal');
+                                        toast.info(`Menampilkan jurnal untuk akun: ${acc.name}`);
+                                    }}
+                                    className="p-4 border rounded-xl hover:bg-primary/5 hover:border-primary/30 cursor-pointer group transition-all"
+                                >
                                     <div className="font-bold text-gray-700 group-hover:text-primary">{acc.code} - {acc.name}</div>
                                     <div className="text-xs text-gray-400 uppercase mt-1">{acc.type}</div>
                                     <div className="text-right font-mono font-bold mt-2">Rp {getDisplayBalance(acc.code).toLocaleString()}</div>
+                                    <div className="text-[10px] text-primary font-bold mt-2 opacity-0 group-hover:opacity-100 transition-opacity">KLIK UNTUK LIHAT JURNAL →</div>
                                 </div>
                             ))}
                         </div>
                     </div>
                 )}
                 {activeTab === 'income' && renderReports('income')}
-                {activeTab === 'balance' && renderReports('balance')}
+                {activeTab === 'hpp' && (
+                    <HppReportTab
+                        startDate={startDate}
+                        endDate={endDate}
+                        currentBranchId={currentBranchId || sales[0]?.branch_id || ''}
+                    />
+                )}
+                {activeTab === 'balance' && renderFinancialPosition()}
                 {activeTab === 'accounts' && (
                     <AccountManagementTab
                         accounts={accounts}

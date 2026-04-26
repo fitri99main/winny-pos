@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, SafeAreaView, StyleSheet, useWindowDimensions, TextInput, ActivityIndicator, FlatList, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, useWindowDimensions, TextInput, ActivityIndicator, FlatList, Modal } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import { useSession } from '../context/SessionContext';
 import { ArrowLeft, Plus, History, ShoppingCart, Search, Trash2, CheckCircle, Package, User, Edit } from 'lucide-react-native';
 import ModernToast from '../components/ModernToast';
-import { PettyCashService } from '../lib/PettyCashService';
+import { PettyCashService, getPettyCashErrorMessage, isPettyCashSchemaMissingError } from '../lib/PettyCashService';
+import { getLocalDateString } from '../lib/dateUtils';
 
 export default function PurchasesScreen() {
     const navigation = useNavigation();
@@ -104,7 +106,7 @@ export default function PurchasesScreen() {
             const payload = {
                 purchase_no: finalPO,
                 supplier_name: finalSupplier,
-                date: new Date().toISOString().split('T')[0],
+                date: getLocalDateString(),
                 items_count: purchaseItems.reduce((sum, i) => sum + i.quantity, 0),
                 total_amount: totalAmount,
                 status: isEditing ? 'Completed' : 'Pending',
@@ -141,7 +143,12 @@ export default function PurchasesScreen() {
                         showToast('PO Berhasil, namun tidak ada sesi Kas Kecil aktif', 'info');
                     }
                 } catch (pcErr) {
-                    console.error('Petty Cash Sync Error:', pcErr);
+                    if (isPettyCashSchemaMissingError(pcErr)) {
+                        showToast('Pembelian tersimpan, tapi modul Kas Kecil belum aktif di database', 'info');
+                    } else {
+                        console.error('Petty Cash Sync Error:', pcErr);
+                        showToast(getPettyCashErrorMessage(pcErr, 'Pembelian tersimpan, tapi gagal sinkron ke Kas Kecil'), 'info');
+                    }
                 }
             }
 

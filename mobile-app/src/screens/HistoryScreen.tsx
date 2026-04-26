@@ -1,17 +1,22 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, FlatList, StyleSheet, useWindowDimensions, ActivityIndicator, Alert, TextInput, Modal } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, FlatList, StyleSheet, useWindowDimensions, ActivityIndicator, TextInput, Modal, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import PaymentModal from '../components/PaymentModal';
 import { PrinterManager } from '../lib/PrinterManager';
-import { Search, Filter, Calendar, RefreshCw, ChevronLeft, Printer, X, Receipt, User, MapPin, CheckCircle2, Edit, Trash2 } from 'lucide-react-native';
+import { Search, Filter, Calendar, RefreshCw, ChevronLeft, Printer, X, Receipt, User, MapPin, CheckCircle2, Edit, Trash2, AlertTriangle } from 'lucide-react-native';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSession } from '../context/SessionContext';
 import ReceiptPreviewModal from '../components/ReceiptPreviewModal';
 import { WifiVoucherService } from '../lib/WifiVoucherService';
-import ManagerAuthModal from '../components/ManagerAuthModal';
 import DateStepper from '../components/DateStepper';
+import { resolveOrderTypeDisplay } from '../lib/orderTypeUtils';
+import { OfflineService } from '../lib/OfflineService';
+import ManagerAuthModal from '../components/ManagerAuthModal';
+import StatusModal from '../components/StatusModal';
+import { getLocalISOString, getLocalDateString } from '../lib/dateUtils';
 
 export default function HistoryScreen() {
     const navigation = useNavigation();
@@ -22,21 +27,29 @@ export default function HistoryScreen() {
     const { currentBranchId, branchName, branchAddress, branchPhone, userName, storeSettings, isAdmin } = useSession();
 
     const [loading, setLoading] = useState(true);
+    const [isOnline, setIsOnline] = useState(true);
     const [history, setHistory] = useState<any[]>([]);
     const [filteredHistory, setFilteredHistory] = useState<any[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
-    const [dateFilter, setDateFilter] = useState<'today' | 'yesterday' | 'week' | 'this_month' | 'all' | 'custom'>('today');
-    const [statusFilter, setStatusFilter] = useState('all');
-    const [paymentFilter, setPaymentFilter] = useState('all');
-    const [staffFilter, setStaffFilter] = useState('all');
-    const [tableFilter, setTableFilter] = useState<'all' | 'with_table' | 'without_table'>('all');
-    const [sortFilter, setSortFilter] = useState<'newest' | 'oldest' | 'highest' | 'lowest'>('newest');
+    const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'month' | 'custom'>('today');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'Paid' | 'Pending'>('all');
+    const [effectiveBranchId, setEffectiveBranchId] = useState(currentBranchId);
+
+    // Sync effectiveBranchId with context but allow fallback
+    useEffect(() => {
+        if (currentBranchId) {
+            setEffectiveBranchId(currentBranchId);
+        } else {
+            AsyncStorage.getItem('mobile_current_branch_id').then(val => {
+                if (val) setEffectiveBranchId(val);
+            });
+        }
+    }, [currentBranchId]);
     
     // Custom Date Range State
-    const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-    const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+    const [startDate, setStartDate] = useState(getLocalDateString());
+    const [endDate, setEndDate] = useState(getLocalDateString());
     const [showDateRangeModal, setShowDateRangeModal] = useState(false);
-    const [showAdvancedFilterModal, setShowAdvancedFilterModal] = useState(false);
     
     // UI Modals
     const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -49,114 +62,33 @@ export default function HistoryScreen() {
     const [showEditModal, setShowEditModal] = useState(false);
     const [editData, setEditData] = useState({ customer_name: '', table_no: '' });
     const [isSaving, setIsSaving] = useState(false);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+    const [statusModal, setStatusModal] = useState({ visible: false, title: '', message: '', type: 'success' as any });
     
     // Create State
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [newData, setNewData] = useState({ customer_name: '', table_no: '', amount: '' });
     const [showReceiptPreview, setShowReceiptPreview] = useState(false);
     const [previewOrderData, setPreviewOrderData] = useState<any>(null);
-    const [showManagerAuth, setShowManagerAuth] = useState(false);
-    const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+    
+    // Auth State
+    const [showAuthModal, setShowAuthModal] = useState(false);
+    const [pendingAction, setPendingAction] = useState<{ type: 'delete' | 'bulk_delete', sale?: any } | null>(null);
+    const [authTitle, setAuthTitle] = useState('Otorisasi Manager');
 
     useFocusEffect(
         useCallback(() => {
             fetchHistory();
-        }, [dateFilter, startDate, endDate, currentBranchId])
+        }, [dateFilter, startDate, endDate, effectiveBranchId])
     );
 
-    const getStaffName = useCallback((sale: any) => {
-        return sale?.cashier_name || sale?.waiter_name || '';
-    }, []);
-
-    const hasAssignedTable = useCallback((sale: any) => {
-        const tableNo = String(sale?.table_no || '').trim();
-        return !!tableNo && tableNo !== '-' && tableNo.toLowerCase() !== 'tanpa meja';
-    }, []);
-
-    const getStatusLabel = useCallback((status: string) => {
-        switch (status) {
-            case 'Paid':
-                return 'Lunas';
-            case 'Completed':
-                return 'Selesai';
-            case 'Served':
-                return 'Tersaji';
-            case 'Ready':
-                return 'Siap';
-            case 'Preparing':
-                return 'Diproses';
-            case 'Pending':
-                return 'Pending';
-            case 'Unpaid':
-                return 'Belum Bayar';
-            default:
-                return status || 'Tanpa Status';
-        }
-    }, []);
-
-    const statusOptions = useMemo(() => {
-        const preferredOrder = ['Paid', 'Completed', 'Served', 'Ready', 'Preparing', 'Pending', 'Unpaid'];
-        const discovered = Array.from(new Set(history.map(item => item?.status).filter(Boolean)));
-        const sorted = [
-            ...preferredOrder.filter(status => discovered.includes(status)),
-            ...discovered.filter(status => !preferredOrder.includes(status)).sort(),
-        ];
-        return [{ value: 'all', label: 'Semua Status' }, ...sorted.map(status => ({ value: status, label: getStatusLabel(status) }))];
-    }, [history, getStatusLabel]);
-
-    const paymentOptions = useMemo(() => {
-        const methods = Array.from(new Set(history.map(item => String(item?.payment_method || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
-        return [{ value: 'all', label: 'Semua Metode' }, ...methods.map(method => ({ value: method, label: method }))];
-    }, [history]);
-
-    const staffOptions = useMemo(() => {
-        const staffs = Array.from(new Set(history.map(item => getStaffName(item).trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
-        return [{ value: 'all', label: 'Semua Kasir/Pelayan' }, ...staffs.map(name => ({ value: name, label: name }))];
-    }, [history, getStaffName]);
-
-    const activeFilterCount = useMemo(() => {
-        return [
-            statusFilter !== 'all',
-            paymentFilter !== 'all',
-            staffFilter !== 'all',
-            tableFilter !== 'all',
-            sortFilter !== 'newest',
-        ].filter(Boolean).length;
-    }, [statusFilter, paymentFilter, staffFilter, tableFilter, sortFilter]);
-
-    const activeFilterLabels = useMemo(() => {
-        const labels: string[] = [];
-        if (statusFilter !== 'all') labels.push(getStatusLabel(statusFilter));
-        if (paymentFilter !== 'all') labels.push(paymentFilter);
-        if (staffFilter !== 'all') labels.push(staffFilter);
-        if (tableFilter === 'with_table') labels.push('Dengan Meja');
-        if (tableFilter === 'without_table') labels.push('Tanpa Meja');
-        if (sortFilter === 'oldest') labels.push('Terlama');
-        if (sortFilter === 'highest') labels.push('Nominal Tertinggi');
-        if (sortFilter === 'lowest') labels.push('Nominal Terendah');
-        return labels;
-    }, [statusFilter, paymentFilter, staffFilter, tableFilter, sortFilter, getStatusLabel]);
-
     useEffect(() => {
-        let filtered = [...history];
+        let filtered = history;
         
         // Apply status filter
         if (statusFilter !== 'all') {
             filtered = filtered.filter(item => item.status === statusFilter);
-        }
-
-        if (paymentFilter !== 'all') {
-            filtered = filtered.filter(item => (item.payment_method || '') === paymentFilter);
-        }
-
-        if (staffFilter !== 'all') {
-            filtered = filtered.filter(item => getStaffName(item) === staffFilter);
-        }
-
-        if (tableFilter === 'with_table') {
-            filtered = filtered.filter(item => hasAssignedTable(item));
-        } else if (tableFilter === 'without_table') {
-            filtered = filtered.filter(item => !hasAssignedTable(item));
         }
         
         // Apply search query
@@ -166,82 +98,121 @@ export default function HistoryScreen() {
                 item.order_no?.toLowerCase().includes(query) || 
                 item.table_no?.toLowerCase().includes(query) ||
                 item.customer_name?.toLowerCase().includes(query) ||
-                item.payment_method?.toLowerCase().includes(query) ||
-                item.cashier_name?.toLowerCase().includes(query) ||
-                item.waiter_name?.toLowerCase().includes(query)
+                resolveOrderTypeDisplay(item.table_no, storeSettings).orderTypeLabel?.toLowerCase().includes(query)
             );
         }
-
-        filtered.sort((a, b) => {
-            if (sortFilter === 'highest') return Number(b.total_amount || 0) - Number(a.total_amount || 0);
-            if (sortFilter === 'lowest') return Number(a.total_amount || 0) - Number(b.total_amount || 0);
-
-            const timeA = new Date(a.date || a.created_at || 0).getTime();
-            const timeB = new Date(b.date || b.created_at || 0).getTime();
-            return sortFilter === 'oldest' ? timeA - timeB : timeB - timeA;
-        });
         
         setFilteredHistory(filtered);
-    }, [searchQuery, statusFilter, paymentFilter, staffFilter, tableFilter, sortFilter, history, getStaffName, hasAssignedTable]);
-
-    const resetAdvancedFilters = useCallback(() => {
-        setStatusFilter('all');
-        setPaymentFilter('all');
-        setStaffFilter('all');
-        setTableFilter('all');
-        setSortFilter('newest');
-    }, []);
+    }, [searchQuery, statusFilter, history]);
 
     const fetchHistory = async () => {
-        if (!currentBranchId || isNaN(Number(currentBranchId))) return;
+        const bId = effectiveBranchId || currentBranchId;
+        if (!bId) {
+            console.log('[HistoryScreen] No branch ID available yet, skipping fetch.');
+            return;
+        }
+        
         try {
             setLoading(true);
-            const now = new Date();
-            let query = supabase
-                .from('sales')
-                .select(`
-                    *,
-                    sale_items (
-                        *,
-                        product:product_id (name, category)
-                    )
-                `)
-                .eq('branch_id', currentBranchId)
-                .order('date', { ascending: false });
+            
+            // 1. Get Offline Queue items for this branch
+            const offlineQueue = await OfflineService.getOfflineQueue();
+            const branchOfflineSales = offlineQueue
+                .filter(s => String(s.branch_id) === String(bId))
+                .map(s => ({
+                    ...s,
+                    is_offline: true,
+                    // Map items to match Supabase response structure
+                    sale_items: (s.items || []).map(item => ({
+                        ...item,
+                        product_name: item.name,
+                        product: { name: item.name, category: item.category || 'Manual' }
+                    }))
+                }));
 
-            if (dateFilter === 'today') {
-                const startOfDay = new Date();
-                startOfDay.setHours(0, 0, 0, 0);
-                query = query.gte('date', startOfDay.toISOString());
-            } else if (dateFilter === 'yesterday') {
-                const yesterday = new Date();
-                yesterday.setDate(yesterday.getDate() - 1);
-                yesterday.setHours(0, 0, 0, 0);
-                const endOfYesterday = new Date();
-                endOfYesterday.setHours(0, 0, 0, 0);
-                query = query.gte('date', yesterday.toISOString()).lt('date', endOfYesterday.toISOString());
-            } else if (dateFilter === 'week') {
-                const weekAgo = new Date();
-                weekAgo.setDate(now.getDate() - 7);
-                query = query.gte('date', weekAgo.toISOString());
-            } else if (dateFilter === 'this_month') {
-                const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-                query = query.gte('date', startOfMonth.toISOString());
-            } else if (dateFilter === 'custom') {
-                const start = new Date(startDate);
-                start.setHours(0, 0, 0, 0);
-                const end = new Date(endDate);
-                end.setHours(23, 59, 59, 999);
-                query = query.gte('date', start.toISOString()).lte('date', end.toISOString());
+            // 2. Check Connectivity
+            const online = await OfflineService.checkConnectivity();
+            setIsOnline(online);
+            
+            let onlineSales: any[] = [];
+
+            if (online) {
+                const now = new Date();
+                let query = supabase
+                    .from('sales')
+                    .select(`
+                        *,
+                        sale_items (
+                            *,
+                            product:product_id (name, category)
+                        )
+                    `)
+                    .eq('branch_id', bId)
+                    .order('date', { ascending: false });
+
+                if (dateFilter === 'today') {
+                    const startOfDay = new Date();
+                    startOfDay.setHours(0, 0, 0, 0);
+                    query = query.gte('date', startOfDay.toISOString());
+                } else if (dateFilter === 'week') {
+                    const weekAgo = new Date();
+                    weekAgo.setDate(now.getDate() - 6);
+                    weekAgo.setHours(0, 0, 0, 0);
+                    query = query.gte('date', weekAgo.toISOString());
+                } else if (dateFilter === 'month') {
+                    const monthAgo = new Date();
+                    monthAgo.setDate(now.getDate() - 29);
+                    monthAgo.setHours(0, 0, 0, 0);
+                    query = query.gte('date', monthAgo.toISOString());
+                } else if (dateFilter === 'custom') {
+                    const start = new Date(startDate);
+                    start.setHours(0, 0, 0, 0);
+                    const end = new Date(endDate);
+                    end.setHours(23, 59, 59, 999);
+                    query = query.gte('date', start.toISOString()).lte('date', end.toISOString());
+                }
+
+                let from = 0;
+                const pageSize = 1000;
+                let hasMore = true;
+
+                while (hasMore) {
+                    const { data, error } = await query.range(from, from + pageSize - 1);
+                    if (error) throw error;
+                    
+                    if (data && data.length > 0) {
+                        onlineSales = [...onlineSales, ...data];
+                        if (data.length < pageSize) hasMore = false;
+                        else from += pageSize;
+                    } else {
+                        hasMore = false;
+                    }
+                }
+            } else {
+                console.warn('[HistoryScreen] Offline detected, showing local only.');
             }
 
-            const { data, error } = await query.limit(500);
+            // 3. Merge and deduplicate by order_no (online takes precedence)
+            const combinedMap = new Map();
+            
+            // Add offline items first
+            branchOfflineSales.forEach(s => combinedMap.set(s.order_no, s));
+            
+            // Add online items (overwrite offline if they exist online already)
+            onlineSales.forEach(s => combinedMap.set(s.order_no, { ...s, is_offline: false }));
 
-            if (error) throw error;
-            setHistory(data || []);
+            const mergedHistory = Array.from(combinedMap.values())
+                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+            setHistory(mergedHistory);
         } catch (error: any) {
             console.error('Fetch History Error:', error);
-            Alert.alert('Error', 'Gagal memuat riwayat: ' + error.message);
+            const msg = error.message || '';
+            if (msg.toLowerCase().includes('failed') || msg.toLowerCase().includes('network')) {
+                setIsOnline(false);
+            } else {
+                Alert.alert('Error', 'Gagal memuat riwayat: ' + error.message);
+            }
         } finally {
             setLoading(false);
         }
@@ -261,19 +232,28 @@ export default function HistoryScreen() {
         if (!selectedSale) return;
         setShowDetailModal(false);
         
+        let activeSettings = storeSettings;
+        if (!activeSettings) {
+            const { data } = await supabase.from('store_settings').select('*').eq('id', 1).maybeSingle();
+            if (data) activeSettings = data;
+        }
+
         const templateFields = {
-            receipt_header: storeSettings?.receipt_header || branchName || 'WINNY POS',
-            receipt_footer: storeSettings?.receipt_footer || 'Terima Kasih Atas\nKunjungan Anda',
-            receipt_paper_width: storeSettings?.receipt_paper_width,
-            receipt_logo_url: storeSettings?.receipt_logo_url,
-            show_logo: storeSettings?.show_logo,
-            shop_address: storeSettings?.address || branchAddress || '',
-            shop_phone: storeSettings?.phone || branchPhone || '',
+            receipt_header: activeSettings?.receipt_header || branchName || 'WINNY POS',
+            receipt_footer: activeSettings?.receipt_footer || 'Terima Kasih Atas\nKunjungan Anda',
+            receipt_paper_width: activeSettings?.receipt_paper_width || '58mm',
+            receipt_logo_url: activeSettings?.receipt_logo_url,
+            show_logo: activeSettings?.show_logo ?? (!!activeSettings?.receipt_logo_url),
+            shop_address: branchAddress || activeSettings?.address || '',
+            shop_phone: branchPhone || activeSettings?.phone || '',
             show_date: storeSettings?.show_date !== false,
             show_table: storeSettings?.show_table !== false,
             show_waiter: storeSettings?.show_waiter !== false,
             show_customer_name: storeSettings?.show_customer_name !== false,
             show_cashier_name: storeSettings?.show_cashier_name !== false,
+            enable_order_type_categories: storeSettings?.enable_order_type_categories,
+            order_type_dine_in_label: storeSettings?.order_type_dine_in_label,
+            order_type_take_away_label: storeSettings?.order_type_take_away_label,
             enable_wifi_vouchers: storeSettings?.enable_wifi_vouchers || false,
             wifi_voucher_min_amount: storeSettings?.wifi_voucher_min_amount || 0,
             wifi_voucher_multiplier: storeSettings?.wifi_voucher_multiplier || 0,
@@ -307,7 +287,9 @@ export default function HistoryScreen() {
             order_no: selectedSale.order_no,
             table_no: selectedSale.table_no,
             customer_name: selectedSale.customer_name || 'Guest',
-            cashier_name: userName || '',
+            cashier_name: (userName && userName !== 'User' && userName !== 'Kasir') 
+                ? userName 
+                : (selectedSale.waiter_name || '-'),
             waiter_name: selectedSale.waiter_name || '',
             total: Number(selectedSale.total_amount),
             total_amount: Number(selectedSale.total_amount),
@@ -317,6 +299,8 @@ export default function HistoryScreen() {
             tax_rate: storeSettings?.tax_rate || 0,
             service_rate: storeSettings?.service_rate || 0,
             payment_method: selectedSale.payment_method,
+            paid_amount: typeof selectedSale.paid_amount === 'number' ? selectedSale.paid_amount : (parseFloat(selectedSale.paid_amount) || selectedSale.total_amount || 0),
+            change: typeof selectedSale.change === 'number' ? selectedSale.change : (parseFloat(selectedSale.change) || 0),
             created_at: selectedSale.date,
             items: selectedSale.sale_items.map((item: any) => {
                 const itemPrice = typeof item.price === 'number' ? item.price : parseFloat(String(item.price || '0').replace(/[^0-9.]/g, '')) || 0;
@@ -326,6 +310,7 @@ export default function HistoryScreen() {
                     price: itemPrice,
                     target: item.target || '',
                     category: item.product?.category || '',
+                    // @ts-ignore
                     isManual: !!item.isManual,
                     notes: item.notes
                 };
@@ -342,19 +327,28 @@ export default function HistoryScreen() {
         try {
             setPrinting(true);
 
+            let activeSettings = storeSettings;
+            if (!activeSettings) {
+                const { data } = await supabase.from('store_settings').select('*').eq('id', 1).maybeSingle();
+                if (data) activeSettings = data;
+            }
+
             const templateFields = {
-                receipt_header: storeSettings?.receipt_header || branchName || 'WINNY POS',
-                receipt_footer: storeSettings?.receipt_footer || 'Terima Kasih Atas\nKunjungan Anda',
-                receipt_paper_width: storeSettings?.receipt_paper_width,
-                receipt_logo_url: storeSettings?.receipt_logo_url,
-                show_logo: storeSettings?.show_logo,
-                shop_address: storeSettings?.address || branchAddress || '',
-                shop_phone: storeSettings?.phone || branchPhone || '',
+                receipt_header: activeSettings?.receipt_header || branchName || 'WINNY POS',
+                receipt_footer: activeSettings?.receipt_footer || 'Terima Kasih Atas\nKunjungan Anda',
+                receipt_paper_width: activeSettings?.receipt_paper_width || '58mm',
+                receipt_logo_url: activeSettings?.receipt_logo_url,
+                show_logo: activeSettings?.show_logo ?? (!!activeSettings?.receipt_logo_url),
+                shop_address: branchAddress || activeSettings?.address || '',
+                shop_phone: branchPhone || activeSettings?.phone || '',
                 show_date: storeSettings?.show_date !== false,
                 show_table: storeSettings?.show_table !== false,
                 show_waiter: storeSettings?.show_waiter !== false,
                 show_customer_name: storeSettings?.show_customer_name !== false,
                 show_cashier_name: storeSettings?.show_cashier_name !== false,
+                enable_order_type_categories: storeSettings?.enable_order_type_categories,
+                order_type_dine_in_label: storeSettings?.order_type_dine_in_label,
+                order_type_take_away_label: storeSettings?.order_type_take_away_label,
                 enable_wifi_vouchers: storeSettings?.enable_wifi_vouchers || false,
                 wifi_voucher_notice: storeSettings?.wifi_voucher_notice || '',
             };
@@ -391,7 +385,9 @@ export default function HistoryScreen() {
                 order_no: selectedSale.order_no,
                 table_no: selectedSale.table_no,
                 customer_name: selectedSale.customer_name || 'Guest',
-                cashier_name: userName || '',
+                cashier_name: (userName && userName !== 'User' && userName !== 'Kasir') 
+                    ? userName 
+                    : (selectedSale.waiter_name || '-'),
                 waiter_name: selectedSale.waiter_name || '',
                 total: selectedSale.total_amount,
                 discount: selectedSale.discount || 0,
@@ -400,6 +396,8 @@ export default function HistoryScreen() {
                 tax_rate: storeSettings?.tax_rate || 0,
                 service_rate: storeSettings?.service_rate || 0,
                 payment_method: selectedSale.payment_method,
+                paid_amount: typeof selectedSale.paid_amount === 'number' ? selectedSale.paid_amount : (parseFloat(selectedSale.paid_amount) || selectedSale.total_amount || 0),
+                change: typeof selectedSale.change === 'number' ? selectedSale.change : (parseFloat(selectedSale.change) || 0),
                 created_at: selectedSale.date,
                 items: (selectedSale.sale_items || []).map((item: any) => {
                     const itemPrice = typeof item.price === 'number' ? item.price : parseFloat(String(item.price || '0').replace(/[^0-9.]/g, '')) || 0;
@@ -409,6 +407,7 @@ export default function HistoryScreen() {
                         price: itemPrice,
                         target: item.target || '',
                         category: item.product?.category || '',
+                        // @ts-ignore
                         isManual: !!item.isManual,
                         notes: item.notes
                     };
@@ -420,18 +419,6 @@ export default function HistoryScreen() {
 
             const success = await PrinterManager.printOrderReceipt(orderData);
             
-            // 2. Also reprint Kitchen and Bar tickets
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Delay to avoid BT congestion
-            const kitchenSuccess = await PrinterManager.printToTarget(orderData.items, 'kitchen', orderData);
-            const barSuccess = await PrinterManager.printToTarget(orderData.items, 'bar', orderData);
-
-            if (!kitchenSuccess) {
-                Alert.alert('Printer Dapur Error', 'Printer Dapur/Kitchen belum diatur atau tidak terhubung');
-            }
-            if (!barSuccess) {
-                Alert.alert('Printer Bar Error', 'Printer Bar belum diatur atau tidak terhubung');
-            }
-
             if (success) {
                 Alert.alert('Sukses', 'Struk berhasil dicetak.');
             } else {
@@ -446,78 +433,117 @@ export default function HistoryScreen() {
         }
     };
 
+    const handlePrintTarget = async (type: 'kitchen' | 'bar') => {
+        if (!selectedSale) return;
+        
+        try {
+            setPrinting(true);
+            const targetName = type === 'kitchen' ? 'Dapur' : 'Bar';
+            
+            const items = (selectedSale.sale_items || []).map((item: any) => ({
+                name: item.product_name || (item.product?.name || 'Produk'),
+                quantity: item.quantity || 0,
+                target: item.target || (type === 'kitchen' ? 'Kitchen' : 'Bar'), // Fallback if missing
+                notes: item.notes
+            }));
+
+            const success = await PrinterManager.printToTarget(items, type, {
+                orderNo: selectedSale.order_no,
+                customerName: selectedSale.customer_name || 'Guest',
+                tableNo: selectedSale.table_no || '-'
+            });
+            
+            if (success) {
+                Alert.alert('Sukses', `Pesanan berhasil dikirim ke ${targetName}.`);
+            } else {
+                Alert.alert('Gagal', `Gagal mencetak ke ${targetName}. Pastikan printer terhubung di menu Pengaturan.`);
+            }
+        } catch (error: any) {
+            console.error(`Print to ${type} Error:`, error);
+            Alert.alert('Error', `Terjadi kesalahan saat mencetak ke ${type}: ` + (error.message || 'Unknown error'));
+        } finally {
+            setPrinting(false);
+        }
+    };
+
+    const requireManagerAuth = (title: string, action: { type: 'delete' | 'bulk_delete', sale?: any }) => {
+        if (isAdmin) {
+            // Admin bypass
+            if (action.type === 'delete') handleQuickDelete(action.sale);
+            else if (action.type === 'bulk_delete') executeBulkDelete();
+        } else {
+            setAuthTitle(title);
+            setPendingAction(action);
+            setShowAuthModal(true);
+        }
+    };
+
     const handleDeleteSale = async () => {
         if (!selectedSale) return;
-        handleQuickDelete(selectedSale);
+        requireManagerAuth('Hapus Transaksi', { type: 'delete', sale: selectedSale });
     };
 
     const handleQuickDelete = async (sale: any) => {
-        const processDelete = async () => {
-            try {
-                setLoading(true);
-                // 1. Delete associated data first to avoid Foreign Key constraints (Error 23503)
-                await supabase.from('sale_items').delete().eq('sale_id', sale.id);
-                await supabase.from('sales_returns').delete().eq('sale_id', sale.id);
-                
-                // Financial Sync Deletion
-                await supabase.from('journal_entries').delete().eq('reference_id', String(sale.id)).eq('source_type', 'sale');
-                if (sale.order_no) {
-                    await supabase.from('journal_entries').delete().ilike('description', `%${sale.order_no}%`);
-                }
+        Alert.alert(
+            'Hapus Transaksi',
+            `Apakah Anda yakin ingin menghapus transaksi ${sale.order_no}? Seluruh data terkait (item, jurnal keuangan) akan ikut terhapus.`,
+            [
+                { text: 'Batal', style: 'cancel' },
+                { 
+                    text: 'Hapus', 
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            setLoading(true);
+                            // 1. Delete associated data first to avoid Foreign Key constraints
+                            await supabase.from('sale_items').delete().eq('sale_id', sale.id);
+                            await supabase.from('sales_returns').delete().eq('sale_id', sale.id);
+                            
+                            // Financial Sync Deletion
+                            await supabase.from('journal_entries').delete().eq('reference_id', String(sale.id)).eq('source_type', 'sale');
+                            if (sale.order_no) {
+                                await supabase.from('journal_entries').delete().ilike('description', `%${sale.order_no}%`);
+                            }
 
-                // Unlink WiFi Vouchers
-                await supabase.from('wifi_vouchers')
-                    .update({ is_used: false, used_at: null, sale_id: null })
-                    .eq('sale_id', sale.id);
+                            // Unlink WiFi Vouchers
+                            await supabase.from('wifi_vouchers')
+                                .update({ is_used: false, used_at: null, sale_id: null })
+                                .eq('sale_id', sale.id);
 
-                // 2. Delete the sale record
-                const { error: saleError } = await supabase
-                    .from('sales')
-                    .delete()
-                    .eq('id', sale.id);
+                            // 2. Delete the sale record
+                            const { error: saleError } = await supabase
+                                .from('sales')
+                                .delete()
+                                .eq('id', sale.id);
 
-                if (saleError) throw saleError;
+                            if (saleError) throw saleError;
 
-                // 3. Free up table if needed
-                if (sale.table_no && sale.table_no !== 'Tanpa Meja') {
-                    await supabase
-                        .from('tables')
-                        .update({ status: 'Available' })
-                        .eq('number', sale.table_no);
-                }
+                            // 3. Free up table if needed
+                            if (sale.table_no && sale.table_no !== 'Tanpa Meja') {
+                                await supabase
+                                    .from('tables')
+                                    .update({ status: 'Available' })
+                                    .eq('number', sale.table_no);
+                            }
 
-                setShowDetailModal(false);
-                fetchHistory();
-                Alert.alert('Sukses', 'Transaksi berhasil dihapus.');
-            } catch (error: any) {
-                console.error('Delete Sale Error:', error);
-                Alert.alert('Error', 'Gagal menghapus transaksi: ' + error.message);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        const confirmDelete = () => {
-            Alert.alert(
-                'Konfirmasi Hapus',
-                `Apakah Anda yakin ingin menghapus transaksi ${sale.order_no}? Tindakan ini tidak dapat dibatalkan.`,
-                [
-                    { text: 'Batal', style: 'cancel' },
-                    { 
-                        text: 'Hapus', 
-                        style: 'destructive',
-                        onPress: processDelete
+                            setShowDetailModal(false);
+                            fetchHistory();
+                            setStatusModal({
+                                visible: true,
+                                title: 'Berhasil Dihapus',
+                                message: 'Transaksi telah berhasil dihapus dari sistem.',
+                                type: 'success'
+                            });
+                        } catch (error: any) {
+                            console.error('Delete Sale Error:', error);
+                            Alert.alert('Error', 'Gagal menghapus transaksi: ' + error.message);
+                        } finally {
+                            setLoading(false);
+                        }
                     }
-                ]
-            );
-        };
-
-        if (storeSettings?.enable_manager_auth) {
-            setPendingAction(() => confirmDelete);
-            setShowManagerAuth(true);
-        } else {
-            confirmDelete();
-        }
+                }
+            ]
+        );
     };
 
     const handleBulkDelete = async () => {
@@ -526,72 +552,67 @@ export default function HistoryScreen() {
             return;
         }
 
-        const processBulkDelete = async () => {
-            try {
-                setLoading(true);
-                const ids = filteredHistory.map(h => h.id);
-                
-                // 1. Delete associated data for all selected IDs
-                await supabase.from('sale_items').delete().in('sale_id', ids);
-                await supabase.from('sales_returns').delete().in('sale_id', ids);
-                
-                // Financial Sync Deletion (Bulk)
-                await supabase.from('journal_entries').delete().in('reference_id', ids.map(id => String(id))).eq('source_type', 'sale');
+        requireManagerAuth('Hapus Semua Transaksi', { type: 'bulk_delete' });
+    };
 
-                // Unlink WiFi Vouchers (Bulk)
-                await supabase.from('wifi_vouchers')
-                    .update({ is_used: false, used_at: null, sale_id: null })
-                    .in('sale_id', ids);
-
-                // 2. Delete sales records
-                const { error: saleError } = await supabase
-                    .from('sales')
-                    .delete()
-                    .in('id', ids);
-
-                if (saleError) throw saleError;
-
-                // 3. Reset tables status if these sales were active (though history usually means finished)
-                const tableNumbers = filteredHistory
-                    .map(h => h.table_no)
-                    .filter(t => t && t !== 'Tanpa Meja');
-                
-                if (tableNumbers.length > 0) {
-                    await supabase
-                        .from('tables')
-                        .update({ status: 'Available' })
-                        .in('number', tableNumbers);
-                }
-
-                fetchHistory();
-                Alert.alert('Sukses', `${ids.length} transaksi berhasil dihapus.`);
-            } catch (error: any) {
-                console.error('Bulk Delete Error:', error);
-                Alert.alert('Error', 'Gagal menghapus beberapa transaksi: ' + error.message);
-            } finally {
-                setLoading(false);
-            }
-        };
-
+    const executeBulkDelete = () => {
         Alert.alert(
-            'Konfirmasi Hapus Semua',
-            `Anda akan menghapus SEMUA (${filteredHistory.length}) transaksi yang muncul di filter ini. Tindakan ini tidak dapat dibatalkan.\n\nLanjutkan?`,
+            'Hapus Masal',
+            `Apakah Anda yakin ingin menghapus ${filteredHistory.length} transaksi yang terfilter? Tindakan ini tidak dapat dibatalkan.`,
             [
                 { text: 'Batal', style: 'cancel' },
                 { 
                     text: 'Hapus Semua', 
                     style: 'destructive',
-                    onPress: () => {
-                        // [MODIFIED] Enforce manager auth for Cashiers (non-admins) even if global setting is off
-                        // Filtered/Bulk delete is a high-risk action.
-                        if (!isAdmin) {
-                            setPendingAction(() => processBulkDelete);
-                            setShowManagerAuth(true);
-                        } else if (storeSettings?.enable_manager_auth) {
-                            setPendingAction(() => processBulkDelete);
-                            setShowManagerAuth(true);
-                        } else {
-                            processBulkDelete();
+                    onPress: async () => {
+                        try {
+                            setLoading(true);
+                            const ids = filteredHistory.map(h => h.id);
+                            
+                            // 1. Delete associated data for all selected IDs
+                            await supabase.from('sale_items').delete().in('sale_id', ids);
+                            await supabase.from('sales_returns').delete().in('sale_id', ids);
+                            
+                            // Financial Sync Deletion (Bulk)
+                            await supabase.from('journal_entries').delete().in('reference_id', ids.map(id => String(id))).eq('source_type', 'sale');
+
+                            // Unlink WiFi Vouchers (Bulk)
+                            await supabase.from('wifi_vouchers')
+                                .update({ is_used: false, used_at: null, sale_id: null })
+                                .in('sale_id', ids);
+
+                            // 2. Delete sales records
+                            const { error: saleError } = await supabase
+                                .from('sales')
+                                .delete()
+                                .in('id', ids);
+
+                            if (saleError) throw saleError;
+
+                            // 3. Reset tables status if these sales were active
+                            const tableNumbers = filteredHistory
+                                .map(h => h.table_no)
+                                .filter(t => t && t !== 'Tanpa Meja');
+                            
+                            if (tableNumbers.length > 0) {
+                                await supabase
+                                    .from('tables')
+                                    .update({ status: 'Available' })
+                                    .in('number', tableNumbers);
+                            }
+
+                            fetchHistory();
+                            setStatusModal({
+                                visible: true,
+                                title: 'Berhasil Dihapus',
+                                message: `${ids.length} transaksi telah berhasil dihapus secara massal.`,
+                                type: 'success'
+                            });
+                        } catch (error: any) {
+                            console.error('Bulk Delete Error:', error);
+                            Alert.alert('Error', 'Gagal menghapus beberapa transaksi: ' + error.message);
+                        } finally {
+                            setLoading(false);
                         }
                     }
                 }
@@ -627,7 +648,12 @@ export default function HistoryScreen() {
             // Refresh local selectedSale
             setSelectedSale({ ...selectedSale, ...editData });
             fetchHistory();
-            Alert.alert('Sukses', 'Data transaksi diperbarui.');
+            setStatusModal({
+                visible: true,
+                title: 'Berhasil Diperbarui',
+                message: 'Data transaksi telah berhasil diperbarui.',
+                type: 'success'
+            });
         } catch (error: any) {
             console.error('Update Sale Error:', error);
             Alert.alert('Error', 'Gagal memperbarui data: ' + error.message);
@@ -657,7 +683,7 @@ export default function HistoryScreen() {
                     total_amount: total,
                     payment_method: 'Manual',
                     status: 'Paid',
-                    date: new Date().toISOString()
+                    date: getLocalISOString()
                 }])
                 .select()
                 .single();
@@ -766,26 +792,29 @@ export default function HistoryScreen() {
         </Modal>
     );
 
-    const DetailModal = () => (
-        <Modal
-            visible={showDetailModal}
-            transparent={true}
-            animationType="slide"
-            onRequestClose={() => setShowDetailModal(false)}
-        >
-            <View style={styles.modalOverlay}>
-                <View style={[styles.modalContent, isSmallDevice && { width: '95%' }]}>
-                    <View style={styles.modalHeader}>
-                        <View>
-                            <Text style={styles.modalTitle}>Detail Transaksi</Text>
-                            <Text style={styles.modalSubtitle}>{selectedSale?.order_no}</Text>
-                        </View>
-                        <TouchableOpacity onPress={() => setShowDetailModal(false)} style={styles.closeBtn}>
-                            <X size={24} color="#64748b" />
-                        </TouchableOpacity>
-                    </View>
+    const DetailModal = () => {
+        const orderInfo = resolveOrderTypeDisplay(selectedSale?.table_no, storeSettings);
 
-                    <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+        return (
+            <Modal
+                visible={showDetailModal}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setShowDetailModal(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, isSmallDevice && { width: '95%' }]}>
+                        <View style={styles.modalHeader}>
+                            <View>
+                                <Text style={styles.modalTitle}>Detail Transaksi</Text>
+                                <Text style={styles.modalSubtitle}>{selectedSale?.order_no}</Text>
+                            </View>
+                            <TouchableOpacity onPress={() => setShowDetailModal(false)} style={styles.closeBtn}>
+                                <X size={24} color="#64748b" />
+                            </TouchableOpacity>
+                        </View>
+
+                        <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
                         {/* Info Section - More Compact */}
                         <View style={styles.compactInfoRow}>
                             <View style={styles.compactInfoItem}>
@@ -798,11 +827,19 @@ export default function HistoryScreen() {
                             </View>
                             <View style={styles.compactInfoItem}>
                                 <MapPin size={12} color="#94a3b8" />
-                                <Text style={styles.compactInfoLabel}>{selectedSale?.table_no || 'No Table'}</Text>
+                                <Text style={styles.compactInfoLabel}>{orderInfo.orderTypeLabel || orderInfo.tableValue || 'No Table'}</Text>
                             </View>
                         </View>
 
                         <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                            {orderInfo.tableValue ? (
+                                <View style={[styles.compactInfoItem, { backgroundColor: '#eff6ff', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }]}>
+                                    <MapPin size={12} color="#2563eb" />
+                                    <Text style={[styles.compactInfoLabel, { color: '#2563eb', fontWeight: '700' }]}>
+                                        {orderInfo.tableLabel}: {orderInfo.tableValue}
+                                    </Text>
+                                </View>
+                            ) : null}
                             <View style={[styles.compactInfoItem, { backgroundColor: '#f1f5f9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }]}>
                                 <Receipt size={12} color="#64748b" />
                                 <Text style={[styles.compactInfoLabel, { color: '#475569' }]}>{selectedSale?.payment_method || '-'}</Text>
@@ -843,8 +880,8 @@ export default function HistoryScreen() {
                             <Text style={styles.summaryLabel}>Total Pembayaran</Text>
                             <Text style={styles.summaryValue}>{formatCurrency(selectedSale?.total_amount || 0)}</Text>
                         </View>
-                    </ScrollView>
-                    <View style={styles.modalFooter}>
+                        </ScrollView>
+                        <View style={styles.modalFooter}>
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f8fafc', padding: 12, borderRadius: 12 }}>
                             <Text style={{ fontSize: 14, color: '#64748b', fontWeight: 'bold' }}>Total Bayar</Text>
                             <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#1e293b' }}>{formatCurrency(selectedSale?.total_amount || 0)}</Text>
@@ -871,6 +908,24 @@ export default function HistoryScreen() {
                             >
                                 <Receipt size={16} color="#64748b" />
                                 <Text style={[styles.compactActionBtnText, { color: '#64748b' }]}>Preview</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity 
+                                style={[styles.compactActionBtn, { backgroundColor: '#fdf4ff', borderWidth: 1, borderColor: '#f5d0fe' }]}
+                                onPress={() => handlePrintTarget('kitchen')}
+                                disabled={printing}
+                            >
+                                <Printer size={16} color="#a21caf" />
+                                <Text style={[styles.compactActionBtnText, { color: '#a21caf' }]}>Dapur</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity 
+                                style={[styles.compactActionBtn, { backgroundColor: '#f0f9ff', borderWidth: 1, borderColor: '#bae6fd' }]}
+                                onPress={() => handlePrintTarget('bar')}
+                                disabled={printing}
+                            >
+                                <Printer size={16} color="#0369a1" />
+                                <Text style={[styles.compactActionBtnText, { color: '#0369a1' }]}>Bar</Text>
                             </TouchableOpacity>
 
                             {/* Actions Group 2: Edit & Delete */}
@@ -908,11 +963,12 @@ export default function HistoryScreen() {
                         >
                             <Text style={{ color: '#94a3b8', fontSize: 13, fontWeight: '600' }}>Tutup</Text>
                         </TouchableOpacity>
+                        </View>
                     </View>
                 </View>
-            </View>
-        </Modal>
-    );
+            </Modal>
+        );
+    };
 
     const EditModal = () => (
         <Modal
@@ -1045,7 +1101,14 @@ export default function HistoryScreen() {
                 <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
                     <ChevronLeft size={32} color="#1e293b" />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Riwayat Transaksi</Text>
+                <View style={{ flex: 1 }}>
+                    <Text style={styles.headerTitle}>Riwayat Transaksi</Text>
+                    {!isOnline && (
+                        <View style={{ backgroundColor: '#fee2e2', alignSelf: 'flex-start', paddingHorizontal: 6, borderRadius: 4, marginTop: 2 }}>
+                            <Text style={{ color: '#ef4444', fontSize: 10, fontWeight: 'bold' }}>OFFLINE</Text>
+                        </View>
+                    )}
+                </View>
                 <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
                     <TouchableOpacity 
                         style={{ backgroundColor: '#fff7ed', padding: 6, paddingHorizontal: 10, borderRadius: 8, borderWidth: 1, borderColor: '#ffedd5' }} 
@@ -1066,33 +1129,19 @@ export default function HistoryScreen() {
             </View>
 
             <View style={styles.searchSection}>
-                <View style={styles.searchRow}>
-                    <View style={[styles.searchBar, styles.searchBarExpanded]}>
-                        <Search size={18} color="#94a3b8" />
-                        <TextInput
-                            style={styles.searchInput}
-                            placeholder="Cari order, meja, pelanggan, kasir..."
-                            value={searchQuery}
-                            onChangeText={setSearchQuery}
-                        />
-                        {searchQuery !== '' && (
-                            <TouchableOpacity onPress={() => setSearchQuery('')}>
-                                <X size={18} color="#94a3b8" />
-                            </TouchableOpacity>
-                        )}
-                    </View>
-                    <TouchableOpacity
-                        style={styles.advancedFilterBtn}
-                        onPress={() => setShowAdvancedFilterModal(true)}
-                    >
-                        <Filter size={16} color="#ea580c" />
-                        <Text style={styles.advancedFilterText}>Filter</Text>
-                        {activeFilterCount > 0 && (
-                            <View style={styles.filterCountBadge}>
-                                <Text style={styles.filterCountText}>{activeFilterCount}</Text>
-                            </View>
-                        )}
-                    </TouchableOpacity>
+                <View style={styles.searchBar}>
+                    <Search size={18} color="#94a3b8" />
+                    <TextInput
+                        style={styles.searchInput}
+                        placeholder="Cari order, meja, atau pelanggan..."
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                    />
+                    {searchQuery !== '' && (
+                        <TouchableOpacity onPress={() => setSearchQuery('')}>
+                            <X size={18} color="#94a3b8" />
+                        </TouchableOpacity>
+                    )}
                 </View>
 
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={{ gap: 8, paddingBottom: 12 }}>
@@ -1103,28 +1152,16 @@ export default function HistoryScreen() {
                         <Text style={[styles.filterChipText, dateFilter === 'today' && styles.filterChipTextActive]}>Hari Ini</Text>
                     </TouchableOpacity>
                     <TouchableOpacity 
-                        style={[styles.filterChip, dateFilter === 'yesterday' && styles.filterChipActive]}
-                        onPress={() => setDateFilter('yesterday')}
-                    >
-                        <Text style={[styles.filterChipText, dateFilter === 'yesterday' && styles.filterChipTextActive]}>Kemarin</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
                         style={[styles.filterChip, dateFilter === 'week' && styles.filterChipActive]}
                         onPress={() => setDateFilter('week')}
                     >
                         <Text style={[styles.filterChipText, dateFilter === 'week' && styles.filterChipTextActive]}>7 Hari</Text>
                     </TouchableOpacity>
                     <TouchableOpacity 
-                        style={[styles.filterChip, dateFilter === 'this_month' && styles.filterChipActive]}
-                        onPress={() => setDateFilter('this_month')}
+                        style={[styles.filterChip, dateFilter === 'month' && styles.filterChipActive]}
+                        onPress={() => setDateFilter('month')}
                     >
-                        <Text style={[styles.filterChipText, dateFilter === 'this_month' && styles.filterChipTextActive]}>Bulan Ini</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                        style={[styles.filterChip, dateFilter === 'all' && styles.filterChipActive]}
-                        onPress={() => setDateFilter('all')}
-                    >
-                        <Text style={[styles.filterChipText, dateFilter === 'all' && styles.filterChipTextActive]}>Semua</Text>
+                        <Text style={[styles.filterChipText, dateFilter === 'month' && styles.filterChipTextActive]}>30 Hari</Text>
                     </TouchableOpacity>
                     <TouchableOpacity 
                         style={[styles.filterChip, dateFilter === 'custom' && styles.filterChipActive]}
@@ -1135,22 +1172,29 @@ export default function HistoryScreen() {
                     </TouchableOpacity>
                 </ScrollView>
 
-                {(activeFilterLabels.length > 0 || filteredHistory.length !== history.length) && (
-                    <View style={styles.activeFilterWrap}>
-                        {activeFilterLabels.map(label => (
-                            <View key={label} style={styles.activeFilterPill}>
-                                <Text style={styles.activeFilterPillText}>{label}</Text>
-                            </View>
-                        ))}
-                        {filteredHistory.length !== history.length && (
-                            <View style={[styles.activeFilterPill, styles.activeFilterPillMuted]}>
-                                <Text style={[styles.activeFilterPillText, styles.activeFilterPillMutedText]}>
-                                    {filteredHistory.length}/{history.length} data
-                                </Text>
-                            </View>
-                        )}
-                    </View>
-                )}
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12 }}>
+                    <Filter size={14} color="#64748b" style={{ marginRight: 8 }} />
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
+                        <TouchableOpacity 
+                            style={[styles.statusToggle, statusFilter === 'all' && styles.statusToggleActive]}
+                            onPress={() => setStatusFilter('all')}
+                        >
+                            <Text style={[styles.statusToggleText, statusFilter === 'all' && styles.statusToggleTextActive]}>Semua</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={[styles.statusToggle, statusFilter === 'Paid' && styles.statusToggleActive]}
+                            onPress={() => setStatusFilter('Paid')}
+                        >
+                            <Text style={[styles.statusToggleText, statusFilter === 'Paid' && styles.statusToggleTextActive]}>Lunas</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={[styles.statusToggle, statusFilter === 'Pending' && styles.statusToggleActive]}
+                            onPress={() => setStatusFilter('Pending')}
+                        >
+                            <Text style={[styles.statusToggleText, statusFilter === 'Pending' && styles.statusToggleTextActive]}>Pending</Text>
+                        </TouchableOpacity>
+                    </ScrollView>
+                </View>
             </View>
 
             {loading && history.length === 0 ? (
@@ -1179,13 +1223,25 @@ export default function HistoryScreen() {
                                 <View style={{ flex: 1 }}>
                                     <View style={styles.slimHeader}>
                                         <Text style={styles.slimOrderNo}>{item.order_no}</Text>
+                                        {item.is_offline && (
+                                            <View style={styles.offlineTagSmall}>
+                                                <RefreshCw size={10} color="#f59e0b" />
+                                                <Text style={styles.offlineTagText}>Syncing</Text>
+                                            </View>
+                                        )}
                                         <View style={styles.dot} />
-                                        <Text style={styles.slimTable}>{item.table_no === 'Tanpa Meja' ? 'TA' : item.table_no}</Text>
+                                        <Text style={styles.slimTable}>{resolveOrderTypeDisplay(item.table_no, storeSettings).orderTypeLabel || resolveOrderTypeDisplay(item.table_no, storeSettings).tableValue || '-'}</Text>
                                     </View>
                                     <View style={styles.slimSub}>
                                         <Text style={styles.slimDate}>{formatDate(item.date).split(',')[0]}</Text>
                                         <Text style={styles.slimCustomer}> • {item.customer_name || 'Guest'}</Text>
                                     </View>
+                                    {(() => {
+                                        const orderInfo = resolveOrderTypeDisplay(item.table_no, storeSettings);
+                                        return orderInfo.tableValue && orderInfo.orderTypeLabel ? (
+                                            <Text style={styles.slimMeta}>{orderInfo.tableLabel}: {orderInfo.tableValue}</Text>
+                                        ) : null;
+                                    })()}
                                     {/* Preparation Duration Badge - prioritized database field */}
                                     {(item.status === 'Paid' || item.status === 'Completed' || item.status === 'Served' || item.status === 'Ready') && (() => {
                                         const dur = item.waiting_time || formatDuration(item.created_at, item.date);
@@ -1221,12 +1277,14 @@ export default function HistoryScreen() {
                                                 </Text>
                                             </View>
                                         </View>
-                                        <TouchableOpacity 
-                                            onPress={() => handleQuickDelete(item)}
-                                            style={{ backgroundColor: '#fef2f2', padding: 6, borderRadius: 8, marginLeft: 4 }}
-                                        >
-                                            <Trash2 size={16} color="#ef4444" />
-                                        </TouchableOpacity>
+                                        {(isAdmin || !storeSettings?.restrict_cashier_delete) && (
+                                            <TouchableOpacity 
+                                                onPress={() => requireManagerAuth('Hapus Transaksi', { type: 'delete', sale: item })}
+                                                style={{ backgroundColor: '#fef2f2', padding: 6, borderRadius: 8, marginLeft: 4 }}
+                                            >
+                                                <Trash2 size={16} color="#ef4444" />
+                                            </TouchableOpacity>
+                                        )}
                                     </View>
                                 </View>
                             </View>
@@ -1246,6 +1304,23 @@ export default function HistoryScreen() {
             <EditModal />
             <CreateModal />
             <SuccessModal />
+
+            <ManagerAuthModal
+                visible={showAuthModal}
+                title={authTitle}
+                onClose={() => {
+                    setShowAuthModal(false);
+                    setPendingAction(null);
+                }}
+                onSuccess={() => {
+                    if (pendingAction) {
+                        if (pendingAction.type === 'delete') handleQuickDelete(pendingAction.sale);
+                        else if (pendingAction.type === 'bulk_delete') executeBulkDelete();
+                    }
+                    setShowAuthModal(false);
+                    setPendingAction(null);
+                }}
+            />
 
             {/* Custom Date Range Modal */}
             <Modal
@@ -1287,146 +1362,19 @@ export default function HistoryScreen() {
                 </View>
             </Modal>
 
-            <Modal
-                visible={showAdvancedFilterModal}
-                animationType="slide"
-                transparent={true}
-                onRequestClose={() => setShowAdvancedFilterModal(false)}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <View style={styles.modalHeader}>
-                            <View>
-                                <Text style={styles.modalTitle}>Filter Lengkap Penjualan</Text>
-                                <Text style={styles.modalSubtitle}>Atur tampilan riwayat transaksi</Text>
-                            </View>
-                            <TouchableOpacity onPress={() => setShowAdvancedFilterModal(false)}>
-                                <Text style={styles.closeBtnText}>Tutup</Text>
-                            </TouchableOpacity>
-                        </View>
-
-                        <ScrollView showsVerticalScrollIndicator={false}>
-                            <Text style={styles.filterSectionTitle}>Status</Text>
-                            <View style={styles.filterOptionWrap}>
-                                {statusOptions.map(option => (
-                                    <TouchableOpacity
-                                        key={option.value}
-                                        style={[styles.statusToggle, statusFilter === option.value && styles.statusToggleActive]}
-                                        onPress={() => setStatusFilter(option.value)}
-                                    >
-                                        <Text style={[styles.statusToggleText, statusFilter === option.value && styles.statusToggleTextActive]}>
-                                            {option.label}
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-
-                            <Text style={styles.filterSectionTitle}>Metode Pembayaran</Text>
-                            <View style={styles.filterOptionWrap}>
-                                {paymentOptions.map(option => (
-                                    <TouchableOpacity
-                                        key={option.value}
-                                        style={[styles.statusToggle, paymentFilter === option.value && styles.statusToggleActive]}
-                                        onPress={() => setPaymentFilter(option.value)}
-                                    >
-                                        <Text style={[styles.statusToggleText, paymentFilter === option.value && styles.statusToggleTextActive]}>
-                                            {option.label}
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-
-                            <Text style={styles.filterSectionTitle}>Kasir / Pelayan</Text>
-                            <View style={styles.filterOptionWrap}>
-                                {staffOptions.map(option => (
-                                    <TouchableOpacity
-                                        key={option.value}
-                                        style={[styles.statusToggle, staffFilter === option.value && styles.statusToggleActive]}
-                                        onPress={() => setStaffFilter(option.value)}
-                                    >
-                                        <Text style={[styles.statusToggleText, staffFilter === option.value && styles.statusToggleTextActive]}>
-                                            {option.label}
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-
-                            <Text style={styles.filterSectionTitle}>Meja</Text>
-                            <View style={styles.filterOptionWrap}>
-                                {[
-                                    { value: 'all', label: 'Semua Meja' },
-                                    { value: 'with_table', label: 'Dengan Meja' },
-                                    { value: 'without_table', label: 'Tanpa Meja' },
-                                ].map(option => (
-                                    <TouchableOpacity
-                                        key={option.value}
-                                        style={[styles.statusToggle, tableFilter === option.value && styles.statusToggleActive]}
-                                        onPress={() => setTableFilter(option.value as 'all' | 'with_table' | 'without_table')}
-                                    >
-                                        <Text style={[styles.statusToggleText, tableFilter === option.value && styles.statusToggleTextActive]}>
-                                            {option.label}
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-
-                            <Text style={styles.filterSectionTitle}>Urutkan</Text>
-                            <View style={styles.filterOptionWrap}>
-                                {[
-                                    { value: 'newest', label: 'Terbaru' },
-                                    { value: 'oldest', label: 'Terlama' },
-                                    { value: 'highest', label: 'Nominal Tertinggi' },
-                                    { value: 'lowest', label: 'Nominal Terendah' },
-                                ].map(option => (
-                                    <TouchableOpacity
-                                        key={option.value}
-                                        style={[styles.statusToggle, sortFilter === option.value && styles.statusToggleActive]}
-                                        onPress={() => setSortFilter(option.value as 'newest' | 'oldest' | 'highest' | 'lowest')}
-                                    >
-                                        <Text style={[styles.statusToggleText, sortFilter === option.value && styles.statusToggleTextActive]}>
-                                            {option.label}
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                        </ScrollView>
-
-                        <View style={styles.filterFooter}>
-                            <TouchableOpacity
-                                style={styles.filterResetBtn}
-                                onPress={resetAdvancedFilters}
-                            >
-                                <Text style={styles.filterResetText}>Reset Filter</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.payBtnLarge, { flex: 1 }]}
-                                onPress={() => setShowAdvancedFilterModal(false)}
-                            >
-                                <Text style={styles.payBtnTextLarge}>Terapkan</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
-
             <PaymentModal
                 visible={showPaymentModal}
                 total={selectedSale?.total_amount || 0}
                 onClose={() => setShowPaymentModal(false)}
                 onConfirm={handlePaymentConfirm}
             />
-            <ManagerAuthModal
-                visible={showManagerAuth}
-                onClose={() => {
-                    setShowManagerAuth(false);
-                    setPendingAction(null);
-                }}
-                onSuccess={() => {
-                    if (pendingAction) {
-                        pendingAction();
-                        setPendingAction(null);
-                    }
-                }}
+
+            <StatusModal
+                visible={statusModal.visible}
+                title={statusModal.title}
+                message={statusModal.message}
+                type={statusModal.type}
+                onClose={() => setStatusModal({ ...statusModal, visible: false })}
             />
         </SafeAreaView>
 
@@ -1456,7 +1404,6 @@ const styles = StyleSheet.create({
     headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#1e293b', flex: 1 },
     refreshBtn: { padding: 8 },
     searchSection: { padding: 12, backgroundColor: '#fff', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 },
-    searchRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
     searchBar: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -1466,41 +1413,7 @@ const styles = StyleSheet.create({
         height: 40,
         marginBottom: 10,
     },
-    searchBarExpanded: {
-        flex: 1,
-        marginBottom: 0,
-    },
     searchInput: { flex: 1, marginLeft: 8, fontSize: 13, color: '#334155' },
-    advancedFilterBtn: {
-        height: 40,
-        paddingHorizontal: 12,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: '#fed7aa',
-        backgroundColor: '#fff7ed',
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-    },
-    advancedFilterText: {
-        fontSize: 12,
-        fontWeight: '700',
-        color: '#c2410c',
-    },
-    filterCountBadge: {
-        minWidth: 18,
-        height: 18,
-        borderRadius: 9,
-        paddingHorizontal: 4,
-        backgroundColor: '#ea580c',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    filterCountText: {
-        fontSize: 10,
-        fontWeight: '700',
-        color: 'white',
-    },
     filterScroll: { flexDirection: 'row' },
     filterChip: {
         paddingHorizontal: 12,
@@ -1537,64 +1450,6 @@ const styles = StyleSheet.create({
     statusToggleTextActive: {
         color: '#2563eb',
         fontWeight: 'bold',
-    },
-    activeFilterWrap: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 8,
-        marginTop: 2,
-    },
-    activeFilterPill: {
-        paddingHorizontal: 10,
-        paddingVertical: 5,
-        borderRadius: 999,
-        backgroundColor: '#eff6ff',
-        borderWidth: 1,
-        borderColor: '#bfdbfe',
-    },
-    activeFilterPillText: {
-        fontSize: 10,
-        fontWeight: '700',
-        color: '#1d4ed8',
-    },
-    activeFilterPillMuted: {
-        backgroundColor: '#f8fafc',
-        borderColor: '#e2e8f0',
-    },
-    activeFilterPillMutedText: {
-        color: '#64748b',
-    },
-    filterSectionTitle: {
-        fontSize: 13,
-        fontWeight: '700',
-        color: '#1e293b',
-        marginBottom: 8,
-        marginTop: 14,
-    },
-    filterOptionWrap: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 8,
-    },
-    filterFooter: {
-        flexDirection: 'row',
-        gap: 10,
-        marginTop: 16,
-    },
-    filterResetBtn: {
-        flex: 1,
-        paddingVertical: 16,
-        borderRadius: 16,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: '#f8fafc',
-        borderWidth: 1,
-        borderColor: '#e2e8f0',
-    },
-    filterResetText: {
-        fontSize: 14,
-        fontWeight: '700',
-        color: '#475569',
     },
     card: {
         backgroundColor: 'white',
@@ -1645,6 +1500,12 @@ const styles = StyleSheet.create({
         fontSize: 11,
         fontWeight: '600',
         color: '#334155',
+    },
+    slimMeta: {
+        fontSize: 10,
+        color: '#2563eb',
+        fontWeight: '600',
+        marginTop: 4,
     },
     slimSub: {
         flexDirection: 'row',
@@ -1822,4 +1683,22 @@ const styles = StyleSheet.create({
     printBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
     payBtnLarge: { backgroundColor: '#ea580c', padding: 16, borderRadius: 16, alignItems: 'center' },
     payBtnTextLarge: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+    offlineTagSmall: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#fffbeb',
+        paddingHorizontal: 6,
+        paddingVertical: 1,
+        borderRadius: 4,
+        borderWidth: 1,
+        borderColor: '#fef3c7',
+        gap: 3,
+        marginLeft: 4
+    },
+    offlineTagText: {
+        fontSize: 9,
+        fontWeight: 'bold',
+        color: '#d97706',
+        textTransform: 'uppercase'
+    }
 });

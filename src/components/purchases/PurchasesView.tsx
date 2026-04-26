@@ -14,6 +14,7 @@ interface PurchaseItem {
     name: string;
     quantity: number;
     price: number;
+    unit?: string;
 }
 
 interface PurchaseOrder {
@@ -114,7 +115,7 @@ export function PurchasesView({
 
     // --- Handlers ---
 
-    const handleAddItem = (item: { itemId: number | string, name: string, price: number }) => {
+    const handleAddItem = (item: { itemId: number | string, name: string, price: number, unit?: string }) => {
         setPurchaseItems(prev => {
             const existing = prev.find(i => i.itemId === item.itemId);
             if (existing) {
@@ -125,7 +126,8 @@ export function PurchasesView({
                 itemId: item.itemId,
                 name: item.name,
                 quantity: 1,
-                price: item.price
+                price: item.price,
+                unit: item.unit
             }];
         });
         toast.success(`Menambahkan ${item.name}`);
@@ -147,7 +149,7 @@ export function PurchasesView({
         return purchaseItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     }, [purchaseItems]);
 
-    const handleInputSubmit = (e: React.FormEvent) => {
+    const handleInputSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!inputForm.supplierName) {
             toast.error('Mohon pilih supplier');
@@ -172,44 +174,47 @@ export function PurchasesView({
             items_list: purchaseItems
         };
 
-        if (isEditing && editingId) {
-            onCRUD('purchases', 'update', { id: editingId, ...purchaseData });
-            toast.success('Pembelian berhasil diupdate');
-        } else {
-            onCRUD('purchases', 'create', purchaseData);
-            toast.success('Pembelian berhasil dibuat');
-
-            // Petty Cash Integration (New)
-            if (purchaseData.payment_method === 'Kas Kecil' && currentBranchId) {
-                PettyCashService.getActiveSession(currentBranchId).then(session => {
-                    if (session) {
-                        PettyCashService.addTransaction({
-                            session_id: session.id,
-                            type: 'SPEND',
-                            amount: totalAmount,
-                            description: `Pembelian: ${purchaseNoFinal}`,
-                            reference_type: 'purchase',
-                            reference_id: purchaseNoFinal
-                        }).then(() => {
+        try {
+            if (isEditing && editingId) {
+                await onCRUD('purchases', 'update', { id: editingId, ...purchaseData });
+            } else {
+                const result = await onCRUD('purchases', 'create', purchaseData);
+                
+                // Petty Cash Integration for new 'Kas Kecil' purchases
+                if (purchaseData.payment_method === 'Kas Kecil' && currentBranchId) {
+                    try {
+                        const session = await PettyCashService.getActiveSession(currentBranchId);
+                        if (session) {
+                            await PettyCashService.addTransaction({
+                                session_id: session.id,
+                                type: 'SPEND',
+                                amount: totalAmount,
+                                description: `Pembelian: ${purchaseNoFinal}`,
+                                reference_type: 'purchase',
+                                reference_id: purchaseNoFinal
+                            });
                             toast.success('Saldo Kas Kecil terpotong');
-                        }).catch(err => {
-                            console.error('Petty Cash Sync Error:', err);
-                            toast.error('PO Berhasil, namun gagal potong saldo kas kecil');
-                        });
-                    } else {
-                        toast.error('PO Berhasil, namun Sesi Kas Kecil belum dibuka');
+                        } else {
+                            toast.error('PO Berhasil, namun Sesi Kas Kecil belum dibuka');
+                        }
+                    } catch (pcErr) {
+                        console.error('Petty Cash Sync Error:', pcErr);
+                        toast.error('Gagal potong saldo kas kecil');
                     }
-                });
+                }
             }
-        }
 
-        // Reset
-        setInputForm({ date: new Date().toISOString().split('T')[0], supplierName: '' });
-        setPurchaseItems([]);
-        setIsEditing(false);
-        setIsManualSupplier(false);
-        setEditingId(null);
-        setActiveTab('history');
+            // Reset only on success
+            setInputForm({ date: new Date().toISOString().split('T')[0], supplierName: '' });
+            setPurchaseItems([]);
+            setIsEditing(false);
+            setIsManualSupplier(false);
+            setEditingId(null);
+            setActiveTab('history');
+        } catch (err) {
+            // Error already handled/toasted by handleMasterDataCRUD
+            console.error('Purchase submission failed:', err);
+        }
     };
 
 
@@ -277,6 +282,37 @@ export function PurchasesView({
             (r.reason || '').toLowerCase().includes(returnSearchQuery.toLowerCase()))
     );
 
+    const flatPurchaseHistory = useMemo(() => {
+        const rows: any[] = [];
+        filteredPurchases.forEach(po => {
+            const items = po.items_list || [];
+            if (items.length === 0) {
+                rows.push({
+                    ...po,
+                    itemName: '-',
+                    itemQty: 0,
+                    itemPrice: 0,
+                    itemUnit: '-',
+                    isFirst: true,
+                    rowSpan: 1
+                });
+            } else {
+                items.forEach((item: any, idx: number) => {
+                    rows.push({
+                        ...po,
+                        itemName: item.name,
+                        itemQty: item.quantity,
+                        itemPrice: item.price,
+                        itemUnit: item.unit || '-',
+                        isFirst: idx === 0,
+                        rowSpan: items.length
+                    });
+                });
+            }
+        });
+        return rows;
+    }, [filteredPurchases]);
+
     // --- Renderers ---
 
     const renderHistory = () => (
@@ -311,60 +347,69 @@ export function PurchasesView({
             <table className="w-full text-sm item-center">
                 <thead className="bg-gray-50 text-gray-500 text-left">
                     <tr>
-                        <th className="px-6 py-4">No. PO</th>
-                        <th className="px-6 py-4">Supplier</th>
+                        <th className="px-6 py-4">No. Faktur</th>
                         <th className="px-6 py-4">Tanggal</th>
-                        <th className="px-6 py-4">Metode</th>
-                        <th className="px-6 py-4 text-center">Items</th>
+                        <th className="px-6 py-4">Supplier</th>
+                        <th className="px-6 py-4">Item</th>
+                        <th className="px-6 py-4 text-right">Harga</th>
+                        <th className="px-6 py-4 text-center">Jumlah</th>
+                        <th className="px-6 py-4">kg/satuan</th>
                         <th className="px-6 py-4 text-right">Total</th>
                         <th className="px-6 py-4 text-center">Status</th>
                         <th className="px-6 py-4 text-center">Aksi</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                    {filteredPurchases.map(po => (
-                        <tr key={po.id} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 font-mono font-medium text-blue-600">{po.purchase_no}</td>
-                            <td className="px-6 py-4 font-bold text-gray-700">{po.supplier_name}</td>
-                            <td className="px-6 py-4 text-gray-500">{po.date}</td>
-                            <td className="px-6 py-4 text-xs font-medium text-gray-400 uppercase tracking-tighter">{po.payment_method || 'Tunai'}</td>
-                            <td className="px-6 py-4 text-center">{po.items_count}</td>
-                            <td className="px-6 py-4 text-right font-bold">Rp {(po.total_amount || 0).toLocaleString()}</td>
+                    {flatPurchaseHistory.map((row, idx) => (
+                        <tr key={`${row.id}-${idx}`} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 font-mono font-medium text-blue-600">{row.purchase_no}</td>
+                            <td className="px-6 py-4 text-gray-500">{row.date}</td>
+                            <td className="px-6 py-4 font-bold text-gray-700">{row.supplier_name}</td>
+                            <td className="px-6 py-4 text-gray-700">{row.itemName}</td>
+                            <td className="px-6 py-4 text-right">Rp {(row.itemPrice || 0).toLocaleString()}</td>
+                            <td className="px-6 py-4 text-center font-bold">{row.itemQty}</td>
+                            <td className="px-6 py-4 text-gray-400">{row.itemUnit}</td>
+                            <td className="px-6 py-4 text-right font-bold">Rp {((row.itemPrice || 0) * (row.itemQty || 0)).toLocaleString()}</td>
                             <td className="px-6 py-4 text-center">
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium border ${po.status === 'Completed' ? 'bg-green-50 text-green-700 border-green-200' :
-                                    po.status === 'Returned' ? 'bg-red-50 text-red-700 border-red-200' :
-                                        'bg-orange-50 text-orange-700 border-orange-200'
-                                    }`}>
-                                    {po.status}
-                                </span>
+                                {row.isFirst && (
+                                    <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase border ${row.status === 'Completed' ? 'bg-green-50 text-green-700 border-green-200' :
+                                        row.status === 'Returned' ? 'bg-red-50 text-red-700 border-red-200' :
+                                            'bg-orange-50 text-orange-700 border-orange-200'
+                                        }`}>
+                                        {row.status}
+                                    </span>
+                                )}
                             </td>
                             <td className="px-6 py-4 flex justify-center gap-2">
-                                {po.status === 'Pending' && (
-                                    <button onClick={() => handleMarkCompleted(po)} className="p-2 hover:bg-green-50 text-green-600 rounded-lg" title="Tandai Selesai">
-                                        <CheckCircle className="w-4 h-4" />
-                                    </button>
+                                {row.isFirst && (
+                                    <>
+                                        {row.status === 'Pending' && (
+                                            <button onClick={() => handleMarkCompleted(row)} className="p-2 hover:bg-green-50 text-green-600 rounded-lg" title="Tandai Selesai">
+                                                <CheckCircle className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                        <button 
+                                            onClick={() => handleEdit(row)}
+                                            className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg" 
+                                            title="Edit"
+                                        >
+                                            <Edit className="w-4 h-4" />
+                                        </button>
+                                        <button 
+                                            onClick={() => handleDelete(row)}
+                                            className="p-2 hover:bg-red-50 text-red-600 rounded-lg" 
+                                            title="Hapus"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </>
                                 )}
-                                <button 
-                                    onClick={() => handleEdit(po)}
-                                    className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg" 
-                                    title="Edit"
-                                >
-                                    <Edit className="w-4 h-4" />
-                                </button>
-                                <button 
-                                    onClick={() => handleDelete(po)}
-                                    className="p-2 hover:bg-red-50 text-red-600 rounded-lg" 
-                                    title="Hapus"
-                                >
-                                    <Trash2 className="w-4 h-4" />
-                                </button>
                             </td>
-
                         </tr>
                     ))}
-                    {filteredPurchases.length === 0 && (
+                    {flatPurchaseHistory.length === 0 && (
                         <tr>
-                            <td colSpan={7} className="px-6 py-10 text-center text-gray-400">Belum ada riwayat pembelian</td>
+                            <td colSpan={10} className="px-6 py-10 text-center text-gray-400">Belum ada riwayat pembelian</td>
                         </tr>
                     )}
                 </tbody>
@@ -379,7 +424,7 @@ export function PurchasesView({
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col min-h-[500px]">
                     <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
                         <div>
-                            <h3 className="text-lg font-bold text-gray-800">Daftar Item Pembelian</h3>
+                            <h3 className="text-lg font-bold text-gray-800">Riwayat Pembelian</h3>
                             <p className="text-sm text-gray-500">Scan barcode atau pilih item secara manual.</p>
                         </div>
                         <div className="flex items-center gap-2 bg-orange-50 text-orange-600 px-4 py-2 rounded-xl text-xs font-bold border border-orange-100">
@@ -393,9 +438,10 @@ export function PurchasesView({
                             <thead className="bg-gray-50 text-gray-500 text-left sticky top-0 z-10">
                                 <tr>
                                     <th className="px-6 py-4">Item</th>
-                                    <th className="px-6 py-4 text-center">Qty</th>
-                                    <th className="px-6 py-4 text-right">Harga Satuan</th>
-                                    <th className="px-6 py-4 text-right">Subtotal</th>
+                                    <th className="px-6 py-4 text-center">kg/satuan</th>
+                                    <th className="px-6 py-4 text-center">Jumlah</th>
+                                    <th className="px-6 py-4 text-right">Harga</th>
+                                    <th className="px-6 py-4 text-right">Total</th>
                                     <th className="px-6 py-4 text-center">Aksi</th>
                                 </tr>
                             </thead>
@@ -403,12 +449,14 @@ export function PurchasesView({
                                 {purchaseItems.map(item => (
                                     <tr key={item.id} className="hover:bg-gray-50">
                                         <td className="px-6 py-4 font-bold text-gray-700">{item.name}</td>
+                                        <td className="px-6 py-4 text-center text-gray-400 text-xs">{item.unit || '-'}</td>
                                         <td className="px-6 py-4 text-center">
                                             <div className="flex items-center justify-center gap-2">
                                                 <button onClick={() => handleUpdateQty(item.id, item.quantity - 1)} className="w-6 h-6 rounded-md bg-gray-100 flex items-center justify-center">-</button>
                                                 <input
                                                     type="number"
                                                     value={item.quantity}
+                                                    onFocus={(e) => e.target.select()}
                                                     onChange={(e) => handleUpdateQty(item.id, parseInt(e.target.value) || 0)}
                                                     className="w-12 text-center border-none bg-transparent font-bold"
                                                 />
@@ -419,6 +467,7 @@ export function PurchasesView({
                                             <input
                                                 type="number"
                                                 value={item.price}
+                                                onFocus={(e) => e.target.select()}
                                                 onChange={(e) => handleUpdatePrice(item.id, parseFloat(e.target.value) || 0)}
                                                 className="w-24 text-right border-none bg-transparent font-bold"
                                             />
@@ -597,7 +646,8 @@ export function PurchasesView({
                                 onClick={() => handleAddItem({
                                     itemId: item.id,
                                     name: item.name,
-                                    price: item.cost || item.cost_per_unit || 0
+                                    price: item.cost || item.cost_per_unit || 0,
+                                    unit: item.unit
                                 })}
                                 className="w-full flex items-center justify-between p-3 hover:bg-gray-50 rounded-xl border border-transparent hover:border-gray-100 transition-all text-left"
                             >
@@ -710,7 +760,7 @@ export function PurchasesView({
             <div className="w-56 bg-white border-r border-gray-200 p-6 flex flex-col gap-2">
                 <h2 className="text-xl font-bold text-gray-800 mb-6 px-2">Modul Pembelian</h2>
                 {[
-                    { id: 'history', label: 'Daftar Pembelian', icon: History },
+                    { id: 'history', label: 'Riwayat Pembelian', icon: History },
                     { id: 'input', label: 'Input Pembelian', icon: Plus },
                     { id: 'returns', label: 'Retur Pembelian', icon: RotateCcw },
                 ].map(item => (

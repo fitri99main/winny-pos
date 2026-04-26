@@ -1,8 +1,9 @@
 import * as React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, ScrollView, TextInput, ActivityIndicator, Alert, Switch } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, ActivityIndicator, Alert, Switch, Image } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
-import { ChevronLeft, Store, MapPin, Phone, Save, Shield, Layout, CheckCircle2, Clock, Calendar, Lock, Monitor, Percent, Printer, Wifi } from 'lucide-react-native';
+import { ChevronLeft, Store, MapPin, Phone, Save, Shield, Layout, CheckCircle2, Clock, Calendar, Lock, Monitor, Percent, Printer, Wifi, Image as ImageIcon, RefreshCw } from 'lucide-react-native';
 import { Modal } from 'react-native';
 import { useSession } from '../context/SessionContext';
 
@@ -12,7 +13,7 @@ export default function StoreSettingsScreen() {
     const [saving, setSaving] = React.useState(false);
     const [showSuccess, setShowSuccess] = React.useState(false);
     const [successMsg, setSuccessMsg] = React.useState('');
-    const { currentBranchId, storeSettings: sessionSettings } = useSession();
+    const { currentBranchId, storeSettings: sessionSettings, isAdmin, checkSession } = useSession();
     
     // Branch state
     const [branchData, setBranchData] = React.useState({
@@ -134,29 +135,33 @@ export default function StoreSettingsScreen() {
 
     const days = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
 
-    // Remove full-screen loading block to ensure "Instant Open"
-    /*
-    if (loading) {
-        return (
-            <View style={[styles.center, { gap: 20 }]}>
-                <ActivityIndicator size="large" color="#ea580c" />
-                <Text style={{ color: '#64748b' }}>Memuat Data Toko...</Text>
-                <TouchableOpacity 
-                    onPress={() => navigation.goBack()}
-                    style={{ 
-                        marginTop: 40,
-                        paddingVertical: 10,
-                        paddingHorizontal: 20,
-                        borderRadius: 12,
-                        backgroundColor: '#f1f5f9'
-                    }}
-                >
-                    <Text style={{ color: '#64748b', fontWeight: 'bold' }}>Batal / Kembali</Text>
-                </TouchableOpacity>
-            </View>
-        );
-    }
-    */
+    const refreshSettings = async () => {
+        try {
+            setLoading(true);
+            console.log('[StoreSettings] Manual refresh triggered...');
+            const { data, error } = await supabase
+                .from('store_settings')
+                .select('*')
+                .eq('id', 1)
+                .maybeSingle();
+            
+            if (error) throw error;
+            if (data) {
+                console.log('[StoreSettings] Fetched from DB:', data);
+                setStoreSettings(data);
+                if (checkSession) checkSession(false, true); // Update global session too
+                Alert.alert('Sukses', 'Pengaturan berhasil disinkronkan dari database.');
+            } else {
+                console.warn('[StoreSettings] No data found for ID 1');
+                Alert.alert('Peringatan', 'Data pengaturan tidak ditemukan di database.');
+            }
+        } catch (err: any) {
+            console.error('[StoreSettings] Refresh failed:', err);
+            Alert.alert('Gagal', 'Gagal memuat ulang pengaturan: ' + err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     return (
         <SafeAreaView style={styles.container}>
@@ -165,6 +170,20 @@ export default function StoreSettingsScreen() {
                     <ChevronLeft size={28} color="#1f2937" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Pengaturan Toko</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    <TouchableOpacity 
+                        style={styles.refreshButton}
+                        onPress={refreshSettings}
+                    >
+                        <RefreshCw size={20} color="#64748b" />
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                        style={styles.saveButton}
+                        onPress={() => Alert.alert('Sukses', 'Semua perubahan telah disimpan otomatis.')}
+                    >
+                        <Save size={20} color="#fff" />
+                    </TouchableOpacity>
+                </View>
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -291,72 +310,88 @@ export default function StoreSettingsScreen() {
                     </View>
                 </View>
 
-                {/* Operational Settings Section */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Operasional & Keamanan</Text>
-                    <View style={styles.card}>
-                        <View style={styles.switchItem}>
-                            <View style={styles.switchContent}>
-                                <View style={styles.switchLabelRow}>
-                                    <Shield size={18} color="#64748b" />
-                                    <Text style={styles.switchLabel}>Sesi Kasir Wajib</Text>
+                {isAdmin && (
+                    <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>Operasional & Keamanan</Text>
+                        <View style={styles.card}>
+                            <View style={styles.switchItem}>
+                                <View style={styles.switchContent}>
+                                    <View style={styles.switchLabelRow}>
+                                        <Shield size={18} color="#64748b" />
+                                        <Text style={styles.switchLabel}>Sesi Kasir Wajib</Text>
+                                    </View>
+                                    <Text style={styles.switchSubtitle}>Wajib buka shift sebelum transaksi</Text>
                                 </View>
-                                <Text style={styles.switchSubtitle}>Wajib buka shift sebelum transaksi</Text>
+                                <Switch
+                                    value={storeSettings?.require_mandatory_session ?? true}
+                                    onValueChange={(val) => toggleSetting('require_mandatory_session', val)}
+                                    trackColor={{ false: '#e2e8f0', true: '#f97316' }}
+                                />
                             </View>
-                            <Switch
-                                value={storeSettings?.require_mandatory_session ?? true}
-                                onValueChange={(val) => toggleSetting('require_mandatory_session', val)}
-                                trackColor={{ false: '#e2e8f0', true: '#f97316' }}
-                            />
-                        </View>
-                        <View style={styles.divider} />
-                        <View style={styles.switchItem}>
-                            <View style={styles.switchContent}>
-                                <View style={styles.switchLabelRow}>
-                                    <Shield size={18} color="#ea580c" />
-                                    <Text style={styles.switchLabel}>Kasir Bisa Buka Laporan</Text>
+                            <View style={styles.divider} />
+                            <View style={styles.switchItem}>
+                                <View style={styles.switchContent}>
+                                    <View style={styles.switchLabelRow}>
+                                        <Shield size={18} color="#ea580c" />
+                                        <Text style={styles.switchLabel}>Kasir Bisa Buka Laporan</Text>
+                                    </View>
+                                    <Text style={styles.switchSubtitle}>Izin melihat Laporan Penjualan & Grafik</Text>
                                 </View>
-                                <Text style={styles.switchSubtitle}>Izin melihat Laporan Penjualan & Grafik</Text>
+                                <Switch
+                                    value={storeSettings?.cashier_can_view_reports ?? false}
+                                    onValueChange={(val) => toggleSetting('cashier_can_view_reports', val)}
+                                    trackColor={{ false: '#e2e8f0', true: '#ea580c' }}
+                                />
                             </View>
-                            <Switch
-                                value={storeSettings?.cashier_can_view_reports ?? false}
-                                onValueChange={(val) => toggleSetting('cashier_can_view_reports', val)}
-                                trackColor={{ false: '#e2e8f0', true: '#ea580c' }}
-                            />
-                        </View>
-                        <View style={styles.divider} />
-                        <View style={styles.divider} />
-                        <View style={styles.switchItem}>
-                            <View style={styles.switchContent}>
-                                <View style={styles.switchLabelRow}>
-                                    <Printer size={18} color="#ea580c" />
-                                    <Text style={styles.switchLabel}>Kasir Bisa Cetak Bukti Kas</Text>
+                            <View style={styles.divider} />
+                            <View style={styles.switchItem}>
+                                <View style={styles.switchContent}>
+                                    <View style={styles.switchLabelRow}>
+                                        <Store size={18} color="#ea580c" />
+                                        <Text style={styles.switchLabel}>Kasir Bisa Lihat Riwayat Sesi</Text>
+                                    </View>
+                                    <Text style={styles.switchSubtitle}>Izin membuka riwayat shift sebelumnya</Text>
                                 </View>
-                                <Text style={styles.switchSubtitle}>Izin cetak struk Kas Masuk/Kas Keluar</Text>
+                                <Switch
+                                    value={storeSettings?.cashier_can_view_session_history ?? false}
+                                    onValueChange={(val) => toggleSetting('cashier_can_view_session_history', val)}
+                                    trackColor={{ false: '#e2e8f0', true: '#ea580c' }}
+                                />
                             </View>
-                            <Switch
-                                value={storeSettings?.cashier_can_print_financial_receipt ?? false}
-                                onValueChange={(val) => toggleSetting('cashier_can_print_financial_receipt', val)}
-                                trackColor={{ false: '#e2e8f0', true: '#ea580c' }}
-                            />
-                        </View>
-                        <View style={styles.divider} />
-                        <View style={styles.switchItem}>
-                            <View style={styles.switchContent}>
-                                <View style={styles.switchLabelRow}>
-                                    <Printer size={18} color="#ea580c" />
-                                    <Text style={styles.switchLabel}>Kasir Bisa Cetak Lap. Omzet</Text>
+                            <View style={styles.divider} />
+                            <View style={styles.divider} />
+                            <View style={styles.switchItem}>
+                                <View style={styles.switchContent}>
+                                    <View style={styles.switchLabelRow}>
+                                        <Printer size={18} color="#ea580c" />
+                                        <Text style={styles.switchLabel}>Kasir Bisa Cetak Bukti Kas</Text>
+                                    </View>
+                                    <Text style={styles.switchSubtitle}>Izin cetak struk Kas Masuk/Kas Keluar</Text>
                                 </View>
-                                <Text style={styles.switchSubtitle}>Izin cetak ringkasan laporan penjualan</Text>
+                                <Switch
+                                    value={storeSettings?.cashier_can_print_financial_receipt ?? false}
+                                    onValueChange={(val) => toggleSetting('cashier_can_print_financial_receipt', val)}
+                                    trackColor={{ false: '#e2e8f0', true: '#ea580c' }}
+                                />
                             </View>
-                            <Switch
-                                value={storeSettings?.cashier_can_print_sales_summary ?? false}
-                                onValueChange={(val) => toggleSetting('cashier_can_print_sales_summary', val)}
-                                trackColor={{ false: '#e2e8f0', true: '#ea580c' }}
-                            />
+                            <View style={styles.divider} />
+                            <View style={styles.switchItem}>
+                                <View style={styles.switchContent}>
+                                    <View style={styles.switchLabelRow}>
+                                        <Printer size={18} color="#ea580c" />
+                                        <Text style={styles.switchLabel}>Kasir Bisa Cetak Lap. Omzet</Text>
+                                    </View>
+                                    <Text style={styles.switchSubtitle}>Izin cetak ringkasan laporan penjualan</Text>
+                                </View>
+                                <Switch
+                                    value={storeSettings?.cashier_can_print_sales_summary ?? false}
+                                    onValueChange={(val) => toggleSetting('cashier_can_print_sales_summary', val)}
+                                    trackColor={{ false: '#e2e8f0', true: '#ea580c' }}
+                                />
+                            </View>
                         </View>
                     </View>
-                </View>
+                )}
 
                 {/* Working Hours Section */}
                 <View style={styles.section}>
@@ -467,6 +502,40 @@ export default function StoreSettingsScreen() {
                                 onBlur={() => toggleSetting('receipt_header', storeSettings.receipt_header)}
                                 placeholder="WINNY POS"
                             />
+                        </View>
+
+                        <View style={styles.inputGroup}>
+                            <View style={styles.inputLabelRow}>
+                                <ImageIcon size={16} color="#64748b" />
+                                <Text style={styles.inputLabel}>URL Logo (Sync dari Web)</Text>
+                            </View>
+                            <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+                                <TextInput
+                                    style={[styles.input, { flex: 1 }]}
+                                    value={storeSettings?.receipt_logo_url || ''}
+                                    onChangeText={(text) => setStoreSettings({ ...storeSettings, receipt_logo_url: text })}
+                                    onBlur={() => toggleSetting('receipt_logo_url', storeSettings.receipt_logo_url)}
+                                    placeholder="https://example.com/logo.png"
+                                />
+                                {storeSettings?.receipt_logo_url ? (
+                                    <View style={styles.logoPreviewContainer}>
+                                        <Image 
+                                            source={{ uri: storeSettings.receipt_logo_url }} 
+                                            style={styles.logoPreview}
+                                            resizeMode="contain"
+                                            onError={(e) => console.error('[StoreSettings] Logo image load error:', e.nativeEvent.error, 'URL:', storeSettings.receipt_logo_url)}
+                                            onLoad={() => console.log('[StoreSettings] Logo image loaded successfully')}
+                                        />
+                                    </View>
+                                ) : (
+                                    <View style={[styles.logoPreviewContainer, { backgroundColor: '#f1f5f9', justifyContent: 'center', alignItems: 'center' }]}>
+                                        <ImageIcon size={20} color="#cbd5e1" />
+                                    </View>
+                                )}
+                            </View>
+                            <Text style={{ fontSize: 10, color: '#94a3b8', marginTop: 4, fontStyle: 'italic' }}>
+                                * Link gambar logo (Gunakan link yang sama dengan versi web).
+                            </Text>
                         </View>
 
                         <View style={styles.inputGroup}>
@@ -602,6 +671,17 @@ export default function StoreSettingsScreen() {
                                 value={storeSettings?.show_qris_on_report ?? true}
                                 onValueChange={(val) => toggleSetting('show_qris_on_report', val)}
                                 trackColor={{ false: '#e2e8f0', true: '#f97316' }}
+                            />
+                        </View>
+                        
+                        <View style={styles.switchItem}>
+                            <View style={styles.switchContent}>
+                                <Text style={styles.switchLabel}>Tampilkan Kategori di Laporan</Text>
+                            </View>
+                            <Switch
+                                value={storeSettings?.show_category_on_summary ?? true}
+                                onValueChange={(val) => toggleSetting('show_category_on_summary', val)}
+                                trackColor={{ false: '#e2e8f0', true: '#ea580c' }}
                             />
                         </View>
                     </View>
@@ -839,5 +919,28 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#64748b',
         textAlign: 'center',
+    },
+    logoPreviewContainer: {
+        width: 48,
+        height: 48,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        overflow: 'hidden',
+        backgroundColor: '#fff',
+    },
+    logoPreview: {
+        width: '100%',
+        height: '100%',
+    },
+    refreshButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        backgroundColor: '#f1f5f9',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
     }
 });

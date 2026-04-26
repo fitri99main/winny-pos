@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
 
 interface ModernToastProps {
@@ -11,9 +11,11 @@ interface ModernToastProps {
 export default function ModernToast({ visible, message, type = 'success', onHide }: ModernToastProps) {
     const translateY = useRef(new Animated.Value(-100)).current;
     const opacity = useRef(new Animated.Value(0)).current;
+    const [isRendered, setIsRendered] = useState(visible);
 
     useEffect(() => {
         if (visible) {
+            setIsRendered(true);
             // Show animation
             Animated.parallel([
                 Animated.spring(translateY, {
@@ -53,11 +55,12 @@ export default function ModernToast({ visible, message, type = 'success', onHide
                 useNativeDriver: true
             })
         ]).start(() => {
+            setIsRendered(false);
             onHide();
         });
     };
 
-    if (!visible && opacity._value === 0) return null;
+    if (!isRendered) return null;
 
     const getBgColor = () => {
         switch (type) {

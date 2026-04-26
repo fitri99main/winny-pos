@@ -42,7 +42,6 @@ export default function ManualItemModal({ visible, onClose, onAdd }: ManualItemM
                         <Text style={styles.label}>Nama Item</Text>
                         <TextInput
                             style={styles.input}
-                            placeholder="Contoh: Jasa Titip..."
                             value={name}
                             onChangeText={setName}
                             autoFocus

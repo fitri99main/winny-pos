@@ -18,7 +18,7 @@ interface HeldOrdersModalProps {
     onClose: () => void;
     orders: HeldOrder[];
     onRestore: (order: HeldOrder) => void;
-    onDelete: (id: string) => void;
+    onDelete?: (id: string) => void;
     onRefresh?: () => void;
     isRefreshing?: boolean;
 }
@@ -86,7 +86,7 @@ export default function HeldOrdersModal({ visible, onClose, orders, onRestore, o
                                                 {order.isRemote ? '⚡ Terima & Bayar' : '▶ Kembalikan'}
                                             </Text>
                                         </TouchableOpacity>
-                                        {!order.isRemote && (
+                                        {!order.isRemote && onDelete && (
                                             <TouchableOpacity style={styles.deleteBtn} onPress={() => onDelete(order.id)}>
                                                 <Text style={styles.deleteText}>🗑️</Text>
                                             </TouchableOpacity>

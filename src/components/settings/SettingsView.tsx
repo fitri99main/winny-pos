@@ -1071,6 +1071,17 @@ export function SettingsView({
                                     onCheckedChange={c => handleLocalChange({ ...localSettings, enable_table_management: c })}
                                 />
                             </div>
+
+                            <div className="flex items-center justify-between p-4 bg-red-50/50 rounded-xl border border-red-100">
+                                <div>
+                                    <h4 className="font-bold text-red-800">Batasi Kasir Hapus Transaksi</h4>
+                                    <p className="text-xs text-red-600">Jika aktif, Kasir tidak dapat menghapus riwayat transaksi atau daftar tunggu.</p>
+                                </div>
+                                <Switch
+                                    checked={localSettings.restrict_cashier_delete ?? false}
+                                    onCheckedChange={c => handleLocalChange({ ...localSettings, restrict_cashier_delete: c })}
+                                />
+                            </div>
                         </div>
 
                         <div className="space-y-4 pt-4 border-t border-gray-100">
@@ -1107,10 +1118,10 @@ export function SettingsView({
                                             <Label className="text-xs font-bold text-gray-700">Prefix Invoice (Awal)</Label>
                                             <input
                                                 type="text"
-                                                value={localSettings.invoice_prefix || 'INV'}
+                                                value={localSettings.invoice_prefix || 'ORD'}
                                                 onChange={e => handleLocalChange({ ...localSettings, invoice_prefix: e.target.value.toUpperCase() })}
                                                 className="w-full px-4 py-2 border border-blue-100 bg-white rounded-xl focus:ring-2 focus:ring-primary/20 outline-none text-sm font-bold"
-                                                placeholder="Contoh: INV"
+                                                placeholder="Contoh: ORD"
                                             />
                                         </div>
                                         <div className="space-y-2">

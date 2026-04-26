@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, Image, Dimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
@@ -15,17 +16,42 @@ export default function LoginScreen() {
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
 
-    async function signInWithEmail() {
+    useEffect(() => {
+        loadSavedEmail();
+    }, []);
+
+    const loadSavedEmail = async () => {
+        try {
+            const savedEmail = await AsyncStorage.getItem('last_login_email');
+            if (savedEmail) {
+                setEmail(savedEmail);
+            }
+        } catch (err) {
+            console.warn('[Login] Error loading saved email:', err);
+        }
+    };
+
+    const signInWithEmail = async () => {
+        if (!email || !password) {
+            Alert.alert('Gagal', 'Silakan isi email dan password');
+            return;
+        }
+
         setLoading(true);
-        const { error } = await supabase.auth.signInWithPassword({
-            email,
-            password,
+        console.log('[Login] Starting login for:', email.trim());
+        const { data, error } = await supabase.auth.signInWithPassword({
+            email: email.trim(),
+            password: password,
         });
+
+        console.log('[Login] signInWithPassword returned:', { hasError: !!error, hasSession: !!data?.session });
 
         if (error) {
             Alert.alert('Login Gagal', error.message);
             setLoading(false);
         } else {
+            // Save email for next time
+            await AsyncStorage.setItem('last_login_email', email.trim());
             router.replace('/(tabs)');
             setLoading(false);
         }

@@ -22,8 +22,10 @@ import { useAuth } from '../auth/AuthProvider';
 import { useSessionGuard } from '../auth/SessionGuardContext';
 import { CashierSessionModal } from './CashierSessionModal';
 import { printerService } from '../../lib/PrinterService';
+import { ManagerAuthModal } from '../shared/ManagerAuthModal';
 import { ContactData } from '../contacts/ContactsView';
 import { Addon } from '@/types/pos';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 // const categories: ProductCategory[] = ['Semua', 'Makanan', 'Minuman', 'Camilan', 'Pencuci Mulut']; // REMOVED
 
@@ -102,7 +104,7 @@ export function CashierInterface({
   onAutoPaymentProcessed,
   topSellingProducts = []
 }: CashierInterfaceProps) {
-  const cashierLayoutVersion = 'Split Layout v6';
+  const isMobile = useIsMobile();
   // console.log('CashierInterface Props:', { productsLength: products?.length, categoriesLength: categories?.length }); 
   // Removed verbose log to prevent crash on undefined properties
   const [viewMode, setViewMode] = useState<'tables' | 'pos'>(
@@ -151,12 +153,18 @@ export function CashierInterface({
   const [addonPendingProduct, setAddonPendingProduct] = useState<Product | null>(null);
   const [tempSelectedAddons, setTempSelectedAddons] = useState<Addon[]>([]);
   const [newOrderModalOpen, setNewOrderModalOpen] = useState(false); // [NEW] State for incoming order modal
+  const [managerAuthModalOpen, setManagerAuthModalOpen] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [promos, setPromos] = useState<Promo[]>([]);
   const [promoProducts, setPromoProducts] = useState<PromoProduct[]>([]);
   const [automaticDiscount, setAutomaticDiscount] = useState(0);
 
   // Shift Session State (Managed by Context)
   const { role, loading } = useAuth();
+  const isAdmin = useMemo(() => {
+    const lowerRole = role?.toLowerCase() || '';
+    return lowerRole === 'admin' || lowerRole === 'administrator' || lowerRole === 'owner' || lowerRole === 'superadmin';
+  }, [role]);
   const { currentSession, checkSession, requireMandatorySession } = useSessionGuard();
   const [sessionModalOpen, setSessionModalOpen] = useState(false);
   const [sessionMode, setSessionMode] = useState<'open' | 'close'>('open');
@@ -790,10 +798,28 @@ export function CashierInterface({
     toast.success('Pesanan dikembalikan');
   };
 
-  // Delete held order
+  // Delete held order (Requires Manager Auth)
   const handleDeleteHeldOrder = (id: string) => {
-    setHeldOrders(heldOrders.filter((h) => h.id !== id));
-    toast.info('Pesanan yang ditangguhkan dihapus');
+    setDeleteTargetId(id);
+    setManagerAuthModalOpen(true);
+  };
+
+  const handleConfirmDeleteHeldOrder = (manager: any) => {
+    if (!deleteTargetId) return;
+
+    // 1. Hapus dari state lokal (Penyimpanan Lokal / Held Orders)
+    setHeldOrders(heldOrders.filter((h) => h.id !== deleteTargetId));
+
+    // 2. Hapus dari database pusat Kiosk jika berasal dari remote
+    if (!deleteTargetId.startsWith('held-') && onDeleteSale) {
+      const numericId = Number(deleteTargetId);
+      if (!isNaN(numericId)) {
+        onDeleteSale(numericId);
+      }
+    }
+
+    toast.info(`Pesanan Dibatalkan oleh Manager: ${manager.name}`);
+    setDeleteTargetId(null);
   };
 
   // Split bill
@@ -822,11 +848,16 @@ export function CashierInterface({
     <div className="h-full flex flex-col bg-pos-cream noise-texture overflow-hidden relative">
       {/* Main Content */}
       <div
-        className="flex-1 overflow-hidden pb-6 md:pb-8 min-w-0"
-        style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) clamp(220px, 36vw, 420px)' }}
+        className="grid flex-1 min-w-0 overflow-hidden pb-6 md:pb-8"
+        style={{
+          direction: 'ltr',
+          gridTemplateColumns: isMobile
+            ? 'minmax(0, 1fr) minmax(164px, 42vw)'
+            : 'minmax(0, 1fr) clamp(220px, 36vw, 420px)'
+        }}
       >
         {/* Left: Product Grid (75%) */}
-        <div className="min-w-0 flex flex-col p-2 md:p-4 lg:p-5 overflow-hidden bg-white/35 rounded-r-[28px] border-r border-orange-100">
+        <div className="order-1 min-w-0 flex flex-col overflow-hidden rounded-r-[28px] border-r border-orange-100 bg-white/35 p-2 md:p-4 lg:p-5">
           {/* Header */}
           <div className="flex items-center gap-3 mb-4">
             {onBack && (
@@ -843,13 +874,7 @@ export function CashierInterface({
                 <ArrowLeft className="w-5 h-5" />
               </button>
             )}
-            <div className="shrink-0 rounded-full bg-red-500 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-white shadow-lg">
-              {cashierLayoutVersion}
-            </div>
-            <div className="w-10 h-10 bg-pos-coral rounded-xl flex items-center justify-center shadow-lg shadow-orange-200 shrink-0">
-              <ShoppingCart className="w-6 h-6 text-white" />
-            </div>
-            <div className="shrink-0">
+            <div className="shrink-0 ml-2">
               <h1 className="text-2xl font-bold text-pos-charcoal leading-none">WinPOS</h1>
               <button
                 onClick={() => {
@@ -951,11 +976,7 @@ export function CashierInterface({
             </div>
           </div>
 
-          {/* Search Bar */}
-          <div className="mb-3 rounded-2xl bg-blue-50 border border-blue-100 px-4 py-2">
-            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-500">Panel Produk</p>
-            <p className="text-xs font-semibold text-blue-700">Semua produk tampil di sisi kiri</p>
-          </div>
+
 
           <div className="mb-4">
             <SearchBar
@@ -977,8 +998,12 @@ export function CashierInterface({
           {/* Product Grid */}
           <div className="flex-1 overflow-y-auto">
             <div
-              className="gap-2 md:gap-3 pb-6"
-              style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(128px, 1fr))' }}
+              className="grid gap-2 pb-6 md:gap-3"
+              style={{
+                gridTemplateColumns: isMobile
+                  ? 'repeat(auto-fill, minmax(104px, 1fr))'
+                  : 'repeat(auto-fill, minmax(128px, 1fr))'
+              }}
             >
               {filteredProducts.filter(p => p && p.id).map((product) => (
                 <ProductTile
@@ -1003,7 +1028,10 @@ export function CashierInterface({
         </div>
 
         {/* Right: Order Panel (25%) */}
-        <div className="min-w-0 p-2 md:p-3 pl-2 md:pl-3 flex flex-col gap-2 overflow-hidden bg-orange-50/60 border-l-2 border-orange-200">
+        <div
+          className="order-2 min-w-0 flex flex-col gap-2 overflow-hidden border-l-2 border-orange-200 bg-orange-50/60 p-2 pl-2 md:p-3 md:pl-3"
+          style={isMobile ? { minWidth: '164px' } : undefined}
+        >
           <QuickActionsBar
             embedded
             hasItems={orderItems.length > 0}
@@ -1047,7 +1075,19 @@ export function CashierInterface({
         onOpenChange={setHeldOrdersModalOpen}
         heldOrders={heldOrders}
         onRestore={handleRestoreOrder}
-        onDelete={handleDeleteHeldOrder}
+        onDelete={(isAdmin || !settings?.restrict_cashier_delete) ? handleDeleteHeldOrder : undefined}
+      />
+
+      <ManagerAuthModal
+        open={managerAuthModalOpen}
+        onClose={() => {
+          setManagerAuthModalOpen(false);
+          setDeleteTargetId(null);
+        }}
+        onSuccess={handleConfirmDeleteHeldOrder}
+        employees={employees}
+        title="Otorisasi Batal Pesanan"
+        description="Masukkan PIN Manager untuk membatalkan pesanan dari daftar tunggu."
       />
 
       {/* Addon Selection Modal */}

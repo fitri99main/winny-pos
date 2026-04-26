@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, SafeAreaView, Alert, ActivityIndicator, StyleSheet, Image, KeyboardAvoidingView, Platform, useWindowDimensions } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, StyleSheet, Image, KeyboardAvoidingView, Platform, useWindowDimensions } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react-native';
@@ -67,7 +68,7 @@ export default function LoginScreen() {
                 password: password,
             });
 
-            console.log('[Login] signInWithPassword returned:', { hasError: !!error, hasData: !!data });
+            console.log('[Login] signInWithPassword returned:', { hasError: !!error, hasSession: !!data?.session });
             clearTimeout(timeoutId);
 
             if (isMounted.current) {

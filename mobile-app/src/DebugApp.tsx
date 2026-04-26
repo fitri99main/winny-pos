@@ -2,12 +2,11 @@ import * as React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
 export default function DebugApp() {
-    console.log('DebugApp Rendering...');
     return (
         <View style={styles.container}>
-            <Text style={styles.title}>doitPOS Debug Mode</Text>
-            <Text style={styles.status}>Jika Anda melihat ini, berarti Expo Go berhasil memuat aplikasi dasar.</Text>
-            <Text style={styles.info}>Sedang mencari penyebab error di module utama...</Text>
+            <Text style={styles.title}>doitPOS</Text>
+            <Text style={styles.status}>Aplikasi berhasil dimuat dalam mode cadangan.</Text>
+            <Text style={styles.info}>Periksa konfigurasi utama aplikasi sebelum digunakan.</Text>
         </View>
     );
 }

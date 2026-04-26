@@ -5,9 +5,6 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 
-console.log('Supabase URL:', supabaseUrl ? 'Found' : 'MISSING');
-console.log('Supabase Key:', supabaseAnonKey ? 'Found' : 'MISSING');
-
 // Safety check to prevent crash if environment variables are missing
 const finalUrl = supabaseUrl || 'https://placeholder.supabase.co';
 const finalKey = supabaseAnonKey || 'placeholder';

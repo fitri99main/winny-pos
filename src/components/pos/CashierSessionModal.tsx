@@ -56,12 +56,28 @@ export function CashierSessionModal({
             // [MODIFIED] Use ISO string for robust date comparison across timezones
             const openedAt = new Date(session.opened_at).toISOString();
             
-            const { data: sales, error } = await supabase
-                .from('sales')
-                .select('*')
-                .gte('created_at', openedAt);
+            // 1. Fetch Sales with Pagination
+            let allSales: any[] = [];
+            let from = 0;
+            const pageSize = 1000;
+            let hasMore = true;
 
-            if (error) throw error;
+            while (hasMore) {
+                const { data: pageData, error: salesError } = await supabase
+                    .from('sales')
+                    .select('*')
+                    .gte('created_at', openedAt)
+                    .range(from, from + pageSize - 1);
+
+                if (salesError) throw salesError;
+                if (pageData && pageData.length > 0) {
+                    allSales = [...allSales, ...pageData];
+                    if (pageData.length < pageSize) hasMore = false;
+                    else from += pageSize;
+                } else {
+                    hasMore = false;
+                }
+            }
 
             let cash = 0;
             let nonCash = 0;
@@ -72,10 +88,10 @@ export function CashierSessionModal({
             let pending = 0;
             const paySummary: Record<string, number> = {};
 
-            sales?.forEach(sale => {
+            allSales.forEach(sale => {
                 const status = (sale.status || '').toLowerCase();
                 // [MODIFIED] Broaden paid status check to catch all successful transactions
-                const isPaid = ['completed', 'selesai', 'paid', 'served', 'success', 'settlement', 'capture'].includes(status);
+                const isPaid = ['completed', 'selesai', 'paid', 'served', 'success', 'settlement', 'capture', 'ready'].includes(status);
                 
                 if (isPaid) {
                     completed++;
@@ -105,30 +121,55 @@ export function CashierSessionModal({
             });
 
             // Fetch Sale Items for Category & Product Summary
-            const saleIds = sales?.map(s => s.id) || [];
+            const saleIds = allSales.map(s => s.id);
             let catSummary: Record<string, number> = {};
             let prodSummary: Record<string, { quantity: number; amount: number; category: string }> = {};
 
             if (saleIds.length > 0) {
-                // [NEW] Robust category lookup maps
-                const { data: allProducts } = await supabase.from('products').select('id, name, category');
-                const productCatMap: Record<string, string> = {};
-                const productIdMap: Record<number, string> = {};
-                
-                allProducts?.forEach(p => {
-                    const cat = (p.category || 'LAINNYA').toUpperCase();
-                    if (p.name) productCatMap[p.name] = cat;
-                    if (p.id) productIdMap[Number(p.id)] = cat;
-                });
+                let allItems: any[] = [];
+                let itemFrom = 0;
+                let itemHasMore = true;
 
-                const { data: items, error: itemsError } = await supabase
-                    .from('sale_items')
-                    .select('product_id, product_name, quantity, price') // Use correct column names
-                    .in('sale_id', saleIds);
+                while (itemHasMore) {
+                    const { data: itemPage, error: itemsError } = await supabase
+                        .from('sale_items')
+                        .select('product_id, product_name, quantity, price')
+                        .in('sale_id', saleIds)
+                        .range(itemFrom, itemFrom + pageSize - 1);
+                    
+                    if (itemsError) throw itemsError;
+                    if (itemPage && itemPage.length > 0) {
+                        allItems = [...allItems, ...itemPage];
+                        if (itemPage.length < pageSize) itemHasMore = false;
+                        else itemFrom += pageSize;
+                    } else {
+                        itemHasMore = false;
+                    }
+                }
                 
-                if (!itemsError && items && items.length > 0) {
+                if (allItems.length > 0) {
+                    const items = allItems;
+                    // 2. Identify unique products that were actually sold
+                    const soldProductNameList = Array.from(new Set(items.map(i => i.product_name).filter(Boolean)));
+                    const soldProductIdList = Array.from(new Set(items.map(i => i.product_id).filter(id => id !== null && id !== undefined)));
+
+                    // 3. Only fetch categories for these specific products (HEAVILY OPTIMIZED)
+                    const { data: specificProducts } = await supabase
+                        .from('products')
+                        .select('id, name, category')
+                        .or(`name.in.(${soldProductNameList.map(n => `"${n}"`).join(',')}),id.in.(${soldProductIdList.join(',')})`);
+
+                    const productCatMap: Record<string, string> = {};
+                    const productIdMap: Record<number, string> = {};
+                    
+                    specificProducts?.forEach(p => {
+                        const cat = (p.category || 'LAINNYA').toUpperCase();
+                        if (p.name) productCatMap[p.name] = cat;
+                        if (p.id) productIdMap[Number(p.id)] = cat;
+                    });
+
+                    // 4. Summarize based on the optimized results
                     items.forEach(item => {
-                        // [MODIFIED] Multi-layer category lookup
                         const name = item.product_name || 'Produk';
                         const productId = item.product_id ? Number(item.product_id) : null;
                         const cat = (productId ? productIdMap[productId] : null) || productCatMap[name] || 'LAINNYA';
@@ -284,9 +325,9 @@ export function CashierSessionModal({
             });
 
             // [NEW] Automatic Petty Cash Deposit
-            try {
-                const branchId = user?.user_metadata?.branch_id || '7';
-                const activePcSession = await PettyCashService.getActiveSession(branchId);
+            // [MODIFIED] Non-blocking Petty Cash Deposit
+            const branchId = user?.user_metadata?.branch_id || '7';
+            PettyCashService.getActiveSession(branchId).then(async (activePcSession) => {
                 if (activePcSession) {
                     await PettyCashService.addTransaction({
                         session_id: activePcSession.id,
@@ -296,12 +337,11 @@ export function CashierSessionModal({
                         reference_type: 'cashier_closing',
                         reference_id: String(session.id)
                     });
-                    toast.success('Setoran Kasir masuk ke Kas Kecil otomatis');
+                    console.log('[Shift] Petty cash deposit success');
                 }
-            } catch (pcErr) {
-                console.error('Petty Cash Deposit Error:', pcErr);
-                // Silent fail for petty cash - don't block session close
-            }
+            }).catch(pcErr => {
+                console.error('[Shift] Petty Cash Deposit Error:', pcErr);
+            });
 
             // Re-fetch session status in Home.tsx via context if needed
             setTimeout(async () => {
@@ -388,7 +428,7 @@ export function CashierSessionModal({
 
                                         <div className="grid grid-cols-2 gap-3 text-[11px]">
                                             <div className="rounded-xl bg-white/80 border border-blue-100 px-3 py-2">
-                                                <span className="text-blue-500/90 block font-bold uppercase tracking-wide">Tunai</span>
+                                                <span className="text-blue-500/90 block font-bold uppercase tracking-wide">Penjualan Tunai</span>
                                                 <span className="font-bold text-blue-950">{formatPrice(closingData?.cash_sales)}</span>
                                             </div>
                                             <div className="rounded-xl bg-white/80 border border-blue-100 px-3 py-2">
@@ -400,7 +440,7 @@ export function CashierSessionModal({
                                                 <span className="font-bold text-blue-950">{formatPrice(parseFloat(session?.starting_cash) || 0)}</span>
                                             </div>
                                             <div className="rounded-xl bg-blue-600 text-white px-3 py-2">
-                                                <span className="block font-bold uppercase tracking-wide text-[10px] text-blue-100">Seharusnya</span>
+                                                <span className="block font-bold uppercase tracking-wide text-[10px] text-blue-100">Total Seharusnya (Tunai+Modal)</span>
                                                 <span className="font-bold text-base">{formatPrice(closingData?.expected_cash)}</span>
                                             </div>
                                         </div>

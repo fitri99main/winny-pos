@@ -15,13 +15,10 @@ interface DateRangePickerProps {
 }
 
 const PRESETS = [
-    { label: 'Hari Ini', id: 'today' },
-    { label: 'Kemarin', id: 'yesterday' },
-    { label: 'Minggu Ini', id: 'this_week' },
-    { label: 'Bulan Ini', id: 'this_month' },
-    { label: 'Bulan Lalu', id: 'last_month' },
-    { label: 'Tahun Ini', id: 'this_year' },
-    { label: 'Semua Waktu', id: 'all_time' },
+    { label: 'Hari ini', id: 'today' },
+    { label: '7 hari', id: '7_days' },
+    { label: '30 hari', id: '30_days' },
+    { label: 'Rentang', id: 'custom' },
 ];
 
 const formatDateForInput = (date: Date) => {
@@ -56,32 +53,17 @@ export function DateRangePicker({ startDate, endDate, onChange, className = '' }
             case 'today':
                 // Already set to now/now
                 break;
-            case 'yesterday':
-                start.setDate(now.getDate() - 1);
-                end.setDate(now.getDate() - 1);
-                break;
-            case 'this_week':
-                const day = now.getDay(); // 0 is Sunday
-                const diff = now.getDate() - day + (day === 0 ? -6 : 1); // Adjust to Monday
-                start = new Date(now.setDate(diff));
+            case '7_days':
+                start.setDate(now.getDate() - 6);
                 end = new Date();
                 break;
-            case 'this_month':
-                start = new Date(now.getFullYear(), now.getMonth(), 1);
-                end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+            case '30_days':
+                start.setDate(now.getDate() - 29);
+                end = new Date();
                 break;
-            case 'last_month':
-                start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-                end = new Date(now.getFullYear(), now.getMonth(), 0);
-                break;
-            case 'this_year':
-                start = new Date(now.getFullYear(), 0, 1);
-                end = new Date(now.getFullYear(), 11, 31);
-                break;
-            case 'all_time':
-                start = new Date(2020, 0, 1);
-                end = new Date(2030, 11, 31);
-                break;
+            case 'custom':
+                setIsOpen(false);
+                return;
         }
 
         onChange({

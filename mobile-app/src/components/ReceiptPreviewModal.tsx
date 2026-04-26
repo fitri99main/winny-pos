@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, Modal, TouchableOpacity, ScrollView, StyleSheet, SafeAreaView, Dimensions, Image } from 'react-native';
+import { View, Text, Modal, TouchableOpacity, ScrollView, StyleSheet, Dimensions, Image } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { PrinterManager } from '../lib/PrinterManager';
 
 interface ReceiptPreviewModalProps {
@@ -20,7 +21,7 @@ export default function ReceiptPreviewModal({ visible, onClose, orderData, onPri
     
     // Simple parser for [C], [L], [R], [LOGO] tags to render in preview
     const renderLine = (line: string, index: number) => {
-        if (line.trim() === '[LOGO]') {
+        if (line.includes('[LOGO]')) {
             return (
                 <View key={index} style={styles.logoContainer}>
                     {receipt_logo_url ? (
@@ -41,6 +42,12 @@ export default function ReceiptPreviewModal({ visible, onClose, orderData, onPri
         let alignment: 'center' | 'left' | 'right' = 'left';
         let text = line;
         let isBold = false;
+        let isBig = false;
+
+        if (text.includes('[BIG]')) {
+            isBig = true;
+            text = text.replace('[BIG]', '').replace('[/BIG]', '');
+        }
 
         if (text.startsWith('[C]')) {
             alignment = 'center';
@@ -69,13 +76,14 @@ export default function ReceiptPreviewModal({ visible, onClose, orderData, onPri
             <View key={index} style={[styles.lineWrapper, { justifyContent: alignment === 'center' ? 'center' : 'space-between' }]}>
                 {parts.length > 1 ? (
                     <>
-                        <Text style={[styles.receiptText, isBold && styles.boldText, isNote && styles.noteText]}>{parts[0]}</Text>
-                        <Text style={[styles.receiptText, isBold && styles.boldText, isNote && styles.noteText]}>{parts[1]}</Text>
+                        <Text style={[styles.receiptText, isBold && styles.boldText, isBig && styles.bigText, isNote && styles.noteText]}>{parts[0]}</Text>
+                        <Text style={[styles.receiptText, isBold && styles.boldText, isBig && styles.bigText, isNote && styles.noteText]}>{parts[1]}</Text>
                     </>
                 ) : (
                     <Text style={[
                         styles.receiptText, 
                         isBold && styles.boldText,
+                        isBig && styles.bigText,
                         isNote && styles.noteText,
                         { textAlign: alignment, width: '100%' }
                     ]}>
@@ -216,6 +224,13 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: '#0f172a',
     },
+    bigText: {
+        fontSize: 20,
+        fontWeight: '900',
+        color: '#000',
+        lineHeight: 28,
+        marginVertical: 4,
+    },
     noteText: {
         color: '#ea580c',
         fontStyle: 'italic',
@@ -235,7 +250,7 @@ const styles = StyleSheet.create({
     },
     receiptLogo: {
         width: 80,
-        height: 80,
+        height: 40,
     },
     logoPlaceholder: {
         width: 80,

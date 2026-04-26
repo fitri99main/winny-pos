@@ -114,7 +114,7 @@ export default defineConfig({
     'global': 'window',
   },
   server: {
-    port: 3000,
+    port: 3001,
     strictPort: false,
     // @ts-ignore
     allowedHosts: true,

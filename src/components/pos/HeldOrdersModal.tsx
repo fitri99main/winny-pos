@@ -17,7 +17,7 @@ interface HeldOrdersModalProps {
     onOpenChange: (open: boolean) => void;
     heldOrders: HeldOrder[];
     onRestore: (order: HeldOrder) => void;
-    onDelete: (id: string) => void;
+    onDelete?: (id: string) => void;
 }
 
 export function HeldOrdersModal({
@@ -88,13 +88,15 @@ export function HeldOrdersModal({
                                             <Play className="w-4 h-4" />
                                             Kembalikan Pesanan
                                         </Button>
-                                        <Button
-                                            variant="outline"
-                                            onClick={() => onDelete(order.id)}
-                                            className="w-11 h-11 border-red-100 text-red-500 hover:bg-red-50 hover:text-red-600 rounded-xl flex-shrink-0"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </Button>
+                                        {onDelete && (
+                                            <Button
+                                                variant="outline"
+                                                onClick={() => onDelete(order.id)}
+                                                className="w-11 h-11 border-red-100 text-red-500 hover:bg-red-50 hover:text-red-600 rounded-xl flex-shrink-0"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </Button>
+                                        )}
                                     </div>
                                 </div>
                             ))}

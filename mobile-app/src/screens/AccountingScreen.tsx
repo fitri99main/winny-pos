@@ -13,11 +13,14 @@ import {
     Award,
     Clock,
     Wallet,
-    Printer
+    Printer,
+    Search,
+    Info
 } from 'lucide-react-native';
 import { PrinterManager } from '../lib/PrinterManager';
 import { useSession } from '../context/SessionContext';
 import DateStepper from '../components/DateStepper';
+import { getLocalDateString } from '../lib/dateUtils';
 
 
 type FilterType = 'today' | 'week' | 'month' | 'custom';
@@ -39,23 +42,31 @@ export default function AccountingScreen() {
     const [loading, setLoading] = useState(true);
     
     // Custom Date Range State
-    const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-    const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+    const [startDate, setStartDate] = useState(getLocalDateString());
+    const [endDate, setEndDate] = useState(getLocalDateString());
     const [showDateRangeModal, setShowDateRangeModal] = useState(false);
     const [stats, setStats] = useState({
         totalOmzet: 0,
         totalSales: 0,
-        avgTicket: 0
+        avgTicket: 0,
+        totalDiscount: 0,
+        totalTax: 0,
+        totalService: 0,
+        estimatedProfit: 0
     });
-    const [makananBestSellers, setMakananBestSellers] = useState<any[]>([]);
-    const [minumanBestSellers, setMinumanBestSellers] = useState<any[]>([]);
-    const [snackBestSellers, setSnackBestSellers] = useState<any[]>([]);
-    const [produkBestSellers, setProdukBestSellers] = useState<any[]>([]);
+    
+    const [globalTopProducts, setGlobalTopProducts] = useState<any[]>([]);
+    const [allProducts, setAllProducts] = useState<any[]>([]);
+    const [productSearch, setProductSearch] = useState('');
+    const [selectedCategory, setSelectedCategory] = useState('Semua');
+    const [sortBy, setSortBy] = useState<'qty' | 'revenue'>('qty');
+    const [categoryBreakdown, setCategoryBreakdown] = useState<any[]>([]);
+    const [paymentBreakdown, setPaymentBreakdown] = useState<any[]>([]);
     const [recentSales, setRecentSales] = useState<any[]>([]);
 
     useFocusEffect(
         useCallback(() => {
-            if (currentBranchId && !isNaN(Number(currentBranchId))) {
+            if (currentBranchId) {
                 fetchDashboardData();
             }
         }, [filter, startDate, endDate, currentBranchId])
@@ -63,7 +74,7 @@ export default function AccountingScreen() {
 
     const fetchDashboardData = async () => {
         const bId = currentBranchId;
-        if (!bId || isNaN(Number(bId))) {
+        if (!bId) {
             setLoading(false);
             return;
         }
@@ -76,101 +87,165 @@ export default function AccountingScreen() {
             if (filter === 'today') {
                 startQueryDate.setHours(0, 0, 0, 0);
             } else if (filter === 'week') {
-                startQueryDate.setDate(now.getDate() - 7);
+                startQueryDate.setDate(now.getDate() - 6);
+                startQueryDate.setHours(0, 0, 0, 0);
             } else if (filter === 'month') {
-                startQueryDate.setMonth(now.getMonth() - 1);
+                startQueryDate.setDate(now.getDate() - 29);
+                startQueryDate.setHours(0, 0, 0, 0);
             } else if (filter === 'custom') {
                 startQueryDate = new Date(startDate);
                 startQueryDate.setHours(0, 0, 0, 0);
                 endQueryDate = new Date(endDate);
                 endQueryDate.setHours(23, 59, 59, 999);
             }
+            let allSales: any[] = [];
+            let from = 0;
+            const pageSize = 1000;
+            let hasMore = true;
 
+            const PAID_STATUSES = ['Paid', 'Completed', 'Selesai', 'Settlement', 'Served', 'Capture', 'Success', 'Ready'];
 
-            let salesQuery = supabase
-                .from('sales')
-                .select('*')
-                .eq('branch_id', bId)
-                .in('status', ['Paid', 'Completed', 'Served', 'Ready'])
-                .gte('date', startQueryDate.toISOString());
+            while (hasMore) {
+                let query = supabase
+                    .from('sales')
+                    .select('*')
+                    .eq('branch_id', bId)
+                    .in('status', PAID_STATUSES)
+                    .gte('date', startQueryDate.toISOString())
+                    .order('date', { ascending: false })
+                    .range(from, from + pageSize - 1);
 
-            if (endQueryDate) {
-                salesQuery = salesQuery.lte('date', endQueryDate.toISOString());
+                if (endQueryDate) {
+                    query = query.lte('date', endQueryDate.toISOString());
+                }
+
+                const { data, error } = await query;
+                if (error) throw error;
+                
+                if (data && data.length > 0) {
+                    allSales = [...allSales, ...data];
+                    if (data.length < pageSize) {
+                        hasMore = false;
+                    } else {
+                        from += pageSize;
+                    }
+                } else {
+                    hasMore = false;
+                }
             }
-            
-            salesQuery = salesQuery.order('date', { ascending: false });
 
-            const { data: sales, error: salesError } = await salesQuery;
-
-            if (salesError) throw salesError;
+            const sales = allSales;
 
             const totalOmzet = sales?.reduce((sum, s) => sum + (s.total_amount || 0), 0) || 0;
+            const totalDiscount = sales?.reduce((sum, s) => sum + (s.discount || 0), 0) || 0;
+            const totalTax = sales?.reduce((sum, s) => sum + (s.tax || 0), 0) || 0;
+            const totalService = sales?.reduce((sum, s) => sum + (s.service_charge || 0), 0) || 0;
             const totalSalesCount = sales?.length || 0;
             const avgTicket = totalSalesCount > 0 ? totalOmzet / totalSalesCount : 0;
+
+            // Payment Breakdown
+            const payments: Record<string, number> = {};
+            sales?.forEach(s => {
+                const method = s.payment_method || 'Tunai';
+                payments[method] = (payments[method] || 0) + (s.total_amount || 0);
+            });
+            setPaymentBreakdown(Object.keys(payments).map(method => ({ method, amount: payments[method] })).sort((a,b) => b.amount - a.amount));
 
             setStats({
                 totalOmzet,
                 totalSales: totalSalesCount,
-                avgTicket
+                avgTicket,
+                totalDiscount,
+                totalTax,
+                totalService,
+                estimatedProfit: 0 // Will update below
             });
 
             setRecentSales(sales?.slice(0, 5) || []);
 
-            // 2. Fetch Best Sellers
-            let itemsQuery = supabase
-                .from('sale_items')
-                .select(`
-                    quantity,
-                    product_name,
-                    product:product_id (category),
-                    sale:sales!inner(date, branch_id, status)
-                `)
-                .eq('sale.branch_id', bId)
-                .in('sale.status', ['Paid', 'Completed', 'Served', 'Ready'])
-                .gte('sale.date', startQueryDate.toISOString());
+            // 2. Fetch Detailed Items for Analytics with Pagination
+            let allItems: any[] = [];
+            let itemsFrom = 0;
+            let itemsHasMore = true;
 
-            if (endQueryDate) {
-                itemsQuery = itemsQuery.lte('sale.date', endQueryDate.toISOString());
+            while (itemsHasMore) {
+                let itemsQuery = supabase
+                    .from('sale_items')
+                    .select(`
+                        quantity,
+                        product_name,
+                        price,
+                        cost,
+                        product:product_id (category),
+                        sale:sales!inner(date, branch_id, status)
+                    `)
+                    .eq('sale.branch_id', bId)
+                    .in('sale.status', PAID_STATUSES)
+                    .gte('sale.date', startQueryDate.toISOString())
+                    .range(itemsFrom, itemsFrom + pageSize - 1);
+
+                if (endQueryDate) {
+                    itemsQuery = itemsQuery.lte('sale.date', endQueryDate.toISOString());
+                }
+
+                const { data: itemsPage, error: itemsError } = await itemsQuery;
+                if (itemsError) throw itemsError;
+
+                if (itemsPage && itemsPage.length > 0) {
+                    allItems = [...allItems, ...itemsPage];
+                    if (itemsPage.length < pageSize) {
+                        itemsHasMore = false;
+                    } else {
+                        itemsFrom += pageSize;
+                    }
+                } else {
+                    itemsHasMore = false;
+                }
             }
 
-            const { data: items, error: itemsError } = await itemsQuery;
+            const items = allItems;
 
-            if (itemsError) throw itemsError;
-
-            // Group by product name with granular category separation
-            const groups: any = {
-                makanan: {},
-                minuman: {},
-                snack: {},
-                produk: {}
-            };
+            // Process Analytics
+            const productGroups: Record<string, { qty: number, revenue: number, cost: number }> = {};
+            const catGroups: Record<string, { revenue: number, qty: number }> = {};
+            let totalCost = 0;
 
             items?.forEach(item => {
                 const name = item.product_name || 'Produk';
                 const qty = item.quantity || 0;
-                const category = (item.product as any)?.category?.toLowerCase() || '';
-                const lowerName = name.toLowerCase();
+                const price = item.price || 0;
+                const cost = item.cost || 0;
+                const category = (item.product as any)?.category || 'Lainnya';
                 
-                if (category.includes('makan') || lowerName.includes('makan')) {
-                    groups.makanan[name] = (groups.makanan[name] || 0) + qty;
-                } else if (category.includes('minum') || lowerName.includes('minum')) {
-                    groups.minuman[name] = (groups.minuman[name] || 0) + qty;
-                } else if (category.includes('snack') || lowerName.includes('snack')) {
-                    groups.snack[name] = (groups.snack[name] || 0) + qty;
-                } else if (category.includes('kemasan') || category.includes('produk') || lowerName.includes('kemasan')) {
-                    groups.produk[name] = (groups.produk[name] || 0) + qty;
-                }
+                // Global Top Products
+                if (!productGroups[name]) productGroups[name] = { qty: 0, revenue: 0, cost: 0, category: category };
+                productGroups[name].qty += qty;
+                productGroups[name].revenue += (price * qty);
+                productGroups[name].cost += (cost * qty);
+                
+                // Category Breakdown
+                if (!catGroups[category]) catGroups[category] = { revenue: 0, qty: 0 };
+                catGroups[category].revenue += (price * qty);
+                catGroups[category].qty += qty;
+                
+                totalCost += (cost * qty);
             });
 
-            const sortAndSlice = (group: any) => Object.keys(group)
-                .map(name => ({ name, qty: group[name] }))
-                .sort((a, b) => b.qty - a.qty)
-                .slice(0, 5);
+            // Update Estimated Profit
+            setStats(prev => ({ ...prev, estimatedProfit: prev.totalOmzet - totalCost }));
 
-            setMakananBestSellers(sortAndSlice(groups.makanan));
-            setMinumanBestSellers(sortAndSlice(groups.minuman));
-            setSnackBestSellers(sortAndSlice(groups.snack));
-            setProdukBestSellers(sortAndSlice(groups.produk));
+            // Sort and Set Results
+            const allSold = Object.keys(productGroups)
+                .map(name => ({ name, ...productGroups[name] }))
+                .sort((a, b) => b.qty - a.qty);
+            
+            setAllProducts(allSold);
+            setGlobalTopProducts(allSold.slice(0, 10));
+
+            const categories = Object.keys(catGroups)
+                .map(name => ({ name, ...catGroups[name] }))
+                .sort((a, b) => b.revenue - a.revenue);
+            setCategoryBreakdown(categories);
 
         } catch (error: any) {
             console.error('Fetch Dashboard Error:', error);
@@ -191,12 +266,7 @@ export default function AccountingScreen() {
             const periodLabel = filter === 'today' ? 'Hari Ini' : filter === 'week' ? '7 Hari Terakhir' : filter === 'month' ? '30 Hari Terakhir' : `${startDate} s/d ${endDate}`;
             
             // Collect all best sellers into one list for printing
-            const allBestSellers = [
-                ...makananBestSellers.map(b => ({ ...b, category: 'Makanan' })),
-                ...minumanBestSellers.map(b => ({ ...b, category: 'Minuman' })),
-                ...snackBestSellers.map(b => ({ ...b, category: 'Snack' })),
-                ...produkBestSellers.map(b => ({ ...b, category: 'Produk' }))
-            ].sort((a, b) => b.qty - a.qty).slice(0, 10);
+            const allBestSellers = globalTopProducts;
 
             const reportData = {
                 receiptHeader: storeSettings?.receipt_header,
@@ -229,13 +299,13 @@ export default function AccountingScreen() {
     };
 
     const StatCard = ({ title, value, icon: Icon, color, subValue }: any) => (
-        <View style={[styles.statCard, isSmallDevice && { padding: 12 }]}>
-            <View style={[styles.statIconContainer, { backgroundColor: color + '10' }]}>
-                <Icon size={isSmallDevice ? 20 : 24} color={color} />
+        <View style={styles.statCard}>
+            <View style={[styles.statIconContainer, { backgroundColor: color + '15' }]}>
+                <Icon size={18} color={color} />
             </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
+            <View style={{ flex: 1, marginLeft: 10 }}>
                 <Text style={styles.statLabel}>{title}</Text>
-                <Text style={[styles.statValue, isSmallDevice && { fontSize: 16 }]}>{value}</Text>
+                <Text style={styles.statValue}>{value}</Text>
                 {subValue && <Text style={styles.statSub}>{subValue}</Text>}
             </View>
         </View>
@@ -288,137 +358,188 @@ export default function AccountingScreen() {
                     </View>
                 ) : (
                     <>
-                        {/* Highlights */}
-                        <View style={styles.row}>
+                        <View style={styles.gridRow}>
                             <StatCard 
                                 title="Total Omzet" 
                                 value={formatCurrency(stats.totalOmzet)} 
                                 icon={TrendingUp} 
                                 color="#22c55e" 
                             />
+                            <StatCard 
+                                title="Transaksi" 
+                                value={stats.totalSales} 
+                                icon={ShoppingCart} 
+                                color="#a855f7" 
+                            />
                         </View>
-                        <View style={styles.row}>
-                            <View style={{ flex: 1, marginRight: 8 }}>
-                                <StatCard 
-                                    title="Transaksi" 
-                                    value={stats.totalSales} 
-                                    icon={ShoppingCart} 
-                                    color="#3b82f6" 
+
+                        <View style={styles.gridRow}>
+                            <StatCard 
+                                title="Rata-rata Order" 
+                                value={formatCurrency(stats.avgTicket)} 
+                                icon={TrendingUp} 
+                                color="#f59e0b" 
+                            />
+                            <StatCard 
+                                title="Potongan" 
+                                value={formatCurrency(stats.totalDiscount)} 
+                                icon={Wallet} 
+                                color="#ef4444" 
+                            />
+                        </View>
+
+                        {/* Payment Breakdown */}
+                        <View style={styles.section}>
+                            <View style={styles.sectionHeader}>
+                                <Wallet size={18} color="#64748b" />
+                                <Text style={styles.sectionTitle}>Metode Pembayaran</Text>
+                            </View>
+                            <View style={styles.card}>
+                                {paymentBreakdown.length === 0 ? (
+                                    <Text style={styles.emptyText}>Tidak ada data pembayaran</Text>
+                                ) : (
+                                    paymentBreakdown.map((item, index) => (
+                                        <View key={'payment-' + index} style={[styles.listItem, index === paymentBreakdown.length - 1 && { borderBottomWidth: 0 }]}>
+                                            <Text style={styles.listItemName}>{item.method}</Text>
+                                            <Text style={styles.amountText}>{formatCurrency(item.amount)}</Text>
+                                        </View>
+                                    ))
+                                )}
+                            </View>
+                        </View>
+
+                        {/* Top Products Leaderboard */}
+                        <View style={styles.section}>
+                            <View style={styles.sectionHeader}>
+                                <Award size={18} color="#ea580c" />
+                                <Text style={styles.sectionTitle}>
+                                    {productSearch.trim() !== '' ? 'Hasil Pencarian Produk' : '10 Produk Terlaris (Global)'}
+                                </Text>
+                            </View>
+
+                            {/* Product Search Bar */}
+                            <View style={styles.searchBarContainer}>
+                                <Search size={18} color="#94a3b8" style={{ marginLeft: 12 }} />
+                                <TextInput
+                                    placeholder="Cari produk terjual..."
+                                    value={productSearch}
+                                    onChangeText={setProductSearch}
+                                    style={styles.searchPromptInput}
+                                    placeholderTextColor="#94a3b8"
                                 />
-                            </View>
-                            <View style={{ flex: 1, marginLeft: 8 }}>
-                                <StatCard 
-                                    title="Rata-rata" 
-                                    value={formatCurrency(stats.avgTicket)} 
-                                    icon={BarChart3} 
-                                    color="#a855f7" 
-                                />
-                            </View>
-                        </View>
-
-                        {/* Petty Cash Integration Link */}
-                        <TouchableOpacity 
-                            style={styles.pettyCashCard}
-                            onPress={() => navigation.navigate('PettyCash' as never)}
-                        >
-                            <View style={[styles.statIconContainer, { backgroundColor: '#ea580c10' }]}>
-                                <Wallet size={24} color="#ea580c" />
-                            </View>
-                            <View style={{ flex: 1, marginLeft: 12 }}>
-                                <Text style={styles.statLabel}>Manajemen Kas Kecil</Text>
-                                <Text style={styles.statValue}>Buka/Tutup Kas Harian</Text>
-                            </View>
-                            <ChevronRight size={20} color="#cbd5e1" />
-                        </TouchableOpacity>
-
-                        {/* Best Sellers - Makanan */}
-                        <View style={styles.section}>
-                            <View style={styles.sectionHeader}>
-                                <Award size={20} color="#ef4444" />
-                                <Text style={styles.sectionTitle}>Makanan Terlaris</Text>
-                            </View>
-                            <View style={styles.card}>
-                                {makananBestSellers.length === 0 ? (
-                                    <Text style={styles.emptyText}>Tidak ada data makanan</Text>
-                                ) : (
-                                    makananBestSellers.map((item, index) => (
-                                        <View key={'makanan-' + index} style={[styles.listItem, index === makananBestSellers.length - 1 && { borderBottomWidth: 0 }]}>
-                                            <View style={[styles.rankBadge, { backgroundColor: '#fee2e2' }]}>
-                                                <Text style={[styles.rankText, { color: '#ef4444' }]}>{index + 1}</Text>
-                                            </View>
-                                            <Text style={styles.listItemName} numberOfLines={1}>{item.name}</Text>
-                                            <Text style={styles.listItemQty}>{item.qty} Porsi</Text>
-                                        </View>
-                                    ))
+                                {productSearch.length > 0 && (
+                                    <TouchableOpacity onPress={() => setProductSearch('')} style={{ padding: 8 }}>
+                                        <Text style={{ color: '#94a3b8', fontSize: 12 }}>Batal</Text>
+                                    </TouchableOpacity>
                                 )}
                             </View>
+
+                            {/* Category Pills */}
+                            <ScrollView 
+                                horizontal 
+                                showsHorizontalScrollIndicator={false} 
+                                style={styles.categoryPills}
+                                contentContainerStyle={{ paddingHorizontal: 4 }}
+                            >
+                                <TouchableOpacity 
+                                    style={[styles.pill, selectedCategory === 'Semua' && styles.pillActive]}
+                                    onPress={() => setSelectedCategory('Semua')}
+                                >
+                                    <Text style={[styles.pillText, selectedCategory === 'Semua' && styles.pillTextActive]}>Semua</Text>
+                                </TouchableOpacity>
+                                {[...new Set(allProducts.map(p => p.category))].sort().map(cat => (
+                                    <TouchableOpacity 
+                                        key={cat}
+                                        style={[styles.pill, selectedCategory === cat && styles.pillActive]}
+                                        onPress={() => setSelectedCategory(cat)}
+                                    >
+                                        <Text style={[styles.pillText, selectedCategory === cat && styles.pillTextActive]}>{cat}</Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </ScrollView>
+
+                            {/* Sort Controls */}
+                            <View style={styles.sortControls}>
+                                <Text style={styles.sortTitle}>Urutkan:</Text>
+                                <TouchableOpacity 
+                                    style={[styles.sortBtn, sortBy === 'qty' && styles.sortBtnActive]}
+                                    onPress={() => setSortBy('qty')}
+                                >
+                                    <Award size={12} color={sortBy === 'qty' ? '#ea580c' : '#94a3b8'} />
+                                    <Text style={[styles.sortBtnText, sortBy === 'qty' && styles.sortBtnTextActive]}>Terlaris</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity 
+                                    style={[styles.sortBtn, sortBy === 'revenue' && styles.sortBtnActive]}
+                                    onPress={() => setSortBy('revenue')}
+                                >
+                                    <Wallet size={12} color={sortBy === 'revenue' ? '#ea580c' : '#94a3b8'} />
+                                    <Text style={[styles.sortBtnText, sortBy === 'revenue' && styles.sortBtnTextActive]}>Omzet</Text>
+                                </TouchableOpacity>
+                            </View>
+
+                            <View style={styles.card}>
+                                {(() => {
+                                    const filtered = allProducts
+                                        .filter(p => {
+                                            const matchesSearch = p.name.toLowerCase().includes(productSearch.toLowerCase());
+                                            const matchesCat = selectedCategory === 'Semua' || p.category === selectedCategory;
+                                            return matchesSearch && matchesCat;
+                                        })
+                                        .sort((a, b) => sortBy === 'qty' ? b.qty - a.qty : b.revenue - a.revenue)
+                                        .slice(0, 50);
+
+                                    if (filtered.length === 0) {
+                                        return <Text style={styles.emptyText}>Produk tidak ditemukan</Text>;
+                                    }
+
+                                    return filtered.map((item, index) => {
+                                        const originalRank = allProducts.findIndex(p => p.name === item.name) + 1;
+                                        return (
+                                            <View key={'top-' + index} style={[styles.listItem, index === filtered.length - 1 && { borderBottomWidth: 0 }]}>
+                                                <View style={[styles.rankBadge, originalRank === 1 && { backgroundColor: '#fef3c7' }]}>
+                                                    <Text style={[styles.rankText, originalRank === 1 && { color: '#d97706' }]}>{originalRank}</Text>
+                                                </View>
+                                                <View style={{ flex: 1 }}>
+                                                    <Text style={styles.listItemName} numberOfLines={1}>{item.name}</Text>
+                                                    <Text style={styles.itemSubText}>{item.category} • {formatCurrency(item.revenue)}</Text>
+                                                </View>
+                                                <Text style={styles.listItemQty}>{item.qty} Pcs</Text>
+                                            </View>
+                                        );
+                                    });
+                                })()}
+                            </View>
+                            {productSearch.trim() !== '' && allProducts.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase())).length > 50 && (
+                                <Text style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center', marginTop: 8 }}>
+                                    Menampilkan 50 hasil teratas
+                                </Text>
+                            )}
                         </View>
 
-                        {/* Best Sellers - Minuman */}
+                        {/* Category Sales Distribution */}
                         <View style={styles.section}>
                             <View style={styles.sectionHeader}>
-                                <Award size={20} color="#3b82f6" />
-                                <Text style={styles.sectionTitle}>Minuman Terlaris</Text>
+                                <BarChart3 size={18} color="#64748b" />
+                                <Text style={styles.sectionTitle}>Distribusi Per Kategori</Text>
                             </View>
                             <View style={styles.card}>
-                                {minumanBestSellers.length === 0 ? (
-                                    <Text style={styles.emptyText}>Tidak ada data minuman</Text>
+                                {categoryBreakdown.length === 0 ? (
+                                    <Text style={styles.emptyText}>Tidak ada data kategori</Text>
                                 ) : (
-                                    minumanBestSellers.map((item, index) => (
-                                        <View key={'minuman-' + index} style={[styles.listItem, index === minumanBestSellers.length - 1 && { borderBottomWidth: 0 }]}>
-                                            <View style={[styles.rankBadge, { backgroundColor: '#eff6ff' }]}>
-                                                <Text style={[styles.rankText, { color: '#3b82f6' }]}>{index + 1}</Text>
+                                    categoryBreakdown.map((item, index) => {
+                                        const percentage = stats.totalOmzet > 0 ? (item.revenue / stats.totalOmzet) : 0;
+                                        return (
+                                            <View key={'cat-' + index} style={{ padding: 12, borderBottomWidth: index === categoryBreakdown.length - 1 ? 0 : 1, borderBottomColor: '#f8fafc' }}>
+                                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                                                    <Text style={styles.catName}>{item.name}</Text>
+                                                    <Text style={styles.catValue}>{formatCurrency(item.revenue)}</Text>
+                                                </View>
+                                                <View style={styles.progressBarBg}>
+                                                    <View style={[styles.progressBarFill, { width: `${percentage * 100}%`, backgroundColor: index % 2 === 0 ? '#ea580c' : '#3b82f6' }]} />
+                                                </View>
                                             </View>
-                                            <Text style={styles.listItemName} numberOfLines={1}>{item.name}</Text>
-                                            <Text style={styles.listItemQty}>{item.qty} Porsi</Text>
-                                        </View>
-                                    ))
-                                )}
-                            </View>
-                        </View>
-
-                        {/* Best Sellers - Snack */}
-                        <View style={styles.section}>
-                            <View style={styles.sectionHeader}>
-                                <Award size={20} color="#f97316" />
-                                <Text style={styles.sectionTitle}>Snack Terlaris</Text>
-                            </View>
-                            <View style={styles.card}>
-                                {snackBestSellers.length === 0 ? (
-                                    <Text style={styles.emptyText}>Tidak ada data snack</Text>
-                                ) : (
-                                    snackBestSellers.map((item, index) => (
-                                        <View key={'snack-' + index} style={[styles.listItem, index === snackBestSellers.length - 1 && { borderBottomWidth: 0 }]}>
-                                            <View style={[styles.rankBadge, { backgroundColor: '#fff7ed' }]}>
-                                                <Text style={[styles.rankText, { color: '#f97316' }]}>{index + 1}</Text>
-                                            </View>
-                                            <Text style={styles.listItemName} numberOfLines={1}>{item.name}</Text>
-                                            <Text style={styles.listItemQty}>{item.qty} Porsi</Text>
-                                        </View>
-                                    ))
-                                )}
-                            </View>
-                        </View>
-
-                        {/* Best Sellers - Produk Kemasan */}
-                        <View style={styles.section}>
-                            <View style={styles.sectionHeader}>
-                                <Award size={20} color="#a855f7" />
-                                <Text style={styles.sectionTitle}>Produk (Kemasan) Terlaris</Text>
-                            </View>
-                            <View style={styles.card}>
-                                {produkBestSellers.length === 0 ? (
-                                    <Text style={styles.emptyText}>Tidak ada data produk kemasan</Text>
-                                ) : (
-                                    produkBestSellers.map((item, index) => (
-                                        <View key={'produk-' + index} style={[styles.listItem, index === produkBestSellers.length - 1 && { borderBottomWidth: 0 }]}>
-                                            <View style={[styles.rankBadge, { backgroundColor: '#f5f3ff' }]}>
-                                                <Text style={[styles.rankText, { color: '#a855f7' }]}>{index + 1}</Text>
-                                            </View>
-                                            <Text style={styles.listItemName} numberOfLines={1}>{item.name}</Text>
-                                            <Text style={styles.listItemQty}>{item.qty} Pcs</Text>
-                                        </View>
-                                    ))
+                                        );
+                                    })
                                 )}
                             </View>
                         </View>
@@ -426,7 +547,7 @@ export default function AccountingScreen() {
                         {/* Recent Transactions */}
                         <View style={styles.section}>
                             <View style={styles.sectionHeader}>
-                                <Clock size={20} color="#64748b" />
+                                <Clock size={18} color="#64748b" />
                                 <Text style={styles.sectionTitle}>Transaksi Terakhir</Text>
                             </View>
                             <View style={styles.card}>
@@ -443,8 +564,11 @@ export default function AccountingScreen() {
                                                 <Text style={styles.orderNo}>#{sale.order_no}</Text>
                                                 <Text style={styles.timeText}>{new Date(sale.date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</Text>
                                             </View>
-                                            <Text style={styles.amountText}>{formatCurrency(sale.total_amount)}</Text>
-                                            <ChevronRight size={16} color="#d1d5db" />
+                                            <View style={{ alignItems: 'flex-end' }}>
+                                                <Text style={styles.amountText}>{formatCurrency(sale.total_amount)}</Text>
+                                                <Text style={styles.methodTextSmall}>{sale.payment_method || 'Tunai'}</Text>
+                                            </View>
+                                            <ChevronRight size={16} color="#d1d5db" style={{ marginLeft: 8 }} />
                                         </TouchableOpacity>
                                     ))
                                 )}
@@ -498,108 +622,103 @@ export default function AccountingScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#f8fafc' },
+    container: { flex: 1, backgroundColor: '#fdfdfd' },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
+        paddingHorizontal: 20,
+        paddingVertical: 14,
         backgroundColor: '#fff',
         borderBottomWidth: 1,
         borderBottomColor: '#f1f5f9',
     },
     backButton: { padding: 4, marginRight: 8 },
-    headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#1e293b' },
+    headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#0f172a' },
     
     // Modal Styles
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-    modalContent: { backgroundColor: 'white', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, maxHeight: '90%', width: '100%', alignSelf: 'center' },
-    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-    modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#1e293b' },
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.4)', justifyContent: 'flex-end' },
+    modalContent: { backgroundColor: 'white', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 16, maxHeight: '85%', width: '100%', alignSelf: 'center' },
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+    modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#0f172a' },
     closeBtnText: { color: '#64748b', fontWeight: 'bold', fontSize: 14 },
-    inputLabel: { fontSize: 14, fontWeight: 'bold', color: '#1e293b', marginBottom: 8 },
+    inputLabel: { fontSize: 14, fontWeight: 'bold', color: '#1e293b', marginBottom: 10 },
     textInput: {
-        backgroundColor: '#f1f5f9',
+        backgroundColor: '#f8fafc',
         borderRadius: 12,
         paddingHorizontal: 16,
-        paddingVertical: 12,
+        paddingVertical: 14,
         fontSize: 16,
-        color: '#1e293b',
+        color: '#0f172a',
         borderWidth: 1,
         borderColor: '#e2e8f0',
     },
-    payBtnLarge: { backgroundColor: '#ea580c', padding: 16, borderRadius: 16, alignItems: 'center' },
+    payBtnLarge: { backgroundColor: '#ea580c', padding: 16, borderRadius: 16, alignItems: 'center', marginTop: 10 },
     payBtnTextLarge: { color: 'white', fontWeight: 'bold', fontSize: 16 },
     scrollContent: { padding: 16 },
     filterContainer: {
         flexDirection: 'row',
-        backgroundColor: '#e2e8f0',
-        borderRadius: 10,
+        backgroundColor: '#f1f5f9',
+        borderRadius: 14,
         padding: 4,
-        marginBottom: 16,
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
     },
     filterTab: {
         flex: 1,
-        paddingVertical: 8,
+        paddingVertical: 10,
         alignItems: 'center',
-        borderRadius: 8,
+        borderRadius: 10,
     },
     filterTabActive: {
         backgroundColor: '#fff',
-        elevation: 2,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 2,
-    },
-    filterTabText: { fontSize: 12, fontWeight: '600', color: '#64748b' },
-    filterTabTextActive: { color: '#ea580c' },
-    row: { flexDirection: 'row', marginBottom: 12 },
-    statCard: {
-        flex: 1,
-        backgroundColor: '#fff',
-        borderRadius: 16,
-        padding: 12,
-        flexDirection: 'row',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#f1f5f9',
-        elevation: 1,
-    },
-    pettyCashCard: {
-        backgroundColor: '#fff',
-        borderRadius: 16,
-        padding: 16,
-        flexDirection: 'row',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#ffedd5',
-        elevation: 2,
-        shadowColor: '#ea580c',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
         shadowRadius: 4,
-        marginBottom: 16,
+        elevation: 3,
+    },
+    filterTabText: { fontSize: 12, fontWeight: '700', color: '#94a3b8' },
+    filterTabTextActive: { color: '#ea580c' },
+    gridRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
+    statCard: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 12,
+        borderWidth: 1,
+        borderColor: '#f1f5f9',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+        elevation: 1,
     },
     statIconContainer: {
-        width: 36,
-        height: 36,
+        width: 32,
+        height: 32,
         borderRadius: 10,
         alignItems: 'center',
         justifyContent: 'center',
     },
-    statLabel: { fontSize: 10, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5 },
-    statValue: { fontSize: 16, fontWeight: 'bold', color: '#1e293b', marginTop: 0 },
-    statSub: { fontSize: 9, color: '#94a3b8', marginTop: 2 },
-    section: { marginTop: 8, marginBottom: 16 },
-    sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, marginLeft: 4 },
-    sectionTitle: { fontSize: 13, fontWeight: 'bold', color: '#334155', marginLeft: 8 },
+    statLabel: { fontSize: 10, color: '#64748b', fontWeight: 'bold', letterSpacing: 0.3 },
+    statValue: { fontSize: 14, fontWeight: 'bold', color: '#0f172a', marginTop: 0 },
+    statSub: { fontSize: 8, color: '#94a3b8', marginTop: 1 },
+    section: { marginTop: 4, marginBottom: 16 },
+    sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, marginLeft: 4 },
+    sectionTitle: { fontSize: 13, fontWeight: 'bold', color: '#475569', marginLeft: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
     card: {
         backgroundColor: '#fff',
         borderRadius: 16,
-        padding: 6,
+        padding: 4,
         borderWidth: 1,
         borderColor: '#f1f5f9',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.04,
+        shadowRadius: 2,
         elevation: 1,
     },
     listItem: {
@@ -610,19 +729,103 @@ const styles = StyleSheet.create({
         borderBottomColor: '#f8fafc',
     },
     rankBadge: {
-        width: 20,
-        height: 20,
-        borderRadius: 10,
-        backgroundColor: '#fff7ed',
+        width: 22,
+        height: 22,
+        borderRadius: 8,
+        backgroundColor: '#f1f5f9',
         alignItems: 'center',
         justifyContent: 'center',
         marginRight: 10,
     },
-    rankText: { fontSize: 10, fontWeight: 'bold', color: '#ea580c' },
-    listItemName: { flex: 1, fontSize: 12, color: '#334155', fontWeight: '500' },
-    listItemQty: { fontSize: 11, fontWeight: 'bold', color: '#64748b' },
-    emptyText: { textAlign: 'center', padding: 16, color: '#94a3b8', fontSize: 12 },
-    orderNo: { fontSize: 12, fontWeight: 'bold', color: '#1e293b' },
-    timeText: { fontSize: 10, color: '#94a3b8', marginTop: 2 },
-    amountText: { fontSize: 13, fontWeight: 'bold', color: '#22c55e', marginRight: 10 },
+    rankText: { fontSize: 11, fontWeight: 'bold', color: '#64748b' },
+    listItemName: { flex: 1, fontSize: 13, color: '#0f172a', fontWeight: '600' },
+    itemSubText: { fontSize: 10, color: '#94a3b8', marginTop: 1 },
+    listItemQty: { fontSize: 13, fontWeight: 'bold', color: '#64748b' },
+    catName: { fontSize: 12, color: '#334155', fontWeight: 'bold' },
+    catValue: { fontSize: 12, color: '#64748b', fontWeight: '600' },
+    progressBarBg: { height: 4, backgroundColor: '#f1f5f9', borderRadius: 2, overflow: 'hidden' },
+    progressBarFill: { height: '100%', borderRadius: 2 },
+    emptyText: { textAlign: 'center', padding: 20, color: '#94a3b8', fontSize: 12 },
+    orderNo: { fontSize: 13, fontWeight: 'bold', color: '#0f172a' },
+    timeText: { fontSize: 11, color: '#94a3b8', marginTop: 1 },
+    amountText: { fontSize: 13, fontWeight: 'bold', color: '#10b981' },
+    methodTextSmall: { fontSize: 10, color: '#94a3b8', marginTop: 1, fontWeight: '500' },
+    searchBarContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f1f5f9',
+        borderRadius: 12,
+        marginBottom: 12,
+        marginHorizontal: 4,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    searchPromptInput: {
+        flex: 1,
+        paddingVertical: 10,
+        paddingHorizontal: 12,
+        fontSize: 13,
+        color: '#0f172a',
+    },
+    categoryPills: {
+        marginBottom: 12,
+        paddingBottom: 4,
+    },
+    pill: {
+        backgroundColor: '#f1f5f9',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 20,
+        marginRight: 8,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    pillActive: {
+        backgroundColor: '#fef3c7',
+        borderColor: '#fcd34d',
+    },
+    pillText: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#64748b',
+    },
+    pillTextActive: {
+        color: '#d97706',
+    },
+    sortControls: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 12,
+        paddingHorizontal: 4,
+        gap: 8,
+    },
+    sortTitle: {
+        fontSize: 11,
+        color: '#64748b',
+        fontWeight: 'bold',
+        marginRight: 4,
+    },
+    sortBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#fff',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#f1f5f9',
+        gap: 4,
+    },
+    sortBtnActive: {
+        borderColor: '#ea580c',
+        backgroundColor: '#fff7ed',
+    },
+    sortBtnText: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#94a3b8',
+    },
+    sortBtnTextActive: {
+        color: '#ea580c',
+    },
 });

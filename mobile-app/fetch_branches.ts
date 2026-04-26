@@ -4,11 +4,11 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://vgyfleusomimkivjrioy.supabase.co';
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 
-if (!supabaseKey) {
-    console.error('Missing EXPO_PUBLIC_SUPABASE_ANON_KEY');
+if (!supabaseUrl || !supabaseKey) {
+    console.error('Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY');
     process.exit(1);
 }
 

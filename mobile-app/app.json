@@ -20,6 +20,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.doitpos.app",
+      "versionCode": 1,
       "newArchEnabled": false,
       "permissions": [
         "CAMERA",
@@ -28,7 +29,12 @@
         "BLUETOOTH_ADMIN",
         "BLUETOOTH_SCAN",
         "BLUETOOTH_CONNECT",
-        "ACCESS_FINE_LOCATION"
+        "ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT"
       ]
     },
     "plugins": [
@@ -36,7 +42,8 @@
         "expo-build-properties",
         {
           "android": {
-            "jvmToolchain": 21
+            "kotlinVersion": "1.9.24",
+            "jvmToolchain": 17
           }
         }
       ],
@@ -58,16 +65,27 @@
           "bluetoothAlwaysPermission": "Allow $(PRODUCT_NAME) to connect to Bluetooth printers."
         }
       ],
-      "expo-asset"
+      "expo-updates",
+      "./plugins/withKotlinFix",
+      "./plugins/withKotlinBypass"
     ],
+    "updates": {
+      "url": "https://u.expo.dev/8aa0de7e-7922-44a8-8ca9-d1e4d6a7b7b3",
+      "enabled": true,
+      "checkOnLaunch": "ALWAYS",
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "extra": {
       "eas": {
-        "projectId": "4f9fa82d-0d4d-468a-969c-b0ac2e64de8c"
+        "projectId": "8aa0de7e-7922-44a8-8ca9-d1e4d6a7b7b3"
       }
     },
-    "owner": "sauqi99"
+    "owner": "safitriana123"
   }
 }

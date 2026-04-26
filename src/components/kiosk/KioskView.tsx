@@ -280,22 +280,32 @@ export function KioskView() {
         if (!selectedBranchId) return;
 
         try {
-            const { data, error } = await supabase
-                .from('sales')
-                .select('table_no')
-                .eq('branch_id', selectedBranchId) // Filter by branch!
-                .in('status', ['Unpaid', 'Pending'])
-                .not('table_no', 'is', null);
+            let allSales: any[] = [];
+            let from = 0;
+            const pageSize = 1000;
+            let hasMore = true;
 
-            if (error) {
-                console.error('Error fetching occupancy:', error);
-                return;
-            }
+            while (hasMore) {
+                const { data, error } = await supabase
+                    .from('sales')
+                    .select('table_no')
+                    .eq('branch_id', selectedBranchId)
+                    .in('status', ['Unpaid', 'Pending'])
+                    .not('table_no', 'is', null)
+                    .range(from, from + pageSize - 1);
 
-            if (data) {
-                const occupied = new Set(data.map((item: any) => String(item.table_no)));
-                setOccupiedTables(occupied);
+                if (error) throw error;
+                if (data && data.length > 0) {
+                    allSales = [...allSales, ...data];
+                    if (data.length < pageSize) hasMore = false;
+                    else from += pageSize;
+                } else {
+                    hasMore = false;
+                }
             }
+            
+            const occupied = new Set(allSales.map((item: any) => String(item.table_no)));
+            setOccupiedTables(occupied);
         } catch (error) {
             console.error('Exception fetching occupancy:', error);
         }
@@ -304,20 +314,42 @@ export function KioskView() {
     const fetchProducts = async () => {
         if (!selectedBranchId) return;
         
-        // Parallel fetch for speed
-        const [productsRes, categoriesRes] = await Promise.all([
-            supabase.from('products').select('*').eq('branch_id', selectedBranchId).order('sort_order', { ascending: true }),
-            supabase.from('categories').select('name').order('sort_order')
-        ]);
+        const pageSize = 1000;
 
-        if (productsRes.data) {
-            setProducts(productsRes.data);
+        // 1. Fetch Products with Pagination
+        let allProducts: any[] = [];
+        let prodFrom = 0;
+        let prodHasMore = true;
+
+        while (prodHasMore) {
+            const { data: prodPage, error: prodError } = await supabase
+                .from('products')
+                .select('*')
+                .eq('branch_id', selectedBranchId)
+                .order('sort_order', { ascending: true })
+                .range(prodFrom, prodFrom + pageSize - 1);
             
-            if (categoriesRes.data && categoriesRes.data.length > 0) {
-                const orderedCats = Array.from(new Set(categoriesRes.data.map(c => c.name)));
+            if (prodError) throw prodError;
+            if (prodPage && prodPage.length > 0) {
+                allProducts = [...allProducts, ...prodPage];
+                if (prodPage.length < pageSize) prodHasMore = false;
+                else prodFrom += pageSize;
+            } else {
+                prodHasMore = false;
+            }
+        }
+
+        // 2. Fetch Categories (Usually fewer than 1000, but let's be safe if needed - though usually fine)
+        const { data: catData } = await supabase.from('categories').select('name').order('sort_order');
+
+        if (allProducts.length > 0) {
+            setProducts(allProducts);
+            
+            if (catData && catData.length > 0) {
+                const orderedCats = Array.from(new Set(catData.map(c => c.name)));
                 setCategories(['All', ...orderedCats]);
             } else {
-                const cats = Array.from(new Set(productsRes.data.map(p => p.category || 'Other')));
+                const cats = Array.from(new Set(allProducts.map(p => p.category || 'Other')));
                 setCategories(['All', ...cats]);
             }
         } else {

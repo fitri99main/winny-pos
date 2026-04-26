@@ -490,7 +490,7 @@ class PrinterService {
         commands.push(new Uint8Array([this.ESC, 0x45, 0x00])); // Reset Bold
 
         if (reportData.cashTotal !== undefined) {
-            commands.push(encoder.encode(`${'Total Tunai:'.padEnd(labelWidth)}${reportData.cashTotal.toLocaleString('id-ID').padStart(valWidth)}\n`));
+            commands.push(encoder.encode(`${'Total Penjualan Tunai:'.slice(0, labelWidth).padEnd(labelWidth)}${reportData.cashTotal.toLocaleString('id-ID').padStart(valWidth)}\n`));
         }
         if (reportData.qrTotal !== undefined) {
             commands.push(encoder.encode(`${'Total Non-Tunai:'.padEnd(labelWidth)}${reportData.qrTotal.toLocaleString('id-ID').padStart(valWidth)}\n`));
@@ -510,8 +510,8 @@ class PrinterService {
             commands.push(encoder.encode('REKONSILIASI KAS\n'));
             commands.push(new Uint8Array([this.ESC, 0x45, 0x00])); // Reset Bold
             
-            commands.push(encoder.encode(`${'Total Di Sistem:'.padEnd(labelWidth)}${reportData.expectedCash.toLocaleString('id-ID').padStart(valWidth)}\n`));
-            commands.push(encoder.encode(`${'Total Aktual:'.padEnd(labelWidth)}${reportData.actualCash.toLocaleString('id-ID').padStart(valWidth)}\n`));
+            commands.push(encoder.encode(`${'Total Seharusnya (Tunai+Modal):'.slice(0, labelWidth).padEnd(labelWidth)}${reportData.expectedCash.toLocaleString('id-ID').padStart(valWidth)}\n`));
+            commands.push(encoder.encode(`${'Kas Fisik Kasir:'.slice(0, labelWidth).padEnd(labelWidth)}${reportData.actualCash.toLocaleString('id-ID').padStart(valWidth)}\n`));
             
             commands.push(new Uint8Array([this.ESC, 0x45, 0x01])); // Bold
             const varLabel = (reportData.variance || 0) >= 0 ? 'SELISIH (+):' : 'SELISIH (-):';

@@ -122,48 +122,45 @@ export const OfflineService = {
                     console.log('[OfflineService] Order already exists, skipping insert:', sale.order_no);
                     newSale = existingSale;
                 } else {
-                    // 1. Insert Sale
-                    const { data: insertedSale, error: saleError } = await supabase
-                        .from('sales')
-                        .insert([{
-                            order_no: sale.order_no,
-                            branch_id: sale.branch_id,
-                            customer_name: sale.customer_name,
-                            customer_id: sale.customer_id,
-                            table_no: sale.table_no,
-                            waiter_name: sale.waiter_name,
-                            total_amount: sale.total_amount,
-                            discount: sale.discount,
-                            tax: sale.tax || 0,
-                            service_charge: sale.service_charge || 0,
-                            status: sale.status,
-                            payment_method: sale.payment_method,
-                            date: sale.date,
-                            paid_amount: sale.paid_amount,
-                            change: sale.change
-                        }])
-                        .select()
-                        .single();
+                    // Use Atomic RPC for synchronization
+                    const saleData = {
+                        order_no: sale.order_no,
+                        branch_id: sale.branch_id,
+                        customer_name: sale.customer_name,
+                        customer_id: sale.customer_id,
+                        table_no: sale.table_no,
+                        waiter_name: sale.waiter_name,
+                        total_amount: sale.total_amount,
+                        discount: sale.discount,
+                        tax: sale.tax || 0,
+                        service_charge: sale.service_charge || 0,
+                        status: sale.status,
+                        payment_method: sale.payment_method,
+                        date: sale.date,
+                        paid_amount: sale.paid_amount,
+                        change: sale.change
+                    };
 
-                    if (saleError) throw saleError;
-                    newSale = insertedSale;
+                    const itemsData = sale.items.map(item => ({
+                        product_id: typeof item.id === 'string' && item.id.startsWith('manual') ? null : item.id,
+                        product_name: item.name,
+                        quantity: item.quantity,
+                        price: item.price,
+                        cost: 0,
+                        target: item.target || 'Waitress',
+                        status: 'Pending',
+                        is_taxed: item.is_taxed || false
+                    }));
+
+                    const { data: rpcData, error: rpcError } = await supabase.rpc('upsert_sale_with_items', {
+                        p_sale_data: saleData,
+                        p_items_data: itemsData,
+                        p_target_sale_id: null // Always new during normal sync, but RPC supports update
+                    });
+
+                    if (rpcError) throw rpcError;
+                    newSale = rpcData;
                 }
-
-                // 2. Insert Items - Map to correct schema columns
-                const cleanedItems = sale.items.map(item => ({
-                    sale_id: newSale.id,
-                    product_id: typeof item.id === 'string' && item.id.startsWith('manual') ? null : item.id,
-                    product_name: item.name,
-                    quantity: item.quantity,
-                    price: item.price,
-                    cost: 0,
-                    target: item.target || 'Waitress',
-                    status: 'Pending',
-                    is_taxed: item.is_taxed || false
-                }));
-
-                const { error: itemsError } = await supabase.from('sale_items').insert(cleanedItems);
-                if (itemsError) throw itemsError;
 
                 // 3. Remove from local queue if successful
                 await OfflineService.removeSaleFromQueue(sale.id);

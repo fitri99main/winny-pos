@@ -8,6 +8,8 @@ import { PaymentMethod } from '@/types/pos';
 import { printerService } from '../../lib/PrinterService';
 import { FingerprintAuthModal } from '../shared/FingerprintAuthModal';
 import { ManagerAuthModal } from '../shared/ManagerAuthModal';
+import { DateRangePicker } from '../shared/DateRangePicker';
+
 
 
 export interface SalesOrder {
@@ -66,6 +68,16 @@ const parseSaleDate = (value: string | Date | null | undefined) => {
     const raw = String(value).trim();
     if (!raw) return null;
 
+    // [TIMEZONE FIX] If string has explicit timezone (ends with Z or +HH:MM / +HHMM),
+    // let the JS Date constructor handle UTC->local conversion automatically.
+    // e.g. "2026-04-18T23:20:00Z" (UTC) → April 19 06:20 WIB (local)
+    const hasTimezone = /Z$|[+-]\d{2}:?\d{2}$/.test(raw);
+    if (hasTimezone) {
+        const parsed = new Date(raw);
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    // No timezone suffix = treat as local time (old format e.g. "2026-01-20 09:30")
     const match = raw.match(
         /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2})(?::(\d{2}))?(?::(\d{2}))?)?/
     );
@@ -90,6 +102,7 @@ const normalizeDateOnly = (value: string | Date | null | undefined) => {
     const parsed = parseSaleDate(value);
     return parsed ? formatDateForInput(parsed) : '';
 };
+
 
 // --- Initial Data ---
 
@@ -201,6 +214,7 @@ export function SalesView({
     settings = {},
     userRole
 }: SalesViewProps) {
+    const isAdmin = ['administrator', 'admin', 'owner', 'superadmin'].includes(userRole?.toLowerCase() || '');
     const [activeTab, setActiveTab] = useState<'history' | 'returns'>(initialTab);
     // Date Filter State
     const [dateFilter, setDateFilter] = useState({
@@ -216,7 +230,10 @@ export function SalesView({
 
     const getStatsTotal = () => {
         const now = new Date();
-        const todayStr = now.toISOString().split('T')[0];
+        // [TIMEZONE FIX] Use local date, not UTC
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+
         const currentMonth = now.getMonth();
         const currentYear = now.getFullYear();
 
@@ -417,11 +434,9 @@ export function SalesView({
         if (!processDateFilter(sale.date)) return false;
 
         // Cashier Logic
-        // Cashier Logic
-        if (selectedCashier && (sale.cashierName === selectedCashier || sale.waiterName === selectedCashier)) return true;
-        if (selectedCashier && sale.cashierName !== selectedCashier && sale.waiterName !== selectedCashier) return false;
+        const matchesCashier = !selectedCashier || (sale.cashierName === selectedCashier || sale.waiterName === selectedCashier);
 
-        return matchesBranch && matchesSearch;
+        return matchesBranch && matchesSearch && matchesCashier;
     });
 
     function processDateFilter(dateStr: string) {
@@ -438,11 +453,15 @@ export function SalesView({
         return true;
     }
 
-    const filteredReturns = (returns || []).filter(ret =>
-        ret.returnNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        ret.orderNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        ret.reason.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const filteredReturns = (returns || []).filter(ret => {
+        const matchesSearch = ret.returnNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            ret.orderNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            ret.reason.toLowerCase().includes(searchQuery.toLowerCase());
+
+        const matchesDate = processDateFilter(ret.date);
+
+        return matchesSearch && matchesDate;
+    });
 
     const [isReceiptPreviewOpen, setIsReceiptPreviewOpen] = useState(false);
     const [receiptPreviewData, setReceiptPreviewData] = useState<SalesOrder | null>(null);
@@ -821,7 +840,6 @@ export function SalesView({
                                         >
                                             <FileText className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
                                         </button>
-                                        {/* DEBUG: Table {sale.tableNo} Status: {tables.find(t => String(t.number) === String(sale.tableNo))?.status || 'Not Found'} */}
                                         {((sale.status === 'Pending' || sale.status === 'Served') || (sale.status === 'Completed' && tables.find(t => String(t.number) === String(sale.tableNo) && t.status === 'Occupied'))) && (
                                             <button
                                                 onClick={() => {
@@ -870,8 +888,11 @@ export function SalesView({
 
     const renderReturns = () => (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden h-full flex flex-col">
-            <div className="p-4 border-b border-gray-100 bg-gray-50/30">
+            <div className="p-4 border-b border-gray-100 bg-gray-50/30 flex justify-between items-center">
                 <h3 className="font-bold text-gray-800">Riwayat Retur Penjualan</h3>
+                <div className="text-xs text-gray-500 font-medium">
+                    Menampilkan <span className="text-red-600 font-bold">{filteredReturns.length}</span> retur terfilter
+                </div>
             </div>
             <div className="flex-1 overflow-y-auto">
                 <table className="w-full text-[13px]">
@@ -960,33 +981,13 @@ export function SalesView({
 
                 <div className="flex flex-wrap items-center gap-3 justify-end">
                     {/* Date Picker Range */}
-                    {activeTab === 'history' && (
-                        <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl p-1 order-2 md:order-1">
-                            <input
-                                type="date"
-                                className="bg-transparent text-xs font-bold text-gray-600 outline-none px-2 w-[110px]"
-                                value={dateFilter.start}
-                                onChange={e => setDateFilter(prev => ({ ...prev, start: e.target.value }))}
-                            />
-                            <span className="text-gray-400">-</span>
-                            <input
-                                type="date"
-                                className="bg-transparent text-xs font-bold text-gray-600 outline-none px-2 w-[110px]"
-                                value={dateFilter.end}
-                                onChange={e => setDateFilter(prev => ({ ...prev, end: e.target.value }))}
-                            />
-                            {(dateFilter.start || dateFilter.end) && (
-                                <button
-                                    onClick={() => setDateFilter({ start: '', end: '' })}
-                                    className="p-1 hover:bg-gray-200 rounded-full text-gray-400"
-                                    title="Reset Tanggal"
-                                >
-                                    <X className="w-3 h-3" />
-                                </button>
-                            )}
-                        </div>
+                    {(activeTab === 'history' || activeTab === 'returns') && (
+                        <DateRangePicker 
+                            startDate={dateFilter.start}
+                            endDate={dateFilter.end}
+                            onChange={(range) => setDateFilter({ start: range.startDate, end: range.endDate })}
+                        />
                     )}
-
 
                     {/* Cashier Filter Dropdown */}
                     {activeTab === 'history' && (
@@ -1159,7 +1160,7 @@ export function SalesView({
                                     <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Item Pesanan</p>
                                     <div className="space-y-2 border-y border-gray-50 py-3">
                                         {selectedOrderDetails.productDetails.map((item, idx) => (
-                                                <div className="flex flex-col flex-1 border-b border-gray-50 pb-2">
+                                                <div className="flex flex-col flex-1 border-b border-gray-50 pb-2" key={idx}>
                                                     <div className="flex justify-between items-center text-sm">
                                                         <div className="flex gap-2">
                                                             <span className="text-gray-500">{item.quantity}x</span>
