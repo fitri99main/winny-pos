@@ -135,7 +135,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!user) return;
 
         let mounted = true;
-        let heartbeatInterval: NodeJS.Timeout;
+        let heartbeatInterval: any;
 
         const registerDeviceSession = async () => {
             try {

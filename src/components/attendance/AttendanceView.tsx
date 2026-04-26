@@ -89,7 +89,7 @@ export function AttendanceView({
     const [pendingFpEmployee, setPendingFpEmployee] = useState<Employee | null>(null);
     const [fpTimeout, setFpTimeout] = useState<number>(0);
     const [showFpDiagnostic, setShowFpDiagnostic] = useState(false);
-    const fpTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const fpTimeoutRef = useRef<any>(null);
 
     // Fingerprint / HID State
     const [inputBuffer, setInputBuffer] = useState('');
@@ -99,7 +99,7 @@ export function AttendanceView({
 
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
-    const scanIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const scanIntervalRef = useRef<any>(null);
 
     const startCamera = async () => {
         try {

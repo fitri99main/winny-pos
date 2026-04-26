@@ -70,8 +70,8 @@ export function EmployeesView({
     const [tempTemplates, setTempTemplates] = useState<string[]>([]);
     const enrollmentStageRef = useRef(0);
     const isScanningRef = useRef(false);
-    const restartEnrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const fingerprintWaitTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const restartEnrollTimeoutRef = useRef<any>(null);
+    const fingerprintWaitTimeoutRef = useRef<any>(null);
     const formDataRef = useRef(formData);
 
     useEffect(() => {

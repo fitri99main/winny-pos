@@ -28,6 +28,7 @@ export interface Product {
     sort_order?: number;
     recipe?: RecipeItem[];
     addons?: Addon[];
+    is_sellable?: boolean;
 }
 
 export interface Addon {

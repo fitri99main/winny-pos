@@ -83,7 +83,7 @@ function Home() {
   const [pendingCount, setPendingCount] = useState(0); // New state for badge
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [contacts, setContacts] = useState<ContactData[]>([]);
-  const fetchTransactionsDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const fetchTransactionsDebounceRef = useRef<any>(null);
   const todayLocal = formatLocalDateForInput(new Date());
 
   const debouncedFetchTransactions = () => {
@@ -603,7 +603,7 @@ function Home() {
     if (!currentBranchId || loading) return;
 
     let isMounted = true;
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: any;
 
     const checkNewOrders = async () => {
       try {

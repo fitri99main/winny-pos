@@ -28,7 +28,7 @@ export function ESSView() {
     const [activeTab, setActiveTab] = useState<'PROFILE' | 'ATTENDANCE' | 'SHIFT' | 'REWARD'>('PROFILE');
 
     // Auto Logout Logic
-    const logoutTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const logoutTimerRef = useRef<any>(null);
 
     const resetLogoutTimer = () => {
         if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
