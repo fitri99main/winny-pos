@@ -66,10 +66,7 @@ export function DashboardView({
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
 
-    const lowStockItems = [
-        ...(products || []).filter(p => p && p.is_stock_ready !== false && (p.stock || 0) <= (p.min_stock ?? 5)),
-        ...(ingredients || []).filter(i => i && (i.current_stock || 0) <= (i.min_stock || 0))
-    ];
+
 
     const [reportStartDate, setReportStartDate] = useState(todayStr);
     const [reportEndDate, setReportEndDate] = useState(todayStr);
@@ -553,16 +550,7 @@ export function DashboardView({
             shadow: 'shadow-orange-500/20',
             module: 'contacts'
         },
-        {
-            label: 'Stok Menipis',
-            value: lowStockItems.length.toString(),
-            icon: Package,
-            trend: lowStockItems.length > 0 ? 'Perlu Restock' : 'Aman',
-            trendUp: lowStockItems.length === 0,
-            gradient: 'from-red-500 to-rose-600',
-            shadow: 'shadow-red-500/20',
-            module: 'inventory'
-        },
+
         {
             label: 'Voucher WiFi (Tersedia)',
             value: (voucherStats?.available || 0).toString(),
@@ -618,46 +606,11 @@ export function DashboardView({
                         </div>
                     </div>
                 )}
-
-                {/* Low Stock Notification */}
-                {lowStockItems.length > 0 && (
-                    <div className="bg-red-50 border border-red-100 rounded-xl p-3 flex flex-col gap-2 animate-in slide-in-from-top duration-500">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <div className="w-6 h-6 bg-red-500 rounded-lg flex items-center justify-center text-white shadow-sm animate-pulse">
-                                    <Package className="w-3.5 h-3.5" />
-                                </div>
-                                <h4 className="text-xs font-black text-red-700 uppercase tracking-tight">Peringatan Stok Menipis</h4>
-                            </div>
-                            <button 
-                                onClick={() => onNavigate('inventory')}
-                                className="h-6 px-2 text-[10px] font-bold text-red-600 hover:bg-red-100 rounded-lg flex items-center gap-1"
-                            >
-                                Re-Stock Sekarang →
-                            </button>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5 overflow-hidden max-h-24">
-                            {lowStockItems.slice(0, 12).map((item, idx) => (
-                                <div key={idx} className="bg-white px-2 py-1 rounded-lg border border-red-100 flex items-center gap-1.5 shadow-sm">
-                                    <span className="text-[10px] font-bold text-gray-700">{item.name}</span>
-                                    <span className="text-[10px] font-black text-red-600 bg-red-50 px-1 rounded">
-                                        {item.stock ?? item.current_stock ?? 0} {item.unit}
-                                    </span>
-                                </div>
-                            ))}
-                            {lowStockItems.length > 12 && (
-                                <div className="text-[10px] font-bold text-gray-400 self-center px-1">
-                                    +{lowStockItems.length - 12} lainnya...
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
             </div>
 
 
             {/* 2. Stats Grid - Compact & Precise */}
-            <div className="grid grid-cols-5 gap-3 shrink-0">
+            <div className="grid grid-cols-4 gap-3 shrink-0">
                 {stats.map((stat, index) => (
                     <div 
                         key={index} 
