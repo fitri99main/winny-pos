@@ -26,6 +26,8 @@ export interface Product {
     branch_id?: number | string;
     target?: 'Kitchen' | 'Bar';
     sort_order?: number;
+    recipe?: RecipeItem[];
+    addons?: Addon[];
 }
 
 export interface Addon {

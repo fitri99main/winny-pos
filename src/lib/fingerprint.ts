@@ -20,7 +20,7 @@ class FingerprintService {
     private scanCallback: FingerprintCallback | null = null;
     private currentMode: 'CAPTURE' | 'ENROLL' = 'CAPTURE';
     private cachedDevice: any = null;
-    private busyTimeout: NodeJS.Timeout | null = null;
+    private busyTimeout: any = null;
     private currentPort: number = 52181;
     private initialized: boolean = false;
     private listenersAttached: boolean = false;
@@ -253,7 +253,7 @@ class FingerprintService {
     };
 
     private withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> {
-        let timeoutHandle: NodeJS.Timeout;
+        let timeoutHandle: any;
         const timeoutPromise = new Promise<T>((_, reject) => {
             timeoutHandle = setTimeout(() => reject(new Error(errorMessage)), timeoutMs);
         });
