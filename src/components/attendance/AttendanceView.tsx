@@ -559,7 +559,7 @@ export function AttendanceView({
             autoTable(doc, {
                 startY: 45,
                 head: [['Nama Staff', 'Tanggal', 'Masuk', 'Pulang', 'Durasi', 'Telat', 'OT', 'Status']],
-                body: tableData,
+                body: tableData as any,
                 theme: 'striped',
                 headStyles: { fillColor: [59, 130, 246], textColor: 255 },
                 styles: { fontSize: 8 },

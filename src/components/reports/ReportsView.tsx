@@ -456,7 +456,7 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
                 autoTable(doc, {
                     startY: 55,
                     head: [['No. Invoice', 'Tanggal', 'Status', 'Metode', 'Total']],
-                    body: tableData,
+                    body: tableData as any,
                     theme: 'striped',
                     headStyles: { fillColor: [79, 70, 229] }, // Indigo-600
                 });
@@ -474,7 +474,7 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
                 autoTable(doc, {
                     startY: 55,
                     head: [['No. PO', 'Tanggal', 'Supplier', 'Total']],
-                    body: tableData,
+                    body: tableData as any,
                     theme: 'striped',
                     headStyles: { fillColor: [249, 115, 22] }, // Orange-500
                 });

@@ -1909,7 +1909,7 @@ export function AccountingView({
                 body: [
                     ...incomeData,
                     [{ content: 'Total Pendapatan', colSpan: 2, styles: { fontStyle: 'bold' } }, { content: `Rp ${totalRevenue.toLocaleString()}`, styles: { fontStyle: 'bold' } }]
-                ],
+                ] as any,
                 theme: 'striped',
                 headStyles: { fillColor: [22, 163, 74] }
             });
@@ -1920,7 +1920,7 @@ export function AccountingView({
                 body: [
                     ...expenseData,
                     [{ content: 'Total Beban', colSpan: 2, styles: { fontStyle: 'bold' } }, { content: `Rp ${totalExpenses.toLocaleString()}`, styles: { fontStyle: 'bold' } }]
-                ],
+                ] as any,
                 theme: 'striped',
                 headStyles: { fillColor: [220, 38, 38] }
             });
@@ -2014,7 +2014,7 @@ export function AccountingView({
             const totalUtangJangkaPanjang = groups.utangJangkaPanjang.reduce((s, a) => s + getDisplayBalance(a.code), 0);
             const totalEkuitas = groups.ekuitas.reduce((s, a) => s + getDisplayBalance(a.code), 0) + netProfit;
 
-            const body = [
+            const body: any[] = [
                 [{ content: 'ASET', colSpan: 3, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } }],
                 [{ content: 'ASET LANCAR', colSpan: 3, styles: { fontStyle: 'bold', textColor: [100, 100, 100] } }],
                 ...groups.asetLancar.map(a => [a.code, a.name, `Rp ${getDisplayBalance(a.code).toLocaleString()}`]),
@@ -2047,7 +2047,7 @@ export function AccountingView({
             autoTable(doc, {
                 startY: 40,
                 head: [['Kode', 'Uraian', 'Jumlah']],
-                body: body,
+                body: body as any,
                 theme: 'plain',
                 styles: { fontSize: 9 },
                 columnStyles: { 2: { halign: 'right' } }
