@@ -156,8 +156,10 @@ function HppReportTab({ startDate, endDate, currentBranchId }: { startDate: stri
                     <DateRangePicker 
                         startDate={localStart} 
                         endDate={localEnd} 
-                        onStartDateChange={setLocalStart} 
-                        onEndDateChange={setLocalEnd} 
+                        onChange={(range) => {
+                            setLocalStart(range.startDate);
+                            setLocalEnd(range.endDate);
+                        }} 
                     />
                     <Button onClick={fetchData} className="flex items-center gap-2 px-8 py-6 rounded-2xl text-lg font-bold shadow-lg shadow-primary/20">
                         <Calculator className="w-5 h-5" /> Tampilkan Laporan
