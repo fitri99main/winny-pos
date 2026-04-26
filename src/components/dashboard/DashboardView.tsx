@@ -64,7 +64,8 @@ export function DashboardView({
 }: DashboardViewProps) {
     const [showDailyReceipt, setShowDailyReceipt] = useState(false);
     const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
+    // Use local date format YYYY-MM-DD
+    const todayStr = today.toLocaleDateString('en-CA'); // en-CA gives YYYY-MM-DD format reliably
 
 
 
