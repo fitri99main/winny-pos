@@ -41,10 +41,8 @@ interface ContactsViewProps {
 }
 
 export function ContactsView({ contacts, setContacts, onAdd, onUpdate, onDelete }: ContactsViewProps) {
-    const [activeTab, setActiveTab] = useState<ContactType>('Customer');
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [formData, setFormData] = useState<Partial<ContactData>>({});
-    const [selectedCard, setSelectedCard] = useState<ContactData | null>(null);
     const [deleteId, setDeleteId] = useState<number | null>(null);
     const [emailError, setEmailError] = useState('');
 
@@ -77,7 +75,7 @@ export function ContactsView({ contacts, setContacts, onAdd, onUpdate, onDelete 
         }
     };
 
-    const filteredContacts = (contacts || []).filter(c => c.type === activeTab);
+    const filteredContacts = (contacts || []).filter(c => c.type === 'Supplier');
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -94,29 +92,23 @@ export function ContactsView({ contacts, setContacts, onAdd, onUpdate, onDelete 
             } else {
                 const newContact = {
                     ...formData,
-                    type: activeTab,
+                    type: 'Supplier',
                     status: 'Active',
-                    member_id: activeTab === 'Customer' ? (formData.memberId || `MC-${Math.floor(Math.random() * 10000)}`) : null,
-                    // Map camelCase to snake_case if needed by Supabase, but our TS interface uses mixed. 
-                    // Ideally we should align types. For now assuming column names match TS or direct mapping.
-                    // Actually supabase columns are usually snake_case. Let's fix keys before insert if needed.
-                    // But wait, the table definition uses snake_case (member_id), frontend uses camelCase (memberId).
-                    // We need to map them.
                 };
 
                 // Manual mapping for insert/update to match DB schema
                 const dbPayload = {
                     name: formData.name,
-                    type: activeTab,
+                    type: 'Supplier',
                     email: formData.email,
                     phone: formData.phone,
                     address: formData.address,
                     company: formData.company,
                     status: 'Active',
                     member_id: formData.memberId,
-                    tier: formData.tier,
-                    points: formData.points,
-                    birthday: formData.birthday
+                    tier: null,
+                    points: 0,
+                    birthday: null
                 };
 
                 if (formData.id) {
@@ -163,32 +155,18 @@ export function ContactsView({ contacts, setContacts, onAdd, onUpdate, onDelete 
                 <h2 className="text-xl font-bold text-gray-800 mb-6 px-2">Kontak</h2>
 
                 <Button
-                    onClick={() => { setFormData({ type: activeTab }); setIsFormOpen(true); }}
+                    onClick={() => { setFormData({ type: 'Supplier' }); setIsFormOpen(true); }}
                     className="w-full bg-primary hover:bg-primary/90 text-white shadow-lg shadow-blue-100 rounded-xl mb-6 h-12"
                 >
                     <Plus className="w-5 h-5 mr-2" />
-                    Tambah {activeTab === 'Customer' ? 'Pelanggan' : 'Pemasok'}
+                    Tambah Pemasok
                 </Button>
 
                 <div className="space-y-1">
                     <button
-                        onClick={() => setActiveTab('Customer')}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${activeTab === 'Customer'
-                            ? 'bg-blue-50 text-blue-700 shadow-sm ring-1 ring-blue-100'
-                            : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
-                            }`}
+                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 bg-blue-50 text-blue-700 shadow-sm ring-1 ring-blue-100"
                     >
-                        <Users className={`w-5 h-5 ${activeTab === 'Customer' ? 'text-blue-600' : 'text-gray-400'}`} />
-                        <span>Pelanggan</span>
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('Supplier')}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${activeTab === 'Supplier'
-                            ? 'bg-blue-50 text-blue-700 shadow-sm ring-1 ring-blue-100'
-                            : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
-                            }`}
-                    >
-                        <Truck className={`w-5 h-5 ${activeTab === 'Supplier' ? 'text-blue-600' : 'text-gray-400'}`} />
+                        <Truck className="w-5 h-5 text-blue-600" />
                         <span>Pemasok</span>
                     </button>
                 </div>
@@ -200,10 +178,10 @@ export function ContactsView({ contacts, setContacts, onAdd, onUpdate, onDelete 
                     <div className="flex justify-between items-center mb-2">
                         <div>
                             <h3 className="text-2xl font-bold text-gray-800">
-                                {activeTab === 'Customer' ? 'Daftar Pelanggan' : 'Daftar Pemasok'}
+                                Daftar Pemasok (Supplier)
                             </h3>
                             <p className="text-gray-500 text-sm mt-1">
-                                {activeTab === 'Customer' ? 'Kelola data pelanggan setia Anda.' : 'Kelola data supplier dan vendor.'}
+                                Kelola data supplier dan vendor untuk pembelian bahan baku.
                             </p>
                         </div>
                     </div>
@@ -214,7 +192,7 @@ export function ContactsView({ contacts, setContacts, onAdd, onUpdate, onDelete 
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                 <input
                                     type="text"
-                                    placeholder={`Cari ${activeTab === 'Customer' ? 'pelanggan' : 'pemasok'}...`}
+                                    placeholder="Cari pemasok..."
                                     className="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                                 />
                             </div>
@@ -224,47 +202,23 @@ export function ContactsView({ contacts, setContacts, onAdd, onUpdate, onDelete 
                             <table className="w-full text-sm text-left">
                                 <thead className="bg-gray-50 text-gray-500">
                                     <tr>
-                                        <th className="px-6 py-4 font-semibold">Nama & Keanggotaan</th>
-                                        <th className="px-6 py-4 font-semibold">Kontak & Ultah</th>
+                                        <th className="px-6 py-4 font-semibold">Nama Pemasok</th>
+                                        <th className="px-6 py-4 font-semibold">Kontak & Perusahaan</th>
                                         <th className="px-6 py-4 font-semibold">Alamat</th>
                                         <th className="px-6 py-4 font-semibold text-center">Status</th>
                                         <th className="px-6 py-4 font-semibold text-center">Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
-                                    {filteredContacts.map(contact => {
-                                        const isBirthday = contact.birthday && new Date(contact.birthday).getMonth() === new Date().getMonth() && new Date(contact.birthday).getDate() === new Date().getDate();
-
-                                        return (
-                                            <tr key={contact.id} className="hover:bg-gray-50 group">
-                                                <td className="px-6 py-4">
-                                                    <div className="font-bold text-gray-800 flex items-center gap-2">
-                                                        {contact.name}
-                                                        {isBirthday && (
-                                                            <div className="animate-bounce">
-                                                                <Cake className="w-4 h-4 text-pink-500" />
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    {contact.memberId && (
-                                                        <div className="flex items-center gap-1.5 mt-1">
-                                                            <span className="text-[10px] font-bold bg-blue-600 text-white px-1.5 py-0.5 rounded uppercase tracking-wider">{contact.tier}</span>
-                                                            <span className="text-[10px] font-mono text-gray-400">#{contact.memberId}</span>
-                                                        </div>
-                                                    )}
+                                    {filteredContacts.map(contact => (
+                                        <tr key={contact.id} className="hover:bg-gray-50 group">
+                                            <td className="px-6 py-4">
+                                                    <div className="font-bold text-gray-800">{contact.name}</div>
                                                     {contact.company && <div className="text-xs text-gray-500 mt-0.5">{contact.company}</div>}
                                                 </td>
                                                 <td className="px-6 py-4 space-y-1">
                                                     <div className="flex items-center gap-2 text-gray-500 text-xs"><Phone className="w-3 h-3" /> {contact.phone}</div>
-                                                    <div className="flex items-center gap-2 text-gray-500 text-xs">
-                                                        {contact.type === 'Customer' && contact.birthday ? (
-                                                            <span className={`flex items-center gap-2 ${isBirthday ? 'text-pink-600 font-bold' : 'text-gray-400'}`}>
-                                                                <Cake className="w-3 h-3" /> {new Date(contact.birthday).toLocaleDateString('id-ID', { day: 'numeric', month: 'long' })}
-                                                            </span>
-                                                        ) : (
-                                                            <span className="flex items-center gap-2"><Mail className="w-3 h-3" /> {contact.email}</span>
-                                                        )}
-                                                    </div>
+                                                    <div className="flex items-center gap-2 text-gray-500 text-xs"><Mail className="w-3 h-3" /> {contact.email}</div>
                                                 </td>
                                                 <td className="px-6 py-4 text-gray-600 max-w-xs truncate">
                                                     <div className="flex items-center gap-2"><MapPin className="w-3 h-3 text-gray-400" /> {contact.address}</div>
@@ -276,27 +230,20 @@ export function ContactsView({ contacts, setContacts, onAdd, onUpdate, onDelete 
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4 flex justify-center gap-2">
-                                                    {contact.type === 'Customer' && (
-                                                        <button type="button" onClick={() => setSelectedCard(contact)} className="p-2 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg flex items-center gap-2 px-3" title="Cetak Kartu Member">
-                                                            <CreditCard className="w-4 h-4" />
-                                                            <span className="text-xs font-bold">Kartu</span>
-                                                        </button>
-                                                    )}
                                                     <button onClick={() => { setFormData(contact); setIsFormOpen(true); }} className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg"><Edit className="w-4 h-4" /></button>
                                                     <button onClick={() => handleDeleteClick(contact.id)} className="p-2 hover:bg-red-50 text-red-600 rounded-lg"><Trash2 className="w-4 h-4" /></button>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
+                                            </td>
+                                        </tr>
+                                    ))}
                                     {filteredContacts.length === 0 && (
                                         <tr>
                                             <td colSpan={5}>
                                                 <EmptyState
-                                                    icon={Users}
-                                                    title={`Belum ada ${activeTab === 'Customer' ? 'Pelanggan' : 'Pemasok'}`}
-                                                    description={`Mulai tambahkan data ${activeTab === 'Customer' ? 'pelanggan' : 'pemasok'} Anda di sini.`}
-                                                    actionLabel={`Tambah ${activeTab === 'Customer' ? 'Pelanggan' : 'Pemasok'}`}
-                                                    onAction={() => { setFormData({ type: activeTab }); setIsFormOpen(true); }}
+                                                    icon={Truck}
+                                                    title="Belum ada Pemasok"
+                                                    description="Mulai tambahkan data pemasok bahan baku Anda di sini."
+                                                    actionLabel="Tambah Pemasok"
+                                                    onAction={() => { setFormData({ type: 'Supplier' }); setIsFormOpen(true); }}
                                                 />
                                             </td>
                                         </tr>
@@ -313,44 +260,23 @@ export function ContactsView({ contacts, setContacts, onAdd, onUpdate, onDelete 
                 <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-md animate-in zoom-in-95">
                         <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-                            <h3 className="font-bold text-lg text-gray-800">{formData.id ? 'Edit Kontak' : `Tambah ${activeTab === 'Customer' ? 'Pelanggan' : 'Pemasok'}`}</h3>
+                            <h3 className="font-bold text-lg text-gray-800">{formData.id ? 'Edit Pemasok' : 'Tambah Pemasok'}</h3>
                         </div>
                         <form onSubmit={handleSubmit} className="p-6 space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Nama {activeTab === 'Customer' ? 'Pelanggan' : 'Pemasok'}</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Nama Pemasok</label>
                                 <input
                                     className="w-full p-2 border rounded-lg"
                                     value={formData.name || ''}
                                     onChange={e => setFormData({ ...formData, name: e.target.value })}
-                                    placeholder={activeTab === 'Customer' ? "Contoh: Budi Santoso" : "Contoh: PT. Supplier Jaya"}
+                                    placeholder="Contoh: PT. Supplier Jaya"
                                     required
                                 />
                             </div>
-                            {activeTab === 'Supplier' ? (
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Nama Perusahaan</label>
-                                    <input className="w-full p-2 border rounded-lg" value={formData.company || ''} onChange={e => setFormData({ ...formData, company: e.target.value })} placeholder="Opsional" />
-                                </div>
-                            ) : (
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">No. Member (Kartu)</label>
-                                        <div className="relative">
-                                            <CreditCard className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                            <input className="w-full pl-9 p-2 border rounded-lg text-sm font-mono" value={formData.memberId || ''} onChange={e => setFormData({ ...formData, memberId: e.target.value.toUpperCase() })} placeholder="MC-XXXX" />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Level Member</label>
-                                        <select className="w-full p-2 border rounded-lg text-sm" value={formData.tier || 'Regular'} onChange={e => setFormData({ ...formData, tier: e.target.value as any })}>
-                                            <option value="Regular">Regular (0%)</option>
-                                            <option value="Silver">Silver (5%)</option>
-                                            <option value="Gold">Gold (10%)</option>
-                                            <option value="Platinum">Platinum (15%)</option>
-                                        </select>
-                                    </div>
-                                </div>
-                            )}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Nama Perusahaan (Opsional)</label>
+                                <input className="w-full p-2 border rounded-lg" value={formData.company || ''} onChange={e => setFormData({ ...formData, company: e.target.value })} placeholder="Opsional" />
+                            </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
@@ -383,15 +309,6 @@ export function ContactsView({ contacts, setContacts, onAdd, onUpdate, onDelete 
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Alamat</label>
                                 <textarea className="w-full p-2 border rounded-lg resize-none text-sm" rows={2} value={formData.address || ''} onChange={e => setFormData({ ...formData, address: e.target.value })} />
                             </div>
-                            {activeTab === 'Customer' && (
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Tanggal Lahir</label>
-                                    <div className="relative">
-                                        <Cake className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                        <input type="date" className="w-full pl-9 p-2 border rounded-lg text-sm" value={formData.birthday || ''} onChange={e => setFormData({ ...formData, birthday: e.target.value })} />
-                                    </div>
-                                </div>
-                            )}
                             <div className="flex justify-end gap-3 pt-4">
                                 <Button type="button" variant="outline" onClick={() => setIsFormOpen(false)}>Batal</Button>
                                 <Button type="submit">Simpan</Button>
@@ -401,32 +318,6 @@ export function ContactsView({ contacts, setContacts, onAdd, onUpdate, onDelete 
                 </div>
             )}
 
-            {/* Card Preview Modal */}
-            {selectedCard && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 text-left">
-                    <div className="bg-white rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-                        <div className="px-8 py-5 border-b flex items-center justify-between bg-gray-50/50">
-                            <h3 className="font-bold text-gray-800">Preview Kartu Member</h3>
-                            <button onClick={() => setSelectedCard(null)} className="p-2 hover:bg-gray-200 rounded-full transition-colors"><Plus className="w-5 h-5 rotate-45 text-gray-400" /></button>
-                        </div>
-                        <div className="p-10 flex flex-col items-center gap-8">
-                            <QRCard
-                                type="Customer"
-                                name={selectedCard.name}
-                                id={selectedCard.memberId || `CUST-${selectedCard.id}`}
-                                roleOrTier={selectedCard.tier}
-                                joinDateOrBirthday={selectedCard.birthday}
-                            />
-                            <div className="flex gap-4 w-full">
-                                <Button variant="outline" className="flex-1 h-12 rounded-xl" onClick={() => setSelectedCard(null)}>Tutup</Button>
-                                <Button className="flex-1 h-12 rounded-xl gap-2 shadow-lg shadow-primary/20" onClick={() => window.print()}>
-                                    <Printer className="w-4 h-4" /> Cetak Kartu
-                                </Button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
             {/* Confirmation Dialog */}
             <ConfirmDialog
                 isOpen={!!deleteId}

@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../auth/AuthProvider';
-import { Calculator, TrendingUp, TrendingDown, DollarSign, Wallet, FileText, Plus, BookOpen, LayoutDashboard, Settings, Edit, Trash2, Download, CalendarCheck, History, Lock, Unlock, Loader2, ShoppingCart, Search, Eye, X } from 'lucide-react';
+import { Calculator, TrendingUp, TrendingDown, DollarSign, Wallet, FileText, Plus, BookOpen, LayoutDashboard, Settings, Edit, Trash2, Download, CalendarCheck, History, Lock, Unlock, Loader2, ShoppingCart, Search, Eye, X, RefreshCw } from 'lucide-react';
 import { PettyCashService, PettyCashSession, PettyCashTransaction } from '../../lib/PettyCashService';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -9,6 +9,7 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { DateRangePicker } from '../shared/DateRangePicker';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, AreaChart, Area } from 'recharts';
 
 // --- Types & Constants ---
 
@@ -42,12 +43,27 @@ function HppReportTab({ startDate, endDate, currentBranchId }: { startDate: stri
     const [hasLoaded, setHasLoaded] = useState(false);
     const [monthlyData, setMonthlyData] = useState<any[]>([]);
     const [productData, setProductData] = useState<any[]>([]);
-    const [viewMode, setViewMode] = useState<'monthly' | 'product'>('monthly');
+    const [allRawItems, setAllRawItems] = useState<any[]>([]); // New state for raw transactions
+    const [viewMode, setViewMode] = useState<'monthly' | 'product' | 'transactions'>('monthly');
     const [searchProduct, setSearchProduct] = useState('');
+    const [searchTransaction, setSearchTransaction] = useState(''); // Search for raw transactions
+    const [localStart, setLocalStart] = useState(startDate);
+    const [localEnd, setLocalEnd] = useState(endDate);
     const fetchingRef = useRef(false);
 
     const formatCurrency = (n: number) => `Rp ${Math.round(n || 0).toLocaleString('id-ID')}`;
     const formatPct = (n: number) => isNaN(n) || !isFinite(n) ? '0%' : `${n.toFixed(1)}%`;
+
+    useEffect(() => {
+        setLocalStart(startDate);
+        setLocalEnd(endDate);
+    }, [startDate, endDate]);
+
+    useEffect(() => {
+        if (hasLoaded) {
+            fetchData();
+        }
+    }, [localStart, localEnd, currentBranchId]);
 
     const fetchData = async () => {
         if (fetchingRef.current) return;
@@ -66,11 +82,11 @@ function HppReportTab({ startDate, endDate, currentBranchId }: { startDate: stri
                 const { data, error } = await supabase
                     .from('sale_items')
                     .select(`
-                        product_name, quantity, price, cost, 
-                        sales!inner(created_at, date, status, branch_id, total_amount)
+                        id, product_id, product_name, quantity, price, cost, 
+                        sales!inner(created_at, date, status, branch_id, total_amount, order_no)
                     `)
-                    .gte('sales.date', startDate)
-                    .lte('sales.date', endDate)
+                    .gte('sales.date', localStart)
+                    .lte('sales.date', localEnd)
                     .eq(currentBranchId ? 'sales.branch_id' : 'sales.branch_id', currentBranchId || 'sales.branch_id')
                     .range(from, from + pageSize - 1);
 
@@ -118,6 +134,7 @@ function HppReportTab({ startDate, endDate, currentBranchId }: { startDate: stri
 
             setMonthlyData(Object.entries(monthMap).map(([month, d]) => ({ month, ...d, grossProfit: d.revenue - d.hpp, margin: d.revenue > 0 ? ((d.revenue - d.hpp) / d.revenue) * 100 : 0 })).sort((a, b) => a.month.localeCompare(b.month)));
             setProductData(Object.entries(productMap).map(([name, d]) => ({ name, ...d, grossProfit: d.revenue - d.hpp, margin: d.revenue > 0 ? ((d.revenue - d.hpp) / d.revenue) * 100 : 0 })).sort((a, b) => b.grossProfit - a.grossProfit));
+            setAllRawItems(allItems.sort((a, b) => (b.sales?.date || '').localeCompare(a.sales?.date || '')));
             setHasLoaded(true);
         } catch (err: any) {
             console.error('[HPP] Error:', err);
@@ -133,10 +150,19 @@ function HppReportTab({ startDate, endDate, currentBranchId }: { startDate: stri
             <div className="flex flex-col items-center justify-center h-96 bg-white rounded-2xl border border-dashed border-gray-300 animate-in fade-in">
                 <TrendingDown className="w-12 h-12 text-gray-300 mb-4" />
                 <h3 className="text-lg font-bold text-gray-800">Laporan Harga Pokok Penjualan (HPP)</h3>
-                <p className="text-gray-500 mb-6 text-center max-w-md">Klik tombol di bawah untuk memproses data HPP periode {startDate} s/d {endDate}.</p>
-                <Button onClick={fetchData} className="flex items-center gap-2 px-8 py-6 rounded-2xl text-lg font-bold shadow-lg shadow-primary/20">
-                    <Calculator className="w-5 h-5" /> Tampilkan Laporan
-                </Button>
+                <p className="text-gray-500 mb-6 text-center max-w-md">Pilih rentang tanggal untuk memproses data HPP snapshot.</p>
+                
+                <div className="bg-gray-50 p-6 rounded-2xl border mb-8 flex flex-col items-center gap-4">
+                    <DateRangePicker 
+                        startDate={localStart} 
+                        endDate={localEnd} 
+                        onStartDateChange={setLocalStart} 
+                        onEndDateChange={setLocalEnd} 
+                    />
+                    <Button onClick={fetchData} className="flex items-center gap-2 px-8 py-6 rounded-2xl text-lg font-bold shadow-lg shadow-primary/20">
+                        <Calculator className="w-5 h-5" /> Tampilkan Laporan
+                    </Button>
+                </div>
             </div>
         );
     }
@@ -149,14 +175,65 @@ function HppReportTab({ startDate, endDate, currentBranchId }: { startDate: stri
     const avgMargin = totalRevenue > 0 ? (totalGross / totalRevenue) * 100 : 0;
 
     const filteredProducts = productData.filter(p => p.name.toLowerCase().includes(searchProduct.toLowerCase()));
-
+    const filteredTransactions = allRawItems.filter(item => 
+        (item.product_name || '').toLowerCase().includes(searchTransaction.toLowerCase()) ||
+        (item.sales?.order_no || '').toLowerCase().includes(searchTransaction.toLowerCase())
+    );
     const getMonthLabel = (m: string) => {
         const d = new Date(m + '-01');
         return d.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
     };
 
+    const trendData = monthlyData.map(d => ({
+        name: getMonthLabel(d.month),
+        hpp: d.hpp,
+        margin: Number(d.margin.toFixed(1)),
+        revenue: d.revenue
+    }));
+
+
     return (
         <div className="space-y-6 animate-in fade-in">
+            {/* Quick Filter Presets & Date Picker */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-2xl border shadow-sm">
+                <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mr-2">Rentang Cepat:</span>
+                    {[
+                        { label: 'Hari Ini', days: 0 },
+                        { label: '7 Hari', days: 7 },
+                        { label: '30 Hari', days: 30 },
+                        { label: '90 Hari', days: 90 },
+                        { label: 'Tahun Ini', type: 'year' }
+                    ].map(p => (
+                        <button
+                            key={p.label}
+                            onClick={() => {
+                                const end = new Date();
+                                const start = new Date();
+                                if (p.type === 'year') {
+                                    start.setMonth(0, 1);
+                                } else {
+                                    start.setDate(end.getDate() - (p.days as number));
+                                }
+                                setLocalStart(start.toISOString().split('T')[0]);
+                                setLocalEnd(end.toISOString().split('T')[0]);
+                            }}
+                            className="text-[10px] font-bold px-3 py-1.5 bg-gray-100 text-gray-600 rounded-full hover:bg-primary/10 hover:text-primary transition-all"
+                        >
+                            {p.label}
+                        </button>
+                    ))}
+                </div>
+                <div className="flex items-center gap-2">
+                    <DateRangePicker 
+                        startDate={localStart} 
+                        endDate={localEnd} 
+                        onStartDateChange={setLocalStart} 
+                        onEndDateChange={setLocalEnd} 
+                    />
+                </div>
+            </div>
+
             {/* Summary Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-white p-5 rounded-2xl border shadow-sm">
@@ -177,11 +254,43 @@ function HppReportTab({ startDate, endDate, currentBranchId }: { startDate: stri
                 </div>
             </div>
 
+            {/* Trend Chart Section */}
+            {monthlyData.length > 0 && (
+                <div className="bg-white p-6 rounded-2xl border shadow-sm">
+                    <div className="flex items-center justify-between mb-6">
+                        <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                            <TrendingUp className="w-5 h-5 text-primary" /> Visualisasi Tren HPP & Margin
+                        </h3>
+                        <div className="flex gap-4 text-xs font-medium">
+                            <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-red-500"></div> HPP</div>
+                            <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-primary"></div> Margin (%)</div>
+                        </div>
+                    </div>
+                    <div className="h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={trendData}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} />
+                                <YAxis yAxisId="left" hide />
+                                <YAxis yAxisId="right" orientation="right" hide />
+                                <Tooltip 
+                                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                                    formatter={(value: any, name: string) => [name === 'hpp' ? formatCurrency(value) : `${value}%`, name === 'hpp' ? 'Total HPP' : 'Margin %']}
+                                />
+                                <Line yAxisId="left" type="monotone" dataKey="hpp" stroke="#ef4444" strokeWidth={3} dot={{ r: 4, fill: '#ef4444' }} activeDot={{ r: 6 }} />
+                                <Line yAxisId="right" type="monotone" dataKey="margin" stroke="#f97316" strokeWidth={3} strokeDasharray="5 5" dot={{ r: 4, fill: '#f97316' }} />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            )}
+
             {/* View Toggle */}
             <div className="flex items-center gap-3">
                 <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
                     <button onClick={() => setViewMode('monthly')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${viewMode === 'monthly' ? 'bg-white text-primary shadow-sm' : 'text-gray-500'}`}>Per Bulan</button>
                     <button onClick={() => setViewMode('product')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${viewMode === 'product' ? 'bg-white text-primary shadow-sm' : 'text-gray-500'}`}>Per Produk</button>
+                    <button onClick={() => setViewMode('transactions')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${viewMode === 'transactions' ? 'bg-white text-primary shadow-sm' : 'text-gray-500'}`}>Riwayat Detail</button>
                 </div>
                 {viewMode === 'product' && (
                     <input
@@ -192,7 +301,58 @@ function HppReportTab({ startDate, endDate, currentBranchId }: { startDate: stri
                         className="border rounded-xl px-4 py-2 text-sm flex-1 max-w-xs outline-none focus:ring-2 focus:ring-primary/20"
                     />
                 )}
-                <button onClick={fetchData} className="ml-auto text-xs text-gray-400 border px-3 py-2 rounded-xl hover:bg-gray-50 flex items-center gap-1 font-bold">
+                {viewMode === 'transactions' && (
+                    <input
+                        type="text"
+                        placeholder="Cari produk / no. invoice..."
+                        value={searchTransaction}
+                        onChange={e => setSearchTransaction(e.target.value)}
+                        className="border rounded-xl px-4 py-2 text-sm flex-1 max-w-xs outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                )}
+                <button 
+                    onClick={async () => {
+                        if (!confirm('Apakah Anda ingin menyinkronkan HPP untuk periode ini? Sistem akan mengisi HPP yang masih kosong (Rp 0) di transaksi lama berdasarkan harga beli produk saat ini.')) return;
+                        setLoading(true);
+                        try {
+                            const { data: products } = await supabase.from('products').select('id, cost');
+                            const { data: allItems } = await supabase
+                                .from('sale_items')
+                                .select('id, product_id, cost, sales!inner(date)')
+                                .gte('sales.date', startDate)
+                                .lte('sales.date', endDate)
+                                .eq('cost', 0);
+
+                            if (!allItems || allItems.length === 0) {
+                                toast.success('Semua transaksi sudah memiliki HPP.');
+                                return;
+                            }
+
+                            const prodMap: Record<string, number> = {};
+                            products?.forEach(p => prodMap[p.id] = p.cost || 0);
+
+                            let updated = 0;
+                            for (const item of allItems) {
+                                const cost = prodMap[item.product_id];
+                                if (cost > 0) {
+                                    await supabase.from('sale_items').update({ cost }).eq('id', item.id);
+                                    updated++;
+                                }
+                            }
+                            toast.success(`Berhasil menyinkronkan HPP untuk ${updated} item.`);
+                            fetchData();
+                        } catch (err) {
+                            console.error(err);
+                            toast.error('Gagal sinkronisasi HPP');
+                        } finally {
+                            setLoading(false);
+                        }
+                    }}
+                    className="ml-auto text-xs text-orange-600 border border-orange-200 px-3 py-2 rounded-xl hover:bg-orange-50 flex items-center gap-1 font-bold"
+                >
+                    <RefreshCw className="w-3 h-3" /> Sinkronkan HPP
+                </button>
+                <button onClick={fetchData} className="text-xs text-gray-400 border px-3 py-2 rounded-xl hover:bg-gray-50 flex items-center gap-1 font-bold">
                     ↻ Refresh
                 </button>
             </div>
@@ -298,6 +458,70 @@ function HppReportTab({ startDate, endDate, currentBranchId }: { startDate: stri
                                         </td>
                                     </tr>
                                 ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
+            {/* Transaction Detail Table */}
+            {viewMode === 'transactions' && (
+                <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
+                    <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
+                        <div>
+                            <h3 className="font-bold text-gray-800">Riwayat Snapshot HPP Detail</h3>
+                            <p className="text-xs text-gray-400 mt-1">Daftar setiap item yang terjual beserta HPP (cost) yang direkam saat transaksi.</p>
+                        </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead className="bg-gray-50 text-gray-500 font-bold">
+                                <tr>
+                                    <th className="px-4 py-3 text-left">Waktu / Invoice</th>
+                                    <th className="px-4 py-3 text-left">Produk</th>
+                                    <th className="px-4 py-3 text-right">Qty</th>
+                                    <th className="px-4 py-3 text-right">Harga Jual</th>
+                                    <th className="px-4 py-3 text-right text-red-500">HPP Unit</th>
+                                    <th className="px-4 py-3 text-right text-red-600">Total HPP</th>
+                                    <th className="px-4 py-3 text-right">Margin</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-50">
+                                {filteredTransactions.length === 0 && (
+                                    <tr><td colSpan={7} className="p-8 text-center text-gray-400">Tidak ada transaksi ditemukan.</td></tr>
+                                )}
+                                {filteredTransactions.map((item, idx) => {
+                                    const cost = Number(item.cost) || 0;
+                                    const qty = Number(item.quantity) || 0;
+                                    const price = Number(item.price) || 0;
+                                    const revenue = qty * price;
+                                    const hppTotal = qty * cost;
+                                    const margin = revenue > 0 ? ((revenue - hppTotal) / revenue) * 100 : 0;
+                                    
+                                    return (
+                                        <tr key={idx} className="hover:bg-gray-50">
+                                            <td className="px-4 py-3">
+                                                <p className="font-bold text-gray-700 text-xs">{item.sales?.date?.substring(0, 16)}</p>
+                                                <p className="text-[10px] text-gray-400 font-mono">{item.sales?.order_no}</p>
+                                            </td>
+                                            <td className="px-4 py-3 font-medium text-gray-800">{item.product_name}</td>
+                                            <td className="px-4 py-3 text-right text-gray-600">{qty}</td>
+                                            <td className="px-4 py-3 text-right font-mono text-xs">{formatCurrency(price)}</td>
+                                            <td className="px-4 py-3 text-right font-mono text-red-500">{formatCurrency(cost)}</td>
+                                            <td className="px-4 py-3 text-right font-mono font-bold text-red-600">{formatCurrency(hppTotal)}</td>
+                                            <td className="px-4 py-3 text-right">
+                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                                    margin >= 50 ? 'bg-green-100 text-green-700' :
+                                                    margin >= 30 ? 'bg-yellow-100 text-yellow-700' :
+                                                    cost === 0 ? 'bg-gray-100 text-gray-400' :
+                                                    'bg-red-100 text-red-700'
+                                                }`}>
+                                                    {cost === 0 ? 'HPP=0' : formatPct(margin)}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>

@@ -1378,6 +1378,75 @@ function Home() {
       }
     }
   };
+  
+  const syncPurchaseWithStock = async (po: any) => {
+    try {
+      console.log('[StockSync] Starting sync for PO:', po.purchase_no, po);
+      const items = po.items_list || po.itemsList || [];
+      
+      if (!items.length) {
+        console.warn('[StockSync] No items found in PO:', po.purchase_no);
+        return;
+      }
+
+      for (const item of items) {
+        const idToSync = item.itemId || item.id;
+        console.log('[StockSync] Processing item:', item.name, 'ID:', idToSync);
+
+        // Skip manual items that are not connected to DB records
+        if (typeof idToSync === 'string' && idToSync.startsWith('manual-')) {
+          console.log('[StockSync] Skipping manual item:', item.name);
+          continue;
+        }
+
+        // 1. Try to find if it's a product
+        const { data: product } = await supabase.from('products').select('id, stock').eq('id', idToSync).maybeSingle();
+        if (product) {
+          const oldStock = Number(product.stock) || 0;
+          const addQty = Number(item.quantity) || 0;
+          const newStock = oldStock + addQty;
+          
+          console.log(`[StockSync] Updating Product ${item.name}: ${oldStock} -> ${newStock}`);
+          const { error: pErr } = await supabase.from('products').update({ stock: newStock }).eq('id', product.id);
+          if (pErr) console.error('[StockSync] Product Update Error:', pErr);
+        } else {
+          // 2. Try to find if it's an ingredient
+          const { data: ingredient } = await supabase.from('ingredients').select('id, current_stock').eq('id', idToSync).maybeSingle();
+          if (ingredient) {
+            const oldStock = Number(ingredient.current_stock) || 0;
+            const addQty = Number(item.quantity) || 0;
+            const newStock = oldStock + addQty;
+
+            console.log(`[StockSync] Updating Ingredient ${item.name}: ${oldStock} -> ${newStock}`);
+            const { error: iErr } = await supabase.from('ingredients').update({ current_stock: newStock }).eq('id', ingredient.id);
+            if (iErr) console.error('[StockSync] Ingredient Update Error:', iErr);
+            
+            // Record stock movement for ingredient
+            await supabase.from('stock_movements').insert([{
+              ingredient_id: ingredient.id,
+              ingredient_name: item.name,
+              branch_id: po.branch_id,
+              type: 'IN',
+              quantity: addQty,
+              unit: item.unit || '',
+              reason: `Pembelian PO: ${po.purchase_no}`,
+              user: profileName || user?.user_metadata?.name || 'System'
+            }]);
+          } else {
+            console.warn('[StockSync] Item ID not found in Products or Ingredients:', idToSync, item.name);
+          }
+        }
+      }
+      toast.success('Stok produk/bahan baku telah diperbarui otomatis');
+      
+      // Proactively refresh branch data to show updated stock in UI
+      if (currentBranchId) fetchBranchData(currentBranchId);
+      
+    } catch (err) {
+      console.error('[StockSync] Critical error:', err);
+      toast.error('Gagal memperbarui stok otomatis');
+    }
+  };
 
   const handleMasterDataCRUD = async (
     table: string,
@@ -1397,22 +1466,24 @@ function Home() {
         if (error) throw error;
         toast.success(`Data berhasil ditambahkan`);
 
-        // [NEW] Accounting Integration for New Purchases
+        // [NEW] Accounting & Stock Integration for New Purchases
         if (table === 'purchases' && insertedData?.status === 'Completed') {
           await syncPurchaseWithAccounting(insertedData);
+          await syncPurchaseWithStock(insertedData);
         }
         return insertedData;
       } else if (action === 'update') {
         const { error } = await supabase.from(table).update(data).eq('id', data.id);
         if (error) throw error;
 
-        // [NEW] Accounting Integration for Updated Purchases
+        // [NEW] Accounting & Stock Integration for Updated Purchases
         if (table === 'purchases' && data.status === 'Completed') {
-          // Fetch full purchase data for journaling
+          // Fetch full purchase data for journaling & stock sync
           const { data: po } = await supabase.from('purchases').select('*').eq('id', data.id).single();
           if (po) {
             await syncPurchaseWithAccounting(po);
-            toast.success('Pembelian dicatat ke Akuntansi');
+            await syncPurchaseWithStock(po);
+            toast.success('Pembelian dicatat ke Akuntansi & Stok diperbarui');
           }
         }
         

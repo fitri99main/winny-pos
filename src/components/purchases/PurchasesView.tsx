@@ -20,6 +20,7 @@ interface PurchaseItem {
 interface PurchaseOrder {
     id: number;
     purchaseNo: string;
+    supplierInvoiceNo?: string; // New field
     supplierName: string;
     date: string;
     items: number;
@@ -70,12 +71,14 @@ export function PurchasesView({
     const [inputForm, setInputForm] = useState<Partial<PurchaseOrder>>({
         date: new Date().toISOString().split('T')[0],
         supplierName: '',
+        supplierInvoiceNo: '',
+        purchaseNo: '',
         payment_method: 'Tunai'
     });
     const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([]);
     const [returnForm, setReturnForm] = useState<Partial<PurchaseReturn>>({ date: new Date().toISOString().split('T')[0] });
     const [isManualSupplier, setIsManualSupplier] = useState(false);
-    const [manualItemForm, setManualItemForm] = useState({ name: '', price: '' });
+    const [manualItemForm, setManualItemForm] = useState({ name: '', price: '', selectedItemId: '' });
 
     const [isEditing, setIsEditing] = useState(false);
     const [editingId, setEditingId] = useState<number | null>(null);
@@ -164,6 +167,7 @@ export function PurchasesView({
         const purchaseNoFinal = inputForm.purchaseNo || `PO-2026-${String(purchases.length + 1).padStart(3, '0')}`;
         const purchaseData = {
             purchase_no: purchaseNoFinal,
+            supplier_invoice_no: inputForm.supplierInvoiceNo || '', // Add to payload
             supplier_name: inputForm.supplierName,
             date: inputForm.date || new Date().toISOString().split('T')[0],
             items_count: purchaseItems.reduce((sum, i) => sum + i.quantity, 0),
@@ -205,7 +209,13 @@ export function PurchasesView({
             }
 
             // Reset only on success
-            setInputForm({ date: new Date().toISOString().split('T')[0], supplierName: '' });
+            setInputForm({ 
+                date: new Date().toISOString().split('T')[0], 
+                supplierName: '', 
+                supplierInvoiceNo: '',
+                purchaseNo: '',
+                payment_method: 'Tunai'
+            });
             setPurchaseItems([]);
             setIsEditing(false);
             setIsManualSupplier(false);
@@ -249,6 +259,7 @@ export function PurchasesView({
             date: po.date,
             supplierName: po.supplier_name,
             purchaseNo: po.purchase_no,
+            supplierInvoiceNo: po.supplier_invoice_no || '',
             status: po.status,
             payment_method: po.payment_method || 'Tunai'
         });
@@ -347,13 +358,14 @@ export function PurchasesView({
             <table className="w-full text-sm item-center">
                 <thead className="bg-gray-50 text-gray-500 text-left">
                     <tr>
-                        <th className="px-6 py-4">No. Faktur</th>
+                        <th className="px-6 py-4 text-center">No</th>
+                        <th className="px-6 py-4">No. Faktur (S)</th>
+                        <th className="px-6 py-4">No. PO</th>
                         <th className="px-6 py-4">Tanggal</th>
                         <th className="px-6 py-4">Supplier</th>
                         <th className="px-6 py-4">Item</th>
                         <th className="px-6 py-4 text-right">Harga</th>
                         <th className="px-6 py-4 text-center">Jumlah</th>
-                        <th className="px-6 py-4">kg/satuan</th>
                         <th className="px-6 py-4 text-right">Total</th>
                         <th className="px-6 py-4 text-center">Status</th>
                         <th className="px-6 py-4 text-center">Aksi</th>
@@ -362,14 +374,17 @@ export function PurchasesView({
                 <tbody className="divide-y divide-gray-100">
                     {flatPurchaseHistory.map((row, idx) => (
                         <tr key={`${row.id}-${idx}`} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 text-center text-gray-400 font-mono text-xs">{idx + 1}</td>
+                            <td className="px-6 py-4 font-bold text-gray-800">{row.supplier_invoice_no || '-'}</td>
                             <td className="px-6 py-4 font-mono font-medium text-blue-600">{row.purchase_no}</td>
                             <td className="px-6 py-4 text-gray-500">{row.date}</td>
                             <td className="px-6 py-4 font-bold text-gray-700">{row.supplier_name}</td>
                             <td className="px-6 py-4 text-gray-700">{row.itemName}</td>
                             <td className="px-6 py-4 text-right">Rp {(row.itemPrice || 0).toLocaleString()}</td>
-                            <td className="px-6 py-4 text-center font-bold">{row.itemQty}</td>
-                            <td className="px-6 py-4 text-gray-400">{row.itemUnit}</td>
-                            <td className="px-6 py-4 text-right font-bold">Rp {((row.itemPrice || 0) * (row.itemQty || 0)).toLocaleString()}</td>
+                            <td className="px-6 py-4 text-center font-bold">
+                                {row.itemQty} <span className="text-[10px] text-gray-400 font-normal ml-1">{row.itemUnit}</span>
+                            </td>
+                            <td className="px-6 py-4 text-right font-bold text-blue-700">Rp {((row.itemPrice || 0) * (row.itemQty || 0)).toLocaleString()}</td>
                             <td className="px-6 py-4 text-center">
                                 {row.isFirst && (
                                     <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase border ${row.status === 'Completed' ? 'bg-green-50 text-green-700 border-green-200' :
@@ -521,12 +536,32 @@ export function PurchasesView({
 
                     <div className="space-y-4">
                         <div>
+                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">No. PO Internal</label>
+                            <input
+                                type="text"
+                                className="w-full p-2.5 border rounded-xl bg-gray-50 font-mono text-sm"
+                                placeholder="Contoh: PO-001 (Kosongkan untuk otomatis)"
+                                value={inputForm.purchaseNo}
+                                onChange={e => setInputForm({ ...inputForm, purchaseNo: e.target.value })}
+                            />
+                        </div>
+                        <div>
                             <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Tanggal</label>
                             <input
                                 type="date"
                                 className="w-full p-2.5 border rounded-xl"
                                 value={inputForm.date}
                                 onChange={e => setInputForm({ ...inputForm, date: e.target.value })}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">No. Faktur Supplier</label>
+                            <input
+                                type="text"
+                                className="w-full p-2.5 border rounded-xl"
+                                placeholder="Masukkan No. Faktur dari Supplier..."
+                                value={inputForm.supplierInvoiceNo}
+                                onChange={e => setInputForm({ ...inputForm, supplierInvoiceNo: e.target.value })}
                             />
                         </div>
                         <div>
@@ -601,13 +636,67 @@ export function PurchasesView({
                         <Plus className="w-4 h-4 text-blue-600" /> Item Kustom / Manual
                     </h3>
                     <div className="space-y-3">
-                        <input
-                            type="text"
-                            placeholder="Nama Barang (misal: Bensin)"
-                            className="w-full p-2.5 text-sm border rounded-xl"
-                            value={manualItemForm.name}
-                            onChange={e => setManualItemForm({ ...manualItemForm, name: e.target.value })}
-                        />
+                        <div className="relative">
+                            <input
+                                type="text"
+                                placeholder="Nama Barang (Ketik atau Cari...)"
+                                className="w-full p-2.5 text-sm border rounded-xl pr-10"
+                                value={manualItemForm.name}
+                                onChange={e => {
+                                    const val = e.target.value;
+                                    setManualItemForm({ ...manualItemForm, name: val, selectedItemId: '' });
+                                }}
+                            />
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300">
+                                <Search className="w-4 h-4" />
+                            </div>
+
+                            {/* Autocomplete Suggestions */}
+                            {manualItemForm.name.length >= 2 && !manualItemForm.selectedItemId && (
+                                <div className="absolute z-20 left-0 right-0 top-full mt-1 bg-white border rounded-xl shadow-xl max-h-48 overflow-auto py-2">
+                                    {ingredients.concat(products)
+                                        .filter(item => item.name.toLowerCase().includes(manualItemForm.name.toLowerCase()))
+                                        .slice(0, 10)
+                                        .map(item => (
+                                            <button
+                                                key={item.id}
+                                                className="w-full px-4 py-2 text-left hover:bg-blue-50 flex justify-between items-center group"
+                                                onClick={() => {
+                                                    setManualItemForm({
+                                                        name: item.name,
+                                                        price: String(item.cost || item.cost_per_unit || ''),
+                                                        selectedItemId: String(item.id)
+                                                    });
+                                                }}
+                                            >
+                                                <div>
+                                                    <div className="text-sm font-bold text-gray-700">{item.name}</div>
+                                                    <div className="text-[10px] text-gray-400 font-mono">{item.code || 'Bahan Baku'}</div>
+                                                </div>
+                                                <div className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-bold group-hover:bg-blue-100">Hubungkan Stok</div>
+                                            </button>
+                                        ))
+                                    }
+                                    {ingredients.concat(products).filter(item => item.name.toLowerCase().includes(manualItemForm.name.toLowerCase())).length === 0 && (
+                                        <div className="px-4 py-2 text-xs text-gray-400 italic">Item tidak ditemukan di inventori (akan dicatat sebagai item manual murni)</div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                        
+                        {manualItemForm.selectedItemId && (
+                            <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2 flex items-center gap-2">
+                                <CheckCircle className="w-3.5 h-3.5 text-blue-600" />
+                                <span className="text-[10px] font-bold text-blue-700 uppercase">Terhubung ke Inventori (Stok akan otomatis bertambah)</span>
+                                <button 
+                                    onClick={() => setManualItemForm({...manualItemForm, selectedItemId: ''})}
+                                    className="ml-auto text-[10px] text-red-500 font-bold hover:underline"
+                                >
+                                    Lepas
+                                </button>
+                            </div>
+                        )}
+
                         <input
                             type="number"
                             placeholder="Harga Satuan"
@@ -617,49 +706,25 @@ export function PurchasesView({
                         />
                         <Button 
                             variant="outline" 
-                            className="w-full border-blue-200 text-blue-600 hover:bg-blue-50"
+                            className={`w-full border-blue-200 ${manualItemForm.selectedItemId ? 'bg-blue-600 text-white hover:bg-blue-700 border-transparent' : 'text-blue-600 hover:bg-blue-50'}`}
                             onClick={() => {
                                 if (!manualItemForm.name || !manualItemForm.price) {
                                     toast.error('Lengkapi Nama & Harga Item');
                                     return;
                                 }
                                 handleAddItem({
-                                    itemId: `manual-${Date.now()}`,
+                                    itemId: manualItemForm.selectedItemId || `manual-${Date.now()}`,
                                     name: manualItemForm.name,
                                     price: Number(manualItemForm.price)
                                 });
-                                setManualItemForm({ name: '', price: '' });
+                                setManualItemForm({ name: '', price: '', selectedItemId: '' });
                             }}
                         >
-                            Tambah Item Manual
+                            {manualItemForm.selectedItemId ? 'Tambahkan ke Daftar PO' : 'Tambah Item Manual'}
                         </Button>
                     </div>
                 </div>
 
-                {/* Additional Item Selection */}
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                    <h3 className="font-bold text-gray-800 mb-4">Daftar Inventori</h3>
-                    <div className="space-y-2 max-h-[300px] overflow-auto pr-2">
-                        {ingredients.concat(products).map((item: any) => (
-                            <button
-                                key={item.id}
-                                onClick={() => handleAddItem({
-                                    itemId: item.id,
-                                    name: item.name,
-                                    price: item.cost || item.cost_per_unit || 0,
-                                    unit: item.unit
-                                })}
-                                className="w-full flex items-center justify-between p-3 hover:bg-gray-50 rounded-xl border border-transparent hover:border-gray-100 transition-all text-left"
-                            >
-                                <div>
-                                    <div className="text-sm font-bold text-gray-700">{item.name}</div>
-                                    <div className="text-[10px] text-gray-400 font-mono">{item.code}</div>
-                                </div>
-                                <Plus className="w-4 h-4 text-gray-300" />
-                            </button>
-                        ))}
-                    </div>
-                </div>
             </div>
         </div>
     );
