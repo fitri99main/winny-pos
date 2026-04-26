@@ -7,7 +7,7 @@ import { getAcronym } from '../../lib/utils';
 import { printerService } from '../../lib/PrinterService';
 import { ImageStorageService } from '../../lib/ImageStorageService';
 
-// --- Types ---
+// --- Types & Interfaces ---
 
 export interface Product {
     id: number; // Changed to number for consistency
@@ -18,12 +18,10 @@ export interface Product {
     unit: string;
     price: number;
     cost: number;
-    stock: number;
-    recipe?: RecipeItem[];
-    addons?: Addon[];
-    is_sellable?: boolean;
     is_taxed?: boolean;
     is_stock_ready?: boolean;
+    stock: number;
+    min_stock?: number;
     image_url?: string;
     branch_id?: number | string;
     target?: 'Kitchen' | 'Bar';
@@ -150,13 +148,17 @@ export function ProductsView({
                     is_stock_ready: true,
                     target: 'Kitchen',
                     stock: 0,
+                    min_stock: 5,
                     category: '',
                     unit: '',
                     brand: '',
                     price: 0
                 });
             } else {
-                setFormData(data);
+                setFormData({
+                    ...data,
+                    min_stock: data.min_stock ?? 5
+                });
             }
         } else {
             // Master data (Category, Unit, Brand) only needs minimal fields
@@ -487,8 +489,11 @@ export function ProductsView({
                                             Rp {p.price.toLocaleString()}
                                         </td>
                                         <td className="px-4 py-5 text-right">
-                                            <span className={`font-black ${p.stock < 10 ? 'text-red-500' : 'text-gray-700'}`}>{p.stock}</span>
+                                            <span className={`font-black ${(p.stock || 0) <= (p.min_stock ?? 5) ? 'text-red-500' : 'text-gray-700'}`}>{p.stock}</span>
                                             <span className="text-gray-400 text-[10px] ml-1 uppercase font-bold">{p.unit}</span>
+                                            {(p.stock || 0) <= (p.min_stock ?? 5) && (
+                                                <div className="text-[9px] text-red-400 font-bold leading-none mt-0.5">LOW STOCK</div>
+                                            )}
                                         </td>
                                         <td className="px-4 py-5 text-center">
                                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${p.is_sellable !== false ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
@@ -783,15 +788,27 @@ export function ProductsView({
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div className="space-y-1.5">
                                                     {isStockReady ? (
-                                                        <div className="animate-in fade-in slide-in-from-top-1 duration-200 space-y-1.5">
-                                                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Jumlah Stok</label>
-                                                            <input 
-                                                                type="number" 
-                                                                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-bold text-gray-800 text-xs" 
-                                                                value={formData.stock === 0 ? '0' : (formData.stock || '')} 
-                                                                onChange={e => setFormData(prev => ({ ...prev, stock: parseInt(e.target.value) || 0 }))} 
-                                                                placeholder="0" 
-                                                            />
+                                                        <div className="animate-in fade-in slide-in-from-top-1 duration-200 grid grid-cols-2 gap-3">
+                                                            <div className="space-y-1.5">
+                                                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Jumlah Stok</label>
+                                                                <input 
+                                                                    type="number" 
+                                                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-4 focus:ring-primary/5 transition-all font-bold text-gray-800 text-xs" 
+                                                                    value={formData.stock === 0 ? '0' : (formData.stock || '')} 
+                                                                    onChange={e => setFormData(prev => ({ ...prev, stock: parseInt(e.target.value) || 0 }))} 
+                                                                    placeholder="0" 
+                                                                />
+                                                            </div>
+                                                            <div className="space-y-1.5">
+                                                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Batas Minimum</label>
+                                                                <input 
+                                                                    type="number" 
+                                                                    className="w-full px-4 py-2.5 bg-red-50/50 border border-red-100 rounded-xl outline-none focus:ring-4 focus:ring-red-500/5 transition-all font-bold text-red-600 text-xs" 
+                                                                    value={formData.min_stock === 0 ? '0' : (formData.min_stock || '')} 
+                                                                    onChange={e => setFormData(prev => ({ ...prev, min_stock: parseInt(e.target.value) || 0 }))} 
+                                                                    placeholder="5" 
+                                                                />
+                                                            </div>
                                                         </div>
                                                     ) : (
                                                         <div className="p-3.5 bg-gray-50/50 rounded-xl border border-gray-100 border-dashed flex items-center justify-center opacity-40 h-full">

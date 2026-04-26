@@ -66,6 +66,11 @@ export function DashboardView({
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
 
+    const lowStockItems = [
+        ...(products || []).filter(p => p && p.is_stock_ready !== false && (p.stock || 0) <= (p.min_stock ?? 5)),
+        ...(ingredients || []).filter(i => i && (i.current_stock || 0) <= (i.min_stock || 0))
+    ];
+
     const [reportStartDate, setReportStartDate] = useState(todayStr);
     const [reportEndDate, setReportEndDate] = useState(todayStr);
     const [cashierSessions, setCashierSessions] = useState<CashierSessionReceipt[]>([]);
@@ -264,11 +269,7 @@ export function DashboardView({
     // For now, let's show Total Customers.
     const totalCustomers = (contacts || []).filter(c => c && c.type === 'Customer').length;
 
-    const lowStockItems = [
-        ...(products || []).filter(p => p && (p.stock || 0) <= 5),
-        ...(ingredients || []).filter(i => i && (i.currentStock || 0) <= (i.minStock || 0))
-    ];
-
+    // birthdaysToday
     const birthdaysToday = (contacts || []).filter(c =>
         c &&
         c.type === 'Customer' &&
@@ -602,19 +603,57 @@ export function DashboardView({
                 </div>
             </div>
 
-            {/* Birthday Alert - Conditional */}
-            {birthdaysToday.length > 0 && (
-                <div className="bg-gradient-to-r from-pink-500/10 to-orange-500/10 border border-pink-200 rounded-xl p-2.5 flex items-center justify-between shrink-0 mb-1">
-                    <div className="flex items-center gap-3">
-                        <div className="w-7 h-7 bg-pink-500 rounded-lg flex items-center justify-center text-white shadow-sm">
-                            <Cake className="w-3.5 h-3.5" />
-                        </div>
-                        <div className="text-[11px]">
-                            <span className="font-bold text-gray-800">Ulang Tahun Hari Ini:</span> {birthdaysToday.map(c => c.name).join(', ')}
+            {/* Notification Area */}
+            <div className="flex flex-col gap-2 shrink-0">
+                {/* Birthday Alert */}
+                {birthdaysToday.length > 0 && (
+                    <div className="bg-gradient-to-r from-pink-500/10 to-orange-500/10 border border-pink-200 rounded-xl p-2.5 flex items-center justify-between animate-in slide-in-from-top duration-300">
+                        <div className="flex items-center gap-3">
+                            <div className="w-7 h-7 bg-pink-500 rounded-lg flex items-center justify-center text-white shadow-sm">
+                                <Cake className="w-3.5 h-3.5" />
+                            </div>
+                            <div className="text-[11px]">
+                                <span className="font-bold text-gray-800">Ulang Tahun Hari Ini:</span> {birthdaysToday.map(c => c.name).join(', ')}
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )}
+
+                {/* Low Stock Notification */}
+                {lowStockItems.length > 0 && (
+                    <div className="bg-red-50 border border-red-100 rounded-xl p-3 flex flex-col gap-2 animate-in slide-in-from-top duration-500">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 bg-red-500 rounded-lg flex items-center justify-center text-white shadow-sm animate-pulse">
+                                    <Package className="w-3.5 h-3.5" />
+                                </div>
+                                <h4 className="text-xs font-black text-red-700 uppercase tracking-tight">Peringatan Stok Menipis</h4>
+                            </div>
+                            <button 
+                                onClick={() => onNavigate('inventory')}
+                                className="h-6 px-2 text-[10px] font-bold text-red-600 hover:bg-red-100 rounded-lg flex items-center gap-1"
+                            >
+                                Re-Stock Sekarang →
+                            </button>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 overflow-hidden max-h-24">
+                            {lowStockItems.slice(0, 12).map((item, idx) => (
+                                <div key={idx} className="bg-white px-2 py-1 rounded-lg border border-red-100 flex items-center gap-1.5 shadow-sm">
+                                    <span className="text-[10px] font-bold text-gray-700">{item.name}</span>
+                                    <span className="text-[10px] font-black text-red-600 bg-red-50 px-1 rounded">
+                                        {item.stock ?? item.current_stock ?? 0} {item.unit}
+                                    </span>
+                                </div>
+                            ))}
+                            {lowStockItems.length > 12 && (
+                                <div className="text-[10px] font-bold text-gray-400 self-center px-1">
+                                    +{lowStockItems.length - 12} lainnya...
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
 
 
             {/* 2. Stats Grid - Compact & Precise */}
@@ -800,57 +839,57 @@ export function DashboardView({
             </div>
 
             {/* Daily Sales Receipt Modal */}
-            {showDailyReceipt && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 print:p-0 print:bg-white animate-in fade-in duration-300">
-                    <div className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl relative print:shadow-none print:max-h-none print:w-full">
+            {showDailyReceipt \u0026\u0026 (
+                <div className=\"fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 print:p-0 print:bg-white animate-in fade-in duration-300\">
+                    <div className=\"bg-white rounded-3xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl relative print:shadow-none print:max-h-none print:w-full\">
                         {/* Header Modal (Hidden on Print) */}
-                        <div className="p-6 border-b border-gray-100 flex items-center justify-between print:hidden">
-                            <div className="flex-1 mr-4">
-                                <h3 className="font-bold text-gray-800">Ringkasan Tutup Kasir</h3>
-                                <div className="mt-2 space-y-2">
-                                    <p className="text-[11px] text-gray-500">
+                        <div className=\"p-6 border-b border-gray-100 flex items-center justify-between print:hidden\">
+                            <div className=\"flex-1 mr-4\">
+                                <h3 className=\"font-bold text-gray-800\">Ringkasan Tutup Kasir</h3>
+                                <div className=\"mt-2 space-y-2\">
+                                    <p className=\"text-[11px] text-gray-500\">
                                         Pilih shift kasir untuk lihat bukti kas secara ringkas.
                                     </p>
                                     <select
                                         value={selectedSessionId}
                                         onChange={(e) => setSelectedSessionId(e.target.value)}
-                                        className="w-full text-[11px] px-3 py-2.5 border rounded-md focus:ring-1 focus:ring-orange-500 outline-none bg-white"
-                                        disabled={(isLoadingSessions && displayedCashierSessions.length === 0) || displayedCashierSessions.length === 0}
+                                        className=\"w-full text-[11px] px-3 py-2.5 border rounded-md focus:ring-1 focus:ring-orange-500 outline-none bg-white\"
+                                        disabled={(isLoadingSessions \u0026\u0026 displayedCashierSessions.length === 0) || displayedCashierSessions.length === 0}
                                     >
-                                        {isLoadingSessions && displayedCashierSessions.length === 0 && <option>Memuat shift kasir...</option>}
-                                        {!isLoadingSessions && displayedCashierSessions.length === 0 && <option>Tidak ada shift kasir</option>}
+                                        {isLoadingSessions \u0026\u0026 displayedCashierSessions.length === 0 \u0026\u0026 <option>Memuat shift kasir...</option>}
+                                        {!isLoadingSessions \u0026\u0026 displayedCashierSessions.length === 0 \u0026\u0026 <option>Tidak ada shift kasir</option>}
                                         {displayedCashierSessions.map((session) => (
                                             <option key={session.id} value={session.id}>
                                                 {formatSessionOptionLabel(session)}
                                             </option>
                                         ))}
                                     </select>
-                                    {hiddenClosedSessionsCount > 0 && (
-                                        <div className="text-[10px] text-gray-400">
+                                    {hiddenClosedSessionsCount > 0 \u0026\u0026 (
+                                        <div className=\"text-[10px] text-gray-400\">
                                             Menampilkan shift aktif dan {CLOSED_SESSION_PREVIEW_LIMIT} shift tutup terbaru. {hiddenClosedSessionsCount} shift lain disembunyikan.
                                         </div>
                                     )}
-                                    {isLoadingSessions && displayedCashierSessions.length > 0 && (
-                                        <div className="text-[10px] text-gray-400">
+                                    {isLoadingSessions \u0026\u0026 displayedCashierSessions.length > 0 \u0026\u0026 (
+                                        <div className=\"text-[10px] text-gray-400\">
                                             Memperbarui daftar kasir...
                                         </div>
                                     )}
-                                    {selectedSession && (
-                                        <div className="text-[11px] text-gray-500 leading-relaxed">
+                                    {selectedSession \u0026\u0026 (
+                                        <div className=\"text-[11px] text-gray-500 leading-relaxed\">
                                             <div>{selectedSessionLabel}</div>
                                             <div>{selectedSessionStatusLabel} • {selectedSessionRangeLabel}</div>
                                         </div>
                                     )}
                                 </div>
                             </div>
-                            <Button variant="ghost" size="icon" onClick={() => setShowDailyReceipt(false)}>
-                                <X className="w-5 h-5" />
+                            <Button variant=\"ghost\" size=\"icon\" onClick={() => setShowDailyReceipt(false)}>
+                                <X className=\"w-5 h-5\" />
                             </Button>
                         </div>
 
                         {/* Receipt Content */}
-                        <div className="flex-1 overflow-y-auto p-8 print:p-0 bg-gray-100 print:bg-white scrollbar-thin scrollbar-thumb-gray-200">
-                            <div className="bg-white p-8 shadow-sm mx-auto print:shadow-none print:p-0 print:m-0" 
+                        <div className=\"flex-1 overflow-y-auto p-8 print:p-0 bg-gray-100 print:bg-white scrollbar-thin scrollbar-thumb-gray-200\">
+                            <div className=\"bg-white p-8 shadow-sm mx-auto print:shadow-none print:p-0 print:m-0\" 
                                  style={{ 
                                      width: storeSettings?.receipt_paper_width === '80mm' ? '400px' : '300px',
                                      maxWidth: '100%',
@@ -858,94 +897,94 @@ export function DashboardView({
                                  }}>
                                 
                                 {/* Receipt Header */}
-                                <div className="text-center space-y-1 mb-4">
-                                    {storeSettings?.show_logo && storeSettings?.receipt_logo_url && (
-                                        <div className="flex justify-center mb-3">
-                                            <img src={storeSettings.receipt_logo_url} alt="Logo" className="w-16 h-16 object-contain grayscale" />
+                                <div className=\"text-center space-y-1 mb-4\">
+                                    {storeSettings?.show_logo \u0026\u0026 storeSettings?.receipt_logo_url \u0026\u0026 (
+                                        <div className=\"flex justify-center mb-3\">
+                                            <img src={storeSettings.receipt_logo_url} alt=\"Logo\" className=\"w-16 h-16 object-contain grayscale\" />
                                         </div>
                                     )}
-                                    <h4 className="font-bold text-lg uppercase">{(storeSettings?.receipt_header || 'WINNY POS').toUpperCase()}</h4>
-                                    {storeSettings?.address && <p className="text-[11px] whitespace-pre-line">{storeSettings.address}</p>}
-                                    {storeSettings?.phone && <p className="text-[11px]">Telp: {storeSettings.phone}</p>}
-                                    <div className="py-2">--------------------------------</div>
-                                    <h5 className="font-bold text-sm">RINGKASAN TUTUP KASIR</h5>
-                                    <p className="text-[11px] font-bold">
+                                    <h4 className=\"font-bold text-lg uppercase\">{(storeSettings?.receipt_header || 'WINNY POS').toUpperCase()}</h4>
+                                    {storeSettings?.address \u0026\u0026 <p className=\"text-[11px] whitespace-pre-line\">{storeSettings.address}</p>}
+                                    {storeSettings?.phone \u0026\u0026 <p className=\"text-[11px]\">Telp: {storeSettings.phone}</p>}
+                                    <div className=\"py-2\">--------------------------------</div>
+                                    <h5 className=\"font-bold text-sm\">RINGKASAN TUTUP KASIR</h5>
+                                    <p className=\"text-[11px] font-bold\">
                                         {selectedSessionRangeLabel || (
                                             reportStartDate === reportEndDate
                                                 ? new Date(reportStartDate).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
                                                 : `${new Date(reportStartDate).toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' })} s/d ${new Date(reportEndDate).toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' })}`
                                         )}
                                     </p>
-                                    {selectedSession && (
+                                    {selectedSession \u0026\u0026 (
                                         <>
-                                            <p className="text-[11px]">Kasir: {selectedSession.employee_name || 'Kasir'}</p>
-                                            <p className="text-[11px]">Status: {selectedSessionStatusLabel}</p>
+                                            <p className=\"text-[11px]\">Kasir: {selectedSession.employee_name || 'Kasir'}</p>
+                                            <p className=\"text-[11px]\">Status: {selectedSessionStatusLabel}</p>
                                         </>
                                     )}
-                                    <div className="py-1">================================</div>
+                                    <div className=\"py-1\">================================</div>
                                 </div>
 
                                 {/* Summary */}
-                                <div className="space-y-1 text-[12px]">
-                                    <div className="flex justify-between">
-                                        <span className="font-bold tracking-tighter uppercase">RINGKASAN</span>
+                                <div className=\"space-y-1 text-[12px]\">
+                                    <div className=\"flex justify-between\">
+                                        <span className=\"font-bold tracking-tighter uppercase\">RINGKASAN</span>
                                     </div>
-                                    <div className="flex justify-between">
+                                    <div className=\"flex justify-between\">
                                         <span>Total Transaksi:</span>
                                         <span>{reportSales.length}</span>
                                     </div>
-                                    <div className="flex justify-between">
+                                    <div className=\"flex justify-between\">
                                         <span>Tunai:</span>
                                         <span>Rp {cashProofSummary.systemCash.toLocaleString('id-ID')}</span>
                                     </div>
-                                    <div className="flex justify-between">
+                                    <div className=\"flex justify-between\">
                                         <span>QRis:</span>
                                         <span>Rp {cashProofSummary.qrisSales.toLocaleString('id-ID')}</span>
                                     </div>
-                                    <div className="flex justify-between font-bold border-t border-gray-200 mt-2 pt-1">
+                                    <div className=\"flex justify-between font-bold border-t border-gray-200 mt-2 pt-1\">
                                         <span>TOTAL BERSIH (NET):</span>
-                                        <span>Rp {(reportSales.reduce((acc, s) => acc + (s.totalAmount || 0), 0)).toLocaleString('id-ID')}</span>
+                                        <span>Rp {(reportSales.reduce((acc, s) =\u003e acc + (s.totalAmount || 0), 0)).toLocaleString('id-ID')}</span>
                                     </div>
                                 </div>
 
-                                <div className="py-2 text-center">--------------------------------</div>
+                                <div className=\"py-2 text-center\">--------------------------------</div>
 
-                                <div className="space-y-1 text-[12px]">
-                                    <div className="flex justify-between">
-                                        <span className="font-bold tracking-tighter uppercase">BUKTI FISIK KAS</span>
+                                <div className=\"space-y-1 text-[12px]\">
+                                    <div className=\"flex justify-between\">
+                                        <span className=\"font-bold tracking-tighter uppercase\">BUKTI FISIK KAS</span>
                                         <span>{cashProofSummary.sessionCount} sesi</span>
                                     </div>
-                                    <div className="flex justify-between">
+                                    <div className=\"flex justify-between\">
                                         <span>Tunai System:</span>
                                         <span>{cashProofSummary.systemCash.toLocaleString('id-ID')}</span>
                                     </div>
-                                    <div className="flex justify-between">
+                                    <div className=\"flex justify-between\">
                                         <span>Modal Awal:</span>
                                         <span>{cashProofSummary.openingCash.toLocaleString('id-ID')}</span>
                                     </div>
-                                    <div className="flex justify-between font-bold border-t border-gray-200 mt-2 pt-1">
+                                    <div className=\"flex justify-between font-bold border-t border-gray-200 mt-2 pt-1\">
                                         <span>Total:</span>
                                         <span>{cashProofSummary.totalCashSystem.toLocaleString('id-ID')}</span>
                                     </div>
-                                    <div className="flex justify-between">
+                                    <div className=\"flex justify-between\">
                                         <span>Kas Fisik Kasir:</span>
                                         <span>{cashProofSummary.actualCashierCash.toLocaleString('id-ID')}</span>
                                     </div>
-                                    <div className="flex justify-between font-bold">
+                                    <div className=\"flex justify-between font-bold\">
                                         <span>Selisih:</span>
                                         <span>{cashProofSummary.difference.toLocaleString('id-ID')}</span>
                                     </div>
                                 </div>
 
-                                <div className="py-4 text-center">--------------------------------</div>
+                                <div className=\"py-4 text-center\">--------------------------------</div>
 
                                 {/* Footer */}
-                                <div className="text-center text-[10px] space-y-1 text-gray-500">
+                                <div className=\"text-center text-[10px] space-y-1 text-gray-500\">
                                     <p>Dicetak pada: {new Date().toLocaleString('id-ID')}</p>
-                                    <p className="font-bold text-black border border-black p-1 inline-block mt-2">BUKTI FISIK SAH</p>
+                                    <p className=\"font-bold text-black border border-black p-1 inline-block mt-2\">BUKTI FISIK SAH</p>
                                     
-                                    {storeSettings?.receipt_footer && (
-                                        <div className="pt-4 text-black text-[11px]">
+                                    {storeSettings?.receipt_footer \u0026\u0026 (
+                                        <div className=\"pt-4 text-black text-[11px]\">
                                             <p>{storeSettings.receipt_footer}</p>
                                         </div>
                                     )}
@@ -954,12 +993,12 @@ export function DashboardView({
                         </div>
 
                         {/* Footer Print Control (Hidden on Print) */}
-                        <div className="p-6 border-t border-gray-100 flex gap-3 print:hidden">
-                            <Button variant="outline" className="flex-1" onClick={() => setShowDailyReceipt(false)}>
+                        <div className=\"p-6 border-t border-gray-100 flex gap-3 print:hidden\">
+                            <Button variant=\"outline\" className=\"flex-1\" onClick={() => setShowDailyReceipt(false)}>
                                 Batal
                             </Button>
-                            <Button className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold" onClick={handlePrint}>
-                                <Printer className="w-4 h-4 mr-2" />
+                            <Button className=\"flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold\" onClick={handlePrint}>
+                                <Printer className=\"w-4 h-4 mr-2\" />
                                 Cetak Struk Sekarang
                             </Button>
                         </div>

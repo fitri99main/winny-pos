@@ -2864,7 +2864,7 @@ function Home() {
               console.log('onProductCRUD triggered:', { action, data });
               if (action === 'create' || action === 'update') {
                 const { recipe, addons, id, ...rest } = data;
-                const validColumns = ['code', 'name', 'category', 'brand', 'unit', 'price', 'cost', 'stock', 'image_url', 'is_sellable', 'is_taxed', 'is_stock_ready', 'target', 'branch_id', 'sort_order'];
+                const validColumns = ['code', 'name', 'category', 'brand', 'unit', 'price', 'cost', 'stock', 'min_stock', 'image_url', 'is_sellable', 'is_taxed', 'is_stock_ready', 'target', 'branch_id', 'sort_order'];
                 const productData: any = {};
                 validColumns.forEach(col => {
                   if (rest[col] !== undefined) productData[col] = rest[col];
@@ -2873,6 +2873,7 @@ function Home() {
                 if (productData.price !== undefined) productData.price = Number(productData.price) || 0;
                 if (productData.cost !== undefined) productData.cost = Number(productData.cost) || 0;
                 if (productData.stock !== undefined) productData.stock = Number(productData.stock) || 0;
+                if (productData.min_stock !== undefined) productData.min_stock = Number(productData.min_stock) || 0;
 
                 let productId = id;
                 if (action === 'create') {
