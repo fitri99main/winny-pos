@@ -230,8 +230,10 @@ function HppReportTab({ startDate, endDate, currentBranchId }: { startDate: stri
                     <DateRangePicker 
                         startDate={localStart} 
                         endDate={localEnd} 
-                        onStartDateChange={setLocalStart} 
-                        onEndDateChange={setLocalEnd} 
+                        onChange={(range) => {
+                            setLocalStart(range.startDate);
+                            setLocalEnd(range.endDate);
+                        }} 
                     />
                 </div>
             </div>
