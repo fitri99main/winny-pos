@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Package, Tags, Scale, Ticket, Plus, Search, Edit, Trash2, Filter, ChefHat, Info, Calculator, Puzzle, Settings2, X, Check, Coffee, Barcode, Printer, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
+import { Package, Tags, Scale, Ticket, Plus, Search, Edit, Trash2, Filter, ChefHat, Info, Calculator, Puzzle, Settings2, X, Check, Coffee, Barcode, Printer, ChevronUp, ChevronDown, GripVertical, Calendar } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
 import { getAcronym } from '../../lib/utils';
 import { printerService } from '../../lib/PrinterService';
 import { ImageStorageService } from '../../lib/ImageStorageService';
+
+import { useAuth } from '../auth/AuthProvider';
 
 // --- Types & Interfaces ---
 
@@ -110,6 +112,10 @@ export function ProductsView({
     const [isAutoSKU, setIsAutoSKU] = useState(true);
     const [isStockReady, setIsStockReady] = useState(true);
     const [editingRecipeIdx, setEditingRecipeIdx] = useState<number | null>(null);
+    const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+    const [historyData, setHistoryData] = useState<any[]>([]);
+    const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+    const { user } = useAuth();
 
 
     // --- Generic Handlers ---
@@ -125,6 +131,40 @@ export function ProductsView({
         }, 0);
 
         return `${prefix}${String(maxNum + 1).padStart(3, '0')}`;
+    };
+
+    const logRecipeHppChange = async (product: Product, oldCost: number, newCost: number) => {
+        try {
+            await supabase.from('recipe_hpp_history').insert({
+                product_id: product.id,
+                product_name: product.name,
+                old_cost: oldCost,
+                new_cost: newCost,
+                recipe_snapshot: product.recipe,
+                changed_by: user?.email || 'System'
+            });
+        } catch (error) {
+            console.error('Error logging recipe/HPP change:', error);
+        }
+    };
+
+    const fetchHistory = async (productId: number) => {
+        setIsLoadingHistory(true);
+        try {
+            const { data, error } = await supabase
+                .from('recipe_hpp_history')
+                .select('*')
+                .eq('product_id', productId)
+                .order('created_at', { ascending: false });
+            
+            if (error) throw error;
+            setHistoryData(data || []);
+            setIsHistoryOpen(true);
+        } catch (error: any) {
+            toast.error('Gagal mengambil riwayat: ' + error.message);
+        } finally {
+            setIsLoadingHistory(false);
+        }
     };
 
     const handleOpenForm = (data: any = {}) => {
@@ -340,6 +380,14 @@ export function ProductsView({
                     productToSave.sort_order = maxOrder + 1;
                 }
                 
+                // Log if HPP or Recipe changed (for existing products)
+                if (action === 'update') {
+                    const oldProduct = products.find(p => p.id === product.id);
+                    if (oldProduct && (oldProduct.cost !== finalHpp || JSON.stringify(oldProduct.recipe) !== JSON.stringify(productToSave.recipe))) {
+                        await logRecipeHppChange(productToSave, oldProduct.cost || 0, finalHpp);
+                    }
+                }
+
                 await onProductCRUD(action, productToSave);
                 console.log('onProductCRUD success');
                 setIsFormOpen(false);
@@ -948,9 +996,19 @@ export function ProductsView({
                                 <h3 className="text-2xl font-black text-gray-800 tracking-tight">Resep & Kalkulasi HPP</h3>
                                 <p className="text-sm text-gray-500 font-medium">{selectedProduct.name} <span className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded ml-1">{selectedProduct.code}</span></p>
                             </div>
-                            <button onClick={() => setIsRecipeOpen(false)} className="p-3 hover:bg-gray-100 rounded-2xl transition-all">
-                                <X className="w-6 h-6 text-gray-400" />
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <Button 
+                                    variant="outline" 
+                                    className="h-10 px-4 rounded-xl border-blue-100 text-blue-600 hover:bg-blue-50 font-bold text-[10px] uppercase tracking-wider"
+                                    onClick={() => fetchHistory(selectedProduct.id)}
+                                    disabled={isLoadingHistory}
+                                >
+                                    {isLoadingHistory ? '...' : 'Lihat Riwayat'}
+                                </Button>
+                                <button onClick={() => setIsRecipeOpen(false)} className="p-3 hover:bg-gray-100 rounded-2xl transition-all">
+                                    <X className="w-6 h-6 text-gray-400" />
+                                </button>
+                            </div>
                         </div>
 
                         <div className="p-10">
@@ -1113,7 +1171,13 @@ export function ProductsView({
                                     <Button                                         onClick={async () => {
                                             setIsRecipeOpen(false);
                                             if (selectedProduct) {
+                                                const oldProduct = products.find(p => p.id === selectedProduct.id);
                                                 const updatedHpp = calculateHPP(selectedProduct.recipe);
+                                                
+                                                if (oldProduct && (oldProduct.cost !== updatedHpp || JSON.stringify(oldProduct.recipe) !== JSON.stringify(selectedProduct.recipe))) {
+                                                    await logRecipeHppChange(selectedProduct, oldProduct.cost || 0, updatedHpp);
+                                                }
+
                                                 await onProductCRUD('update', { ...selectedProduct, cost: updatedHpp });
                                                 toast.success('HPP Produk diperbarui');
                                             }
@@ -1265,6 +1329,75 @@ export function ProductsView({
                                     <Printer className="w-5 h-5" />
                                     Cetak Label
                                 </Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* History Modal */}
+            {isHistoryOpen && (
+                <div onClick={() => setIsHistoryOpen(false)} className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-md p-4">
+                    <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-[44px] shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+                        <div className="px-10 py-8 border-b border-gray-50 flex items-center justify-between bg-gray-50/50">
+                            <div>
+                                <h3 className="text-xl font-black text-gray-800 tracking-tight">Riwayat Perubahan HPP</h3>
+                                <p className="text-xs text-gray-500 font-medium">Audit log untuk resep dan modal produk</p>
+                            </div>
+                            <button onClick={() => setIsHistoryOpen(false)} className="p-3 hover:bg-gray-100 rounded-2xl">
+                                <Plus className="w-5 h-5 text-gray-400 rotate-45" />
+                            </button>
+                        </div>
+                        <div className="p-10 max-h-[60vh] overflow-y-auto">
+                            <div className="space-y-4">
+                                {historyData.length === 0 ? (
+                                    <div className="text-center py-12">
+                                        <Info className="w-12 h-12 text-gray-100 mx-auto mb-4" />
+                                        <p className="text-gray-400 font-medium italic">Belum ada riwayat perubahan</p>
+                                    </div>
+                                ) : (
+                                    historyData.map((h, idx) => (
+                                        <div key={idx} className="p-5 bg-gray-50 rounded-3xl border border-gray-100 flex items-start gap-4">
+                                            <div className="w-10 h-10 bg-white rounded-2xl flex items-center justify-center text-primary border border-gray-100 flex-shrink-0">
+                                                <Calendar className="w-5 h-5" />
+                                            </div>
+                                            <div className="flex-1">
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <div className="text-xs font-black text-gray-800 uppercase tracking-wider">
+                                                        {new Date(h.created_at).toLocaleString('id-ID')}
+                                                    </div>
+                                                    <span className="text-[9px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-bold">
+                                                        {h.changed_by}
+                                                    </span>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div className="p-3 bg-white rounded-xl border border-gray-100">
+                                                        <p className="text-[8px] font-bold text-gray-400 uppercase mb-1">HPP Lama</p>
+                                                        <p className="text-sm font-black text-gray-400 line-through">Rp {Number(h.old_cost).toLocaleString()}</p>
+                                                    </div>
+                                                    <div className="p-3 bg-white rounded-xl border border-emerald-100">
+                                                        <p className="text-[8px] font-bold text-emerald-500 uppercase mb-1">HPP Baru</p>
+                                                        <p className="text-sm font-black text-emerald-600">Rp {Number(h.new_cost).toLocaleString()}</p>
+                                                    </div>
+                                                </div>
+                                                {h.recipe_snapshot && h.recipe_snapshot.length > 0 && (
+                                                    <div className="mt-3 pt-3 border-t border-gray-200/50">
+                                                        <p className="text-[8px] font-bold text-gray-400 uppercase mb-2">Item Resep pada saat itu:</p>
+                                                        <div className="flex flex-wrap gap-1.5">
+                                                            {h.recipe_snapshot.map((item: any, i: number) => {
+                                                                const ing = ingredients.find(ing => ing.id === item.ingredientId);
+                                                                return (
+                                                                    <span key={i} className="text-[9px] bg-gray-200/50 text-gray-600 px-2 py-1 rounded-lg font-bold">
+                                                                        {ing?.name || 'Item'} ({item.amount})
+                                                                    </span>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
                             </div>
                         </div>
                     </div>
