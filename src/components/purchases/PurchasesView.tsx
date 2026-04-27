@@ -661,7 +661,7 @@ export function PurchasesView({
                                 value={manualItemForm.name}
                                 onChange={e => {
                                     const val = e.target.value;
-                                    setManualItemForm({ ...manualItemForm, name: val, selectedItemId: '' });
+                                    setManualItemForm({ ...manualItemForm, name: val, selectedItemId: '', sellingPrice: '' });
                                 }}
                             />
                             <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300">
@@ -682,6 +682,7 @@ export function PurchasesView({
                                                     setManualItemForm({
                                                         name: item.name,
                                                         price: String(item.cost || item.cost_per_unit || ''),
+                                                        sellingPrice: String(item.price || ''),
                                                         selectedItemId: String(item.id)
                                                     });
                                                 }}
@@ -716,10 +717,17 @@ export function PurchasesView({
 
                         <input
                             type="number"
-                            placeholder="Harga Satuan"
+                            placeholder="Harga Beli Satuan"
                             className="w-full p-2.5 text-sm border rounded-xl"
                             value={manualItemForm.price}
                             onChange={e => setManualItemForm({ ...manualItemForm, price: e.target.value })}
+                        />
+                        <input
+                            type="number"
+                            placeholder="Harga Jual Baru (Opsional)"
+                            className="w-full p-2.5 text-sm border rounded-xl bg-blue-50/50"
+                            value={manualItemForm.sellingPrice}
+                            onChange={e => setManualItemForm({ ...manualItemForm, sellingPrice: e.target.value })}
                         />
                         <Button 
                             variant="outline" 
@@ -732,9 +740,10 @@ export function PurchasesView({
                                 handleAddItem({
                                     itemId: manualItemForm.selectedItemId || `manual-${Date.now()}`,
                                     name: manualItemForm.name,
-                                    price: Number(manualItemForm.price)
+                                    price: Number(manualItemForm.price),
+                                    sellingPrice: Number(manualItemForm.sellingPrice) || undefined
                                 });
-                                setManualItemForm({ name: '', price: '', selectedItemId: '' });
+                                setManualItemForm({ name: '', price: '', sellingPrice: '', selectedItemId: '' });
                             }}
                         >
                             {manualItemForm.selectedItemId ? 'Tambahkan ke Daftar PO' : 'Tambah Item Manual'}
