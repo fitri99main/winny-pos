@@ -13,7 +13,8 @@ interface PurchaseItem {
     itemId: number | string;
     name: string;
     quantity: number;
-    price: number;
+    price: number; // Purchase Cost
+    sellingPrice?: number; // Target Selling Price
     unit?: string;
 }
 
@@ -78,7 +79,7 @@ export function PurchasesView({
     const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([]);
     const [returnForm, setReturnForm] = useState<Partial<PurchaseReturn>>({ date: new Date().toISOString().split('T')[0] });
     const [isManualSupplier, setIsManualSupplier] = useState(false);
-    const [manualItemForm, setManualItemForm] = useState({ name: '', price: '', selectedItemId: '' });
+    const [manualItemForm, setManualItemForm] = useState({ name: '', price: '', sellingPrice: '', selectedItemId: '' });
 
     const [isEditing, setIsEditing] = useState(false);
     const [editingId, setEditingId] = useState<number | null>(null);
@@ -106,7 +107,8 @@ export function PurchasesView({
                 handleAddItem({
                     itemId: product.id,
                     name: product.name,
-                    price: product.cost || 0
+                    price: product.cost || 0,
+                    sellingPrice: product.price || 0
                 });
                 return;
             }
@@ -118,7 +120,7 @@ export function PurchasesView({
 
     // --- Handlers ---
 
-    const handleAddItem = (item: { itemId: number | string, name: string, price: number, unit?: string }) => {
+    const handleAddItem = (item: { itemId: number | string, name: string, price: number, sellingPrice?: number, unit?: string }) => {
         setPurchaseItems(prev => {
             const existing = prev.find(i => i.itemId === item.itemId);
             if (existing) {
@@ -130,6 +132,7 @@ export function PurchasesView({
                 name: item.name,
                 quantity: 1,
                 price: item.price,
+                sellingPrice: item.sellingPrice || item.price * 1.2, // Default 20% margin if not set
                 unit: item.unit
             }];
         });
@@ -146,6 +149,10 @@ export function PurchasesView({
 
     const handleUpdatePrice = (id: string, price: number) => {
         setPurchaseItems(prev => prev.map(i => i.id === id ? { ...i, price } : i));
+    };
+
+    const handleUpdateSellingPrice = (id: string, sellingPrice: number) => {
+        setPurchaseItems(prev => prev.map(i => i.id === id ? { ...i, sellingPrice } : i));
     };
 
     const totalAmount = useMemo(() => {
@@ -455,7 +462,8 @@ export function PurchasesView({
                                     <th className="px-6 py-4">Item</th>
                                     <th className="px-6 py-4 text-center">kg/satuan</th>
                                     <th className="px-6 py-4 text-center">Jumlah</th>
-                                    <th className="px-6 py-4 text-right">Harga</th>
+                                    <th className="px-6 py-4 text-right">Harga Beli</th>
+                                    <th className="px-6 py-4 text-right">Harga Jual Baru</th>
                                     <th className="px-6 py-4 text-right">Total</th>
                                     <th className="px-6 py-4 text-center">Aksi</th>
                                 </tr>
@@ -484,7 +492,16 @@ export function PurchasesView({
                                                 value={item.price}
                                                 onFocus={(e) => e.target.select()}
                                                 onChange={(e) => handleUpdatePrice(item.id, parseFloat(e.target.value) || 0)}
-                                                className="w-24 text-right border-none bg-transparent font-bold"
+                                                className="w-24 text-right border rounded px-2 py-1 bg-gray-50 font-bold"
+                                            />
+                                        </td>
+                                        <td className="px-6 py-4 text-right">
+                                            <input
+                                                type="number"
+                                                value={item.sellingPrice}
+                                                onFocus={(e) => e.target.select()}
+                                                onChange={(e) => handleUpdateSellingPrice(item.id, parseFloat(e.target.value) || 0)}
+                                                className="w-24 text-right border rounded px-2 py-1 bg-blue-50 text-blue-700 font-bold"
                                             />
                                         </td>
                                         <td className="px-6 py-4 text-right font-black">Rp {(item.price * item.quantity).toLocaleString()}</td>

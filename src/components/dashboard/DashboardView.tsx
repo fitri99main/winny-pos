@@ -265,16 +265,7 @@ export function DashboardView({
     // Since contacts don't store "createdAt", we'll just show total active customers for now or diff
     // A better approach for "New Customers" would require a date field in ContactData.
     // For now, let's show Total Customers.
-    const totalCustomers = (contacts || []).filter(c => c && c.type === 'Customer').length;
 
-    // birthdaysToday
-    const birthdaysToday = (contacts || []).filter(c =>
-        c &&
-        c.type === 'Customer' &&
-        c.birthday &&
-        new Date(c.birthday).getMonth() === today.getMonth() &&
-        new Date(c.birthday).getDate() === today.getDate()
-    );
 
     // --- Chart Data (Last 7 Days) ---
     const chartData = Array.from({ length: 7 }, (_, i) => {
@@ -541,16 +532,7 @@ export function DashboardView({
             module: 'pos',
             tab: 'history'
         },
-        {
-            label: 'Total Pelanggan',
-            value: totalCustomers.toString(),
-            icon: Users,
-            trend: '+2',
-            trendUp: true,
-            gradient: 'from-orange-500 to-pink-600',
-            shadow: 'shadow-orange-500/20',
-            module: 'contacts'
-        },
+
 
         {
             label: 'Voucher WiFi (Tersedia)',
@@ -594,24 +576,12 @@ export function DashboardView({
 
             {/* Notification Area */}
             <div className="flex flex-col gap-2 shrink-0">
-                {/* Birthday Alert */}
-                {birthdaysToday.length > 0 && (
-                    <div className="bg-gradient-to-r from-pink-500/10 to-orange-500/10 border border-pink-200 rounded-xl p-2.5 flex items-center justify-between animate-in slide-in-from-top duration-300">
-                        <div className="flex items-center gap-3">
-                            <div className="w-7 h-7 bg-pink-500 rounded-lg flex items-center justify-center text-white shadow-sm">
-                                <Cake className="w-3.5 h-3.5" />
-                            </div>
-                            <div className="text-[11px]">
-                                <span className="font-bold text-gray-800">Ulang Tahun Hari Ini:</span> {birthdaysToday.map(c => c.name).join(', ')}
-                            </div>
-                        </div>
-                    </div>
-                )}
+
             </div>
 
 
             {/* 2. Stats Grid - Compact & Precise */}
-            <div className="grid grid-cols-4 gap-3 shrink-0">
+            <div className="grid grid-cols-3 gap-3 shrink-0">
                 {stats.map((stat, index) => (
                     <div 
                         key={index} 
@@ -778,7 +748,7 @@ export function DashboardView({
                     </button>
                 </div>
                 <div className="grid grid-cols-4 gap-3 overflow-hidden">
-                    {sales.slice(0, 4).map((sale) => (
+                    {sales.filter(s => s && s.date && s.date.startsWith(todayStr)).slice(0, 4).map((sale) => (
                         <div key={sale.id} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded-lg border border-transparent hover:border-gray-100 transition-colors">
                             <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
                                 <ShoppingBag className="w-3.5 h-3.5 text-blue-600" />

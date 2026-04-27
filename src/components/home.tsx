@@ -1407,7 +1407,11 @@ function Home() {
           const newStock = oldStock + addQty;
           
           console.log(`[StockSync] Updating Product ${item.name}: ${oldStock} -> ${newStock}`);
-          const { error: pErr } = await supabase.from('products').update({ stock: newStock }).eq('id', product.id);
+          const { error: pErr } = await supabase.from('products').update({ 
+            stock: newStock,
+            cost: Number(item.price) || 0, // Update Modal (Cost)
+            price: Number(item.sellingPrice) || undefined // Update Harga Jual (if provided)
+          }).eq('id', product.id);
           if (pErr) console.error('[StockSync] Product Update Error:', pErr);
         } else {
           // 2. Try to find if it's an ingredient
@@ -1418,7 +1422,10 @@ function Home() {
             const newStock = oldStock + addQty;
 
             console.log(`[StockSync] Updating Ingredient ${item.name}: ${oldStock} -> ${newStock}`);
-            const { error: iErr } = await supabase.from('ingredients').update({ current_stock: newStock }).eq('id', ingredient.id);
+            const { error: iErr } = await supabase.from('ingredients').update({ 
+              current_stock: newStock,
+              cost_per_unit: Number(item.price) || 0 // Update Modal (Cost per Unit)
+            }).eq('id', ingredient.id);
             if (iErr) console.error('[StockSync] Ingredient Update Error:', iErr);
             
             // Record stock movement for ingredient
