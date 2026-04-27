@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, ShoppingCart, Settings, Coffee, FileText,
   LogOut, Bell, Search, Menu, Calculator, ChefHat, MonitorCheck,
   Contact, Archive, MapPin, CalendarCheck, History as ClockHistory, Wallet, Award, Target,
-  Store, ChevronLeft, ChevronRight, CheckCircle, Package, RefreshCw, ShieldCheck, Clock, History, Percent, Fingerprint
+  Store, ChevronLeft, ChevronRight, CheckCircle, Package, RefreshCw, ShieldCheck, Clock, Percent, Fingerprint
 } from 'lucide-react';
 import { printerService } from '../lib/PrinterService';
 import { WifiVoucherService } from '../lib/WifiVoucherService';
@@ -2624,22 +2624,49 @@ function Home() {
 
   // --- Accounting Handlers ---
   const handleAddAccount = async (account: any) => {
-    const { code, name, type } = account;
-    const { error } = await supabase.from('accounts').insert([{ code, name, type }]);
+    const { code, name, type, parent_code, description } = account;
+    // Sanitize parent_code to be null if empty string
+    const sanitizedParentCode = parent_code || null;
+    
+    const { error } = await supabase.from('accounts').insert([{ 
+      code, 
+      name, 
+      type, 
+      parent_code: sanitizedParentCode,
+      description,
+      order_index: account.order_index || 0
+    }]);
     if (error) {
-      toast.error('Gagal menambah akun: ' + error.message);
+      if (error.code === '23505') {
+        toast.error('Gagal: Kode Akun "' + code + '" sudah digunakan oleh akun lain.');
+      } else {
+        toast.error('Gagal menambah akun: ' + error.message);
+      }
     } else {
-      toast.success('Akun berhasil ditambahkan');
+      const isLabel = type === 'Label';
+      toast.success(isLabel ? 'Teks/Label berhasil disimpan' : 'Akun berhasil ditambahkan');
+      fetchAccounting();
     }
   };
 
   const handleUpdateAccount = async (account: any) => {
-    const { code, name, type } = account;
-    const { error } = await supabase.from('accounts').update({ name, type }).eq('code', code);
+    const { code, name, type, parent_code, description } = account;
+    // Sanitize parent_code to be null if empty string
+    const sanitizedParentCode = parent_code || null;
+
+    const { error } = await supabase.from('accounts').update({ 
+      name, 
+      type, 
+      parent_code: sanitizedParentCode,
+      description,
+      order_index: account.order_index
+    }).eq('code', code);
     if (error) {
       toast.error('Gagal update akun: ' + error.message);
     } else {
-      toast.success('Akun berhasil diupdate');
+      const isLabel = type === 'Label';
+      toast.success(isLabel ? 'Teks/Label berhasil diperbarui' : 'Akun berhasil diupdate');
+      fetchAccounting();
     }
   };
 
@@ -2649,12 +2676,12 @@ function Home() {
       toast.error('Gagal hapus akun: ' + error.message);
     } else {
       toast.success('Akun berhasil dihapus');
+      fetchAccounting();
     }
   };
 
   const handleAddJournalEntry = async (entry: any) => {
     const { date, description, debitAccount, creditAccount, amount } = entry;
-    // Removed branch_id to prevent "column does not exist" error
     const { error } = await supabase.from('journal_entries').insert([{
       date,
       description,
@@ -2674,72 +2701,39 @@ function Home() {
     try {
       const { error } = await supabase.from('journal_entries').delete().eq('id', id);
       if (error) throw error;
-
       toast.success('Jurnal berhasil dihapus');
       fetchAccounting();
     } catch (err: any) {
-      console.error('Failed to delete journal entry:', err);
       toast.error('Gagal menghapus jurnal: ' + err.message);
     }
   };
 
   const handleResetJournalEntries = async () => {
-    if (!window.confirm('PERINGATAN: Apakah Anda yakin ingin menghapus SEMUA data jurnal akuntansi? Tindakan ini tidak dapat dibatalkan.')) return;
-
+    if (!window.confirm('Hapus SEMUA jurnal?')) return;
     try {
-      // Removed branch_id filter because the column doesn't exist yet
       const { error } = await supabase.from('journal_entries').delete().neq('id', 0);
       if (error) throw error;
-
-      toast.success('Semua data akuntansi berhasil di-reset');
+      toast.success('Data akuntansi di-reset');
       fetchAccounting();
     } catch (err: any) {
-      console.error('Failed to reset journal entries:', err);
-      toast.error('Gagal mereset jurnal: ' + err.message);
+      toast.error('Gagal reset jurnal: ' + err.message);
     }
   };
 
-  // --- Employee Handlers ---
   const handleEmployeeCRUD = async (action: 'create' | 'update' | 'delete', data: any) => {
     try {
       if (action === 'create') {
         const { id, joinDate, offDays, system_role, ...rest } = data;
-        const payload = { ...rest, join_date: joinDate, off_days: offDays, branch_id: currentBranchId, system_role: system_role };
-
-        // 1. Insert Employee
+        const payload = { ...rest, join_date: joinDate, off_days: offDays, branch_id: currentBranchId, system_role };
         const { error } = await supabase.from('employees').insert([payload]);
         if (error) throw error;
-
-        // 2. Sync to Profiles (Pre-Approve User) if Role is Set
-        if (system_role && data.email) {
-          await supabase.from('profiles').upsert({
-            email: data.email,
-            name: data.name,
-            role: system_role
-          }, { onConflict: 'email' });
-        }
-
-        toast.success('Karyawan berhasil ditambahkan');
+        toast.success('Karyawan ditambahkan');
       } else if (action === 'update') {
         const { id, joinDate, offDays, system_role, ...rest } = data;
-        const payload = { ...rest, join_date: joinDate, off_days: offDays, branch_id: currentBranchId, system_role: system_role };
-
-        // 1. Update Employee
+        const payload = { ...rest, join_date: joinDate, off_days: offDays, branch_id: currentBranchId, system_role };
         const { error } = await supabase.from('employees').update(payload).eq('id', id);
         if (error) throw error;
-
-        // 2. Sync to Profiles
-        if (system_role && data.email) {
-          await supabase.from('profiles').upsert({
-            email: data.email,
-            name: data.name,
-            role: system_role
-          }, { onConflict: 'email' });
-          toast.success('Data & Akses Sistem diupdate');
-        } else {
-          toast.success('Data karyawan diupdate');
-        }
-
+        toast.success('Data karyawan diupdate');
       } else if (action === 'delete') {
         const { error } = await supabase.from('employees').delete().eq('id', data.id);
         if (error) throw error;
@@ -2753,7 +2747,7 @@ function Home() {
   const handleDepartmentCRUD = async (action: 'create' | 'delete', data: any) => {
     try {
       if (action === 'create') {
-        const { id, ...rest } = data; // strip dummy id
+        const { id, ...rest } = data;
         const { error } = await supabase.from('departments').insert([rest]);
         if (error) throw error;
         toast.success('Departemen ditambahkan');
@@ -2766,13 +2760,9 @@ function Home() {
       toast.error('Error Dept: ' + err.message);
     }
   };
-
-  // Settings Handler
   const handleUpdateSettings = async (newSettings: any) => {
-    // Optimistic update for immediate UI feedback (especially for theme)
     const previousSettings = storeSettings;
     setStoreSettings({ ...storeSettings, ...newSettings });
-
     try {
       const { error } = await supabase.from('store_settings').upsert({
         id: 1,
@@ -2780,7 +2770,6 @@ function Home() {
         updated_at: new Date()
       });
       if (error) {
-        // Revert on error
         setStoreSettings(previousSettings);
         throw error;
       }

@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../auth/AuthProvider';
-import { Calculator, TrendingUp, TrendingDown, DollarSign, Wallet, FileText, Plus, BookOpen, LayoutDashboard, Settings, Edit, Trash2, Download, CalendarCheck, History, Lock, Unlock, Loader2, ShoppingCart, Search, Eye, X, RefreshCw } from 'lucide-react';
+import { Calculator, TrendingUp, TrendingDown, DollarSign, Wallet, FileText, Plus, BookOpen, LayoutDashboard, Settings, Edit, Trash2, Download, CalendarCheck, History, Lock, Unlock, Loader2, ShoppingCart, Search, Eye, X, RefreshCw, Printer, ChevronUp, ChevronDown } from 'lucide-react';
 import { PettyCashService, PettyCashSession, PettyCashTransaction } from '../../lib/PettyCashService';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -13,13 +13,15 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 
 // --- Types & Constants ---
 
-type AccountType = 'Asset' | 'Liability' | 'Equity' | 'Income' | 'Expense';
+type AccountType = 'Asset' | 'Liability' | 'Equity' | 'Income' | 'Expense' | 'Label';
 
 interface Account {
     code: string;
     name: string;
     type: AccountType;
     parent_code?: string;
+    description?: string;
+    order_index?: number;
 }
 
 interface JournalEntry {
@@ -30,8 +32,6 @@ interface JournalEntry {
     creditAccount: string;
     amount: number;
 }
-
-// --- Sub-Components ---
 
 // --- Sub-Components ---
 
@@ -1691,14 +1691,15 @@ function PurchaseHistoryTab({ purchases, onCRUD }: {
     );
 }
 
-function AccountManagementTab({ accounts, getBalance, onAddAccount, onUpdateAccount, onDeleteAccount }: {
+function AccountManagementTab({ accounts, getBalance, onAddAccount, onUpdateAccount, onDeleteAccount, onMoveAccount }: {
     accounts: Account[],
     getBalance: (code: string) => number,
     onAddAccount: (acc: Account) => void,
     onUpdateAccount: (acc: Account) => void,
-    onDeleteAccount: (code: string) => void
+    onDeleteAccount: (code: string) => void,
+    onMoveAccount: (acc: Account, dir: 'up' | 'down') => void
 }) {
-    const [formData, setFormData] = useState<Account>({ code: '', name: '', type: 'Asset', parent_code: '' });
+    const [formData, setFormData] = useState<Account>({ code: '', name: '', type: 'Asset', parent_code: '', description: '' });
     const [isEditing, setIsEditing] = useState(false);
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -1721,7 +1722,7 @@ function AccountManagementTab({ accounts, getBalance, onAddAccount, onUpdateAcco
             onAddAccount(formData);
             toast.success('Akun baru berhasil ditambahkan');
         }
-        setFormData({ code: '', name: '', type: 'Asset', parent_code: '' });
+        setFormData({ code: '', name: '', type: 'Asset', parent_code: '', description: '' });
     };
 
     const handleEdit = (acc: Account) => {
@@ -1765,7 +1766,18 @@ function AccountManagementTab({ accounts, getBalance, onAddAccount, onUpdateAcco
                             <option value="Equity">Equity (Modal)</option>
                             <option value="Income">Income (Pendapatan)</option>
                             <option value="Expense">Expense (Beban)</option>
+                            <option value="Label">Label / Sub-Judul (Tanpa Saldo)</option>
                         </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Keterangan (Opsional)</label>
+                        <textarea 
+                            className="w-full p-2 border rounded-lg resize-none" 
+                            rows={2} 
+                            placeholder="Tambahkan catatan di sini..." 
+                            value={formData.description || ''} 
+                            onChange={e => setFormData({ ...formData, description: e.target.value })} 
+                        />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Grup / Induk Akun (Sub-Akun Dari)</label>
@@ -1785,7 +1797,7 @@ function AccountManagementTab({ accounts, getBalance, onAddAccount, onUpdateAcco
                             <option value="">-- Akun Utama (Tidak ada Induk) --</option>
                             {accounts
                                 .filter(a => a.code !== formData.code)
-                                .sort((a,b) => a.code.localeCompare(b.code))
+                                .sort((a,b) => (a.order_index ?? 0) - (b.order_index ?? 0) || a.code.localeCompare(b.code))
                                 .map(acc => (
                                     <option key={acc.code} value={acc.code}>{acc.code} - {acc.name}</option>
                                 ))
@@ -1796,7 +1808,7 @@ function AccountManagementTab({ accounts, getBalance, onAddAccount, onUpdateAcco
                     <div className="flex gap-2">
                         <Button type="submit" className="w-full">{isEditing ? 'Simpan Perubahan' : 'Tambah Akun'}</Button>
                         {isEditing && (
-                            <Button type="button" variant="outline" onClick={() => { setIsEditing(false); setFormData({ code: '', name: '', type: 'Asset', parent_code: '' }); }}>Batal</Button>
+                            <Button type="button" variant="outline" onClick={() => { setIsEditing(false); setFormData({ code: '', name: '', type: 'Asset', parent_code: '', description: '' }); }}>Batal</Button>
                         )}
                     </div>
                 </form>
@@ -1823,7 +1835,7 @@ function AccountManagementTab({ accounts, getBalance, onAddAccount, onUpdateAcco
                                 const buildHierarchy = (parentCode: string | undefined = undefined, level: number = 0): any[] => {
                                     return accounts
                                         .filter(a => (parentCode === undefined ? !a.parent_code : a.parent_code === parentCode))
-                                        .sort((a, b) => a.code.localeCompare(b.code))
+                                        .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0) || a.code.localeCompare(b.code))
                                         .reduce((acc: any[], curr) => {
                                             acc.push({ ...curr, level });
                                             const children = buildHierarchy(curr.code, level + 1);
@@ -1844,8 +1856,11 @@ function AccountManagementTab({ accounts, getBalance, onAddAccount, onUpdateAcco
                                                 {isSubAccount && <span className="mr-2">└</span>}
                                                 {acc.code}
                                             </td>
-                                            <td className={`px-4 py-3 ${hasChildren ? 'font-black text-gray-900' : isSubAccount ? 'text-gray-600' : 'font-bold text-gray-800'}`}>
-                                                {acc.name}
+                                            <td className={`px-4 py-3 ${hasChildren ? 'font-black text-gray-900' : acc.type === 'Label' ? 'text-gray-500 italic' : isSubAccount ? 'text-gray-600' : 'font-bold text-gray-800'}`}>
+                                                <div className="flex flex-col">
+                                                    <span>{acc.name}</span>
+                                                    {acc.description && <span className="text-[10px] text-gray-400 italic font-normal">{acc.description}</span>}
+                                                </div>
                                             </td>
                                             <td className="px-4 py-3">
                                                 <span className={`px-2 py-1 rounded-full text-[10px] border ${acc.type === 'Asset' ? 'bg-green-50 text-green-700 border-green-200' :
@@ -1861,6 +1876,21 @@ function AccountManagementTab({ accounts, getBalance, onAddAccount, onUpdateAcco
                                                 Rp {getBalance(acc.code).toLocaleString()}
                                             </td>
                                             <td className="px-4 py-3 flex justify-center gap-2">
+                                                <button 
+                                                    onClick={() => onMoveAccount(acc, 'up')} 
+                                                    className="p-1 hover:bg-gray-100 text-gray-400 rounded"
+                                                    title="Geser Atas"
+                                                >
+                                                    <ChevronUp className="w-4 h-4" />
+                                                </button>
+                                                <button 
+                                                    onClick={() => onMoveAccount(acc, 'down')} 
+                                                    className="p-1 hover:bg-gray-100 text-gray-400 rounded"
+                                                    title="Geser Bawah"
+                                                >
+                                                    <ChevronDown className="w-4 h-4" />
+                                                </button>
+                                                <div className="w-px h-4 bg-gray-100 mx-1 self-center" />
                                                 <button onClick={() => handleEdit(acc)} className="p-1 hover:bg-blue-50 text-blue-600 rounded">
                                                     <Edit className="w-4 h-4" />
                                                 </button>
@@ -1921,12 +1951,198 @@ export function AccountingView({
     onPurchaseCRUD = async () => { }
 }: AccountingViewProps) {
     const { user, role } = useAuth();
+
+    const moveAccount = async (acc: Account, direction: 'up' | 'down') => {
+        // Find siblings
+        const siblings = accounts
+            .filter(a => a.parent_code === acc.parent_code)
+            .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0) || a.code.localeCompare(b.code));
+
+        const index = siblings.findIndex(s => s.code === acc.code);
+        if (index === -1) return;
+
+        const targetIndex = direction === 'up' ? index - 1 : index + 1;
+        if (targetIndex < 0 || targetIndex >= siblings.length) return;
+
+        const targetAcc = siblings[targetIndex];
+
+        // Swap order_index
+        const currentOrder = acc.order_index ?? 0;
+        const targetOrder = targetAcc.order_index ?? 0;
+
+        // If they are the same, we need to distinguish them first
+        let newCurrentOrder = targetOrder;
+        let newTargetOrder = currentOrder;
+
+        if (newCurrentOrder === newTargetOrder) {
+            if (direction === 'up') newCurrentOrder--;
+            else newCurrentOrder++;
+        }
+
+        await onUpdateAccount({ ...acc, order_index: newCurrentOrder });
+        await onUpdateAccount({ ...targetAcc, order_index: newTargetOrder });
+        
+        toast.success(`Berhasil menggeser ${acc.type === 'Label' ? 'Teks' : 'Akun'}`);
+    };
     const [activeTab, setActiveTab] = useState('overview');
     const [journalSearch, setJournalSearch] = useState('');
     
     const [realSales, setRealSales] = useState<any[]>([]);
     const [realPurchases, setRealPurchases] = useState<any[]>([]);
     const [isLoadingRealData, setIsLoadingRealData] = useState(false);
+
+    // --- Modal State ---
+    const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
+    const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+    const [initialTypeForNewAccount, setInitialTypeForNewAccount] = useState<AccountType>('Asset');
+    const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
+    const renderPrintRows = (type: AccountType | undefined, parentCode: string | undefined, level: number = 0): React.ReactNode[] => {
+        const children = accounts.filter(a => {
+            const isMatch = parentCode 
+                ? a.parent_code === parentCode 
+                : (!a.parent_code || a.parent_code === '');
+            
+            if (!isMatch) return false;
+            if (parentCode) return true;
+
+            if (a.type === 'Label') {
+                if (type === 'Asset' && a.code.startsWith('1')) return true;
+                if (type === 'Liability' && a.code.startsWith('2')) return true;
+                if (type === 'Equity' && a.code.startsWith('3')) return true;
+                return false;
+            }
+            
+            return type ? a.type === type : true;
+        }).sort((a, b) => a.code.localeCompare(b.code));
+        
+        return children.flatMap(acc => {
+            const balance = getDisplayBalance(acc.code);
+            const subHierarchy = renderPrintRows(undefined, acc.code, level + 1);
+            const hasChildren = accounts.some(a => a.parent_code === acc.code);
+            const isLabel = acc.type === 'Label';
+
+            return [
+                <div key={acc.code} className="py-1">
+                    <div className="flex justify-between items-center text-[12px]">
+                        <span style={{ marginLeft: `${level * 1.5}rem` }} className={`${isLabel || hasChildren ? 'font-bold' : ''}`}>
+                            {!isLabel && <span className="text-gray-400 mr-2">{acc.code}</span>}
+                            {acc.name}
+                        </span>
+                        {!isLabel && (
+                            <span className={hasChildren ? 'font-bold' : ''}>
+                                Rp {balance.toLocaleString()}
+                            </span>
+                        )}
+                    </div>
+                    {subHierarchy}
+                </div>
+            ];
+        });
+    };
+
+    const renderPrintPreview = () => {
+        if (!isPreviewOpen) return null;
+
+        const totalAset = accounts.filter(a => a.type === 'Asset').reduce((s, a) => s + getDisplayBalance(a.code), 0);
+        const totalUtang = accounts.filter(a => a.type === 'Liability').reduce((s, a) => s + getDisplayBalance(a.code), 0);
+        const totalEkuitasWithoutProfit = accounts.filter(a => a.type === 'Equity').reduce((s, a) => s + getDisplayBalance(a.code), 0);
+        const totalEkuitas = totalEkuitasWithoutProfit + netProfit;
+
+        return (
+            <div className="fixed inset-0 bg-gray-900/90 backdrop-blur-md z-[10000] overflow-y-auto p-4 sm:p-8 flex justify-center">
+                <div className="absolute top-4 right-4 flex gap-4">
+                    <Button 
+                        variant="outline" 
+                        className="bg-white/10 text-white border-white/20 hover:bg-white/20"
+                        onClick={() => window.print()}
+                    >
+                        <Printer className="w-4 h-4 mr-2" /> Cetak Sekarang
+                    </Button>
+                    <Button 
+                        variant="outline" 
+                        className="bg-white/10 text-white border-white/20 hover:bg-white/20"
+                        onClick={() => setIsPreviewOpen(false)}
+                    >
+                        <X className="w-4 h-4 mr-2" /> Tutup
+                    </Button>
+                </div>
+
+                <div className="bg-white w-full max-w-[210mm] min-h-[297mm] shadow-[0_0_50px_rgba(0,0,0,0.5)] p-[20mm] print:shadow-none print:p-0 animate-in fade-in zoom-in-95 duration-300">
+                    {/* Paper Content */}
+                    <div className="border-b-4 border-black pb-6 mb-8 text-center">
+                        <h1 className="text-3xl font-serif font-bold tracking-tight">LAPORAN POSISI KEUANGAN</h1>
+                        <p className="text-lg font-serif mt-1 uppercase tracking-widest text-gray-600">WinPOS Enterprise Edition</p>
+                        <div className="flex justify-center items-center gap-4 mt-4 text-sm font-medium text-gray-500 uppercase tracking-tighter">
+                            <span>Per Tanggal: {endDate}</span>
+                            <span className="w-1.5 h-1.5 bg-gray-300 rounded-full"></span>
+                            <span>Mata Uang: IDR (Rupiah)</span>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-16">
+                        {/* Left Side: Assets */}
+                        <div className="space-y-4">
+                            <h2 className="font-serif font-bold border-b-2 border-black pb-1 mb-4 text-sm">AKTIVA (ASET)</h2>
+                            <div className="space-y-1">
+                                {renderPrintRows('Asset', undefined)}
+                            </div>
+                            <div className="mt-8 pt-2 border-t-2 border-black flex justify-between font-serif font-bold text-sm">
+                                <span>TOTAL AKTIVA</span>
+                                <span>Rp {totalAset.toLocaleString()}</span>
+                            </div>
+                        </div>
+
+                        {/* Right Side: Liabilities & Equity */}
+                        <div className="space-y-12">
+                            <div>
+                                <h2 className="font-serif font-bold border-b-2 border-black pb-1 mb-4 text-sm">KEWAJIBAN (UTANG)</h2>
+                                <div className="space-y-1">
+                                    {renderPrintRows('Liability', undefined)}
+                                </div>
+                                <div className="mt-4 pt-2 border-t border-black flex justify-between font-serif font-bold text-xs italic">
+                                    <span>Subtotal Kewajiban</span>
+                                    <span>Rp {totalUtang.toLocaleString()}</span>
+                                </div>
+                            </div>
+
+                            <div>
+                                <h2 className="font-serif font-bold border-b-2 border-black pb-1 mb-4 text-sm">EKUITAS & MODAL</h2>
+                                <div className="space-y-1">
+                                    {renderPrintRows('Equity', undefined)}
+                                    <div className="flex justify-between items-center text-[12px] py-1 text-gray-600">
+                                        <span>Laba Tahun Berjalan (Net Profit)</span>
+                                        <span>Rp {netProfit.toLocaleString()}</span>
+                                    </div>
+                                </div>
+                                <div className="mt-8 pt-2 border-t-2 border-black flex justify-between font-serif font-bold text-sm">
+                                    <span>TOTAL PASIVA</span>
+                                    <span>Rp {totalEkuitas.toLocaleString()}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Footer Signature Area */}
+                    <div className="mt-32 grid grid-cols-3 gap-8 text-center text-xs font-medium">
+                        <div className="space-y-20">
+                            <span>Disusun Oleh,</span>
+                            <div className="border-t border-black pt-2 mx-4 text-gray-400 font-light italic">( Bagian Akuntansi )</div>
+                        </div>
+                        <div></div>
+                        <div className="space-y-20">
+                            <span>Mengetahui,</span>
+                            <div className="border-t border-black pt-2 mx-4 text-gray-400 font-light italic">( Pimpinan Cabang )</div>
+                        </div>
+                    </div>
+
+                    <div className="mt-20 text-[8px] text-gray-300 text-center uppercase tracking-[0.2em]">
+                        Dokumen ini dihasilkan secara otomatis oleh sistem WinPOS - Keamanan Terenkripsi
+                    </div>
+                </div>
+            </div>
+        );
+    };
 
 
     // --- Date Filtering State ---
@@ -2168,49 +2384,72 @@ export function AccountingView({
 
     const exportFinancialPositionToExcel = () => {
         try {
-            const groups = {
-                asetLancar: accounts.filter(a => a.type === 'Asset' && (parseInt(a.code.replace(/\D/g, '')) || 0) < 120),
-                asetTetap: accounts.filter(a => a.type === 'Asset' && (parseInt(a.code.replace(/\D/g, '')) || 0) >= 120),
-                utangLancar: accounts.filter(a => a.type === 'Liability' && (parseInt(a.code.replace(/\D/g, '')) || 0) < 220),
-                utangJangkaPanjang: accounts.filter(a => a.type === 'Liability' && (parseInt(a.code.replace(/\D/g, '')) || 0) >= 220),
-                ekuitas: accounts.filter(a => a.type === 'Equity')
+            const data: any[] = [];
+            
+            const addRows = (parentCode: string | undefined, level: number = 0) => {
+                const children = accounts.filter(a => a.parent_code === parentCode).sort((a, b) => a.code.localeCompare(b.code));
+                children.forEach(acc => {
+                    const balance = getDisplayBalance(acc.code);
+                    const hasChildren = accounts.some(a => a.parent_code === acc.code);
+                    
+                    data.push({
+                        'Kode': acc.code,
+                        'Nama Akun': (level > 0 ? '  '.repeat(level) + '└ ' : '') + acc.name,
+                        'Tipe': acc.type,
+                        'Saldo': balance
+                    });
+                    
+                    if (hasChildren) {
+                        addRows(acc.code, level + 1);
+                    }
+                });
             };
 
-            const totalAsetLancar = groups.asetLancar.reduce((s, a) => s + getDisplayBalance(a.code), 0);
-            const totalAsetTetap = groups.asetTetap.reduce((s, a) => s + getDisplayBalance(a.code), 0);
-            const totalUtangLancar = groups.utangLancar.reduce((s, a) => s + getDisplayBalance(a.code), 0);
-            const totalUtangJangkaPanjang = groups.utangJangkaPanjang.reduce((s, a) => s + getDisplayBalance(a.code), 0);
-            const totalEkuitas = groups.ekuitas.reduce((s, a) => s + getDisplayBalance(a.code), 0) + netProfit;
+            data.push({ 'Kode': '---', 'Nama Akun': 'AKTIVA (ASET)', 'Tipe': '', 'Saldo': '' });
+            const assetAccounts = accounts.filter(a => a.type === 'Asset' && !a.parent_code);
+            assetAccounts.forEach(a => addRows(a.parent_code === undefined ? undefined : a.code, 0)); // Start from top assets
+            // Fix: The above logic was a bit circular, let's simplify:
+            const topAssets = accounts.filter(a => a.type === 'Asset' && !a.parent_code).sort((a,b) => a.code.localeCompare(b.code));
+            
+            const finalData: any[] = [];
+            const processHierarchy = (accList: Account[], typeLabel: string) => {
+                finalData.push({ 'Kode': '', 'Nama Akun': typeLabel, 'Tipe': '', 'Saldo': '' });
+                
+                const recurse = (pCode: string | undefined, level: number) => {
+                    const children = accounts.filter(a => {
+                        const isMatch = pCode ? a.parent_code === pCode : (!a.parent_code || a.parent_code === '');
+                        return isMatch && (pCode ? true : accList.some(al => al.code === a.code));
+                    }).sort((a,b) => a.code.localeCompare(b.code));
+                    children.forEach(acc => {
+                        const isLabel = acc.type === 'Label';
+                        finalData.push({
+                            'Kode': isLabel ? '' : acc.code,
+                            'Nama Akun': (level > 0 ? '  '.repeat(level) + ' ' : '') + acc.name,
+                            'Tipe': acc.type,
+                            'Saldo': isLabel ? '' : getDisplayBalance(acc.code)
+                        });
+                        recurse(acc.code, level + 1);
+                    });
+                };
 
-            const data = [
-                { 'Kategori': 'ASET', 'Nama': '', 'Jumlah': '' },
-                { 'Kategori': 'ASET LANCAR', 'Nama': '', 'Jumlah': '' },
-                ...groups.asetLancar.map(a => ({ 'Kategori': '', 'Nama': a.name, 'Jumlah': getDisplayBalance(a.code) })),
-                { 'Kategori': 'TOTAL ASET LANCAR', 'Nama': '', 'Jumlah': totalAsetLancar },
-                { 'Kategori': '', 'Nama': '', 'Jumlah': '' },
-                { 'Kategori': 'ASET TETAP', 'Nama': '', 'Jumlah': '' },
-                ...groups.asetTetap.map(a => ({ 'Kategori': '', 'Nama': a.name, 'Jumlah': getDisplayBalance(a.code) })),
-                { 'Kategori': 'TOTAL ASET TETAP', 'Nama': '', 'Jumlah': totalAsetTetap },
-                { 'Kategori': 'TOTAL ASET', 'Nama': '', 'Jumlah': totalAsetLancar + totalAsetTetap },
-                { 'Kategori': '', 'Nama': '', 'Jumlah': '' },
-                { 'Kategori': 'KEWAJIBAN DAN MODAL', 'Nama': '', 'Jumlah': '' },
-                { 'Kategori': 'UTANG LANCAR', 'Nama': '', 'Jumlah': '' },
-                ...groups.utangLancar.map(a => ({ 'Kategori': '', 'Nama': a.name, 'Jumlah': getDisplayBalance(a.code) })),
-                { 'Kategori': 'TOTAL UTANG LANCAR', 'Nama': '', 'Jumlah': totalUtangLancar },
-                { 'Kategori': '', 'Nama': '', 'Jumlah': '' },
-                { 'Kategori': 'UTANG JANGKA PANJANG', 'Nama': '', 'Jumlah': '' },
-                ...groups.utangJangkaPanjang.map(a => ({ 'Kategori': '', 'Nama': a.name, 'Jumlah': getDisplayBalance(a.code) })),
-                { 'Kategori': 'TOTAL UTANG JANGKA PANJANG', 'Nama': '', 'Jumlah': totalUtangJangkaPanjang },
-                { 'Kategori': 'TOTAL UTANG', 'Nama': '', 'Jumlah': totalUtangLancar + totalUtangJangkaPanjang },
-                { 'Kategori': '', 'Nama': '', 'Jumlah': '' },
-                { 'Kategori': 'EKUITAS', 'Nama': '', 'Jumlah': '' },
-                ...groups.ekuitas.map(a => ({ 'Kategori': '', 'Nama': a.name, 'Jumlah': getDisplayBalance(a.code) })),
-                { 'Kategori': 'Laba Tahun Berjalan', 'Nama': '', 'Jumlah': netProfit },
-                { 'Kategori': 'TOTAL EKUITAS', 'Nama': '', 'Jumlah': totalEkuitas },
-                { 'Kategori': 'TOTAL UTANG DAN MODAL', 'Nama': '', 'Jumlah': totalUtangLancar + totalUtangJangkaPanjang + totalEkuitas }
-            ];
+                accList.forEach(a => {
+                    const isLabel = a.type === 'Label';
+                    finalData.push({
+                        'Kode': isLabel ? '' : a.code,
+                        'Nama Akun': a.name,
+                        'Tipe': a.type,
+                        'Saldo': isLabel ? '' : getDisplayBalance(a.code)
+                    });
+                    recurse(a.code, 1);
+                });
+            };
 
-            const worksheet = XLSX.utils.json_to_sheet(data);
+            processHierarchy(accounts.filter(a => a.type === 'Asset' && !a.parent_code), '--- AKTIVA (ASET) ---');
+            processHierarchy(accounts.filter(a => a.type === 'Liability' && !a.parent_code), '--- KEWAJIBAN (UTANG) ---');
+            processHierarchy(accounts.filter(a => a.type === 'Equity' && !a.parent_code), '--- EKUITAS & MODAL ---');
+            finalData.push({ 'Kode': '', 'Nama Akun': 'Laba Tahun Berjalan', 'Tipe': 'Equity', 'Saldo': netProfit });
+
+            const worksheet = XLSX.utils.json_to_sheet(finalData);
             const workbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(workbook, worksheet, "Posisi Keuangan");
             XLSX.writeFile(workbook, `Posisi_Keuangan_${startDate}_to_${endDate}.xlsx`);
@@ -2226,51 +2465,49 @@ export function AccountingView({
             doc.setFontSize(18);
             doc.text('LAPORAN POSISI KEUANGAN', 105, 20, { align: 'center' });
             doc.setFontSize(11);
-            doc.text(`Periode: ${startDate} s/d ${endDate}`, 105, 28, { align: 'center' });
+            doc.text(`Periode: Per ${endDate}`, 105, 28, { align: 'center' });
 
-            const groups = {
-                asetLancar: accounts.filter(a => a.type === 'Asset' && (parseInt(a.code.replace(/\D/g, '')) || 0) < 120),
-                asetTetap: accounts.filter(a => a.type === 'Asset' && (parseInt(a.code.replace(/\D/g, '')) || 0) >= 120),
-                utangLancar: accounts.filter(a => a.type === 'Liability' && (parseInt(a.code.replace(/\D/g, '')) || 0) < 220),
-                utangJangkaPanjang: accounts.filter(a => a.type === 'Liability' && (parseInt(a.code.replace(/\D/g, '')) || 0) >= 220),
-                ekuitas: accounts.filter(a => a.type === 'Equity')
+            const body: any[] = [];
+            
+            const buildBodyRows = (accList: Account[], typeLabel: string) => {
+                body.push([{ content: typeLabel, colSpan: 3, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } }]);
+                
+                const recurse = (pCode: string | undefined, level: number) => {
+                    const children = accounts.filter(a => {
+                        const isMatch = pCode ? a.parent_code === pCode : (!a.parent_code || a.parent_code === '');
+                        return isMatch && (pCode ? true : accList.some(al => al.code === a.code));
+                    }).sort((a,b) => a.code.localeCompare(b.code));
+                    children.forEach(acc => {
+                        const isLabel = acc.type === 'Label';
+                        body.push([
+                            isLabel ? '' : acc.code, 
+                            (level > 0 ? '      '.repeat(level) : '') + acc.name, 
+                            isLabel ? '' : `Rp ${getDisplayBalance(acc.code).toLocaleString()}`
+                        ]);
+                        recurse(acc.code, level + 1);
+                    });
+                };
+
+                accList.forEach(a => {
+                    const isLabel = a.type === 'Label';
+                    body.push([
+                        { content: isLabel ? '' : a.code, styles: { fontStyle: 'bold' } }, 
+                        { content: a.name, styles: { fontStyle: 'bold' } }, 
+                        { content: isLabel ? '' : `Rp ${getDisplayBalance(a.code).toLocaleString()}`, styles: { fontStyle: 'bold' } }
+                    ]);
+                    recurse(a.code, 1);
+                });
             };
 
-            const totalAsetLancar = groups.asetLancar.reduce((s, a) => s + getDisplayBalance(a.code), 0);
-            const totalAsetTetap = groups.asetTetap.reduce((s, a) => s + getDisplayBalance(a.code), 0);
-            const totalUtangLancar = groups.utangLancar.reduce((s, a) => s + getDisplayBalance(a.code), 0);
-            const totalUtangJangkaPanjang = groups.utangJangkaPanjang.reduce((s, a) => s + getDisplayBalance(a.code), 0);
-            const totalEkuitas = groups.ekuitas.reduce((s, a) => s + getDisplayBalance(a.code), 0) + netProfit;
+            buildBodyRows(accounts.filter(a => a.type === 'Asset' && !a.parent_code), 'AKTIVA (ASET)');
+            body.push([{ content: 'TOTAL ASET', colSpan: 2, styles: { fontStyle: 'bold', fillColor: [220, 220, 220] } }, { content: `Rp ${accounts.filter(a => a.type === 'Asset').reduce((s, a) => s + getDisplayBalance(a.code), 0).toLocaleString()}`, styles: { fontStyle: 'bold', fillColor: [220, 220, 220] } }]);
 
-            const body: any[] = [
-                [{ content: 'ASET', colSpan: 3, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } }],
-                [{ content: 'ASET LANCAR', colSpan: 3, styles: { fontStyle: 'bold', textColor: [100, 100, 100] } }],
-                ...groups.asetLancar.map(a => [a.code, a.name, `Rp ${getDisplayBalance(a.code).toLocaleString()}`]),
-                [{ content: 'TOTAL ASET LANCAR', colSpan: 2, styles: { fontStyle: 'bold' } }, { content: `Rp ${totalAsetLancar.toLocaleString()}`, styles: { fontStyle: 'bold' } }],
-                
-                [{ content: 'ASET TETAP', colSpan: 3, styles: { fontStyle: 'bold', textColor: [100, 100, 100] } }],
-                ...groups.asetTetap.map(a => [a.code, a.name, `Rp ${getDisplayBalance(a.code).toLocaleString()}`]),
-                [{ content: 'TOTAL ASET TETAP', colSpan: 2, styles: { fontStyle: 'bold' } }, { content: `Rp ${totalAsetTetap.toLocaleString()}`, styles: { fontStyle: 'bold' } }],
-                
-                [{ content: 'TOTAL ASET', colSpan: 2, styles: { fontStyle: 'bold', fillColor: [220, 220, 220] } }, { content: `Rp ${(totalAsetLancar + totalAsetTetap).toLocaleString()}`, styles: { fontStyle: 'bold', fillColor: [220, 220, 220] } }],
-                
-                [{ content: 'KEWAJIBAN DAN MODAL', colSpan: 3, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } }],
-                [{ content: 'UTANG LANCAR', colSpan: 3, styles: { fontStyle: 'bold', textColor: [100, 100, 100] } }],
-                ...groups.utangLancar.map(a => [a.code, a.name, `Rp ${getDisplayBalance(a.code).toLocaleString()}`]),
-                [{ content: 'TOTAL UTANG LANCAR', colSpan: 2, styles: { fontStyle: 'bold' } }, { content: `Rp ${totalUtangLancar.toLocaleString()}`, styles: { fontStyle: 'bold' } }],
-
-                [{ content: 'UTANG JANGKA PANJANG', colSpan: 3, styles: { fontStyle: 'bold', textColor: [100, 100, 100] } }],
-                ...groups.utangJangkaPanjang.map(a => [a.code, a.name, `Rp ${getDisplayBalance(a.code).toLocaleString()}`]),
-                [{ content: 'TOTAL UTANG JANGKA PANJANG', colSpan: 2, styles: { fontStyle: 'bold' } }, { content: `Rp ${totalUtangJangkaPanjang.toLocaleString()}`, styles: { fontStyle: 'bold' } }],
-                [{ content: 'TOTAL UTANG', colSpan: 2, styles: { fontStyle: 'bold' } }, { content: `Rp ${(totalUtangLancar + totalUtangJangkaPanjang).toLocaleString()}`, styles: { fontStyle: 'bold' } }],
-
-                [{ content: 'EKUITAS', colSpan: 3, styles: { fontStyle: 'bold', textColor: [100, 100, 100] } }],
-                ...groups.ekuitas.map(a => [a.code, a.name, `Rp ${getDisplayBalance(a.code).toLocaleString()}`]),
-                ['-', 'Laba Tahun Berjalan', `Rp ${netProfit.toLocaleString()}`],
-                [{ content: 'TOTAL EKUITAS', colSpan: 2, styles: { fontStyle: 'bold' } }, { content: `Rp ${totalEkuitas.toLocaleString()}`, styles: { fontStyle: 'bold' } }],
-                
-                [{ content: 'TOTAL UTANG DAN MODAL', colSpan: 2, styles: { fontStyle: 'bold', fillColor: [220, 220, 220] } }, { content: `Rp ${(totalUtangLancar + totalUtangJangkaPanjang + totalEkuitas).toLocaleString()}`, styles: { fontStyle: 'bold', fillColor: [220, 220, 220] } }],
-            ];
+            buildBodyRows(accounts.filter(a => a.type === 'Liability' && !a.parent_code), 'KEWAJIBAN (UTANG)');
+            buildBodyRows(accounts.filter(a => a.type === 'Equity' && !a.parent_code), 'EKUITAS & MODAL');
+            body.push(['-', 'Laba Tahun Berjalan', `Rp ${netProfit.toLocaleString()}`]);
+            
+            const totalPasiva = accounts.filter(a => a.type === 'Liability' || a.type === 'Equity').reduce((s, a) => s + getDisplayBalance(a.code), 0) + netProfit;
+            body.push([{ content: 'TOTAL PASIVA (UTANG & MODAL)', colSpan: 2, styles: { fontStyle: 'bold', fillColor: [220, 220, 220] } }, { content: `Rp ${totalPasiva.toLocaleString()}`, styles: { fontStyle: 'bold', fillColor: [220, 220, 220] } }]);
 
             autoTable(doc, {
                 startY: 40,
@@ -2288,24 +2525,246 @@ export function AccountingView({
         }
     };
 
+    const renderAccountModal = () => {
+        if (!isAccountModalOpen) return null;
+
+        const handleSave = async (e: React.FormEvent) => {
+            e.preventDefault();
+            const form = e.target as HTMLFormElement;
+            const formData = new FormData(form);
+            const accountData: Account = {
+                code: formData.get('code') as string,
+                name: formData.get('name') as string,
+                type: formData.get('type') as AccountType,
+                parent_code: formData.get('parent_code') as string || undefined,
+                description: formData.get('description') as string || undefined
+            };
+
+            if (editingAccount) {
+                await updateAccount(accountData);
+            } else {
+                await addAccount(accountData);
+            }
+            setIsAccountModalOpen(false);
+            setEditingAccount(null);
+        };
+
+        const initialData = editingAccount || { 
+            code: initialTypeForNewAccount === 'Label' ? (window as any).__lastSectionPrefix + '-TXT-' + Date.now().toString().slice(-6) : '', 
+            name: '', 
+            type: initialTypeForNewAccount, 
+            parent_code: '', 
+            description: '' 
+        };
+
+        return (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-in fade-in">
+                <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+                    <div className={`p-6 text-white flex justify-between items-center ${initialData.type === 'Label' ? 'bg-gradient-to-r from-red-600 to-rose-700' : 'bg-gradient-to-r from-blue-600 to-indigo-700'}`}>
+                        <h3 className="text-xl font-bold flex items-center gap-2">
+                            {editingAccount ? <Edit className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+                            {editingAccount ? 'Edit Akun' : (initialData.type === 'Label' ? 'Tambah Baris Teks / Label' : 'Tambah Akun Baru')}
+                            <span className="text-[8px] opacity-50 font-mono">({initialData.type})</span>
+                        </h3>
+                        <button onClick={() => { setIsAccountModalOpen(false); setEditingAccount(null); }} className="hover:rotate-90 transition-transform">
+                            <X className="w-6 h-6" />
+                        </button>
+                    </div>
+                    <form onSubmit={handleSave} className="p-8 space-y-5">
+                        <div className={`space-y-2 ${initialData.type === 'Label' ? 'hidden' : ''}`}>
+                            <label className="text-xs font-black uppercase text-gray-400 tracking-wider">Kode Akun</label>
+                            <input
+                                name="code"
+                                defaultValue={initialData.code || (initialData.type === 'Label' ? 'TXT-' + Date.now().toString().slice(-6) : '')}
+                                readOnly={!!editingAccount}
+                                required
+                                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all outline-none font-mono"
+                                placeholder="Contoh: 1101"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-xs font-black uppercase text-gray-400 tracking-wider">
+                                {initialData.type === 'Label' ? 'Isi Tulisan / Teks' : 'Nama Akun'}
+                            </label>
+                            <input
+                                name="name"
+                                defaultValue={initialData.name}
+                                required
+                                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all outline-none"
+                                placeholder={initialData.type === 'Label' ? 'Contoh: ASET LANCAR' : 'Contoh: Kas Kecil'}
+                            />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className={`space-y-2 ${initialData.type === 'Label' ? 'hidden' : ''}`}>
+                                <label className="text-xs font-black uppercase text-gray-400 tracking-wider">Tipe Akun</label>
+                                <select
+                                    name="type"
+                                    defaultValue={initialData.type}
+                                    key={initialData.type} // Force re-render select when default value changes
+                                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all outline-none appearance-none"
+                                >
+                                    <option value="Asset">Asset (Harta)</option>
+                                    <option value="Liability">Liability (Utang)</option>
+                                    <option value="Equity">Equity (Modal)</option>
+                                    <option value="Income">Income (Pendapatan)</option>
+                                    <option value="Expense">Expense (Beban)</option>
+                                    <option value="Label">Label / Sub-Judul (Tanpa Saldo)</option>
+                                </select>
+                            </div>
+                            <div className={`space-y-2 ${initialData.type === 'Label' ? 'col-span-2' : ''}`}>
+                                <label className="text-xs font-black uppercase text-gray-400 tracking-wider">
+                                    {initialData.type === 'Label' ? 'Letakkan di Bawah...' : 'Induk Akun'}
+                                </label>
+                                <select
+                                    name="parent_code"
+                                    defaultValue={initialData.parent_code}
+                                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all outline-none appearance-none"
+                                >
+                                    <option value="">- Tanpa Induk (Paling Atas) -</option>
+                                    {accounts.filter(a => a.code !== editingAccount?.code).map(a => (
+                                        <option key={a.code} value={a.code}>{a.code} - {a.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-xs font-black uppercase text-gray-400 tracking-wider">Keterangan (Opsional)</label>
+                            <textarea
+                                name="description"
+                                defaultValue={initialData.description}
+                                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all outline-none resize-none"
+                                placeholder="Tambahkan catatan atau keterangan akun di sini..."
+                                rows={2}
+                            />
+                        </div>
+                        <div className="pt-4 flex gap-3">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className="flex-1 rounded-xl py-6"
+                                onClick={() => { setIsAccountModalOpen(false); setEditingAccount(null); }}
+                            >
+                                Batal
+                            </Button>
+                            <Button
+                                type="submit"
+                                className="flex-1 bg-blue-600 hover:bg-blue-700 rounded-xl py-6 shadow-lg shadow-blue-200"
+                            >
+                                {editingAccount ? 'Simpan Perubahan' : (initialData.type === 'Label' ? 'Simpan Teks' : 'Tambah Akun')}
+                            </Button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        );
+    };
+
     const renderFinancialPosition = () => {
-        const renderAccountRows = (parentCode: string | undefined, level: number = 0): { rows: React.ReactNode[], subTotal: number } => {
+        const renderAccountRows = (type: AccountType | undefined, parentCode: string | undefined, level: number = 0): { rows: React.ReactNode[], subTotal: number } => {
             let total = 0;
-            const children = accounts.filter(a => a.parent_code === parentCode).sort((a, b) => a.code.localeCompare(b.code));
+            const children = accounts.filter(a => {
+                const isMatch = parentCode 
+                    ? a.parent_code === parentCode 
+                    : (!a.parent_code || a.parent_code === '');
+                
+                if (!isMatch) return false;
+                if (parentCode) return true;
+
+                // Root level filtering: Label accounts use their code prefix (1, 2, 3)
+                if (a.type === 'Label') {
+                    if (type === 'Asset' && a.code.startsWith('1')) return true;
+                    if (type === 'Liability' && a.code.startsWith('2')) return true;
+                    if (type === 'Equity' && a.code.startsWith('3')) return true;
+                    return false;
+                }
+                
+                return type ? a.type === type : true;
+            }).sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0) || a.code.localeCompare(b.code));
             
             const rows = children.flatMap(acc => {
                 const balance = getDisplayBalance(acc.code);
-                const subHierarchy = renderAccountRows(acc.code, level + 1);
+                const subHierarchy = renderAccountRows(undefined, acc.code, level + 1);
                 const currentTotal = balance + subHierarchy.subTotal;
                 total += currentTotal;
 
                 const hasChildren = accounts.some(a => a.parent_code === acc.code);
+                const isLabel = acc.type === 'Label';
 
                 return [
-                    <div key={acc.code} className={`${hasChildren ? 'mt-4' : ''}`}>
-                        <div className={`flex justify-between py-1 border-b border-dashed border-gray-100 ${hasChildren ? 'font-bold text-gray-800' : 'text-sm text-gray-600'}`} style={{ paddingLeft: `${level * 1.5}rem` }}>
-                            <span>{acc.code} - {acc.name}</span>
-                            <span>Rp {currentTotal.toLocaleString()}</span>
+                    <div key={acc.code} className={`${(hasChildren || isLabel) ? 'mt-4 mb-2' : ''} group`}>
+                        <div 
+                            className={`flex justify-between items-center py-2 px-3 rounded-lg transition-all ${
+                                isLabel
+                                    ? 'bg-gray-100/50 font-black text-gray-800 border-l-4 border-gray-400'
+                                    : hasChildren 
+                                        ? 'bg-blue-50/50 font-black text-blue-900 border-l-4 border-blue-600' 
+                                        : 'text-sm text-gray-600 hover:bg-gray-50 border-b border-dashed border-gray-100'
+                            }`} 
+                            style={{ marginLeft: `${level * 1}rem` }}
+                        >
+                            <span className="flex flex-col">
+                                <span className="flex items-center gap-2">
+                                    {level > 0 && <span className="text-gray-300 font-light">└─</span>}
+                                    {isLabel ? acc.name : `${acc.code} - ${acc.name}`}
+                                    
+                                    {/* Row Actions */}
+                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                moveAccount(acc, 'up');
+                                            }}
+                                            className="p-1 hover:bg-gray-100 text-gray-400 rounded transition-colors"
+                                            title="Geser Atas"
+                                        >
+                                            <ChevronUp className="w-3 h-3" />
+                                        </button>
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                moveAccount(acc, 'down');
+                                            }}
+                                            className="p-1 hover:bg-gray-100 text-gray-400 rounded transition-colors"
+                                            title="Geser Bawah"
+                                        >
+                                            <ChevronDown className="w-3 h-3" />
+                                        </button>
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setEditingAccount(acc);
+                                                setIsAccountModalOpen(true);
+                                            }}
+                                            className="p-1 hover:bg-blue-100 text-blue-600 rounded transition-colors"
+                                            title="Edit Akun"
+                                        >
+                                            <Edit className="w-3 h-3" />
+                                        </button>
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (window.confirm(`Hapus akun ${acc.name}?`)) {
+                                                    deleteAccount(acc.code);
+                                                }
+                                            }}
+                                            className="p-1 hover:bg-red-100 text-red-600 rounded transition-colors"
+                                            title="Hapus Akun"
+                                        >
+                                            <Trash2 className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                </span>
+                                {acc.description && (
+                                    <span className={`text-[10px] text-gray-400 italic font-light ${level > 0 ? 'ml-6' : 'ml-0'}`}>
+                                        {acc.description}
+                                    </span>
+                                )}
+                            </span>
+                            {!isLabel && (
+                                <span className={hasChildren ? 'text-blue-700' : 'font-mono'}>
+                                    Rp {currentTotal.toLocaleString()}
+                                </span>
+                            )}
                         </div>
                         {subHierarchy.rows}
                     </div>
@@ -2315,36 +2774,35 @@ export function AccountingView({
             return { rows, subTotal: total };
         };
 
-        const assetSections = renderAccountRows(undefined).rows.filter((_, i) => {
-            const acc = accounts.filter(a => !a.parent_code).sort((a, b) => a.code.localeCompare(b.code))[i];
-            return acc?.type === 'Asset';
-        });
-
-        const liabilitySections = renderAccountRows(undefined).rows.filter((_, i) => {
-            const acc = accounts.filter(a => !a.parent_code).sort((a, b) => a.code.localeCompare(b.code))[i];
-            return acc?.type === 'Liability';
-        });
-
-        const equitySections = renderAccountRows(undefined).rows.filter((_, i) => {
-            const acc = accounts.filter(a => !a.parent_code).sort((a, b) => a.code.localeCompare(b.code))[i];
-            return acc?.type === 'Equity';
-        });
+        const assetSections = renderAccountRows('Asset', undefined).rows;
+        const liabilitySections = renderAccountRows('Liability', undefined).rows;
+        const equitySections = renderAccountRows('Equity', undefined).rows;
 
         const totalAset = accounts.filter(a => a.type === 'Asset').reduce((s, a) => s + getDisplayBalance(a.code), 0);
         const totalUtang = accounts.filter(a => a.type === 'Liability').reduce((s, a) => s + getDisplayBalance(a.code), 0);
         const totalEkuitasWithoutProfit = accounts.filter(a => a.type === 'Equity').reduce((s, a) => s + getDisplayBalance(a.code), 0);
         const totalEkuitas = totalEkuitasWithoutProfit + netProfit;
 
+
+
         return (
             <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4">
                 <div className="flex justify-between items-center mb-8">
                     <div>
                         <h2 className="text-2xl font-bold text-gray-900 uppercase tracking-widest">
-                            Laporan Posisi Keuangan
+                            Laporan Posisi Keuangan <span className="text-[10px] text-gray-300 font-normal">V.2.1</span>
                         </h2>
                         <p className="text-gray-500">WinPOS Enterprise • Per {endDate}</p>
                     </div>
                     <div className="flex gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex items-center gap-2 border-blue-200 text-blue-700 hover:bg-blue-50"
+                            onClick={() => setIsPreviewOpen(true)}
+                        >
+                            <Eye className="w-4 h-4" /> Preview Cetak
+                        </Button>
                         <Button
                             variant="outline"
                             size="sm"
@@ -2367,7 +2825,32 @@ export function AccountingView({
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
                     {/* SISI AKTIVA (ASET) */}
                     <div className="space-y-6">
-                        <h3 className="font-black text-lg text-blue-700 border-b-2 border-blue-700 pb-1 uppercase">Aktiva (Aset)</h3>
+                        <div className="flex justify-between items-end border-b-2 border-blue-700 pb-1">
+                            <h3 className="font-black text-lg text-blue-700 uppercase">Aktiva (Aset)</h3>
+                            <div className="flex gap-1">
+                                <button 
+                                    onClick={() => {
+                                        (window as any).__lastSectionPrefix = '1';
+                                        setInitialTypeForNewAccount('Label');
+                                        setEditingAccount(null);
+                                        setIsAccountModalOpen(true);
+                                    }}
+                                    className="flex items-center gap-1 text-[10px] font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded-full hover:bg-gray-200 transition-colors uppercase tracking-tighter"
+                                >
+                                    <Plus className="w-2.5 h-2.5" /> Teks
+                                </button>
+                                <button 
+                                    onClick={() => {
+                                        setInitialTypeForNewAccount('Asset');
+                                        setEditingAccount(null);
+                                        setIsAccountModalOpen(true);
+                                    }}
+                                    className="flex items-center gap-1 text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-1 rounded-full hover:bg-blue-100 transition-colors uppercase tracking-tighter"
+                                >
+                                    <Plus className="w-2.5 h-2.5" /> Akun
+                                </button>
+                            </div>
+                        </div>
                         <div className="space-y-4">
                             {assetSections}
                         </div>
@@ -2380,7 +2863,32 @@ export function AccountingView({
                     {/* SISI PASIVA (KEWAJIBAN & EKUITAS) */}
                     <div className="space-y-8">
                         <div>
-                            <h3 className="font-black text-lg text-red-700 border-b-2 border-red-700 pb-1 uppercase">Kewajiban (Utang)</h3>
+                            <div className="flex justify-between items-end border-b-2 border-red-700 pb-1">
+                                <h3 className="font-black text-lg text-red-700 uppercase">Kewajiban (Utang)</h3>
+                                <div className="flex gap-1">
+                                    <button 
+                                        onClick={() => {
+                                            (window as any).__lastSectionPrefix = '2';
+                                            setInitialTypeForNewAccount('Label');
+                                            setEditingAccount(null);
+                                            setIsAccountModalOpen(true);
+                                        }}
+                                        className="flex items-center gap-1 text-[10px] font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded-full hover:bg-gray-200 transition-colors uppercase tracking-tighter"
+                                    >
+                                        <Plus className="w-2.5 h-2.5" /> Teks
+                                    </button>
+                                    <button 
+                                        onClick={() => {
+                                            setInitialTypeForNewAccount('Liability');
+                                            setEditingAccount(null);
+                                            setIsAccountModalOpen(true);
+                                        }}
+                                        className="flex items-center gap-1 text-[10px] font-bold bg-red-50 text-red-700 px-2 py-1 rounded-full hover:bg-red-100 transition-colors uppercase tracking-tighter"
+                                    >
+                                        <Plus className="w-2.5 h-2.5" /> Akun
+                                    </button>
+                                </div>
+                            </div>
                             <div className="mt-4 space-y-4">
                                 {liabilitySections}
                             </div>
@@ -2391,7 +2899,32 @@ export function AccountingView({
                         </div>
 
                         <div>
-                            <h3 className="font-black text-lg text-emerald-700 border-b-2 border-emerald-700 pb-1 uppercase">Ekuitas & Modal</h3>
+                            <div className="flex justify-between items-end border-b-2 border-emerald-700 pb-1">
+                                <h3 className="font-black text-lg text-emerald-700 uppercase">Ekuitas & Modal</h3>
+                                <div className="flex gap-1">
+                                    <button 
+                                        onClick={() => {
+                                            (window as any).__lastSectionPrefix = '3';
+                                            setInitialTypeForNewAccount('Label');
+                                            setEditingAccount(null);
+                                            setIsAccountModalOpen(true);
+                                        }}
+                                        className="flex items-center gap-1 text-[10px] font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded-full hover:bg-gray-200 transition-colors uppercase tracking-tighter"
+                                    >
+                                        <Plus className="w-2.5 h-2.5" /> Teks
+                                    </button>
+                                    <button 
+                                        onClick={() => {
+                                            setInitialTypeForNewAccount('Equity');
+                                            setEditingAccount(null);
+                                            setIsAccountModalOpen(true);
+                                        }}
+                                        className="flex items-center gap-1 text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-1 rounded-full hover:bg-emerald-100 transition-colors uppercase tracking-tighter"
+                                    >
+                                        <Plus className="w-2.5 h-2.5" /> Akun
+                                    </button>
+                                </div>
+                            </div>
                             <div className="mt-4 space-y-4">
                                 {equitySections}
                                 <div className="flex justify-between text-sm py-1 border-b border-dashed border-gray-100 text-blue-600 font-medium">
@@ -2622,7 +3155,9 @@ export function AccountingView({
     ];
 
     return (
-        <div className="p-8 space-y-8 min-h-full bg-gray-50/50">
+        <div className="min-h-screen bg-gray-50 pb-20">
+            {renderAccountModal()}
+            {renderPrintPreview()}
             {/* Header */}
             <div className="flex justify-between items-center">
                 <div>
@@ -2753,6 +3288,7 @@ export function AccountingView({
                         onAddAccount={addAccount}
                         onUpdateAccount={updateAccount}
                         onDeleteAccount={deleteAccount}
+                        onMoveAccount={moveAccount}
                     />
                 )}
             </div>

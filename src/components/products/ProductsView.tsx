@@ -155,7 +155,8 @@ export function ProductsView({
                     category: '',
                     unit: '',
                     brand: '',
-                    price: 0
+                    price: 0,
+                    cost: 0
                 });
             } else {
                 setFormData({
@@ -322,14 +323,18 @@ export function ProductsView({
                     return toast.error('Nama dan Kode Produk wajib diisi');
                 }
 
-                const hpp = calculateHPP(product.recipe);
-                const productWithHPP = { ...product, cost: hpp };
-                console.log('Calling onProductCRUD with:', productWithHPP);
+                const manualHpp = parseFloat(product.cost as any) || 0;
+                const calculatedHpp = calculateHPP(product.recipe);
+                
+                // If there's a recipe, use it. Otherwise, use the manual cost.
+                const finalHpp = (product.recipe && product.recipe.length > 0) ? calculatedHpp : manualHpp;
+                const productToSave: any = { ...product, cost: finalHpp };
+                
+                console.log('Calling onProductCRUD with:', productToSave);
 
                 const action = product.id ? 'update' : 'create';
                 
                 // Set initial sort_order for new products
-                const productToSave = { ...productWithHPP };
                 if (action === 'create') {
                     const maxOrder = products.reduce((max, p) => Math.max(max, p.sort_order || 0), 0);
                     productToSave.sort_order = maxOrder + 1;
@@ -434,7 +439,7 @@ export function ProductsView({
                             .filter(p => !currentBranchId || String(p.branch_id) === String(currentBranchId) || !p.branch_id)
                             .sort((a, b) => (a.sort_order ?? a.id) - (b.sort_order ?? b.id))
                             .map((p, idx, filtered) => {
-                                const currentHPP = calculateHPP(p.recipe);
+                                const currentHPP = (p.recipe && p.recipe.length > 0) ? calculateHPP(p.recipe) : (p.cost || 0);
                                 const margin = p.price - currentHPP;
                                 return (
                                     <tr key={p.id} className="group hover:bg-gray-50/50 transition-all">
@@ -757,8 +762,25 @@ export function ProductsView({
                                             {/* Row 3: Pricing & Stock Readiness */}
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div className="space-y-1.5">
+                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Harga Modal (HPP) (Rp)</label>
+                                                    <input 
+                                                        type="number" 
+                                                        className="w-full px-4 py-2.5 bg-orange-50/30 border border-orange-100 rounded-xl outline-none focus:ring-4 focus:ring-orange-500/5 transition-all font-bold text-orange-600 text-xs" 
+                                                        value={formData.cost === 0 ? '0' : (formData.cost || '')} 
+                                                        onChange={e => setFormData(prev => ({ ...prev, cost: parseFloat(e.target.value) || 0 }))} 
+                                                        placeholder="0" 
+                                                    />
+                                                    <p className="text-[8px] text-gray-400 px-1 italic">Diabaikan jika menggunakan resep.</p>
+                                                </div>
+                                                <div className="space-y-1.5">
                                                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Harga Jual (Rp)</label>
-                                                    <input type="number" className="w-full px-4 py-2.5 bg-blue-50/30 border border-blue-100 rounded-xl outline-none focus:ring-4 focus:ring-blue-500/5 transition-all font-bold text-blue-600 text-xs" value={formData.price || ''} onChange={e => setFormData(prev => ({ ...prev, price: parseInt(e.target.value) || 0 }))} placeholder="0" />
+                                                    <input 
+                                                        type="number" 
+                                                        className="w-full px-4 py-2.5 bg-blue-50/30 border border-blue-100 rounded-xl outline-none focus:ring-4 focus:ring-blue-500/5 transition-all font-bold text-blue-600 text-xs" 
+                                                        value={formData.price === 0 ? '0' : (formData.price || '')} 
+                                                        onChange={e => setFormData(prev => ({ ...prev, price: parseInt(e.target.value) || 0 }))} 
+                                                        placeholder="0" 
+                                                    />
                                                 </div>
                                                 <div className="space-y-1.5">
                                                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Stok Awal</label>
@@ -1088,7 +1110,15 @@ export function ProductsView({
                                             </div>
                                         </div>
                                     </div>
-                                    <Button onClick={() => setIsRecipeOpen(false)} className="w-full h-16 rounded-[24px] bg-gray-900 hover:bg-black text-white shadow-2xl shadow-gray-200 transition-all font-black text-lg">
+                                    <Button                                         onClick={async () => {
+                                            setIsRecipeOpen(false);
+                                            if (selectedProduct) {
+                                                const updatedHpp = calculateHPP(selectedProduct.recipe);
+                                                await onProductCRUD('update', { ...selectedProduct, cost: updatedHpp });
+                                                toast.success('HPP Produk diperbarui');
+                                            }
+                                        }} 
+ className="w-full h-16 rounded-[24px] bg-gray-900 hover:bg-black text-white shadow-2xl shadow-gray-200 transition-all font-black text-lg">
                                         Selesai & Simpan
                                     </Button>
                                 </div>
@@ -1107,7 +1137,16 @@ export function ProductsView({
                                 <h3 className="text-2xl font-black text-gray-800 tracking-tight">Toping / Add-ons</h3>
                                 <p className="text-sm text-gray-500 font-medium">{selectedProduct.name}</p>
                             </div>
-                            <button onClick={() => setIsAddonOpen(false)} className="p-3 hover:bg-gray-100 rounded-2xl">
+                            <button 
+                                onClick={async () => {
+                                    setIsAddonOpen(false);
+                                    if (selectedProduct) {
+                                        await onProductCRUD('update', selectedProduct);
+                                        toast.success('Pilihan Toping disimpan');
+                                    }
+                                }} 
+                                className="p-3 hover:bg-gray-100 rounded-2xl"
+                            >
                                 <Plus className="w-6 h-6 rotate-45 text-gray-400" />
                             </button>
                         </div>
