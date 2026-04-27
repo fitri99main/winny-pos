@@ -140,6 +140,7 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
                     name: i.product_name,
                     quantity: i.quantity,
                     price: i.price,
+                    cost: i.cost || 0,
                     category: i.product?.category
                 }))
             }));
@@ -243,11 +244,18 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
     };
 
     const totalSales = filteredSales.reduce((sum, s) => sum + (isCompletedSale(s.status) ? s.totalAmount : 0), 0);
+    
+    const totalHPP = filteredSales.reduce((sum, s) => {
+        if (!isCompletedSale(s.status)) return sum;
+        const saleHPP = (s.productDetails || []).reduce((iSum, item) => iSum + ((item.cost || 0) * item.quantity), 0);
+        return sum + saleHPP;
+    }, 0);
+
+    const grossProfit = totalSales - totalHPP;
+    const profitMargin = totalSales > 0 ? (grossProfit / totalSales) * 100 : 0;
 
     const totalPurchases = filteredPurchases.reduce((sum, p) => sum + (p.total_amount || 0), 0);
-        const totalTransactions = filteredSales.filter(s => isCompletedSale(s.status)).length;
-
-
+    const totalTransactions = filteredSales.filter(s => isCompletedSale(s.status)).length;
     const totalPurchaseTrans = filteredPurchases.length;
     const totalReturned = filteredSales.filter(s => s.status === 'Returned').length;
     const totalRefunded = filteredReturns.reduce((sum, r) => sum + r.refundAmount, 0);
@@ -377,8 +385,9 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
                 data = filteredSales.map(s => ({
                     'No. Invoice': s.orderNo,
                     'Tanggal': s.date,
-                    'Items': s.items,
                     'Total Amount': s.totalAmount,
+                    'HPP (Modal)': (s.productDetails || []).reduce((sum, item) => sum + ((item.cost || 0) * item.quantity), 0),
+                    'Laba Kotor': s.totalAmount - (s.productDetails || []).reduce((sum, item) => sum + ((item.cost || 0) * item.quantity), 0),
                     'Metode Pembayaran': s.paymentMethod,
                     'Status': s.status === 'Completed' ? 'Selesai' : 'Retur',
                     'Kasir': s.cashierName || s.waiterName || '-',
@@ -443,19 +452,27 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
             doc.setTextColor(0);
             if (reportType === 'sales') {
                 doc.text(`Total Penjualan: ${formatCurrency(totalSales)}`, 14, 40);
-                doc.text(`Total Transaksi: ${totalTransactions}`, 14, 46);
+                doc.text(`Total Modal (HPP): ${formatCurrency(totalHPP)}`, 14, 46);
+                doc.setTextColor(34, 197, 94); // Green for profit
+                doc.text(`Laba Kotor: ${formatCurrency(grossProfit)} (${profitMargin.toFixed(1)}%)`, 14, 52);
+                doc.setTextColor(0);
+                doc.text(`Total Transaksi: ${totalTransactions}`, 14, 58);
 
-                const tableData = filteredSales.map(s => [
-                    s.orderNo,
-                    s.date,
-                    s.status === 'Returned' ? 'Retur' : 'Selesai',
-                    s.paymentMethod,
-                    formatCurrency(s.totalAmount)
-                ]);
+                const tableData = filteredSales.map(s => {
+                    const hpp = (s.productDetails || []).reduce((sum, item) => sum + ((item.cost || 0) * item.quantity), 0);
+                    return [
+                        s.orderNo,
+                        s.date.substring(0, 10),
+                        s.status === 'Returned' ? 'Retur' : 'Selesai',
+                        formatCurrency(s.totalAmount),
+                        formatCurrency(hpp),
+                        formatCurrency(s.totalAmount - hpp)
+                    ];
+                });
 
                 autoTable(doc, {
-                    startY: 55,
-                    head: [['No. Invoice', 'Tanggal', 'Status', 'Metode', 'Total']],
+                    startY: 65,
+                    head: [['No. Invoice', 'Tanggal', 'Status', 'Total', 'Modal', 'Laba']],
                     body: tableData as any,
                     theme: 'striped',
                     headStyles: { fillColor: [79, 70, 229] }, // Indigo-600
@@ -594,8 +611,21 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
                     <p className="text-xs text-gray-400 mt-2 font-medium">{reportType === 'sales' ? 'Transaksi berhasil selesai' : 'Transaksi pembelian barang'}</p>
                 </div>
 
+                <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                        <TrendingUp className="w-16 h-16 text-emerald-600" />
+                    </div>
+                    <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center mb-4 text-emerald-600">
+                        <TrendingUp className="w-6 h-6" />
+                    </div>
+                    <p className="text-sm font-medium text-gray-500">Laba Kotor (Estimasi)</p>
+                    <h3 className="text-2xl font-black text-emerald-600 mt-1">{formatCurrency(grossProfit)}</h3>
+                    <div className="flex items-center gap-1.5 mt-2">
+                        <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-black uppercase">Margin {profitMargin.toFixed(1)}%</span>
+                    </div>
+                </div>
                 <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-                    <div className="w-12 h-12 bg-orange-50 rounded-2xl flex items-center justify-center mb-4 text-orange-600">
+                    <div className="w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center mb-4 text-amber-600">
                         <DollarSign className="w-6 h-6" />
                     </div>
                     <p className="text-sm font-medium text-gray-500">{reportType === 'sales' ? 'Rata-rata Order' : 'Rata-rata Belanja'}</p>
