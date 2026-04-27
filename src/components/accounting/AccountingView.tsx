@@ -1952,38 +1952,6 @@ export function AccountingView({
 }: AccountingViewProps) {
     const { user, role } = useAuth();
 
-    const moveAccount = async (acc: Account, direction: 'up' | 'down') => {
-        // Find siblings
-        const siblings = accounts
-            .filter(a => a.parent_code === acc.parent_code)
-            .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0) || a.code.localeCompare(b.code));
-
-        const index = siblings.findIndex(s => s.code === acc.code);
-        if (index === -1) return;
-
-        const targetIndex = direction === 'up' ? index - 1 : index + 1;
-        if (targetIndex < 0 || targetIndex >= siblings.length) return;
-
-        const targetAcc = siblings[targetIndex];
-
-        // Swap order_index
-        const currentOrder = acc.order_index ?? 0;
-        const targetOrder = targetAcc.order_index ?? 0;
-
-        // If they are the same, we need to distinguish them first
-        let newCurrentOrder = targetOrder;
-        let newTargetOrder = currentOrder;
-
-        if (newCurrentOrder === newTargetOrder) {
-            if (direction === 'up') newCurrentOrder--;
-            else newCurrentOrder++;
-        }
-
-        await onUpdateAccount({ ...acc, order_index: newCurrentOrder });
-        await onUpdateAccount({ ...targetAcc, order_index: newTargetOrder });
-        
-        toast.success(`Berhasil menggeser ${acc.type === 'Label' ? 'Teks' : 'Akun'}`);
-    };
     const [activeTab, setActiveTab] = useState('overview');
     const [journalSearch, setJournalSearch] = useState('');
     
@@ -2267,6 +2235,36 @@ export function AccountingView({
             return;
         }
         onDeleteAccount(code);
+    };
+
+    const moveAccount = async (acc: Account, direction: 'up' | 'down') => {
+        const siblings = accounts.filter(a => a.parent_code === acc.parent_code && a.type === acc.type)
+            .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0) || a.code.localeCompare(b.code));
+        
+        const currentIndex = siblings.findIndex(s => s.code === acc.code);
+        if (currentIndex === -1) return;
+
+        const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+        if (targetIndex < 0 || targetIndex >= siblings.length) return;
+
+        const targetAcc = siblings[targetIndex];
+        
+        // Swap order_index
+        const currentOrder = acc.order_index ?? 0;
+        const targetOrder = targetAcc.order_index ?? 0;
+
+        // Ensure distinct order indices
+        let newCurrentOrder = targetOrder;
+        let newTargetOrder = currentOrder;
+        
+        if (newCurrentOrder === newTargetOrder) {
+            newCurrentOrder = direction === 'up' ? targetOrder - 1 : targetOrder + 1;
+        }
+
+        await onUpdateAccount({ ...acc, order_index: newCurrentOrder });
+        await onUpdateAccount({ ...targetAcc, order_index: newTargetOrder });
+        
+        toast.success(`Berhasil menggeser ${acc.name}`);
     };
 
     // --- Derived State for Reports ---
