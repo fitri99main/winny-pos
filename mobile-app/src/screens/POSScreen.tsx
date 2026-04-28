@@ -160,6 +160,10 @@ export default function POSScreen() {
     const [showSplitBillModal, setShowSplitBillModal] = useState(false);
     const [showHeldOrdersModal, setShowHeldOrdersModal] = useState(false);
     const [showDeleteAuthModal, setShowDeleteAuthModal] = useState(false);
+    const [pendingAuth, setPendingAuth] = useState<{
+        action: 'discount' | 'hold' | 'delete' | 'manual' | 'split';
+        data?: any;
+    } | null>(null);
     const [orderToDeleteId, setOrderToDeleteId] = useState<string | null>(null);
     const [isFetchingRemote, setIsFetchingRemote] = useState(false);
 
@@ -229,39 +233,66 @@ export default function POSScreen() {
 
     const renderSplitCartActions = () => (
         <View style={[styles.quickActionsRow, { marginBottom: 10 }]}>
-            {(!storeSettings?.restrict_manual_item || isAdmin) && (
-                <TouchableOpacity
-                    style={styles.quickActionBtn}
-                    onPress={() => setShowManualItemModal(true)}
-                >
-                    <Text style={styles.quickActionIcon}>+</Text>
-                    <Text style={styles.quickActionText}>Manual</Text>
-                </TouchableOpacity>
-            )}
-            {(!storeSettings?.restrict_discount || isAdmin) && (
-                <TouchableOpacity
-                    style={styles.quickActionBtn}
-                    onPress={() => setShowDiscountModal(true)}
-                >
-                    <Text style={styles.quickActionIcon}>%</Text>
-                    <Text style={styles.quickActionText}>Diskon</Text>
-                </TouchableOpacity>
-            )}
-            {(!storeSettings?.restrict_split_bill || isAdmin) && (
-                <TouchableOpacity style={styles.quickActionBtn} onPress={() => setShowSplitBillModal(true)}>
-                    <Text style={styles.quickActionIcon}>/</Text>
-                    <Text style={styles.quickActionText}>Pisah</Text>
-                </TouchableOpacity>
-            )}
-            {(!storeSettings?.restrict_hold_order || isAdmin) && (
-                <TouchableOpacity
-                    style={styles.quickActionBtn}
-                    onPress={() => setShowHoldNoteModal(true)}
-                >
-                    <Text style={styles.quickActionIcon}>||</Text>
-                    <Text style={styles.quickActionText}>Hold</Text>
-                </TouchableOpacity>
-            )}
+            <TouchableOpacity
+                style={styles.quickActionBtn}
+                onPress={() => {
+                    if (isAdmin || !storeSettings?.restrict_manual_item) {
+                        setShowManualItemModal(true);
+                    } else {
+                        setPendingAuth({ action: 'manual' });
+                        setShowDeleteAuthModal(true);
+                    }
+                }}
+            >
+                <Text style={styles.quickActionIcon}>+</Text>
+                <Text style={styles.quickActionText}>Manual</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+                style={styles.quickActionBtn}
+                onPress={() => {
+                    if (isAdmin || !storeSettings?.restrict_discount) {
+                        setShowDiscountModal(true);
+                    } else {
+                        setPendingAuth({ action: 'discount' });
+                        setShowDeleteAuthModal(true);
+                    }
+                }}
+            >
+                <Text style={styles.quickActionIcon}>%</Text>
+                <Text style={styles.quickActionText}>Diskon</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+                style={styles.quickActionBtn} 
+                onPress={() => {
+                    if (isAdmin || !storeSettings?.restrict_split_bill) {
+                        setShowSplitBillModal(true);
+                    } else {
+                        setPendingAuth({ action: 'split' });
+                        setShowDeleteAuthModal(true);
+                    }
+                }}
+            >
+                <Text style={styles.quickActionIcon}>/</Text>
+                <Text style={styles.quickActionText}>Pisah</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+                style={styles.quickActionBtn}
+                onPress={() => {
+                    if (isAdmin || !storeSettings?.restrict_hold_order) {
+                        setShowHoldNoteModal(true);
+                    } else {
+                        setPendingAuth({ action: 'hold' });
+                        setShowDeleteAuthModal(true);
+                    }
+                }}
+            >
+                <Text style={styles.quickActionIcon}>||</Text>
+                <Text style={styles.quickActionText}>Hold</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity style={styles.quickActionBtn} onPress={() => setShowHeldOrdersModal(true)}>
                 <Text style={styles.quickActionIcon}>#</Text>
                 <Text style={styles.quickActionText}>Daftar</Text>
@@ -1592,13 +1623,35 @@ export default function POSScreen() {
 
     const handleDeleteHeldOrder = (id: string) => {
         setOrderToDeleteId(id);
-        // [BYPASS FIX] Admins delete IMMEDIATELY using the ID directly to avoid race conditions
-        if (isAdmin) {
-            console.log('[POSScreen] Admin deleting held order directly:', id);
+        if (isAdmin || !storeSettings?.restrict_cashier_delete) {
             confirmDeleteOrder(id);
         } else {
+            setPendingAuth({ action: 'delete', data: id });
             setShowDeleteAuthModal(true);
         }
+    };
+
+    const handleAuthSuccess = () => {
+        if (!pendingAuth) return;
+        
+        switch (pendingAuth.action) {
+            case 'discount':
+                setShowDiscountModal(true);
+                break;
+            case 'hold':
+                setShowHoldNoteModal(true);
+                break;
+            case 'manual':
+                setShowManualItemModal(true);
+                break;
+            case 'split':
+                setShowSplitBillModal(true);
+                break;
+            case 'delete':
+                confirmDeleteOrder(pendingAuth.data);
+                break;
+        }
+        setPendingAuth(null);
     };
 
     const confirmDeleteOrder = async (directId?: string) => {
@@ -2959,10 +3012,17 @@ export default function POSScreen() {
 
                             {/* Quick Actions Row */}
                             <View style={styles.quickActionsRow}>
-                                {!isDisplayOnly && (!storeSettings?.restrict_manual_item || isAdmin) && (
+                                {!isDisplayOnly && (
                                     <TouchableOpacity
                                         style={styles.quickActionBtn}
-                                        onPress={() => setShowManualItemModal(true)}
+                                        onPress={() => {
+                                            if (isAdmin || !storeSettings?.restrict_manual_item) {
+                                                setShowManualItemModal(true);
+                                            } else {
+                                                setPendingAuth({ action: 'manual' });
+                                                setShowDeleteAuthModal(true);
+                                            }
+                                        }}
                                     >
                                         <Text style={styles.quickActionIcon}>➕</Text>
                                         <Text style={styles.quickActionText}>Manual</Text>
@@ -2970,27 +3030,48 @@ export default function POSScreen() {
                                 )}
                                 {!isDisplayOnly && (
                                     <>
-                                        {(!storeSettings?.restrict_discount || isAdmin) && (
-                                            <TouchableOpacity
-                                                style={styles.quickActionBtn}
-                                                onPress={() => setShowDiscountModal(true)}
-                                            >
-                                                <Text style={styles.quickActionIcon}>🏷️</Text>
-                                                <Text style={styles.quickActionText}>Diskon</Text>
-                                            </TouchableOpacity>
-                                        )}
-                                        {(!storeSettings?.restrict_split_bill || isAdmin) && (
-                                            <TouchableOpacity style={styles.quickActionBtn} onPress={() => setShowSplitBillModal(true)}>
-                                                <Text style={styles.quickActionIcon}>✂️</Text>
-                                                <Text style={styles.quickActionText}>Pisah</Text>
-                                            </TouchableOpacity>
-                                        )}
+                                        <TouchableOpacity
+                                            style={styles.quickActionBtn}
+                                            onPress={() => {
+                                                if (isAdmin || !storeSettings?.restrict_discount) {
+                                                    setShowDiscountModal(true);
+                                                } else {
+                                                    setPendingAuth({ action: 'discount' });
+                                                    setShowDeleteAuthModal(true);
+                                                }
+                                            }}
+                                        >
+                                            <Text style={styles.quickActionIcon}>🏷️</Text>
+                                            <Text style={styles.quickActionText}>Diskon</Text>
+                                        </TouchableOpacity>
+
+                                        <TouchableOpacity 
+                                            style={styles.quickActionBtn} 
+                                            onPress={() => {
+                                                if (isAdmin || !storeSettings?.restrict_split_bill) {
+                                                    setShowSplitBillModal(true);
+                                                } else {
+                                                    setPendingAuth({ action: 'split' });
+                                                    setShowDeleteAuthModal(true);
+                                                }
+                                            }}
+                                        >
+                                            <Text style={styles.quickActionIcon}>✂️</Text>
+                                            <Text style={styles.quickActionText}>Pisah</Text>
+                                        </TouchableOpacity>
                                     </>
                                 )}
-                                {!isDisplayOnly && (!storeSettings?.restrict_hold_order || isAdmin) && (
+                                {!isDisplayOnly && (
                                     <TouchableOpacity
                                         style={styles.quickActionBtn}
-                                        onPress={() => setShowHoldNoteModal(true)}
+                                        onPress={() => {
+                                            if (isAdmin || !storeSettings?.restrict_hold_order) {
+                                                setShowHoldNoteModal(true);
+                                            } else {
+                                                setPendingAuth({ action: 'hold' });
+                                                setShowDeleteAuthModal(true);
+                                            }
+                                        }}
                                     >
                                         <Text style={styles.quickActionIcon}>⏸️</Text>
                                         <Text style={styles.quickActionText}>Hold</Text>
@@ -3237,9 +3318,18 @@ export default function POSScreen() {
 
                 <ManagerAuthModal
                     visible={showDeleteAuthModal}
-                    onClose={() => setShowDeleteAuthModal(false)}
-                    onSuccess={confirmDeleteOrder}
-                    title="Otorisasi Hapus Pesanan"
+                    onClose={() => {
+                        setShowDeleteAuthModal(false);
+                        setPendingAuth(null);
+                    }}
+                    onSuccess={handleAuthSuccess}
+                    title={
+                        pendingAuth?.action === 'discount' ? "Otorisasi Diskon" :
+                        pendingAuth?.action === 'hold' ? "Otorisasi Tahan Pesanan" :
+                        pendingAuth?.action === 'manual' ? "Otorisasi Item Manual" :
+                        pendingAuth?.action === 'split' ? "Otorisasi Split Bill" :
+                        "Otorisasi Manager"
+                    }
                 />
 
                 {/* Manual Table Modal */}

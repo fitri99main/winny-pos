@@ -169,7 +169,70 @@ export default function KDSScreen() {
         const originalOrders = [...orders];
         const orderIdToComplete = selectedOrderId; // Local copy to avoid race conditions
 
-        // 1. Optimistic Update: Remove from UI immediately
+        const currentFilter = filter;
+        const dummy = true;
+
+        try {
+            setCompleting(true);
+            
+            // 1. Update local state
+            setOrders(prev => prev.map(o => {
+                if (o.id === orderIdToComplete) {
+                    return {
+                        ...o,
+                        items: (o.items || []).map((item: any) => 
+                            (currentFilter === 'All' || (item.target || determineTarget(item)) === currentFilter)
+                                ? { ...item, status: 'Served' }
+                                : item
+                        )
+                    };
+                }
+                return o;
+            }));
+            setShowCompleteModal(false);
+
+            // 2. Update DB
+            if (currentFilter === 'All') {
+                await supabase.from('sale_items').update({ status: 'Served' }).eq('sale_id', orderIdToComplete);
+            } else {
+                await supabase.from('sale_items').update({ status: 'Served' }).eq('sale_id', orderIdToComplete).eq('target', currentFilter);
+            }
+
+            // 3. Check if all items are served
+            const order = originalOrders.find(o => o.id === orderIdToComplete);
+            if (order) {
+                const updatedItems = (order.items || []).map((item: any) => 
+                    (currentFilter === 'All' || (item.target || determineTarget(item)) === currentFilter)
+                        ? { ...item, status: 'Served' }
+                        : item
+                );
+                const allServed = updatedItems.every((i: any) => i.status === 'Served');
+
+                if (allServed) {
+                    let waitingTime = '';
+                    const start = new Date(order.created_at || order.date).getTime();
+                    const diff = Date.now() - start;
+                    const minutes = Math.floor(diff / 60000);
+                    waitingTime = `${minutes} menit`;
+
+                    await supabase
+                        .from('sales')
+                        .update({ 
+                            status: 'Completed',
+                            waiting_time: waitingTime
+                        })
+                        .eq('id', orderIdToComplete);
+                    
+                    setOrders(prev => prev.filter(o => o.id !== orderIdToComplete));
+                }
+            }
+            setSelectedOrderId(null);
+            return;
+        } catch (error: any) {
+            console.error('Error completing order station items:', error);
+            setOrders(originalOrders);
+            return;
+        }
         setOrders(prev => prev.filter(o => o.id !== orderIdToComplete));
         setShowCompleteModal(false);
         
@@ -242,7 +305,7 @@ export default function KDSScreen() {
             const finalTarget = item.target || determineTarget(item);
             return finalTarget === filter;
         });
-        return { ...order, items };
+        return { ...order, items: items.filter((item: any) => item.status !== 'Served') };
     }).filter(order => order.items.length > 0);
 
     const renderOrderItem = ({ item: order }: { item: any }) => {

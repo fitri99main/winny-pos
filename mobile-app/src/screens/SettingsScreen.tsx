@@ -35,7 +35,8 @@ import {
     BarChart3,
     Lock,
     Pencil,
-    Store
+    Store,
+    Scissors
 } from 'lucide-react-native';
 import SalesReportModal from '../components/SalesReportModal';
 import { OfflineService } from '../lib/OfflineService';
@@ -510,10 +511,10 @@ export default function SettingsScreen() {
         setFullSettings(updatedSettings);
         try {
             await supabase.from('store_settings').update({ [key]: value }).eq('id', 1);
-            checkSession();
+            checkSession(false, true); // Silent force refresh to prevent reload flash
         } catch (e) {
             Alert.alert('Error', 'Gagal menyimpan pengaturan');
-            loadSettings();
+            loadSettings(); // Rollback on error
         }
     };
 
@@ -1023,6 +1024,17 @@ export default function SettingsScreen() {
                             type="switch"
                             value={autoPreviewReceipt}
                             onToggle={toggleAutoPreview}
+                            isSmallDevice={isSmallDevice}
+                        />
+
+                        <View style={styles.divider} />
+                        <SettingItem 
+                            icon={Scissors} 
+                            label="Potong Kertas Otomatis" 
+                            subtitle="Kirim perintah potong kertas ke printer"
+                            type="switch"
+                            value={fullSettings?.enable_auto_cut ?? true}
+                            onToggle={(val: boolean) => toggleSetting('enable_auto_cut', val)}
                             isSmallDevice={isSmallDevice}
                         />
 

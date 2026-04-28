@@ -40,35 +40,49 @@ export default function ManagerAuthModal({ visible, onClose, onSuccess, title = 
 
         try {
             // 1. Try Online Verification first
-            // Check both position and system_role for the authorized titles
             const authorizedRoles = ['Manager', 'Manajer', 'Owner', 'Administrator', 'Admin', 'Supervisor'];
             
             const { data, error: fetchError } = await supabase
                 .from('employees')
                 .select('id, name, position, system_role, pin')
                 .eq('pin', pin)
-                .or(`position.in.(${authorizedRoles.join(',')}),system_role.in.(${authorizedRoles.join(',')})`)
                 .maybeSingle();
 
+            let isAuthorized = false;
+            let userName = '';
+
             if (data) {
-                console.log('[ManagerAuth] Authorized by:', data.name, '(', data.position, ')');
-                onSuccess();
+                const pos = (data.position || '').toLowerCase();
+                const sys = (data.system_role || '').toLowerCase();
+                isAuthorized = authorizedRoles.some(role => 
+                    pos.includes(role.toLowerCase()) || sys.includes(role.toLowerCase())
+                );
+                userName = data.name;
+            }
+
+            if (isAuthorized) {
+                console.log('[ManagerAuth] Authorized by:', userName);
                 onClose();
+                setTimeout(() => {
+                    onSuccess();
+                }, 400);
             } else {
-                // 2. Try Offline Cache if online fails or returns nothing
+                // 2. Try Offline Cache if online fails or returns nothing (or if user wasn't authorized)
                 const cachedManagersRaw = await AsyncStorage.getItem('cached_manager_pins');
                 if (cachedManagersRaw) {
                     const cachedManagers = JSON.parse(cachedManagersRaw);
                     const matched = cachedManagers.find((m: any) => m.pin === pin);
                     if (matched) {
                         console.log('[ManagerAuth] Authorized Offline by:', matched.name);
-                        onSuccess();
                         onClose();
+                        setTimeout(() => {
+                            onSuccess();
+                        }, 400);
                         setLoading(false);
                         return;
                     }
                 }
-                setError('PIN Salah atau Anda bukan Manager');
+                setError(data ? 'Anda tidak memiliki otoritas Manager' : 'PIN Salah');
                 setPin('');
             }
         } catch (err) {
@@ -79,8 +93,10 @@ export default function ManagerAuthModal({ visible, onClose, onSuccess, title = 
                 const cachedManagers = JSON.parse(cachedManagersRaw);
                 const matched = cachedManagers.find((m: any) => m.pin === pin);
                 if (matched) {
-                    onSuccess();
                     onClose();
+                    setTimeout(() => {
+                        onSuccess();
+                    }, 400);
                     setLoading(false);
                     return;
                 }

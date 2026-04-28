@@ -155,9 +155,24 @@ export function CashierInterface({
   const [newOrderModalOpen, setNewOrderModalOpen] = useState(false); // [NEW] State for incoming order modal
   const [managerAuthModalOpen, setManagerAuthModalOpen] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
-  const [promos, setPromos] = useState<Promo[]>([]);
-  const [promoProducts, setPromoProducts] = useState<PromoProduct[]>([]);
-  const [automaticDiscount, setAutomaticDiscount] = useState(0);
+  const [pendingAuth, setPendingAuth] = useState<{
+    action: 'discount' | 'hold' | 'deleteHeld' | 'restoreHeld';
+    data?: any;
+  } | null>(null);
+
+  // Helper to check if current user is manager/admin or if action is restricted
+  const checkAuth = (action: 'discount' | 'hold' | 'deleteHeld' | 'restoreHeld'): boolean => {
+    if (isAdmin) return true;
+
+    // Check specific restrictions from settings
+    const isRestricted = (
+      (action === 'discount' && settings?.restrict_cashier_discount) ||
+      (action === 'hold' && settings?.restrict_cashier_hold) ||
+      (action === 'deleteHeld' && settings?.restrict_cashier_delete)
+    );
+
+    return !isRestricted;
+  };
 
   // Shift Session State (Managed by Context)
   const { role, loading } = useAuth();
@@ -717,71 +732,80 @@ export function CashierInterface({
   const handleHoldOrder = () => {
     if (orderItems.length === 0) return;
 
-    const newHeldOrder: HeldOrder = {
-      id: `held-${Date.now()}`,
-      items: [...orderItems],
-      discount: orderDiscount,
-      total,
-      createdAt: new Date(),
+    const performHold = () => {
+      const newHeldOrder: HeldOrder = {
+        id: `held-${Date.now()}`,
+        items: [...orderItems],
+        discount: orderDiscount,
+        total,
+        createdAt: new Date(),
+      };
+
+      setHeldOrders([newHeldOrder, ...heldOrders]);
+
+      // Send to KDS
+      if (onSendToKDS) {
+        onSendToKDS({
+          orderNo: newHeldOrder.id, // Using held ID as temp ref
+          tableNo: selectedTable,
+          waiterName: waiterName,
+          productDetails: orderItems.map(item => ({
+            name: item.product.name,
+            quantity: item.quantity,
+            price: item.product.price,
+            target: item.product.target, // Pass the target attribute
+            notes: item.notes
+          }))
+        });
+      }
+
+      // [NEW] Smart Production Printing on HOLD
+      if (settings?.enable_print_at_hold) {
+          const waiterShort = (waiterName || 'Cashier').split(' ')[0];
+          const kitchenItems = orderItems.filter(item => item.product.target === 'Kitchen' || item.product.category?.toLowerCase().includes('makan'));
+          const barItems = orderItems.filter(item => item.product.target === 'Bar' || item.product.category?.toLowerCase().includes('minum'));
+
+          const commonTicketData = {
+              orderNo: `HOLD-${Date.now().toString().slice(-4)}`,
+              tableNo: selectedTable || 'TAKEAWAY',
+              customerName: customerName || 'Guest',
+              waiterName: waiterShort,
+              time: new Date().toLocaleTimeString(),
+              notes: '',
+          };
+
+          try {
+              if (kitchenItems.length > 0) {
+                  printerService.printTicket('Kitchen', {
+                      ...commonTicketData,
+                      items: kitchenItems.map(i => ({ name: i.product.name, quantity: i.quantity, notes: i.notes }))
+                  });
+              }
+              if (barItems.length > 0) {
+                  printerService.printTicket('Bar', {
+                      ...commonTicketData,
+                      items: barItems.map(i => ({ name: i.product.name, quantity: i.quantity, notes: i.notes }))
+                  });
+              }
+              toast.success(`Berhasil HOLD & Cetak Produksi (${kitchenItems.length} Dapur, ${barItems.length} Bar)`);
+          } catch (e) {
+              console.error("Hold Print Error", e);
+              toast.error('Gagal cetak produksi (Cek Koneksi Printer)');
+          }
+      } else {
+          toast.success('Pesanan berhasil disimpan sementara');
+      }
+
+      setOrderItems([]);
+      setOrderDiscount(0);
     };
 
-    setHeldOrders([newHeldOrder, ...heldOrders]);
-
-    // Send to KDS
-    if (onSendToKDS) {
-      onSendToKDS({
-        orderNo: newHeldOrder.id, // Using held ID as temp ref
-        tableNo: selectedTable,
-        waiterName: waiterName,
-        productDetails: orderItems.map(item => ({
-          name: item.product.name,
-          quantity: item.quantity,
-          price: item.product.price,
-          target: item.product.target, // Pass the target attribute
-          notes: item.notes
-        }))
-      });
-    }
-
-    // [NEW] Smart Production Printing on HOLD
-    if (settings?.enable_print_at_hold) {
-        const waiterShort = (waiterName || 'Cashier').split(' ')[0];
-        const kitchenItems = orderItems.filter(item => item.product.target === 'Kitchen' || item.product.category?.toLowerCase().includes('makan'));
-        const barItems = orderItems.filter(item => item.product.target === 'Bar' || item.product.category?.toLowerCase().includes('minum'));
-
-        const commonTicketData = {
-            orderNo: `HOLD-${Date.now().toString().slice(-4)}`,
-            tableNo: selectedTable || 'TAKEAWAY',
-            customerName: customerName || 'Guest',
-            waiterName: waiterShort,
-            time: new Date().toLocaleTimeString(),
-            notes: '',
-        };
-
-        try {
-            if (kitchenItems.length > 0) {
-                printerService.printTicket('Kitchen', {
-                    ...commonTicketData,
-                    items: kitchenItems.map(i => ({ name: i.product.name, quantity: i.quantity, notes: i.notes }))
-                });
-            }
-            if (barItems.length > 0) {
-                printerService.printTicket('Bar', {
-                    ...commonTicketData,
-                    items: barItems.map(i => ({ name: i.product.name, quantity: i.quantity, notes: i.notes }))
-                });
-            }
-            toast.success(`Berhasil HOLD & Cetak Produksi (${kitchenItems.length} Dapur, ${barItems.length} Bar)`);
-        } catch (e) {
-            console.error("Hold Print Error", e);
-            toast.error('Gagal cetak produksi (Cek Koneksi Printer)');
-        }
+    if (checkAuth('hold')) {
+      performHold();
     } else {
-        toast.success('Pesanan berhasil disimpan sementara');
+      setPendingAuth({ action: 'hold' });
+      setManagerAuthModalOpen(true);
     }
-
-    setOrderItems([]);
-    setOrderDiscount(0);
   };
 
   // Restore order
@@ -800,26 +824,39 @@ export function CashierInterface({
 
   // Delete held order (Requires Manager Auth)
   const handleDeleteHeldOrder = (id: string) => {
-    setDeleteTargetId(id);
+    setPendingAuth({ action: 'deleteHeld', data: id });
     setManagerAuthModalOpen(true);
   };
 
-  const handleConfirmDeleteHeldOrder = (manager: any) => {
-    if (!deleteTargetId) return;
+  const handleAuthSuccess = (manager: any) => {
+    if (!pendingAuth) return;
 
-    // 1. Hapus dari state lokal (Penyimpanan Lokal / Held Orders)
-    setHeldOrders(heldOrders.filter((h) => h.id !== deleteTargetId));
+    const { action, data } = pendingAuth;
 
-    // 2. Hapus dari database pusat Kiosk jika berasal dari remote
-    if (!deleteTargetId.startsWith('held-') && onDeleteSale) {
-      const numericId = Number(deleteTargetId);
-      if (!isNaN(numericId)) {
-        onDeleteSale(numericId);
+    if (action === 'deleteHeld') {
+      const targetId = data;
+      // 1. Hapus dari state lokal
+      setHeldOrders(heldOrders.filter((h) => h.id !== targetId));
+
+      // 2. Hapus dari database pusat Kiosk jika berasal dari remote
+      if (!targetId.startsWith('held-') && onDeleteSale) {
+        const numericId = Number(targetId);
+        if (!isNaN(numericId)) {
+          onDeleteSale(numericId);
+        }
       }
+      toast.info(`Pesanan Dibatalkan oleh Manager: ${manager.name}`);
+    } 
+    else if (action === 'discount') {
+      setDiscountModalOpen(true);
+    } 
+    else if (action === 'hold') {
+      // Trigger hold logic again, now it should pass checkAuth if we handle it
+      // Actually, easier to just call performHold logic here or force it
+      handleHoldOrder(); 
     }
 
-    toast.info(`Pesanan Dibatalkan oleh Manager: ${manager.name}`);
-    setDeleteTargetId(null);
+    setPendingAuth(null);
   };
 
   // Split bill
@@ -1036,8 +1073,14 @@ export function CashierInterface({
             embedded
             hasItems={orderItems.length > 0}
             onManualItemClick={() => setManualItemModalOpen(true)}
-            onDiscountClick={() => setDiscountModalOpen(true)}
-            onSplitBillClick={handleSplitBill}
+            onDiscountClick={() => {
+              if (checkAuth('discount')) {
+                setDiscountModalOpen(true);
+              } else {
+                setPendingAuth({ action: 'discount' });
+                setManagerAuthModalOpen(true);
+              }
+            }}
             onHoldOrderClick={handleHoldOrder}
             onPaymentClick={() => {
               setIsSplitPayment(false);
@@ -1082,12 +1125,20 @@ export function CashierInterface({
         open={managerAuthModalOpen}
         onClose={() => {
           setManagerAuthModalOpen(false);
-          setDeleteTargetId(null);
+          setPendingAuth(null);
         }}
-        onSuccess={handleConfirmDeleteHeldOrder}
+        onSuccess={handleAuthSuccess}
         employees={employees}
-        title="Otorisasi Batal Pesanan"
-        description="Masukkan PIN Manager untuk membatalkan pesanan dari daftar tunggu."
+        title={
+          pendingAuth?.action === 'discount' ? "Otorisasi Diskon" : 
+          pendingAuth?.action === 'hold' ? "Otorisasi Tahan Bill" :
+          "Otorisasi Manager"
+        }
+        description={
+          pendingAuth?.action === 'discount' ? "Masukkan PIN Manager untuk memberikan diskon." :
+          pendingAuth?.action === 'hold' ? "Masukkan PIN Manager untuk menangguhkan pesanan ini." :
+          "Masukkan PIN Manager untuk melanjutkan aksi ini."
+        }
       />
 
       {/* Addon Selection Modal */}

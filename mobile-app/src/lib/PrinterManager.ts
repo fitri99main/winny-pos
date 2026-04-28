@@ -290,7 +290,7 @@ export class PrinterManager {
         text += CENTER + footer + '\n';
         text += CENTER + shopName.toUpperCase() + '\n';
         
-        text += '\n'.repeat(4) + (isPreview ? '' : COMMANDS.PAPER.PAPER_FULL_CUT);
+        text += '\n'.repeat(4) + (isPreview ? '' : (orderData.enable_auto_cut !== false ? COMMANDS.PAPER.PAPER_FULL_CUT : ''));
         return text;
     }
 
@@ -324,7 +324,7 @@ export class PrinterManager {
         });
 
         text += LINE + CENTER + `Waktu: ${new Date().toLocaleString('id-ID')}\n`;
-        text += '\n'.repeat(7) + COMMANDS.PAPER.PAPER_FULL_CUT;
+        text += '\n'.repeat(7) + (orderData.enable_auto_cut !== false ? COMMANDS.PAPER.PAPER_FULL_CUT : '');
         return text;
     }
 
@@ -348,6 +348,7 @@ export class PrinterManager {
                         orderData.receipt_header = orderData.receipt_header || safetyData.receipt_header || safetyData.store_name;
                         orderData.receipt_paper_width = orderData.receipt_paper_width || safetyData.receipt_paper_width;
                         orderData.show_logo = orderData.show_logo ?? safetyData.show_logo;
+                        orderData.enable_auto_cut = orderData.enable_auto_cut ?? safetyData.enable_auto_cut;
                     }
                 } catch (err) {
                     console.warn('[PrinterManager] Safety harvest failed', err);
@@ -359,10 +360,6 @@ export class PrinterManager {
             const connected = await this.ensureConnection(mac);
             if (!connected) return false;
             
-            // Use library commands for the safest hardware initialization
-            await BLEPrinter.printBill(COMMANDS.TEXT_FORMAT.TXT_NORMAL);
-            await new Promise(r => setTimeout(r, 400));
-
             // 1. Handle Logo if present
             if (orderData.show_logo && orderData.receipt_logo_url) {
                 const base64 = await this.getBase64Image(orderData.receipt_logo_url);
@@ -378,13 +375,11 @@ export class PrinterManager {
                     } catch (picErr) {
                         console.warn('[PrinterManager] printImageBase64 failed, skipping logo:', picErr);
                     }
-                } else {
-                    console.warn('[PrinterManager] Logo base64 is null, skipping.');
                 }
             }
 
             // 2. Print the text receipt (Strip the [LOGO] tag after printing the picture)
-            const text = this.formatReceipt(orderData).replace(/\[LOGO\]\n?/, '');
+            const text = '\x1b\x40' + this.formatReceipt(orderData).replace(/\[LOGO\]\n?/, ''); // Prepend ESC @ (Reset)
             await BLEPrinter.printBill(text);
             
             console.log('[PrinterManager] Receipt printed successfully');
@@ -430,7 +425,8 @@ export class PrinterManager {
             const connected = await this.ensureConnection(mac);
             if (!connected) return false;
 
-            await BLEPrinter.printBill(text);
+            const printData = '\x1b\x40' + text;
+            await BLEPrinter.printBill(printData);
             console.log(`[PrinterManager] ${targetName} ticket printed successfully`);
             return true;
         } catch (e) {
@@ -443,7 +439,7 @@ export class PrinterManager {
     static async testPrint(type: PrinterType = 'receipt') {
         const mac = await this.getSelectedPrinter(type);
         if (!mac) throw new Error('Printer belum diatur');
-        const text = `\nTEST PRINT ${type.toUpperCase()}\nStatus: Berhasil\n\n\n\n\n\n\n${COMMANDS.PAPER.PAPER_FULL_CUT}`;
+        const text = '\x1b\x40' + `\nTEST PRINT ${type.toUpperCase()}\nStatus: Berhasil\n\n\n\n\n\n\n${COMMANDS.PAPER.PAPER_FULL_CUT}`;
         const connected = await this.ensureConnection(mac);
         if (!connected) return;
         await BLEPrinter.printBill(text);
@@ -508,7 +504,7 @@ export class PrinterManager {
         text += CENTER + BOLD_ON + '[ BUKTI FISIK SAH ]' + BOLD_OFF + '\n';
         if (data.receiptFooter) text += CENTER + data.receiptFooter + '\n';
 
-        text += '\n'.repeat(7) + (isPreview ? '' : COMMANDS.PAPER.PAPER_FULL_CUT);
+        text += '\n'.repeat(7) + (isPreview ? '' : (data.enableAutoCut !== false ? COMMANDS.PAPER.PAPER_FULL_CUT : ''));
         return text;
     }
 
@@ -539,6 +535,7 @@ export class PrinterManager {
                         data.receiptLogoUrl = data.receiptLogoUrl || safetyData.receipt_logo_url;
                         data.shopName = data.shopName || safetyData.receipt_header || safetyData.store_name;
                         data.paperWidth = data.paperWidth || (safetyData.receipt_paper_width === '80mm' ? 48 : 32);
+                        data.enableAutoCut = data.enableAutoCut ?? safetyData.enable_auto_cut;
                     }
                 } catch (err) {
                     console.warn('[PrinterManager] Safety harvest (report) failed', err);
@@ -550,15 +547,7 @@ export class PrinterManager {
             const connected = await this.ensureConnection(mac);
             if (!connected) return false;
             
-            // Use library commands for the safest hardware initialization
-            await BLEPrinter.printBill(COMMANDS.TEXT_FORMAT.TXT_NORMAL);
-            await new Promise(r => setTimeout(r, 400));
-
-            const text = this.formatSalesReport(data);
-
-            // Connection and Reset moved to the start of the function for reliability
-            await new Promise(r => setTimeout(r, 200));
-
+            const text = '\x1b\x40' + this.formatSalesReport(data);
             await BLEPrinter.printBill(text);
             return true;
         } catch (e: any) {

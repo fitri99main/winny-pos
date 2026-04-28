@@ -803,7 +803,7 @@ function Home() {
               name: i.product_name,
               quantity: i.quantity,
               target: i.target || product?.target || 'Kitchen', // Prefer DB value, fallback to product data
-              status: 'Pending'
+              status: i.status || 'Pending',
             };
           })
         }));
@@ -2257,7 +2257,78 @@ function Home() {
   };
 
   const handleKDSUpdate = async (orderId: number, status: string, items?: any) => {
-    // 1. Update LOCAL state for immediate UI response
+    console.log("KDS Update triggered", orderId, status, items);
+    if (status === 'ItemUpdate') {
+      setPendingOrders(prev => prev.map(order =>
+        order.id === orderId
+          ? {
+            ...order,
+            items: order.items.map((i: any) => i.name === items.itemName ? { ...i, status: items.newStatus } : i)
+          }
+          : order
+      ));
+
+      await supabase
+        .from('sale_items')
+        .update({ status: items.newStatus })
+        .eq('sale_id', orderId)
+        .eq('product_name', items.itemName);
+
+      toast.success(`Menu "${items.itemName}" ${items.newStatus === 'Ready' ? 'siap!' : 'diproses'}`);
+      return;
+    } else if (status === 'Served') {
+      const stationFilter = items?.filter || 'All';
+      const order = pendingOrders.find(o => o.id === orderId);
+      
+      if (order) {
+        setPendingOrders(prev => prev.map(o => {
+          if (o.id === orderId) {
+            return {
+              ...o,
+              items: o.items.map((i: any) => 
+                (stationFilter === 'All' || i.target === stationFilter)
+                  ? { ...i, status: 'Served' } 
+                  : i
+              )
+            };
+          }
+          return o;
+        }));
+
+        if (stationFilter === 'All') {
+          await supabase.from('sale_items').update({ status: 'Served' }).eq('sale_id', orderId);
+        } else {
+          await supabase.from('sale_items').update({ status: 'Served' }).eq('sale_id', orderId).eq('target', stationFilter);
+        }
+
+        const updatedItems = order.items.map((i: any) => 
+          (stationFilter === 'All' || i.target === stationFilter)
+            ? { ...i, status: 'Served' } 
+            : i
+        );
+        const allServed = updatedItems.every((i: any) => i.status === 'Served');
+
+        if (allServed) {
+          let waitingTimeUpdate = {};
+          if (order.date) {
+            const start = new Date(order.date).getTime();
+            const diff = Date.now() - start;
+            const minutes = Math.floor(diff / 60000);
+            waitingTimeUpdate = { waiting_time: `${minutes} mnt` };
+          }
+
+          const { error } = await supabase.from('sales').update({ status: 'Completed', ...waitingTimeUpdate }).eq('id', orderId);
+          if (error) console.error('Failed to complete sale:', error);
+          else {
+            toast.success('Pesanan selesai & disajikan');
+            setPendingOrders(prev => prev.filter(o => o.id !== orderId));
+          }
+        } else {
+          toast.success(`Pesanan bagian ${stationFilter} siap disajikan!`);
+        }
+      }
+      return;
+    }
     setPendingOrders(prev => prev.map(order =>
       order.id === orderId
         ? {

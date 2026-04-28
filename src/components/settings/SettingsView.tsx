@@ -1082,6 +1082,28 @@ export function SettingsView({
                                     onCheckedChange={c => handleLocalChange({ ...localSettings, restrict_cashier_delete: c })}
                                 />
                             </div>
+
+                            <div className="flex items-center justify-between p-4 bg-red-50/50 rounded-xl border border-red-100">
+                                <div>
+                                    <h4 className="font-bold text-red-800">Batasi Kasir Memberi Diskon</h4>
+                                    <p className="text-xs text-red-600">Jika aktif, Kasir harus meminta PIN Manager sebelum memberikan diskon manual.</p>
+                                </div>
+                                <Switch
+                                    checked={localSettings.restrict_cashier_discount ?? false}
+                                    onCheckedChange={c => handleLocalChange({ ...localSettings, restrict_cashier_discount: c })}
+                                />
+                            </div>
+
+                            <div className="flex items-center justify-between p-4 bg-red-50/50 rounded-xl border border-red-100">
+                                <div>
+                                    <h4 className="font-bold text-red-800">Batasi Kasir Tahan Bill</h4>
+                                    <p className="text-xs text-red-600">Jika aktif, Kasir harus meminta PIN Manager sebelum menahan (hold) pesanan.</p>
+                                </div>
+                                <Switch
+                                    checked={localSettings.restrict_cashier_hold ?? false}
+                                    onCheckedChange={c => handleLocalChange({ ...localSettings, restrict_cashier_hold: c })}
+                                />
+                            </div>
                         </div>
 
                         <div className="space-y-4 pt-4 border-t border-gray-100">

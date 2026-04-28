@@ -221,7 +221,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             const roleStr = (roleName || '').toLowerCase().trim();
             const isDisplayRole = roleStr === 'display' || roleStr.includes('display');
             const isDisplayOnlyVal = isDisplayRole || currentPerms.includes('pos_order_only') || currentPerms.includes('order_only');
-            const isAdminVal = roleStr === 'admin' || roleStr === 'administrator' || roleStr === 'superadmin' || roleStr === 'owner';
+            const isAdminVal = ['admin', 'administrator', 'superadmin', 'owner', 'manager', 'manajer', 'supervisor'].some(r => roleStr.includes(r));
             const globalRequired = settingsRes.data?.require_mandatory_session ?? true;
             
             // Admins NEVER require mandatory session

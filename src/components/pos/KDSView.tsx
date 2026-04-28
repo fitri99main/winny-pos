@@ -87,14 +87,14 @@ export function KDSView({ orders = [], onUpdateStatus }: KDSViewProps) {
 
     const handleCompleteOrder = (orderId: number) => {
         if (confirm('Selesaikan seluruh pesanan ini?')) {
-            onUpdateStatus(orderId, 'Served');
+            onUpdateStatus(orderId, 'Served', { filter });
         }
     };
 
     const getFilteredOrders = (targetFilter: string) => {
         return kdsOrders.map(order => ({
             ...order,
-            items: targetFilter === 'All' ? order.items : order.items.filter((i: any) => i.target === targetFilter)
+            items: (targetFilter === 'All' ? order.items : order.items.filter((i: any) => i.target === targetFilter)).filter((i: any) => i.status !== 'Served')
         })).filter(order => order.items.length > 0);
     };
 

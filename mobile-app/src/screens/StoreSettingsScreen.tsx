@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Activi
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
-import { ChevronLeft, Store, MapPin, Phone, Save, Shield, Layout, CheckCircle2, Clock, Calendar, Lock, Monitor, Percent, Printer, Wifi, Image as ImageIcon, RefreshCw } from 'lucide-react-native';
+import { ChevronLeft, Store, MapPin, Phone, Save, Shield, Layout, CheckCircle2, Clock, Calendar, Lock, Monitor, Percent, Printer, Wifi, Image as ImageIcon, RefreshCw, Scissors } from 'lucide-react-native';
 import { Modal } from 'react-native';
 import { useSession } from '../context/SessionContext';
 
@@ -386,6 +386,96 @@ export default function StoreSettingsScreen() {
                                 <Switch
                                     value={storeSettings?.cashier_can_print_sales_summary ?? false}
                                     onValueChange={(val) => toggleSetting('cashier_can_print_sales_summary', val)}
+                                    trackColor={{ false: '#e2e8f0', true: '#ea580c' }}
+                                />
+                            </View>
+                            <View style={styles.divider} />
+                            <View style={styles.switchItem}>
+                                <View style={styles.switchContent}>
+                                    <View style={styles.switchLabelRow}>
+                                        <Scissors size={18} color="#ea580c" />
+                                        <Text style={styles.switchLabel}>Potong Kertas Otomatis</Text>
+                                    </View>
+                                    <Text style={styles.switchSubtitle}>Kirim perintah potong kertas ke printer</Text>
+                                </View>
+                                <Switch
+                                    value={storeSettings?.enable_auto_cut ?? true}
+                                    onValueChange={(val) => toggleSetting('enable_auto_cut', val)}
+                                    trackColor={{ false: '#e2e8f0', true: '#ea580c' }}
+                                />
+                            </View>
+                            <View style={styles.divider} />
+                            <View style={styles.switchItem}>
+                                <View style={styles.switchContent}>
+                                    <View style={styles.switchLabelRow}>
+                                        <Lock size={18} color="#ea580c" />
+                                        <Text style={styles.switchLabel}>Batasi Diskon (Butuh PIN)</Text>
+                                    </View>
+                                    <Text style={styles.switchSubtitle}>Kasir butuh PIN Manager untuk beri diskon</Text>
+                                </View>
+                                <Switch
+                                    value={storeSettings?.restrict_discount ?? false}
+                                    onValueChange={(val) => toggleSetting('restrict_discount', val)}
+                                    trackColor={{ false: '#e2e8f0', true: '#ea580c' }}
+                                />
+                            </View>
+                            <View style={styles.divider} />
+                            <View style={styles.switchItem}>
+                                <View style={styles.switchContent}>
+                                    <View style={styles.switchLabelRow}>
+                                        <Lock size={18} color="#ea580c" />
+                                        <Text style={styles.switchLabel}>Batasi Hold (Butuh PIN)</Text>
+                                    </View>
+                                    <Text style={styles.switchSubtitle}>Kasir butuh PIN Manager untuk menahan pesanan</Text>
+                                </View>
+                                <Switch
+                                    value={storeSettings?.restrict_hold_order ?? false}
+                                    onValueChange={(val) => toggleSetting('restrict_hold_order', val)}
+                                    trackColor={{ false: '#e2e8f0', true: '#ea580c' }}
+                                />
+                            </View>
+                            <View style={styles.divider} />
+                            <View style={styles.switchItem}>
+                                <View style={styles.switchContent}>
+                                    <View style={styles.switchLabelRow}>
+                                        <Lock size={18} color="#ea580c" />
+                                        <Text style={styles.switchLabel}>Batasi Hapus (Butuh PIN)</Text>
+                                    </View>
+                                    <Text style={styles.switchSubtitle}>Kasir butuh PIN Manager untuk hapus pesanan</Text>
+                                </View>
+                                <Switch
+                                    value={storeSettings?.restrict_cashier_delete ?? false}
+                                    onValueChange={(val) => toggleSetting('restrict_cashier_delete', val)}
+                                    trackColor={{ false: '#e2e8f0', true: '#ea580c' }}
+                                />
+                            </View>
+                            <View style={styles.divider} />
+                            <View style={styles.switchItem}>
+                                <View style={styles.switchContent}>
+                                    <View style={styles.switchLabelRow}>
+                                        <Lock size={18} color="#ea580c" />
+                                        <Text style={styles.switchLabel}>Batasi Item Manual</Text>
+                                    </View>
+                                    <Text style={styles.switchSubtitle}>Kasir butuh PIN Manager untuk input manual</Text>
+                                </View>
+                                <Switch
+                                    value={storeSettings?.restrict_manual_item ?? false}
+                                    onValueChange={(val) => toggleSetting('restrict_manual_item', val)}
+                                    trackColor={{ false: '#e2e8f0', true: '#ea580c' }}
+                                />
+                            </View>
+                            <View style={styles.divider} />
+                            <View style={styles.switchItem}>
+                                <View style={styles.switchContent}>
+                                    <View style={styles.switchLabelRow}>
+                                        <Lock size={18} color="#ea580c" />
+                                        <Text style={styles.switchLabel}>Batasi Pisah Bill</Text>
+                                    </View>
+                                    <Text style={styles.switchSubtitle}>Kasir butuh PIN Manager untuk split bill</Text>
+                                </View>
+                                <Switch
+                                    value={storeSettings?.restrict_split_bill ?? false}
+                                    onValueChange={(val) => toggleSetting('restrict_split_bill', val)}
                                     trackColor={{ false: '#e2e8f0', true: '#ea580c' }}
                                 />
                             </View>
