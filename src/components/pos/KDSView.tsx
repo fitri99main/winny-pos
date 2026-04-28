@@ -147,10 +147,11 @@ export function KDSView({ orders = [], onUpdateStatus }: KDSViewProps) {
                             </div>
                             {item.status !== 'Ready' && (
                                 <button
-                                    onClick={() => handleUpdateItemStatus(order.id, item.name, 'Ready')}
-                                    className="p-2 bg-gray-50 hover:bg-green-50 text-gray-300 hover:text-green-600 rounded-lg transition-colors"
+                                    onClick={() => handleUpdateItemStatus(order.id, item.name, item.status === 'Preparing' ? 'Ready' : 'Preparing')}
+                                    className={`p-2 rounded-lg transition-all duration-200 ${item.status === 'Preparing' ? 'bg-orange-100 hover:bg-green-50 text-orange-600 hover:text-green-600 animate-pulse' : 'bg-gray-50 hover:bg-orange-50 text-gray-300 hover:text-orange-600'}`}
+                                    title={item.status === 'Preparing' ? 'Selesaikan menu' : 'Mulai proses menu'}
                                 >
-                                    <CheckCircle2 className="w-4 h-4" />
+                                    {item.status === 'Preparing' ? <CheckCircle2 className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
                                 </button>
                             )}
                         </div>

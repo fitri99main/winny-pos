@@ -376,14 +376,18 @@ export default function KDSScreen() {
                                 <TouchableOpacity 
                                     style={[
                                         styles.readyButton,
+                                        item.status === 'Preparing' ? { backgroundColor: '#ecfdf5', borderColor: '#10b981' } : { backgroundColor: '#fff7ed', borderColor: '#fdba74' },
                                         isSmallDevice && { paddingVertical: 2, paddingHorizontal: 6 }
                                     ]}
-                                    onPress={() => handleUpdateItemStatus(item.id, 'Ready')}
+                                    onPress={() => handleUpdateItemStatus(item.id, item.status === 'Preparing' ? 'Ready' : 'Preparing')}
                                 >
                                     <Text style={[
                                         styles.readyButtonText,
+                                        item.status === 'Preparing' ? { color: '#10b981' } : { color: '#ea580c' },
                                         isSmallDevice && { fontSize: 9 }
-                                    ]}>Check</Text>
+                                    ]}>
+                                        {item.status === 'Preparing' ? 'Selesai' : 'Proses'}
+                                    </Text>
                                 </TouchableOpacity>
                             )}
                             {item.status === 'Ready' && (
