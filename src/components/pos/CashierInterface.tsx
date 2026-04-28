@@ -160,6 +160,10 @@ export function CashierInterface({
     data?: any;
   } | null>(null);
 
+  const [promos, setPromos] = useState<Promo[]>([]);
+  const [promoProducts, setPromoProducts] = useState<PromoProduct[]>([]);
+  const [automaticDiscount, setAutomaticDiscount] = useState<number>(0);
+
   // Helper to check if current user is manager/admin or if action is restricted
   const checkAuth = (action: 'discount' | 'hold' | 'deleteHeld' | 'restoreHeld'): boolean => {
     if (isAdmin) return true;
@@ -1088,6 +1092,7 @@ export function CashierInterface({
             }}
             onHeldOrdersClick={() => setHeldOrdersModalOpen(true)}
             heldCount={heldOrders.length}
+            onSplitBillClick={() => setSplitBillModalOpen(true)}
           />
 
           <div className="flex-1 min-h-0">
