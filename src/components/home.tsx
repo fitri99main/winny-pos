@@ -3341,7 +3341,7 @@ function Home() {
           </div>
           {!isSidebarCollapsed && (
             <div className="flex flex-col animate-in fade-in duration-200">
-              <span className="font-bold text-gray-800 dark:text-gray-100 text-sm tracking-tight leading-none">WINPOS</span>
+              <span className="font-bold text-gray-800 dark:text-gray-100 text-sm tracking-tight leading-none">ERPPOS</span>
               <span className="text-[10px] text-gray-400 font-medium">Enterprise Management</span>
             </div>
           )}
