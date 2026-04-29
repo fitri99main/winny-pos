@@ -222,6 +222,11 @@ export class PrinterManager {
         // Match Photo Label: "Order: " instead of "Tipe: "
         const info = resolveOrderTypeDisplay(orderData.table_no || orderData.tableNo, orderData);
         text += `Order: ${info.orderTypeLabel || '-'}\n`;
+        
+        // Add Table Number for customer receipt if it exists
+        if (info.tableValue && info.tableValue !== '-') {
+            text += `Meja: ${info.tableValue}\n`;
+        }
 
         if (orderData.show_cashier_name !== false && (orderData.cashier_name || orderData.waiter_name)) {
             text += `Kasir: ${orderData.cashier_name || orderData.waiter_name}\n`;
