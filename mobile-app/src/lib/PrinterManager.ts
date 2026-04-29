@@ -312,12 +312,10 @@ export class PrinterManager {
         const tableNo = orderData.table_no || orderData.tableNo || '';
         const customer = orderData.customer_name || orderData.customerName || '';
 
-        // Kitchen header using 2HEIGHT only (taller but not wider) for better fit
-        const HEIGHT_ONLY = '\x1b\x21\x10'; // ESC ! 16 (Height double)
-        
-        let text = CENTER + BOLD_ON + HEIGHT_ONLY + `PESANAN ${targetName.toUpperCase()}` + DOUBLE_OFF + BOLD_OFF + '\n';
+        // Kitchen header using DOUBLE_ON (Double Height + Double Width) for maximum visibility
+        let text = CENTER + BOLD_ON + DOUBLE_ON + `PESANAN ${targetName.toUpperCase()}` + DOUBLE_OFF + BOLD_OFF + '\n';
         text += `No: ${orderNo}\n`;
-        if (tableNo && tableNo !== '-') text += BOLD_ON + HEIGHT_ONLY + `MEJA: ${tableNo}` + DOUBLE_OFF + BOLD_OFF + '\n';
+        if (tableNo && tableNo !== '-') text += BOLD_ON + DOUBLE_ON + `MEJA: ${tableNo}` + DOUBLE_OFF + BOLD_OFF + '\n';
         if (customer && customer !== 'Guest') text += `Pelanggan: ${customer}\n`;
         text += LINE + LEFT;
 
