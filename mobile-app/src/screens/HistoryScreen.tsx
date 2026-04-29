@@ -72,6 +72,10 @@ export default function HistoryScreen() {
     const [showReceiptPreview, setShowReceiptPreview] = useState(false);
     const [previewOrderData, setPreviewOrderData] = useState<any>(null);
     
+    // Pagination State
+    const [hasMore, setHasMore] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
+    
     // Auth State
     const [showAuthModal, setShowAuthModal] = useState(false);
     const [pendingAction, setPendingAction] = useState<{ type: 'delete' | 'bulk_delete', sale?: any } | null>(null);
@@ -79,7 +83,8 @@ export default function HistoryScreen() {
 
     useFocusEffect(
         useCallback(() => {
-            fetchHistory();
+            setHasMore(true);
+            fetchHistory(false);
         }, [dateFilter, startDate, endDate, effectiveBranchId])
     );
 
@@ -105,7 +110,7 @@ export default function HistoryScreen() {
         setFilteredHistory(filtered);
     }, [searchQuery, statusFilter, history]);
 
-    const fetchHistory = async () => {
+    const fetchHistory = async (isLoadMore = false) => {
         const bId = effectiveBranchId || currentBranchId;
         if (!bId) {
             console.log('[HistoryScreen] No branch ID available yet, skipping fetch.');
@@ -113,7 +118,11 @@ export default function HistoryScreen() {
         }
         
         try {
-            setLoading(true);
+            if (isLoadMore) {
+                setLoadingMore(true);
+            } else {
+                setLoading(true);
+            }
             
             // 1. Get Offline Queue items for this branch
             const offlineQueue = await OfflineService.getOfflineQueue();
@@ -172,30 +181,32 @@ export default function HistoryScreen() {
                     query = query.gte('date', start.toISOString()).lte('date', end.toISOString());
                 }
 
-                let from = 0;
-                const pageSize = 1000;
-                let hasMore = true;
+                const pageSize = 50;
+                const currentCount = isLoadMore ? history.length : 0;
 
-                while (hasMore) {
-                    const { data, error } = await query.range(from, from + pageSize - 1);
-                    if (error) throw error;
-                    
-                    if (data && data.length > 0) {
-                        onlineSales = [...onlineSales, ...data];
-                        if (data.length < pageSize) hasMore = false;
-                        else from += pageSize;
-                    } else {
-                        hasMore = false;
-                    }
+                const { data, error } = await query.range(currentCount, currentCount + pageSize - 1);
+                if (error) throw error;
+                onlineSales = data || [];
+                
+                if (onlineSales.length < pageSize) {
+                    setHasMore(false);
+                } else {
+                    setHasMore(true);
                 }
             } else {
                 console.warn('[HistoryScreen] Offline detected, showing local only.');
+                setHasMore(false);
             }
 
-            // 3. Merge and deduplicate by order_no (online takes precedence)
+            // 3. Merge and deduplicate by order_no
             const combinedMap = new Map();
             
-            // Add offline items first
+            // If loading more, preserve existing history first
+            if (isLoadMore) {
+                history.forEach(s => combinedMap.set(s.order_no, s));
+            }
+
+            // Add offline items next
             branchOfflineSales.forEach(s => combinedMap.set(s.order_no, s));
             
             // Add online items (overwrite offline if they exist online already)
@@ -1210,6 +1221,13 @@ export default function HistoryScreen() {
                     keyExtractor={(item, index) => (item?.id ?? index).toString()}
                     columnWrapperStyle={useMultiColumn ? { gap: 12, paddingHorizontal: 12 } : null}
                     contentContainerStyle={{ padding: 12, paddingBottom: 100 }}
+                    onEndReached={() => {
+                        if (hasMore && !loadingMore && isOnline) {
+                            fetchHistory(true);
+                        }
+                    }}
+                    onEndReachedThreshold={0.5}
+                    ListFooterComponent={loadingMore ? <ActivityIndicator size="small" color="#ea580c" style={{ marginVertical: 16 }} /> : null}
                     renderItem={({ item }) => (
                         <TouchableOpacity 
                             style={[

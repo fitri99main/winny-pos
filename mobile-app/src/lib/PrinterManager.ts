@@ -380,10 +380,27 @@ export class PrinterManager {
 
             // 2. Print the text receipt (Strip the [LOGO] tag after printing the picture)
             const text = '\x1b\x40' + this.formatReceipt(orderData).replace(/\[LOGO\]\n?/, ''); // Prepend ESC @ (Reset)
-            await BLEPrinter.printBill(text);
             
-            console.log('[PrinterManager] Receipt printed successfully');
-            return true;
+            let success = false;
+            try {
+                await BLEPrinter.printBill(text);
+                success = true;
+            } catch (printErr) {
+                console.warn('[PrinterManager] First print attempt failed. Retrying connection...', printErr);
+                this.currentActiveMac = null;
+                const reconnected = await this.ensureConnection(mac);
+                if (reconnected) {
+                    try {
+                        await BLEPrinter.printBill(text);
+                        success = true;
+                    } catch (secondErr) {
+                        console.error('[PrinterManager] Second print attempt failed:', secondErr);
+                    }
+                }
+            }
+            
+            console.log('[PrinterManager] Receipt printed:', success);
+            return success;
         } catch (e) {
             console.error('[PrinterManager] Print Receipt Error:', e);
             this.currentActiveMac = null;
@@ -426,9 +443,24 @@ export class PrinterManager {
             if (!connected) return false;
 
             const printData = '\x1b\x40' + text;
-            await BLEPrinter.printBill(printData);
-            console.log(`[PrinterManager] ${targetName} ticket printed successfully`);
-            return true;
+            let success = false;
+            try {
+                await BLEPrinter.printBill(printData);
+                success = true;
+            } catch (printErr) {
+                console.warn(`[PrinterManager] First target print attempt failed for ${targetName}. Retrying connection...`, printErr);
+                this.currentActiveMac = null;
+                const reconnected = await this.ensureConnection(mac);
+                if (reconnected) {
+                    try {
+                        await BLEPrinter.printBill(printData);
+                        success = true;
+                    } catch (secondErr) {
+                        console.error(`[PrinterManager] Second target print attempt for ${targetName} failed:`, secondErr);
+                    }
+                }
+            }
+            return success;
         } catch (e) {
             console.error(`[PrinterManager] Print to ${targetName} Error:`, e);
             this.currentActiveMac = null;

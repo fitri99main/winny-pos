@@ -167,30 +167,30 @@ export default function KDSScreen() {
         if (!selectedOrderId) return;
         
         const originalOrders = [...orders];
-        const orderIdToComplete = selectedOrderId; // Local copy to avoid race conditions
+        const orderIdToComplete = selectedOrderId;
 
         const currentFilter = filter;
-        const dummy = true;
+
+        // 1. Update local state immediately (Optimistic UI)
+        setOrders(prev => prev.map(o => {
+            if (o.id === orderIdToComplete) {
+                return {
+                    ...o,
+                    items: (o.items || []).map((item: any) => 
+                        (currentFilter === 'All' || (item.target || determineTarget(item)) === currentFilter)
+                            ? { ...item, status: 'Served' }
+                            : item
+                    )
+                };
+            }
+            return o;
+        }));
+        
+        // Hide modal immediately
+        setShowCompleteModal(false);
+        setSelectedOrderId(null);
 
         try {
-            setCompleting(true);
-            
-            // 1. Update local state
-            setOrders(prev => prev.map(o => {
-                if (o.id === orderIdToComplete) {
-                    return {
-                        ...o,
-                        items: (o.items || []).map((item: any) => 
-                            (currentFilter === 'All' || (item.target || determineTarget(item)) === currentFilter)
-                                ? { ...item, status: 'Served' }
-                                : item
-                        )
-                    };
-                }
-                return o;
-            }));
-            setShowCompleteModal(false);
-
             // 2. Update DB
             if (currentFilter === 'All') {
                 await supabase.from('sale_items').update({ status: 'Served' }).eq('sale_id', orderIdToComplete);
@@ -226,54 +226,11 @@ export default function KDSScreen() {
                     setOrders(prev => prev.filter(o => o.id !== orderIdToComplete));
                 }
             }
-            setSelectedOrderId(null);
-            return;
         } catch (error: any) {
             console.error('Error completing order station items:', error);
+            // Revert optimistic UI on error
             setOrders(originalOrders);
-            return;
-        }
-        setOrders(prev => prev.filter(o => o.id !== orderIdToComplete));
-        setShowCompleteModal(false);
-        
-        try {
-            setCompleting(true);
-            
-            // Calculate waiting time
-            const order = originalOrders.find(o => o.id === orderIdToComplete);
-            let waitingTime = '';
-            if (order) {
-                const start = new Date(order.created_at || order.date).getTime();
-                const diff = Date.now() - start;
-                const minutes = Math.floor(diff / 60000);
-                waitingTime = `${minutes} menit`;
-            }
-
-            console.log('[KDS] Completing order:', orderIdToComplete);
-            
-            const { error } = await supabase
-                .from('sales')
-                .update({ 
-                    status: 'Completed',
-                    waiting_time: waitingTime
-                })
-                .eq('id', orderIdToComplete);
-
-            if (error) {
-                // Revert state if error
-                setOrders(originalOrders);
-                throw error;
-            }
-            
-            console.log('[KDS] Order completed successfully:', orderIdToComplete);
-            setSelectedOrderId(null);
-        } catch (error: any) {
-            console.error('Error completing order:', error);
-            const msg = error.message || 'Koneksi terganggu';
-            Alert.alert('Gagal Selesai', `Gagal menyimpan status pesanan: ${msg}`);
-            setOrders(originalOrders);
-        } finally {
-            setCompleting(false);
+            Alert.alert('Gagal Selesai', `Gagal menyimpan status pesanan: ${error.message}`);
         }
     };
 
