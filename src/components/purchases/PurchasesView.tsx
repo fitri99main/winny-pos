@@ -529,122 +529,168 @@ export function PurchasesView({
             </div>
 
             <div className="space-y-6">
-                {/* Form & Totals */}
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-6">
-                    <div className="flex justify-between items-center">
-                        <h3 className="font-bold text-gray-800">Ringkasan Pembelian</h3>
-                        {isEditing && (
-                            <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                className="text-red-500 font-bold"
+                {/* Form & Totals - Premium Redesign */}
+                <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+                    <div className="p-6 bg-gradient-to-r from-blue-600 to-indigo-700 text-white flex justify-between items-center">
+                        <div>
+                            <h3 className="font-black text-lg">Ringkasan Pembelian</h3>
+                            <p className="text-[10px] opacity-80 uppercase tracking-widest font-bold">Detail Transaksi Baru</p>
+                        </div>
+                        {isEditing ? (
+                            <button 
+                                className="bg-white/20 hover:bg-white/30 p-2 rounded-lg transition-all"
                                 onClick={() => {
                                     setIsEditing(false);
                                     setEditingId(null);
                                     setInputForm({ date: new Date().toISOString().split('T')[0], supplierName: '' });
                                     setPurchaseItems([]);
                                 }}
+                                title="Batal Edit"
                             >
-                                Batal Edit
-                            </Button>
+                                <RotateCcw className="w-4 h-4" />
+                            </button>
+                        ) : (
+                            <ShoppingCart className="w-6 h-6 opacity-30" />
                         )}
                     </div>
 
-
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">No. PO Internal</label>
-                            <input
-                                type="text"
-                                className="w-full p-2.5 border rounded-xl bg-gray-50 font-mono text-sm"
-                                placeholder="Contoh: PO-001 (Kosongkan untuk otomatis)"
-                                value={inputForm.purchaseNo}
-                                onChange={e => setInputForm({ ...inputForm, purchaseNo: e.target.value })}
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Tanggal</label>
-                            <input
-                                type="date"
-                                className="w-full p-2.5 border rounded-xl"
-                                value={inputForm.date}
-                                onChange={e => setInputForm({ ...inputForm, date: e.target.value })}
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">No. Faktur Supplier</label>
-                            <input
-                                type="text"
-                                className="w-full p-2.5 border rounded-xl"
-                                placeholder="Masukkan No. Faktur dari Supplier..."
-                                value={inputForm.supplierInvoiceNo}
-                                onChange={e => setInputForm({ ...inputForm, supplierInvoiceNo: e.target.value })}
-                            />
-                        </div>
-                        <div>
-                            <div className="flex justify-between items-center mb-2">
-                                <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest">Supplier</label>
-                                <button 
-                                    onClick={() => {
-                                        setIsManualSupplier(!isManualSupplier);
-                                        setInputForm({...inputForm, supplierName: ''});
-                                    }}
-                                    className="text-[10px] font-bold text-blue-600 hover:underline"
-                                >
-                                    {isManualSupplier ? 'Pilih dari Daftar' : 'Input Manual'}
-                                </button>
-                            </div>
-                            {isManualSupplier ? (
+                    <div className="p-6 space-y-5">
+                        {/* Transaction Details Group */}
+                        <div className="space-y-4">
+                            <div className="relative group">
+                                <label className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1.5 ml-1">
+                                    <FileText className="w-3 h-3" /> No. PO Internal
+                                </label>
                                 <input
                                     type="text"
-                                    className="w-full p-2.5 border rounded-xl"
-                                    placeholder="Ketik Nama Supplier..."
-                                    value={inputForm.supplierName}
-                                    onChange={e => setInputForm({ ...inputForm, supplierName: e.target.value })}
+                                    className="w-full p-3 border-2 border-gray-50 rounded-xl bg-gray-50/50 focus:bg-white focus:border-blue-500 transition-all font-mono text-sm outline-none"
+                                    placeholder="Otomatis..."
+                                    value={inputForm.purchaseNo}
+                                    onChange={e => setInputForm({ ...inputForm, purchaseNo: e.target.value })}
                                 />
-                            ) : (
-                                <select
-                                    className="w-full p-2.5 border rounded-xl"
-                                    value={inputForm.supplierName}
-                                    onChange={e => setInputForm({ ...inputForm, supplierName: e.target.value })}
-                                >
-                                    <option value="">Pilih Supplier...</option>
-                                    {contacts.filter(c => c.type === 'Supplier').map(c => (
-                                        <option key={c.id} value={c.name}>{c.name}</option>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="relative">
+                                    <label className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1.5 ml-1">
+                                        <Calendar className="w-3 h-3" /> Tanggal
+                                    </label>
+                                    <input
+                                        type="date"
+                                        className="w-full p-3 border-2 border-gray-50 rounded-xl bg-gray-50/50 focus:bg-white focus:border-blue-500 transition-all text-sm outline-none"
+                                        value={inputForm.date}
+                                        onChange={e => setInputForm({ ...inputForm, date: e.target.value })}
+                                    />
+                                </div>
+                                <div className="relative">
+                                    <label className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1.5 ml-1">
+                                        <FileText className="w-3 h-3" /> No. Faktur (S)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        className="w-full p-3 border-2 border-gray-50 rounded-xl bg-gray-50/50 focus:bg-white focus:border-blue-500 transition-all text-sm outline-none"
+                                        placeholder="No. Faktur..."
+                                        value={inputForm.supplierInvoiceNo}
+                                        onChange={e => setInputForm({ ...inputForm, supplierInvoiceNo: e.target.value })}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="relative">
+                                <div className="flex justify-between items-center mb-1.5 ml-1">
+                                    <label className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-wider">
+                                        <ShoppingCart className="w-3 h-3" /> Supplier
+                                    </label>
+                                    <button 
+                                        onClick={() => {
+                                            setIsManualSupplier(!isManualSupplier);
+                                            setInputForm({...inputForm, supplierName: ''});
+                                        }}
+                                        className="text-[9px] font-black text-blue-600 hover:text-blue-800 bg-blue-50 px-2 py-0.5 rounded-full uppercase transition-all"
+                                    >
+                                        {isManualSupplier ? 'Daftar' : 'Manual'}
+                                    </button>
+                                </div>
+                                {isManualSupplier ? (
+                                    <input
+                                        type="text"
+                                        className="w-full p-3 border-2 border-gray-50 rounded-xl bg-gray-50/50 focus:bg-white focus:border-blue-500 transition-all text-sm outline-none"
+                                        placeholder="Ketik Nama Supplier..."
+                                        value={inputForm.supplierName}
+                                        onChange={e => setInputForm({ ...inputForm, supplierName: e.target.value })}
+                                    />
+                                ) : (
+                                    <select
+                                        className="w-full p-3 border-2 border-gray-50 rounded-xl bg-gray-50/50 focus:bg-white focus:border-blue-500 transition-all text-sm outline-none appearance-none cursor-pointer"
+                                        value={inputForm.supplierName}
+                                        onChange={e => setInputForm({ ...inputForm, supplierName: e.target.value })}
+                                    >
+                                        <option value="">Pilih Supplier...</option>
+                                        {contacts.filter(c => c.type === 'Supplier').map(c => (
+                                            <option key={c.id} value={c.name}>{c.name}</option>
+                                        ))}
+                                    </select>
+                                )}
+                            </div>
+
+                            <div className="relative">
+                                <label className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1.5 ml-1">
+                                    Metode Pembayaran
+                                </label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {['Tunai', 'Transfer', 'Kas Kecil', 'Hutang'].map(m => (
+                                        <button
+                                            key={m}
+                                            type="button"
+                                            onClick={() => setInputForm({ ...inputForm, payment_method: m })}
+                                            className={`py-2 px-3 rounded-xl text-xs font-bold transition-all border-2 ${
+                                                inputForm.payment_method === m 
+                                                ? 'bg-blue-600 text-white border-blue-600 shadow-md' 
+                                                : 'bg-gray-50 text-gray-500 border-gray-50 hover:border-gray-200'
+                                            }`}
+                                        >
+                                            {m}
+                                        </button>
                                     ))}
-                                </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Grand Total Display */}
+                        <div className="pt-6 border-t-2 border-dashed border-gray-100 space-y-3">
+                            <div className="flex justify-between items-center text-sm font-medium text-gray-500">
+                                <span>Subtotal</span>
+                                <span>Rp {totalAmount.toLocaleString()}</span>
+                            </div>
+                            <div className="bg-gray-50 rounded-2xl p-4 flex justify-between items-center group hover:bg-blue-50 transition-all">
+                                <div className="flex flex-col">
+                                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Total Bayar</span>
+                                    <span className="text-2xl font-black text-gray-800 group-hover:text-blue-700 transition-all">
+                                        Rp {totalAmount.toLocaleString()}
+                                    </span>
+                                </div>
+                                <div className="w-10 h-10 bg-white rounded-full shadow-sm flex items-center justify-center text-blue-600 group-hover:scale-110 transition-all">
+                                    <CheckCircle className="w-6 h-6" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <Button 
+                            onClick={handleInputSubmit} 
+                            className={`w-full h-16 rounded-2xl text-lg font-black shadow-lg transform active:scale-95 transition-all ${
+                                isEditing 
+                                ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200' 
+                                : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'
+                            }`} 
+                            disabled={purchaseItems.length === 0}
+                        >
+                            {isEditing ? (
+                                <span className="flex items-center gap-2"><Edit className="w-5 h-5" /> Update Pembelian</span>
+                            ) : (
+                                <span className="flex items-center gap-2"><ShoppingCart className="w-5 h-5" /> Simpan Pembelian</span>
                             )}
-                        </div>
-                        <div>
-                            <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Metode Pembayaran</label>
-                            <select
-                                className="w-full p-2.5 border rounded-xl"
-                                value={inputForm.payment_method}
-                                onChange={e => setInputForm({ ...inputForm, payment_method: e.target.value })}
-                            >
-                                <option value="Tunai">Tunai / Cash</option>
-                                <option value="Transfer">Transfer Bank</option>
-                                <option value="Kas Kecil">Kas Kecil (Petty Cash)</option>
-                                <option value="Hutang">Hutang / Credit</option>
-                            </select>
-                        </div>
+                        </Button>
                     </div>
-
-                    <div className="pt-6 border-t border-gray-100 space-y-3">
-                        <div className="flex justify-between text-sm">
-                            <span className="text-gray-500">Subtotal</span>
-                            <span className="font-bold">Rp {totalAmount.toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between text-lg font-black text-gray-800">
-                            <span>Total</span>
-                            <span className="text-blue-600">Rp {totalAmount.toLocaleString()}</span>
-                        </div>
-                    </div>
-
-                    <Button onClick={handleInputSubmit} className={`w-full h-14 rounded-2xl text-lg font-black ${isEditing ? 'bg-blue-600 hover:bg-blue-700' : ''}`} disabled={purchaseItems.length === 0}>
-                        {isEditing ? 'Update Pembelian' : 'Simpan Pembelian'}
-                    </Button>
-
                 </div>
 
                 {/* Manual Item Input (Aligned with Mobile) */}

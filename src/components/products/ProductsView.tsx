@@ -115,6 +115,7 @@ export function ProductsView({
     const [isHistoryOpen, setIsHistoryOpen] = useState(false);
     const [historyData, setHistoryData] = useState<any[]>([]);
     const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
     const { user } = useAuth();
 
 
@@ -463,7 +464,13 @@ export function ProductsView({
             <div className="p-6 border-b border-gray-100 bg-gray-50/30 flex gap-4">
                 <div className="relative flex-1 max-w-xs">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input type="text" placeholder="Cari..." className="w-full pl-12 pr-4 py-3 text-sm bg-white border border-gray-200 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all" />
+                    <input 
+                        type="text" 
+                        placeholder="Cari Produk atau Kode..." 
+                        className="w-full pl-12 pr-4 py-3 text-sm bg-white border border-gray-200 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all" 
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                    />
                 </div>
                 <Button onClick={() => handleOpenForm()} className="gap-2 h-12 rounded-2xl px-6"><Plus className="w-4 h-4" /> Tambah</Button>
             </div>
@@ -484,7 +491,13 @@ export function ProductsView({
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                         {products
-                            .filter(p => !currentBranchId || String(p.branch_id) === String(currentBranchId) || !p.branch_id)
+                            .filter(p => {
+                                const matchesBranch = !currentBranchId || String(p.branch_id) === String(currentBranchId) || !p.branch_id;
+                                const matchesSearch = (p.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                                                     (p.code || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                                     (p.category || '').toLowerCase().includes(searchQuery.toLowerCase());
+                                return matchesBranch && matchesSearch;
+                            })
                             .sort((a, b) => (a.sort_order ?? a.id) - (b.sort_order ?? b.id))
                             .map((p, idx, filtered) => {
                                 const currentHPP = (p.recipe && p.recipe.length > 0) ? calculateHPP(p.recipe) : (p.cost || 0);
