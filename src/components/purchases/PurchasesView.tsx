@@ -444,14 +444,13 @@ export function PurchasesView({
             <div className="lg:col-span-2 space-y-6">
                 {/* Header & Item List */}
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col min-h-[500px]">
-                    <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+                    <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
                         <div>
-                            <h3 className="text-lg font-bold text-gray-800">Riwayat Pembelian</h3>
-                            <p className="text-sm text-gray-500">Scan barcode atau pilih item secara manual.</p>
+                            <h3 className="text-base font-black text-gray-800 uppercase tracking-tight">Daftar Item</h3>
                         </div>
-                        <div className="flex items-center gap-2 bg-orange-50 text-orange-600 px-4 py-2 rounded-xl text-xs font-bold border border-orange-100">
-                            <ScanLine className="w-4 h-4 animate-pulse" />
-                            Scanner Ready
+                        <div className="flex items-center gap-2 bg-orange-50 text-orange-600 px-3 py-1.5 rounded-lg text-[10px] font-bold border border-orange-100">
+                            <ScanLine className="w-3.5 h-3.5 animate-pulse" />
+                            SCANNER READY
                         </div>
                     </div>
 
@@ -471,43 +470,43 @@ export function PurchasesView({
                             <tbody className="divide-y divide-gray-100">
                                 {purchaseItems.map(item => (
                                     <tr key={item.id} className="hover:bg-gray-50">
-                                        <td className="px-6 py-4 font-bold text-gray-700">{item.name}</td>
-                                        <td className="px-6 py-4 text-center text-gray-400 text-xs">{item.unit || '-'}</td>
-                                        <td className="px-6 py-4 text-center">
-                                            <div className="flex items-center justify-center gap-2">
-                                                <button onClick={() => handleUpdateQty(item.id, item.quantity - 1)} className="w-6 h-6 rounded-md bg-gray-100 flex items-center justify-center">-</button>
+                                        <td className="px-4 py-3 font-bold text-gray-700 text-xs">{item.name}</td>
+                                        <td className="px-4 py-3 text-center text-gray-400 text-[10px]">{item.unit || '-'}</td>
+                                        <td className="px-4 py-3 text-center">
+                                            <div className="flex items-center justify-center gap-1.5">
+                                                <button onClick={() => handleUpdateQty(item.id, item.quantity - 1)} className="w-5 h-5 rounded bg-gray-100 flex items-center justify-center text-xs font-bold">-</button>
                                                 <input
                                                     type="number"
                                                     value={item.quantity}
                                                     onFocus={(e) => e.target.select()}
                                                     onChange={(e) => handleUpdateQty(item.id, parseInt(e.target.value) || 0)}
-                                                    className="w-12 text-center border-none bg-transparent font-bold"
+                                                    className="w-10 text-center border-none bg-transparent font-black text-xs"
                                                 />
-                                                <button onClick={() => handleUpdateQty(item.id, item.quantity + 1)} className="w-6 h-6 rounded-md bg-gray-100 flex items-center justify-center">+</button>
+                                                <button onClick={() => handleUpdateQty(item.id, item.quantity + 1)} className="w-5 h-5 rounded bg-gray-100 flex items-center justify-center text-xs font-bold">+</button>
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4 text-right">
+                                        <td className="px-4 py-3 text-right">
                                             <input
                                                 type="number"
                                                 value={item.price}
                                                 onFocus={(e) => e.target.select()}
                                                 onChange={(e) => handleUpdatePrice(item.id, parseFloat(e.target.value) || 0)}
-                                                className="w-24 text-right border rounded px-2 py-1 bg-gray-50 font-bold"
+                                                className="w-20 text-right border-gray-100 border rounded-lg px-2 py-1 bg-gray-50 font-bold text-xs"
                                             />
                                         </td>
-                                        <td className="px-6 py-4 text-right">
+                                        <td className="px-4 py-3 text-right">
                                             <input
                                                 type="number"
                                                 value={item.sellingPrice}
                                                 onFocus={(e) => e.target.select()}
                                                 onChange={(e) => handleUpdateSellingPrice(item.id, parseFloat(e.target.value) || 0)}
-                                                className="w-24 text-right border rounded px-2 py-1 bg-blue-50 text-blue-700 font-bold"
+                                                className="w-20 text-right border-blue-50 border rounded-lg px-2 py-1 bg-blue-50 text-blue-700 font-bold text-xs"
                                             />
                                         </td>
-                                        <td className="px-6 py-4 text-right font-black">Rp {(item.price * item.quantity).toLocaleString()}</td>
-                                        <td className="px-6 py-4 text-center">
-                                            <button onClick={() => handleUpdateQty(item.id, 0)} className="text-red-400 hover:text-red-600">
-                                                <Trash2 className="w-4 h-4" />
+                                        <td className="px-4 py-3 text-right font-black text-xs">Rp {(item.price * item.quantity).toLocaleString()}</td>
+                                        <td className="px-4 py-3 text-center">
+                                            <button onClick={() => handleUpdateQty(item.id, 0)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                                                <Trash2 className="w-3.5 h-3.5" />
                                             </button>
                                         </td>
                                     </tr>
@@ -530,66 +529,46 @@ export function PurchasesView({
 
             <div className="space-y-6">
                 {/* Form & Totals - Premium Redesign */}
-                <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
-                    <div className="p-6 bg-gradient-to-r from-blue-600 to-indigo-700 text-white flex justify-between items-center">
-                        <div>
-                            <h3 className="font-black text-lg">Ringkasan Pembelian</h3>
-                            <p className="text-[10px] opacity-80 uppercase tracking-widest font-bold">Detail Transaksi Baru</p>
+                <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+                    <div className="px-5 py-4 bg-gray-900 text-white flex justify-between items-center">
+                        <div className="flex items-center gap-2">
+                            <ShoppingCart className="w-4 h-4 text-blue-400" />
+                            <h3 className="font-black text-sm uppercase tracking-tight">Ringkasan</h3>
                         </div>
-                        {isEditing ? (
+                        {isEditing && (
                             <button 
-                                className="bg-white/20 hover:bg-white/30 p-2 rounded-lg transition-all"
+                                className="bg-white/10 hover:bg-white/20 p-1.5 rounded-lg transition-all"
                                 onClick={() => {
                                     setIsEditing(false);
                                     setEditingId(null);
                                     setInputForm({ date: new Date().toISOString().split('T')[0], supplierName: '' });
                                     setPurchaseItems([]);
                                 }}
-                                title="Batal Edit"
                             >
-                                <RotateCcw className="w-4 h-4" />
+                                <RotateCcw className="w-3.5 h-3.5" />
                             </button>
-                        ) : (
-                            <ShoppingCart className="w-6 h-6 opacity-30" />
                         )}
                     </div>
 
-                    <div className="p-6 space-y-5">
+                    <div className="p-4 space-y-4">
                         {/* Transaction Details Group */}
-                        <div className="space-y-4">
-                            <div className="relative group">
-                                <label className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1.5 ml-1">
-                                    <FileText className="w-3 h-3" /> No. PO Internal
-                                </label>
-                                <input
-                                    type="text"
-                                    className="w-full p-3 border-2 border-gray-50 rounded-xl bg-gray-50/50 focus:bg-white focus:border-blue-500 transition-all font-mono text-sm outline-none"
-                                    placeholder="Otomatis..."
-                                    value={inputForm.purchaseNo}
-                                    onChange={e => setInputForm({ ...inputForm, purchaseNo: e.target.value })}
-                                />
-                            </div>
-
+                        <div className="space-y-3">
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="relative">
-                                    <label className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1.5 ml-1">
-                                        <Calendar className="w-3 h-3" /> Tanggal
-                                    </label>
+                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1 px-1">Tgl PO</label>
                                     <input
                                         type="date"
-                                        className="w-full p-3 border-2 border-gray-50 rounded-xl bg-gray-50/50 focus:bg-white focus:border-blue-500 transition-all text-sm outline-none"
+                                        className="w-full p-2.5 border border-gray-100 rounded-lg bg-gray-50/50 focus:bg-white text-xs outline-none"
                                         value={inputForm.date}
                                         onChange={e => setInputForm({ ...inputForm, date: e.target.value })}
                                     />
                                 </div>
                                 <div className="relative">
-                                    <label className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1.5 ml-1">
-                                        <FileText className="w-3 h-3" /> No. Faktur (S)
-                                    </label>
+                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1 px-1">No. Faktur (S)</label>
                                     <input
                                         type="text"
-                                        className="w-full p-3 border-2 border-gray-50 rounded-xl bg-gray-50/50 focus:bg-white focus:border-blue-500 transition-all text-sm outline-none"
-                                        placeholder="No. Faktur..."
+                                        className="w-full p-2.5 border border-gray-100 rounded-lg bg-gray-50/50 focus:bg-white text-xs outline-none"
+                                        placeholder="..."
                                         value={inputForm.supplierInvoiceNo}
                                         onChange={e => setInputForm({ ...inputForm, supplierInvoiceNo: e.target.value })}
                                     />
@@ -597,31 +576,29 @@ export function PurchasesView({
                             </div>
 
                             <div className="relative">
-                                <div className="flex justify-between items-center mb-1.5 ml-1">
-                                    <label className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-wider">
-                                        <ShoppingCart className="w-3 h-3" /> Supplier
-                                    </label>
+                                <div className="flex justify-between items-center mb-1 px-1">
+                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Supplier</label>
                                     <button 
                                         onClick={() => {
                                             setIsManualSupplier(!isManualSupplier);
                                             setInputForm({...inputForm, supplierName: ''});
                                         }}
-                                        className="text-[9px] font-black text-blue-600 hover:text-blue-800 bg-blue-50 px-2 py-0.5 rounded-full uppercase transition-all"
+                                        className="text-[9px] font-black text-blue-600 uppercase"
                                     >
-                                        {isManualSupplier ? 'Daftar' : 'Manual'}
+                                        [{isManualSupplier ? 'Daftar' : 'Manual'}]
                                     </button>
                                 </div>
                                 {isManualSupplier ? (
                                     <input
                                         type="text"
-                                        className="w-full p-3 border-2 border-gray-50 rounded-xl bg-gray-50/50 focus:bg-white focus:border-blue-500 transition-all text-sm outline-none"
+                                        className="w-full p-2.5 border border-gray-100 rounded-lg bg-gray-50/50 focus:bg-white text-xs outline-none"
                                         placeholder="Ketik Nama Supplier..."
                                         value={inputForm.supplierName}
                                         onChange={e => setInputForm({ ...inputForm, supplierName: e.target.value })}
                                     />
                                 ) : (
                                     <select
-                                        className="w-full p-3 border-2 border-gray-50 rounded-xl bg-gray-50/50 focus:bg-white focus:border-blue-500 transition-all text-sm outline-none appearance-none cursor-pointer"
+                                        className="w-full p-2.5 border border-gray-100 rounded-lg bg-gray-50/50 focus:bg-white text-xs outline-none cursor-pointer"
                                         value={inputForm.supplierName}
                                         onChange={e => setInputForm({ ...inputForm, supplierName: e.target.value })}
                                     >
@@ -634,19 +611,17 @@ export function PurchasesView({
                             </div>
 
                             <div className="relative">
-                                <label className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1.5 ml-1">
-                                    Metode Pembayaran
-                                </label>
-                                <div className="grid grid-cols-2 gap-2">
+                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1 px-1">Metode</label>
+                                <div className="flex flex-wrap gap-1.5">
                                     {['Tunai', 'Transfer', 'Kas Kecil', 'Hutang'].map(m => (
                                         <button
                                             key={m}
                                             type="button"
                                             onClick={() => setInputForm({ ...inputForm, payment_method: m })}
-                                            className={`py-2 px-3 rounded-xl text-xs font-bold transition-all border-2 ${
+                                            className={`py-1.5 px-3 rounded-lg text-[10px] font-black transition-all border ${
                                                 inputForm.payment_method === m 
-                                                ? 'bg-blue-600 text-white border-blue-600 shadow-md' 
-                                                : 'bg-gray-50 text-gray-500 border-gray-50 hover:border-gray-200'
+                                                ? 'bg-blue-600 text-white border-blue-600' 
+                                                : 'bg-gray-50 text-gray-400 border-gray-100 hover:border-gray-300'
                                             }`}
                                         >
                                             {m}
@@ -656,63 +631,47 @@ export function PurchasesView({
                             </div>
                         </div>
 
-                        {/* Grand Total Display */}
-                        <div className="pt-6 border-t-2 border-dashed border-gray-100 space-y-3">
-                            <div className="flex justify-between items-center text-sm font-medium text-gray-500">
-                                <span>Subtotal</span>
-                                <span>Rp {totalAmount.toLocaleString()}</span>
-                            </div>
-                            <div className="bg-gray-50 rounded-2xl p-4 flex justify-between items-center group hover:bg-blue-50 transition-all">
-                                <div className="flex flex-col">
-                                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Total Bayar</span>
-                                    <span className="text-2xl font-black text-gray-800 group-hover:text-blue-700 transition-all">
-                                        Rp {totalAmount.toLocaleString()}
-                                    </span>
-                                </div>
-                                <div className="w-10 h-10 bg-white rounded-full shadow-sm flex items-center justify-center text-blue-600 group-hover:scale-110 transition-all">
-                                    <CheckCircle className="w-6 h-6" />
-                                </div>
+                        <div className="pt-4 border-t border-dashed border-gray-100 space-y-3">
+                            <div className="bg-gray-50 rounded-xl p-3 flex justify-between items-center">
+                                <span className="text-[10px] font-black text-gray-400 uppercase">Total Bayar</span>
+                                <span className="text-lg font-black text-gray-800">
+                                    Rp {totalAmount.toLocaleString()}
+                                </span>
                             </div>
                         </div>
 
                         <Button 
                             onClick={handleInputSubmit} 
-                            className={`w-full h-16 rounded-2xl text-lg font-black shadow-lg transform active:scale-95 transition-all ${
+                            className={`w-full h-12 rounded-xl text-sm font-black shadow-lg transition-all ${
                                 isEditing 
-                                ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200' 
-                                : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'
+                                ? 'bg-indigo-600 hover:bg-indigo-700 text-white' 
+                                : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-100'
                             }`} 
                             disabled={purchaseItems.length === 0}
                         >
-                            {isEditing ? (
-                                <span className="flex items-center gap-2"><Edit className="w-5 h-5" /> Update Pembelian</span>
-                            ) : (
-                                <span className="flex items-center gap-2"><ShoppingCart className="w-5 h-5" /> Simpan Pembelian</span>
-                            )}
+                            {isEditing ? 'UPDATE' : 'SIMPAN PEMBELIAN'}
                         </Button>
                     </div>
                 </div>
 
-                {/* Manual Item Input (Aligned with Mobile) */}
-                <div className="bg-white rounded-2xl shadow-sm border border-blue-100 p-6 bg-gradient-to-br from-white to-blue-50/20">
-                    <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-                        <Plus className="w-4 h-4 text-blue-600" /> Item Kustom / Manual
+                {/* Manual Item Input - Slim Version */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <Plus className="w-3 h-3 text-blue-600" /> Item Baru
                     </h3>
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                         <div className="relative">
                             <input
                                 type="text"
-                                placeholder="Nama Barang (Ketik atau Cari...)"
-                                className="w-full p-2.5 text-sm border rounded-xl pr-10"
+                                placeholder="Cari atau Ketik Nama..."
+                                className="w-full p-2 text-xs border border-gray-100 rounded-lg outline-none focus:border-blue-500 pr-8"
                                 value={manualItemForm.name}
                                 onChange={e => {
                                     const val = e.target.value;
                                     setManualItemForm({ ...manualItemForm, name: val, selectedItemId: '', sellingPrice: '' });
                                 }}
                             />
-                            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300">
-                                <Search className="w-4 h-4" />
-                            </div>
+                            <Search className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-300" />
 
                             {/* Autocomplete Suggestions */}
                             {manualItemForm.name.length >= 2 && !manualItemForm.selectedItemId && (
@@ -761,23 +720,25 @@ export function PurchasesView({
                             </div>
                         )}
 
-                        <input
-                            type="number"
-                            placeholder="Harga Beli Satuan"
-                            className="w-full p-2.5 text-sm border rounded-xl"
-                            value={manualItemForm.price}
-                            onChange={e => setManualItemForm({ ...manualItemForm, price: e.target.value })}
-                        />
-                        <input
-                            type="number"
-                            placeholder="Harga Jual Baru (Opsional)"
-                            className="w-full p-2.5 text-sm border rounded-xl bg-blue-50/50"
-                            value={manualItemForm.sellingPrice}
-                            onChange={e => setManualItemForm({ ...manualItemForm, sellingPrice: e.target.value })}
-                        />
+                        <div className="grid grid-cols-2 gap-2">
+                            <input
+                                type="number"
+                                placeholder="Harga Beli"
+                                className="w-full p-2 text-xs border border-gray-100 rounded-lg outline-none"
+                                value={manualItemForm.price}
+                                onChange={e => setManualItemForm({ ...manualItemForm, price: e.target.value })}
+                            />
+                            <input
+                                type="number"
+                                placeholder="Harga Jual"
+                                className="w-full p-2 text-xs border border-gray-100 rounded-lg outline-none bg-blue-50/30"
+                                value={manualItemForm.sellingPrice}
+                                onChange={e => setManualItemForm({ ...manualItemForm, sellingPrice: e.target.value })}
+                            />
+                        </div>
                         <Button 
                             variant="outline" 
-                            className={`w-full border-blue-200 ${manualItemForm.selectedItemId ? 'bg-blue-600 text-white hover:bg-blue-700 border-transparent' : 'text-blue-600 hover:bg-blue-50'}`}
+                            className="w-full h-10 text-[10px] font-black tracking-widest uppercase border-blue-200 text-blue-600 hover:bg-blue-600 hover:text-white transition-all"
                             onClick={() => {
                                 if (!manualItemForm.name || !manualItemForm.price) {
                                     toast.error('Lengkapi Nama & Harga Item');
@@ -792,7 +753,7 @@ export function PurchasesView({
                                 setManualItemForm({ name: '', price: '', sellingPrice: '', selectedItemId: '' });
                             }}
                         >
-                            {manualItemForm.selectedItemId ? 'Tambahkan ke Daftar PO' : 'Tambah Item Manual'}
+                            TAMBAH ITEM
                         </Button>
                     </div>
                 </div>

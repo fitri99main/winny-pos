@@ -219,13 +219,19 @@ export class PrinterManager {
             text += `Waktu: ${dateStr}, ${timeStr}\n`;
         }
         
-        // Match Photo Label: "Order: " instead of "Tipe: "
-        const info = resolveOrderTypeDisplay(orderData.table_no || orderData.tableNo, orderData);
-        text += `Order: ${info.orderTypeLabel || '-'}\n`;
+        // Resolve Order Type & Table
+        const tableRef = orderData.table_no || orderData.tableNo || orderData.table || '-';
+        const info = resolveOrderTypeDisplay(tableRef, orderData);
         
-        // Add Table Number for customer receipt if it exists
-        if (info.tableValue && info.tableValue !== '-') {
-            text += `Meja: ${info.tableValue}\n`;
+        // Match Photo Label: "Order: "
+        const orderLabel = info.orderTypeLabel || (info.orderType === 'take_away' ? 'TAKE AWAY' : 'DINE IN');
+        text += `Order: ${orderLabel}\n`;
+        
+        // Force Table Number display for customer receipt if it exists and not take away
+        if (tableRef && tableRef !== '-' && info.orderType !== 'take_away') {
+            text += BOLD_ON + `Meja: ${tableRef}` + BOLD_OFF + '\n';
+        } else if (info.tableValue && info.tableValue !== '-') {
+            text += BOLD_ON + `Meja: ${info.tableValue}` + BOLD_OFF + '\n';
         }
 
         if (orderData.show_cashier_name !== false && (orderData.cashier_name || orderData.waiter_name)) {
