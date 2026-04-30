@@ -510,42 +510,47 @@ export default function POSScreen() {
         try {
             console.log('[POSScreen] triggerTargetPrints for Order:', orderNo, 'Items:', items.length);
 
+            const receiptMac = await PrinterManager.getSelectedPrinter('receipt');
+            const kitchenMac = await PrinterManager.getSelectedPrinter('kitchen');
+            const barMac = await PrinterManager.getSelectedPrinter('bar');
+
             // Filter for diagnostics
-            const kitchenCount = items.filter(i => {
+            const kitchenItems = items.filter(i => {
                 const target = (i.target || '').toLowerCase().trim();
                 return target === 'kitchen' || target === 'dapur' || target === 'kds' || (!target || target === 'waitress');
-            }).length;
+            });
             
-            const barCount = items.filter(i => (i.target || '').toLowerCase().trim() === 'bar').length;
+            const barItems = items.filter(i => (i.target || '').toLowerCase().trim() === 'bar');
 
-            if (kitchenCount > 0 || barCount > 0) {
-                showToast(`Printer: Mengirim ${kitchenCount} menu ke Dapur, ${barCount} ke Bar...`, 'info');
+            if (kitchenItems.length > 0 && kitchenMac) {
+                // Skip if same as receipt printer to avoid double cutting the same paper
+                if (kitchenMac.toUpperCase() !== receiptMac?.toUpperCase()) {
+                    console.log('[POSScreen] Printing to Kitchen...');
+                    await PrinterManager.printToTarget(kitchenItems, 'kitchen', {
+                        orderNo,
+                        customerName: customerName || 'Guest',
+                        tableNo: selectedTable || '-'
+                    });
+                } else {
+                    console.log('[POSScreen] Kitchen printer same as receipt, skipping redundant print.');
+                }
             }
 
-            const kRes = await PrinterManager.printToTarget(items, 'kitchen', {
-                orderNo,
-                customerName: customerName || 'Guest',
-                tableNo: selectedTable || '-'
-            });
-
-            const bRes = await PrinterManager.printToTarget(items, 'bar', {
-                orderNo,
-                customerName: customerName || 'Guest',
-                tableNo: selectedTable || '-'
-            });
-
-            if (kRes === false) {
-                console.warn('[POSScreen] Kitchen printer failed or not configured.');
-                showToast('Printer Dapur belum disetel di pengaturan', 'error');
-            }
-
-            if (bRes === false) {
-                console.warn('[POSScreen] Bar printer failed or not configured.');
-                showToast('Printer Bar belum disetel di pengaturan', 'error');
+            if (barItems.length > 0 && barMac) {
+                // Skip if same as receipt printer
+                if (barMac.toUpperCase() !== receiptMac?.toUpperCase()) {
+                    console.log('[POSScreen] Printing to Bar...');
+                    await PrinterManager.printToTarget(barItems, 'bar', {
+                        orderNo,
+                        customerName: customerName || 'Guest',
+                        tableNo: selectedTable || '-'
+                    });
+                } else {
+                    console.log('[POSScreen] Bar printer same as receipt, skipping redundant print.');
+                }
             }
         } catch (error) {
             console.error('[POSScreen] triggerTargetPrints Error:', error);
-            showToast('Gagal mengirim ke printer dapur/bar', 'error');
         }
     };
 
@@ -686,7 +691,8 @@ export default function POSScreen() {
 
                     // [ENHANCED] Multiplier logic with fallback to minAmount
                     const effectiveMultiplier = multiplier > 0 ? multiplier : (minAmount > 0 ? minAmount : 15000);
-                    count = Math.floor(totalAmount / effectiveMultiplier);
+                    // Ensure at least 1 voucher if minimum amount is reached
+                    count = Math.max(1, Math.floor(totalAmount / effectiveMultiplier));
 
                     console.log(`[POSScreen] WiFi Voucher Logic: total=${totalAmount}, min=${minAmount}, mult=${multiplier}, effective=${effectiveMultiplier}, count=${count}`);
 

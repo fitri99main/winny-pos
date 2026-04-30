@@ -1081,8 +1081,7 @@ function Home() {
         }
       )
       .subscribe();
-
-    return () => {
+    return () => {
       supabase.removeChannel(channel);
     };
   }, [currentBranchId, loading, role]);
@@ -1099,9 +1098,6 @@ function Home() {
 
       // 2. Fetch branch names for metadata (Optional failure)
       const { data: bData } = await supabase.from('branches').select('id, name');
-      
-      console.log(`[DEBUG] SUPABASE URL: ${import.meta.env.VITE_SUPABASE_URL}`);
-      console.log(`[DEBUG] RAW ATTENDANCE COUNT: ${data?.length || 0}`);
 
       if (data) {
         setAttendanceLogs(data.map(log => {

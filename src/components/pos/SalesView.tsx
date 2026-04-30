@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, memo } from 'react';
 import { History, RotateCcw, Search, FileText, CheckCircle, XCircle, X, ShoppingCart, Printer, ChevronDown, Users, Trash2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -192,7 +192,7 @@ interface SalesViewProps {
     userRole?: string;
 }
 
-export function SalesView({
+export const SalesView = memo(function SalesView({
     initialTab = 'history',
     initialDateFilter,
     currentBranchId,
@@ -215,49 +215,166 @@ export function SalesView({
     userRole
 }: SalesViewProps) {
     const isAdmin = ['administrator', 'admin', 'owner', 'superadmin'].includes(userRole?.toLowerCase() || '');
+    
+    // 1. All State Hooks
     const [activeTab, setActiveTab] = useState<'history' | 'returns'>(initialTab);
-    // Date Filter State
     const [dateFilter, setDateFilter] = useState({
         start: initialDateFilter?.start || formatDateForInput(new Date()),
         end: initialDateFilter?.end || formatDateForInput(new Date())
     });
-
-    // Stats State
     const [statsPeriod, setStatsPeriod] = useState<'daily' | 'monthly' | 'yearly' | 'filtered'>('filtered');
-
-    // Cashier Filter State
     const [selectedCashier, setSelectedCashier] = useState('');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+    const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+    const [selectedSaleForPayment, setSelectedSaleForPayment] = useState<SalesOrder | null>(null);
+    const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
+    const [selectedOrder, setSelectedOrder] = useState<SalesOrder | null>(null);
+    const [returnReason, setReturnReason] = useState('');
+    const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+    const [selectedOrderDetails, setSelectedOrderDetails] = useState<SalesOrder | null>(null);
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [selectedOrderToEdit, setSelectedOrderToEdit] = useState<SalesOrder | null>(null);
+    const [editForm, setEditForm] = useState<Partial<SalesOrder>>({});
+    const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+    const [isManagerAuthOpen, setIsManagerAuthOpen] = useState(false);
+    const [pendingReturnAction, setPendingReturnAction] = useState<(() => void) | null>(null);
+    const [pendingDeleteAction, setPendingDeleteAction] = useState<(() => void) | null>(null);
+    const [isReceiptPreviewOpen, setIsReceiptPreviewOpen] = useState(false);
+    const [receiptPreviewData, setReceiptPreviewData] = useState<SalesOrder | null>(null);
+    const [visibleCount, setVisibleCount] = useState(50);
+    const [sortConfig, setSortConfig] = useState<{ key: keyof SalesOrder | '_cashier'; direction: 'asc' | 'desc' }>({ key: 'date', direction: 'desc' });
 
-    const getStatsTotal = () => {
+    // 1. Debounce Search
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebouncedSearchQuery(searchQuery);
+        }, 300);
+        return () => clearTimeout(handler);
+    }, [searchQuery]);
+
+    // 2. Pre-process sales for faster filtering
+    const processedSales = useMemo(() => {
+        return (sales || []).map(sale => {
+            // Name Normalization
+            let rawCashier = sale.cashierName || sale.waiterName || '';
+            let normalizedCashier = rawCashier;
+            if (rawCashier.toLowerCase().includes('marini')) {
+                normalizedCashier = 'Neneng';
+            } else if (rawCashier.toLowerCase().trim() === 'azla' || rawCashier.toLowerCase().includes('azla sakiya')) {
+                normalizedCashier = 'Azla Sakiya';
+            }
+
+            return {
+                ...sale,
+                _cashierName: normalizedCashier,
+                _searchKey: `${sale.orderNo} ${sale.customerName || ''} ${sale.productDetails.map(p => p.name).join(' ')} ${normalizedCashier}`.toLowerCase(),
+                _dateOnly: normalizeDateOnly(sale.date),
+                _formattedDate: new Date(sale.date).toLocaleString('id-ID', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                })
+            };
+        });
+    }, [sales]);
+
+    const processedReturns = useMemo(() => {
+        return (returns || []).map(ret => ({
+            ...ret,
+            _searchKey: `${ret.returnNo} ${ret.orderNo} ${ret.reason}`.toLowerCase(),
+            _dateOnly: normalizeDateOnly(ret.date),
+            _formattedDate: new Date(ret.date).toLocaleString('id-ID', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            })
+        }));
+    }, [returns]);
+
+    // 3. Memoized filtering AND sorting logic
+    const filteredSales = useMemo(() => {
+        const query = debouncedSearchQuery.toLowerCase();
+        let result = processedSales.filter(sale => {
+            const matchesBranch = (String(sale.branchId) === String(currentBranchId) || !sale.branchId);
+            const matchesSearch = !query || sale._searchKey.includes(query);
+
+            if (!matchesBranch || !matchesSearch) return false;
+
+            // Date Logic
+            if (dateFilter.start || dateFilter.end) {
+                const saleDate = sale._dateOnly;
+                if (!saleDate) return false;
+                if (dateFilter.start && saleDate < dateFilter.start) return false;
+                if (dateFilter.end && saleDate > dateFilter.end) return false;
+            }
+
+            // Cashier Logic (Case-insensitive & Normalized)
+            if (selectedCashier) {
+                const cashier = sale._cashierName.toLowerCase();
+                if (cashier !== selectedCashier.toLowerCase() && !selectedCashier.toLowerCase().includes('marini')) return false;
+                // If selected is Neneng, it matches. If selected is Marini, we treat it as Neneng? 
+                // Actually, if we selected 'Neneng' in dropdown, we want it to match 'Marini' too.
+            }
+
+            return true;
+        });
+
+        // Apply Sorting
+        return result.sort((a, b) => {
+            let valA: any;
+            let valB: any;
+
+            if (sortConfig.key === '_cashier') {
+                valA = (a.cashierName || a.waiterName || '').toLowerCase();
+                valB = (b.cashierName || b.waiterName || '').toLowerCase();
+            } else {
+                valA = a[sortConfig.key as keyof SalesOrder];
+                valB = b[sortConfig.key as keyof SalesOrder];
+            }
+
+            if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+            if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+    }, [processedSales, debouncedSearchQuery, currentBranchId, dateFilter, selectedCashier, sortConfig]);
+
+    const filteredReturns = useMemo(() => {
+        const query = debouncedSearchQuery.toLowerCase();
+        return processedReturns.filter(ret => {
+            const matchesSearch = !query || ret._searchKey.includes(query);
+
+            if (!matchesSearch) return false;
+
+            // Date Logic
+            if (dateFilter.start || dateFilter.end) {
+                const retDate = ret._dateOnly;
+                if (!retDate) return false;
+                if (dateFilter.start && retDate < dateFilter.start) return false;
+                if (dateFilter.end && retDate > dateFilter.end) return false;
+            }
+
+            return true;
+        });
+    }, [processedReturns, debouncedSearchQuery, dateFilter]);
+
+    // 2. Optimized Stats Calculation (Uses filteredSales)
+    const statsTotal = useMemo(() => {
         const now = new Date();
-        // [TIMEZONE FIX] Use local date, not UTC
-        const pad = (n: number) => String(n).padStart(2, '0');
-        const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-
         const currentMonth = now.getMonth();
         const currentYear = now.getFullYear();
 
-        let targetSales = sales || [];
-
-        // If 'filtered', use the already filtered list (respects search & date picker)
         if (statsPeriod === 'filtered') {
-            // We need to re-apply filter or use 'filteredSales' if accessible here?
-            // filteredSales is defined below. We might need to move this function or use the var.
-            // Since 'filteredSales' is derived closer to render, let's use a standard calculation here 
-            // OR move 'filteredSales' up. 
-            // EASIER: Calculate 'Filtered' inside the render or just duplicate logic if small.
-            // Actually, we can move 'filteredSales' definition up above this function? 
-            // No, 'filteredSales' uses 'searchQuery' etc.
-            // Let's defer 'filtered' calc to the reducer in render?
-            // BETTER: Just return 0 here and handle in render? No.
-            // Let's filter 'sales' right here for consistency if easy.
             return filteredSales.reduce((sum, sale) => sum + (sale.status !== 'Returned' ? sale.totalAmount : 0), 0);
         }
 
-        // For other periods, filter ALL sales
+        const targetSales = sales || [];
         return targetSales.reduce((sum, sale) => {
             if (sale.status === 'Returned') return sum;
-            // Branch check
             if (currentBranchId && sale.branchId && String(sale.branchId) !== String(currentBranchId)) return sum;
 
             const saleDate = parseSaleDate(sale.date);
@@ -272,11 +389,8 @@ export function SalesView({
             }
             return sum + sale.totalAmount;
         }, 0);
-    };
+    }, [sales, filteredSales, statsPeriod, currentBranchId]);
 
-    // Payment Modal State
-    const [paymentModalOpen, setPaymentModalOpen] = useState(false);
-    const [selectedSaleForPayment, setSelectedSaleForPayment] = useState<SalesOrder | null>(null);
 
     const handlePaymentClick = (sale: SalesOrder) => {
         if (sale.status !== 'Unpaid') return;
@@ -381,19 +495,6 @@ export function SalesView({
         });
     }, [initialDateFilter?.start, initialDateFilter?.end]);
 
-    const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
-    const [selectedOrder, setSelectedOrder] = useState<SalesOrder | null>(null);
-    const [returnReason, setReturnReason] = useState('');
-    const [searchQuery, setSearchQuery] = useState('');
-    const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
-    const [selectedOrderDetails, setSelectedOrderDetails] = useState<SalesOrder | null>(null);
-    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-    const [selectedOrderToEdit, setSelectedOrderToEdit] = useState<SalesOrder | null>(null);
-    const [editForm, setEditForm] = useState<Partial<SalesOrder>>({});
-    const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-    const [isManagerAuthOpen, setIsManagerAuthOpen] = useState(false);
-    const [pendingReturnAction, setPendingReturnAction] = useState<(() => void) | null>(null);
-    const [pendingDeleteAction, setPendingDeleteAction] = useState<(() => void) | null>(null);
 
 
     // Keyboard Shortcuts
@@ -425,46 +526,7 @@ export function SalesView({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [onOpenCashier, isReturnModalOpen, isDetailsModalOpen, isEditModalOpen]);
 
-    const filteredSales = (sales || []).filter(sale => {
-        const matchesBranch = (String(sale.branchId) === String(currentBranchId) || !sale.branchId);
-        const matchesSearch = (sale.orderNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            sale.productDetails.some(p => p.name.toLowerCase().includes(searchQuery.toLowerCase())));
 
-        // Date Logic
-        if (!processDateFilter(sale.date)) return false;
-
-        // Cashier Logic
-        const matchesCashier = !selectedCashier || (sale.cashierName === selectedCashier || sale.waiterName === selectedCashier);
-
-        return matchesBranch && matchesSearch && matchesCashier;
-    });
-
-    function processDateFilter(dateStr: string) {
-        if (!dateFilter.start && !dateFilter.end) return true;
-        const saleDate = normalizeDateOnly(dateStr);
-        if (!saleDate) return false;
-
-        if (dateFilter.start) {
-            if (saleDate < dateFilter.start) return false;
-        }
-        if (dateFilter.end) {
-            if (saleDate > dateFilter.end) return false;
-        }
-        return true;
-    }
-
-    const filteredReturns = (returns || []).filter(ret => {
-        const matchesSearch = ret.returnNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            ret.orderNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            ret.reason.toLowerCase().includes(searchQuery.toLowerCase());
-
-        const matchesDate = processDateFilter(ret.date);
-
-        return matchesSearch && matchesDate;
-    });
-
-    const [isReceiptPreviewOpen, setIsReceiptPreviewOpen] = useState(false);
-    const [receiptPreviewData, setReceiptPreviewData] = useState<SalesOrder | null>(null);
 
     const handlePrintReceipt = (sale: SalesOrder) => {
         setReceiptPreviewData(sale);
@@ -613,6 +675,15 @@ export function SalesView({
         }
     };
 
+    const handleSort = (key: keyof SalesOrder | '_cashier') => {
+        let direction: 'asc' | 'desc' = 'asc';
+        if (sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        }
+        setSortConfig({ key, direction });
+        setVisibleCount(50); // Reset visibility on sort
+    };
+
     const handleBulkDeleteClick = () => {
         if (filteredSales.length === 0) {
             toast.info('Tidak ada transaksi yang bisa dihapus pada filter ini.');
@@ -665,17 +736,25 @@ export function SalesView({
             <div className="flex-1 overflow-y-auto">
                 <table className="w-full text-[13px]">
                     <thead className="bg-gray-50 text-gray-500 text-left sticky top-0">
-                        <tr>
-                            <th className="px-3 py-2">No. Invoice</th>
+                        <tr className="select-none">
+                            <th className="px-3 py-2 cursor-pointer hover:bg-gray-100" onClick={() => handleSort('orderNo')}>
+                                No. Invoice {sortConfig.key === 'orderNo' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                            </th>
                             <th className="px-3 py-2">Meja</th>
                             <th className="px-3 py-2">Pelanggan</th>
-                            <th className="px-3 py-2">Tanggal</th>
+                            <th className="px-3 py-2 cursor-pointer hover:bg-gray-100" onClick={() => handleSort('date')}>
+                                Tanggal {sortConfig.key === 'date' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                            </th>
                             <th className="px-3 py-2 text-center hidden xl:table-cell">Item</th>
                             <th className="px-3 py-2 text-right">Diskon</th>
                             <th className="px-3 py-2 text-right">Pajak</th>
-                            <th className="px-3 py-2 text-right">Total</th>
+                            <th className="px-3 py-2 text-right cursor-pointer hover:bg-gray-100" onClick={() => handleSort('totalAmount')}>
+                                Total {sortConfig.key === 'totalAmount' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                            </th>
                             <th className="px-3 py-2">Bayar</th>
-                            <th className="px-3 py-2">Kasir</th>
+                            <th className="px-3 py-2 cursor-pointer hover:bg-gray-100" onClick={() => handleSort('_cashier')}>
+                                Kasir {sortConfig.key === '_cashier' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                            </th>
                             <th className="px-3 py-2 text-center">Cetak</th>
                             <th className="px-3 py-2 text-center">Status</th>
                             <th className="px-3 py-2 text-center hidden lg:table-cell">Sinkron</th>
@@ -694,7 +773,7 @@ export function SalesView({
                                 </td>
                             </tr>
                         ) : (
-                            filteredSales.map(sale => (
+                            filteredSales.slice(0, visibleCount).map(sale => (
                                 <tr key={sale.id} className="hover:bg-gray-50">
                                     <td className="px-3 py-2">
                                         <div className="font-mono text-blue-600 font-medium mb-1 whitespace-nowrap">{sale.orderNo}</div>
@@ -726,16 +805,7 @@ export function SalesView({
                                         )}
                                     </td>
                                     <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
-                                        {new Date(sale.date).toLocaleString('id-ID', {
-                                            year: 'numeric',
-                                            month: 'short',
-                                            day: 'numeric',
-                                            hour: '2-digit',
-                                            minute: '2-digit'
-                                            // Removed explicit timeZone to rely on Browser Local Time which seems to be what user wants (WIB)
-                                            // actually, better to be safe? User is in WIB.
-                                            // timeZone: 'Asia/Jakarta' 
-                                        })}
+                                        {(sale as any)._formattedDate}
                                     </td>
                                     <td className="px-3 py-2 text-center hidden xl:table-cell">{sale.items}</td>
                                     <td className="px-3 py-2 text-right text-red-500 font-medium whitespace-nowrap">
@@ -749,7 +819,7 @@ export function SalesView({
                                     <td className="px-3 py-2">
                                         {sale.cashierName || sale.waiterName ? (
                                             <span className="text-gray-700 text-[10px] font-medium bg-gray-100 px-1.5 py-0.5 rounded whitespace-nowrap">
-                                                {sale.cashierName || sale.waiterName}
+                                                {(sale as any)._cashierName}
                                             </span>
                                         ) : (
                                             <span className="text-gray-300 text-xs">-</span>
@@ -882,6 +952,17 @@ export function SalesView({
                         )}
                     </tbody>
                 </table>
+                {filteredSales.length > visibleCount && (
+                    <div className="p-4 border-t bg-gray-50/50 flex justify-center">
+                        <Button 
+                            variant="outline" 
+                            onClick={() => setVisibleCount(prev => prev + 50)}
+                            className="bg-white"
+                        >
+                            Muat Lebih Banyak ({filteredSales.length - visibleCount} lagi)
+                        </Button>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -913,7 +994,7 @@ export function SalesView({
                                 <td colSpan={6} className="px-6 py-12 text-center text-gray-500">Belum ada data retur penjualan.</td>
                             </tr>
                         ) : (
-                            filteredReturns.map(ret => (
+                            filteredReturns.slice(0, visibleCount).map(ret => (
                                 <tr key={ret.id} className="hover:bg-gray-50">
                                     <td className="px-3 py-3 font-mono text-red-600 whitespace-nowrap">{ret.returnNo}</td>
                                     <td className="px-3 py-3 font-mono text-gray-600 whitespace-nowrap">{ret.orderNo}</td>
@@ -943,6 +1024,17 @@ export function SalesView({
                         )}
                     </tbody>
                 </table>
+                {filteredReturns.length > visibleCount && (
+                    <div className="p-4 border-t bg-gray-50/50 flex justify-center">
+                        <Button 
+                            variant="outline" 
+                            onClick={() => setVisibleCount(prev => prev + 50)}
+                            className="bg-white"
+                        >
+                            Muat Lebih Banyak ({filteredReturns.length - visibleCount} lagi)
+                        </Button>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -985,7 +1077,10 @@ export function SalesView({
                         <DateRangePicker 
                             startDate={dateFilter.start}
                             endDate={dateFilter.end}
-                            onChange={(range) => setDateFilter({ start: range.startDate, end: range.endDate })}
+                            onChange={(range) => {
+                                setDateFilter({ start: range.startDate, end: range.endDate });
+                                setVisibleCount(50);
+                            }}
                         />
                     )}
 
@@ -1000,9 +1095,24 @@ export function SalesView({
                                     onChange={(e) => setSelectedCashier(e.target.value)}
                                 >
                                     <option value="">Semua Kasir</option>
-                                    {employees.map(emp => (
-                                        <option key={emp.id} value={emp.name}>{emp.name}</option>
-                                    ))}
+                                    {(() => {
+                                        const seenNames = new Set<string>();
+                                        return employees
+                                            .map(emp => {
+                                                let name = emp.name;
+                                                if (name.toLowerCase().includes('marini')) name = 'Neneng';
+                                                else if (name.toLowerCase().trim() === 'azla' || name.toLowerCase().includes('azla sakiya')) name = 'Azla Sakiya';
+                                                return { ...emp, name };
+                                            })
+                                            .filter(emp => {
+                                                if (seenNames.has(emp.name)) return false;
+                                                seenNames.add(emp.name);
+                                                return true;
+                                            })
+                                            .map(emp => (
+                                                <option key={emp.id} value={emp.name}>{emp.name}</option>
+                                            ));
+                                    })()}
                                 </select>
                                 <ChevronDown className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                             </div>
@@ -1016,7 +1126,10 @@ export function SalesView({
                             placeholder={activeTab === 'history' ? "Cari invoice..." : "Cari retur..."}
                             className="pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 w-32 md:w-48 transition-all focus:w-64"
                             value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
+                            onChange={(e) => {
+                                setSearchQuery(e.target.value);
+                                setVisibleCount(50);
+                            }}
                             id="sales-search-input"
                         />
                     </div>
@@ -1046,7 +1159,7 @@ export function SalesView({
                                     <ChevronDown className="w-3 h-3 text-blue-400" />
                                 </div>
                                 <span className="text-sm font-bold text-blue-800">
-                                    Rp {getStatsTotal().toLocaleString()}
+                                    Rp {statsTotal.toLocaleString()}
                                 </span>
                             </div>
                         </div>
@@ -1443,4 +1556,4 @@ export function SalesView({
 
         </div>
     );
-}
+});

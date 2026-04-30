@@ -65,8 +65,9 @@ export function CashierSessionModal({
             while (hasMore) {
                 const { data: pageData, error: salesError } = await supabase
                     .from('sales')
-                    .select('*')
-                    .gte('created_at', openedAt)
+                    .select('*, items:sale_items(*)')
+                    .eq('branch_id', session.branch_id)
+                    .gte('date', openedAt)
                     .range(from, from + pageSize - 1);
 
                 if (salesError) throw salesError;
@@ -91,7 +92,7 @@ export function CashierSessionModal({
             allSales.forEach(sale => {
                 const status = (sale.status || '').toLowerCase();
                 // [MODIFIED] Broaden paid status check to catch all successful transactions
-                const isPaid = ['completed', 'selesai', 'paid', 'served', 'success', 'settlement', 'capture', 'ready'].includes(status);
+                const isPaid = ['completed', 'selesai', 'paid', 'success', 'settlement', 'capture'].includes(status);
                 
                 if (isPaid) {
                     completed++;
@@ -199,7 +200,8 @@ export function CashierSessionModal({
                 total_tax: tax,
                 payment_summary: Object.entries(paySummary).map(([method, amount]) => ({ method, amount })),
                 category_summary: Object.entries(catSummary).map(([category, amount]) => ({ category, amount })),
-                product_summary: Object.entries(prodSummary).map(([name, data]) => ({ name, ...data }))
+                product_summary: Object.entries(prodSummary).map(([name, data]) => ({ name, ...data })),
+                sales_list: allSales.filter(s => ['completed', 'selesai', 'paid', 'served', 'success', 'settlement', 'capture', 'ready'].includes((s.status || '').toLowerCase()))
             });
             setActualCash('');
 
@@ -426,7 +428,52 @@ export function CashierSessionModal({
                                             </div>
                                         </div>
 
-                                        <div className="grid grid-cols-2 gap-3 text-[11px]">
+                                        {/* Detailed Breakdown Section */}
+                        {closingData && (
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <h3 className="font-bold text-gray-800">Detail Transaksi</h3>
+                                    <div className="text-xs text-gray-500">
+                                        Total {closingData.sales_list?.length || 0} transaksi
+                                    </div>
+                                </div>
+                                <div className="border rounded-xl overflow-hidden overflow-x-auto">
+                                    <table className="w-full text-xs">
+                                        <thead className="bg-gray-50 border-b">
+                                            <tr>
+                                                <th className="px-3 py-2 text-left">Invoice</th>
+                                                <th className="px-3 py-2 text-left">Waktu</th>
+                                                <th className="px-3 py-2 text-left">Metode</th>
+                                                <th className="px-3 py-2 text-right">Total</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y">
+                                            {closingData.sales_list?.slice(0, 50).map((s: any) => (
+                                                <tr key={s.id} className="hover:bg-gray-50">
+                                                    <td className="px-3 py-2 font-mono text-blue-600">{s.order_no}</td>
+                                                    <td className="px-3 py-2 text-gray-500">
+                                                        {new Date(s.date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                                                    </td>
+                                                    <td className="px-3 py-2">{s.payment_method}</td>
+                                                    <td className="px-3 py-2 text-right font-medium">
+                                                        Rp {(s.paid_amount || s.total_amount || 0).toLocaleString()}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            {closingData.sales_list?.length > 50 && (
+                                                <tr>
+                                                    <td colSpan={4} className="px-3 py-2 text-center text-gray-400 italic">
+                                                        ...dan {closingData.sales_list.length - 50} transaksi lainnya (Cetak laporan untuk detail lengkap)
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px]">
                                             <div className="rounded-xl bg-white/80 border border-blue-100 px-3 py-2">
                                                 <span className="text-blue-500/90 block font-bold uppercase tracking-wide">Penjualan Tunai</span>
                                                 <span className="font-bold text-blue-950">{formatPrice(closingData?.cash_sales)}</span>

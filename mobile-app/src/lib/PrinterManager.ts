@@ -301,7 +301,7 @@ export class PrinterManager {
         text += CENTER + footer + '\n';
         text += CENTER + shopName.toUpperCase() + '\n';
         
-        text += '\n'.repeat(4) + (isPreview ? '' : (orderData.enable_auto_cut !== false ? COMMANDS.PAPER.PAPER_FULL_CUT : ''));
+        text += '\n';
         return text;
     }
 
@@ -333,7 +333,7 @@ export class PrinterManager {
         });
 
         text += LINE + CENTER + `Waktu: ${new Date().toLocaleString('id-ID')}\n`;
-        text += '\n'.repeat(7) + (orderData.enable_auto_cut !== false ? COMMANDS.PAPER.PAPER_FULL_CUT : '');
+        text += '\n';
         return text;
     }
 

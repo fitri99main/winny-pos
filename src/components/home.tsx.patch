@@ -1,0 +1,35 @@
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentBranchId, loading, role]);
+
+  // --- Attendance Integration ---
+  const fetchAttendance = async () => {
+    try {
+      // 1. Fetch raw attendance logs first (Independence)
+      const { data, error } = await supabase.from('attendance_logs').select('*').order('created_at', { ascending: false });
+      if (error) {
+        console.error('Core Attendance Fetch Failed:', error);
+        return;
+      }
+
+      // 2. Fetch branch names for metadata (Optional failure)
+      const { data: bData } = await supabase.from('branches').select('id, name');
+
+      if (data) {
+        setAttendanceLogs(data.map(log => {
+          const branch = bData?.find(b => b.id === log.branch_id);
+          return {
+            ...log,
+            employeeName: log.employee_name,
+            checkIn: log.check_in,
+            checkOut: log.check_out,
+            branchName: branch?.name || `Branch ${log.branch_id || '?'}`
+          };
+        }));
+      }
+    } catch (err: any) {
+      console.error('Critical Fetch Error:', err);
+    }
+  };

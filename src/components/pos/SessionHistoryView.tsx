@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo, memo } from 'react';
 import { History, Calendar, User, Search, Download, Eye, TrendingUp, DollarSign, Clock, Trash2, AlertTriangle, FileSpreadsheet } from 'lucide-react';
 import { utils, writeFile } from 'xlsx';
 import { supabase } from '../../lib/supabase';
@@ -25,7 +25,7 @@ interface SessionHistoryViewProps {
     branchId?: string | null;
 }
 
-export function SessionHistoryView({ branchId }: SessionHistoryViewProps) {
+export const SessionHistoryView = memo(function SessionHistoryView({ branchId }: SessionHistoryViewProps) {
     const [sessions, setSessions] = useState<SessionHistory[]>([]);
     const [filteredSessions, setFilteredSessions] = useState<SessionHistory[]>([]);
     const [loading, setLoading] = useState(true);
@@ -134,8 +134,7 @@ export function SessionHistoryView({ branchId }: SessionHistoryViewProps) {
         applyFilters();
     }, [sessions, searchQuery, dateFrom, dateTo, statusFilter, datePreset]);
 
-    const fetchSessions = async () => {
-        console.log('SessionHistoryView: Fetching sessions for branchId:', branchId);
+    const fetchSessions = useCallback(async () => {
         setLoading(true);
         try {
             let allSessions: any[] = [];
@@ -169,12 +168,20 @@ export function SessionHistoryView({ branchId }: SessionHistoryViewProps) {
                 }
             }
 
-            const sessionsWithNames = allSessions.map(s => ({
-                ...s,
-                user_name: s.employee_name || 'Unknown'
-            }));
+            const sessionsWithNames = allSessions.map(s => {
+                let name = s.employee_name || 'Unknown';
+                // Name Normalization
+                if (name.toLowerCase().includes('marini')) {
+                    name = 'Neneng';
+                } else if (name.toLowerCase().trim() === 'azla' || name.toLowerCase().includes('azla sakiya')) {
+                    name = 'Azla Sakiya';
+                }
+                return {
+                    ...s,
+                    user_name: name
+                };
+            });
 
-            console.log(`SessionHistoryView: Loaded ${sessionsWithNames.length} sessions`);
             setSessions(sessionsWithNames);
         } catch (error: any) {
             console.error('Error fetching sessions:', error);
@@ -182,9 +189,9 @@ export function SessionHistoryView({ branchId }: SessionHistoryViewProps) {
         } finally {
             setLoading(false);
         }
-    };
+    }, [branchId]);
 
-    const applyFilters = () => {
+    const applyFilters = useCallback(() => {
         let filtered = [...sessions];
 
         // Filter by search query (user name or ID)
@@ -225,7 +232,7 @@ export function SessionHistoryView({ branchId }: SessionHistoryViewProps) {
         }
 
         setFilteredSessions(filtered);
-    };
+    }, [sessions, searchQuery, dateFrom, dateTo, statusFilter, datePreset]);
 
     const exportToExcel = () => {
         const data = filteredSessions.map(s => ({
@@ -294,13 +301,15 @@ export function SessionHistoryView({ branchId }: SessionHistoryViewProps) {
     };
 
     // Calculate summary stats
-    const totalSessions = filteredSessions.length;
-    const closedSessionsCount = filteredSessions.filter(s => s.status?.toLowerCase() === 'closed').length;
-    const totalSales = filteredSessions.reduce((sum, s) => sum + (Number(s.total_sales) || 0), 0);
-    const totalVariance = filteredSessions.filter(s => s.status?.toLowerCase() === 'closed').reduce((sum, s) => sum + (Number(s.difference) || 0), 0);
-    const avgVariance = closedSessionsCount > 0 ? totalVariance / closedSessionsCount : 0;
+    const stats = useMemo(() => {
+        const totalSessions = filteredSessions.length;
+        const closedSessionsCount = filteredSessions.filter(s => s.status?.toLowerCase() === 'closed').length;
+        const totalSales = filteredSessions.reduce((sum, s) => sum + (Number(s.total_sales) || 0), 0);
+        const totalVariance = filteredSessions.filter(s => s.status?.toLowerCase() === 'closed').reduce((sum, s) => sum + (Number(s.difference) || 0), 0);
+        const avgVariance = closedSessionsCount > 0 ? totalVariance / closedSessionsCount : 0;
 
-    console.log('Stats Calculated:', { totalSessions, closedSessionsCount, totalSales, totalVariance, avgVariance });
+        return { totalSessions, closedSessionsCount, totalSales, totalVariance, avgVariance };
+    }, [filteredSessions]);
 
     const confirmDelete = (session: SessionHistory) => {
         setSessionToDelete(session);
@@ -399,7 +408,7 @@ export function SessionHistoryView({ branchId }: SessionHistoryViewProps) {
                         </div>
                         <div>
                             <p className="text-sm text-gray-500 dark:text-gray-400">Total Sessions</p>
-                            <p className="text-2xl font-bold text-gray-800 dark:text-white">{totalSessions}</p>
+                            <p className="text-2xl font-bold text-gray-800 dark:text-white">{stats.totalSessions}</p>
                         </div>
                     </div>
                 </div>
@@ -411,7 +420,7 @@ export function SessionHistoryView({ branchId }: SessionHistoryViewProps) {
                         </div>
                         <div>
                             <p className="text-sm text-gray-500 dark:text-gray-400">Total Penjualan</p>
-                            <p className="text-2xl font-bold text-gray-800 dark:text-white">{formatCurrency(totalSales)}</p>
+                            <p className="text-2xl font-bold text-gray-800 dark:text-white">{formatCurrency(stats.totalSales)}</p>
                         </div>
                     </div>
                 </div>
@@ -421,8 +430,8 @@ export function SessionHistoryView({ branchId }: SessionHistoryViewProps) {
                         <AlertTriangle className="w-6 h-6" />
                     </div>
                     <p className="text-sm text-gray-500 dark:text-gray-400">Total Selisih</p>
-                    <h3 className={`text-2xl font-bold mt-1 ${totalVariance < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                        {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(totalVariance)}
+                    <h3 className={`text-2xl font-bold mt-1 ${stats.totalVariance < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(stats.totalVariance)}
                     </h3>
                 </div>
             </div>
@@ -748,4 +757,4 @@ export function SessionHistoryView({ branchId }: SessionHistoryViewProps) {
             />
         </div>
     );
-}
+});

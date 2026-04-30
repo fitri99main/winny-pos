@@ -78,7 +78,7 @@ export function InventoryView({
 
     // Modal states
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-    const [isEditModalOpen, setIsEditModalOpen] = useState(false); // NEW
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isStockModalOpen, setIsStockModalOpen] = useState(false);
     const [isStockCardOpen, setIsStockCardOpen] = useState(false);
     const [stockAction, setStockAction] = useState<'IN' | 'OUT'>('IN');
@@ -88,7 +88,7 @@ export function InventoryView({
     const [newIngredient, setNewIngredient] = useState<Partial<Ingredient>>({
         name: '', unit: 'kg', category: 'Coffee', min_stock: 1, cost_per_unit: 0
     });
-    const [editFormData, setEditFormData] = useState<Partial<Ingredient>>({}); // NEW
+    const [editFormData, setEditFormData] = useState<Partial<Ingredient>>({});
 
     const [stockForm, setStockForm] = useState({
         quantity: 0,
@@ -176,7 +176,7 @@ export function InventoryView({
             quantity: qty,
             unit: selectedIngredient.unit,
             reason: stockForm.reason || (stockAction === 'IN' ? 'Penyesuaian Masuk' : 'Pemakaian/Terbuang'),
-            user: 'Staff' // Ideally from prop or context
+            user: 'Staff'
         });
 
         setIsStockModalOpen(false);
@@ -257,7 +257,7 @@ export function InventoryView({
                                     <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px]">Kategori</th>
                                     <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px] text-center">Unit</th>
                                     <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px] text-right">Harga Beli (HPP)</th>
-                                    <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px] text-right">Min. Stok</th>
+                                    <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px] text-right">Jumlah</th>
                                     <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px] text-right">Stok Aktif</th>
                                     <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px] text-center">Status</th>
                                     <th className="px-8 py-5 font-black uppercase tracking-widest text-[10px] text-center">Tindakan</th>
@@ -429,22 +429,22 @@ export function InventoryView({
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
-                                        <label className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Minimum Stok untuk Alert</label>
+                                        <label className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Jumlah</label>
                                         <input
                                             type="number"
                                             className="w-full p-4 bg-gray-50 border border-gray-100 rounded-[20px] outline-none"
-                                            value={newIngredient.min_stock}
+                                            value={newIngredient.min_stock || 0}
                                             onChange={e => setNewIngredient({ ...newIngredient, min_stock: Number(e.target.value) })}
                                             required
                                         />
                                     </div>
                                     <div className="space-y-2">
-                                        <label className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Harga Beli / Unit (HPP)</label>
+                                        <label className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Harga Beli / Unit</label>
                                         <input
                                             type="number"
                                             className="w-full p-4 bg-gray-50 border border-gray-100 rounded-[20px] outline-none font-bold text-gray-700"
                                             placeholder="Rp 0"
-                                            value={newIngredient.cost_per_unit || ''}
+                                            value={newIngredient.cost_per_unit || 0}
                                             onChange={e => setNewIngredient({ ...newIngredient, cost_per_unit: Number(e.target.value) })}
                                         />
                                     </div>
@@ -510,7 +510,7 @@ export function InventoryView({
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
-                                        <label className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Minimum Stok</label>
+                                        <label className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Jumlah</label>
                                         <input
                                             type="number"
                                             className="w-full p-4 bg-gray-50 border border-gray-100 rounded-[20px] outline-none"
@@ -529,6 +529,26 @@ export function InventoryView({
                                             onChange={e => setEditFormData({ ...editFormData, cost_per_unit: Number(e.target.value) })}
                                         />
                                     </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Stok Aktif</label>
+                                    <div className="relative">
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            className="w-full p-4 bg-amber-50 border-2 border-amber-200 rounded-[20px] outline-none font-black text-gray-800 focus:ring-4 focus:ring-amber-100 transition-all"
+                                            placeholder="0"
+                                            value={editFormData.current_stock ?? 0}
+                                            onChange={e => setEditFormData({ ...editFormData, current_stock: Number(e.target.value) })}
+                                        />
+                                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-amber-500">
+                                            {editFormData.unit || ''}
+                                        </span>
+                                    </div>
+                                    <p className="text-[10px] text-amber-600 font-medium pl-1">
+                                        ⚠ Mengubah nilai ini akan langsung menimpa stok. Gunakan Stok Masuk/Keluar untuk pencatatan mutasi.
+                                    </p>
                                 </div>
                                 <div className="flex gap-4 pt-4">
                                     <Button type="button" variant="outline" className="flex-1 h-14 rounded-[20px]" onClick={() => setIsEditModalOpen(false)}>Batal</Button>
