@@ -11,6 +11,8 @@ interface SummaryData {
     cash_expenses?: number;
     cash_topups?: number;
     total_sales: number;
+    total_tax?: number;
+    total_discount?: number;
     total_orders: number;
     expected_cash: number;
     payment_summary: { method: string; amount: number }[];
@@ -94,6 +96,8 @@ export default function CashierClosingSummaryModal({
         dateRange: `${new Date(data.opened_at || Date.now()).toLocaleString('id-ID')} - ${data.closed_at ? new Date(data.closed_at).toLocaleString('id-ID') : new Date().toLocaleString('id-ID')}`,
         totalOrders: data.total_orders,
         totalSales: data.total_sales,
+        totalTax: data.total_tax,
+        totalDiscount: data.total_discount,
         cashTotal: data.cash_sales,
         qrTotal: data.non_cash_sales,
         openingBalance: data.starting_cash,
@@ -175,6 +179,18 @@ export default function CashierClosingSummaryModal({
                                         <Text style={styles.itemValue}>{formatCurrency(p.amount)}</Text>
                                     </View>
                                 ))}
+                                {(data.total_discount || 0) > 0 && (
+                                    <View style={styles.itemRow}>
+                                        <Text style={[styles.itemLabel, { color: '#ef4444' }]}>TOTAL DISKON</Text>
+                                        <Text style={[styles.itemValue, { color: '#ef4444' }]}>- {formatCurrency(data.total_discount || 0)}</Text>
+                                    </View>
+                                )}
+                                {(data.total_tax || 0) > 0 && (
+                                    <View style={styles.itemRow}>
+                                        <Text style={styles.itemLabel}>TOTAL PAJAK</Text>
+                                        <Text style={styles.itemValue}>{formatCurrency(data.total_tax || 0)}</Text>
+                                    </View>
+                                )}
                             </View>
 
                             {/* Reconciliation */}

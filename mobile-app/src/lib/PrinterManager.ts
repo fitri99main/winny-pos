@@ -518,6 +518,12 @@ export class PrinterManager {
         text += this.padColumns('Total Transaksi:', (data.totalOrders || 0).toString(), paperWidth, isPreview) + '\n';
         text += this.padColumns('Tunai:', (data.cashTotal || 0).toLocaleString('id-ID'), paperWidth, isPreview) + '\n';
         text += this.padColumns('QRIS:', (data.qrTotal || 0).toLocaleString('id-ID'), paperWidth, isPreview) + '\n';
+        if ((data.totalDiscount || 0) > 0) {
+            text += this.padColumns('Total Diskon:', '-' + (data.totalDiscount || 0).toLocaleString('id-ID'), paperWidth, isPreview) + '\n';
+        }
+        if ((data.totalTax || 0) > 0) {
+            text += this.padColumns('Total Pajak:', (data.totalTax || 0).toLocaleString('id-ID'), paperWidth, isPreview) + '\n';
+        }
         text += BOLD_ON + this.padColumns('TOTAL BERSIH (NET):', (data.totalSales || 0).toLocaleString('id-ID'), paperWidth, isPreview) + BOLD_OFF + '\n';
         const avgOrder = data.totalOrders > 0 ? Math.round(data.totalSales / data.totalOrders) : 0;
         text += this.padColumns('Rata-rata/Order:', avgOrder.toLocaleString('id-ID'), paperWidth, isPreview) + '\n';

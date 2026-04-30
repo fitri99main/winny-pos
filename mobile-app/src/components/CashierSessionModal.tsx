@@ -69,6 +69,8 @@ export default function CashierSessionModal({ visible, onClose, mode, session, o
             let cash = 0;
             let nonCash = 0;
             let total = 0;
+            let totalTax = 0;
+            let totalDiscount = 0;
             let completedCount = 0;
             let paySummary: Record<string, number> = {};
 
@@ -81,6 +83,8 @@ export default function CashierSessionModal({ visible, onClose, mode, session, o
                     // ALWAYS use total_amount for revenue/cash calculations to prevent change (kembalian) from inflating the cash drawer amount
                     const amount = (sale.total_amount || 0);
                     total += amount;
+                    totalTax += (sale.tax || 0);
+                    totalDiscount += (sale.discount || 0);
                     const method = (sale.payment_method || 'Tunai').trim();
                     paySummary[method] = (paySummary[method] || 0) + amount;
 
@@ -187,6 +191,8 @@ export default function CashierSessionModal({ visible, onClose, mode, session, o
                 cash_expenses: cashExpenses,
                 cash_topups: cashTopups,
                 total_sales: total,
+                total_tax: totalTax,
+                total_discount: totalDiscount,
                 total_orders: completedCount, 
                 expected_cash: startCash + cash + cashTopups - cashRefunds - cashExpenses,
                 payment_summary: Object.entries(paySummary).map(([method, amount]) => ({ method, amount })),
@@ -291,8 +297,8 @@ export default function CashierSessionModal({ visible, onClose, mode, session, o
                 dateRange: `${new Date(dataForReport.opened_at).toLocaleString('id-ID')} - ${new Date().toLocaleString('id-ID')}`,
                 totalOrders: dataForReport.total_orders,
                 totalSales: dataForReport.total_sales,
-                totalTax: 0,
-                totalDiscount: 0,
+                totalTax: dataForReport.total_tax || 0,
+                totalDiscount: dataForReport.total_discount || 0,
                 paymentSummary: dataForReport.payment_summary,
                 categorySummary: dataForReport.category_summary.map((c: any) => ({ category: c.name, amount: c.amount })),
                 productSummary: [],
