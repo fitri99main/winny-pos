@@ -241,21 +241,22 @@ export class PrinterManager {
 
         let hasTaxedItems = false;
         (orderData.items || []).forEach((item: any) => {
-            if (item.is_taxed) hasTaxedItems = true;
-            const label = `${item.quantity}x ${item.product_name || item.name}${item.is_taxed ? '*' : ''}`;
+            const isTaxed = item.is_taxed !== false;
+            if (isTaxed) hasTaxedItems = true;
+            const label = `${item.quantity}x ${item.product_name || item.name}${isTaxed ? '*' : ''}`;
             const price = (item.price * item.quantity).toLocaleString('id-ID');
             text += this.padColumns(label, price, paperWidth, isPreview) + '\n';
             if (item.notes) text += `  (${item.notes})\n`;
         });
         if (hasTaxedItems) {
-            text += LEFT + '  * = Produk Kena Pajak\n';
+            text += LEFT + '  (*) = Produk Kena Pajak\n';
         }
         text += LINE;
 
-        const total = orderData.total_amount || orderData.total || 0;
-        const discount = orderData.discount || 0;
-        const tax = orderData.tax || 0;
-        const service = orderData.service_charge || 0;
+        const total = Number(orderData.total_amount || orderData.total || 0);
+        const discount = Number(orderData.discount || 0);
+        const tax = Number(orderData.tax || 0);
+        const service = Number(orderData.service_charge || 0);
         const subtotal = total + discount - tax - service;
 
         text += this.padColumns('Subtotal', subtotal.toLocaleString('id-ID'), paperWidth, isPreview) + '\n';
@@ -422,12 +423,14 @@ export class PrinterManager {
         const filtered = items.filter(i => {
             const itarget = (i.target || '').toLowerCase().trim();
             if (type === 'kitchen') {
-                // Kitchen takes explicitly 'kitchen', 'dapur', 'kds', OR empty/waitress
-                return itarget === 'kitchen' || itarget === 'dapur' || itarget === 'kds' || !itarget || itarget === 'waitress';
+                // Kitchen takes explicitly 'kitchen', 'dapur', 'kds'
+                // It also takes empty/waitress ONLY if it's NOT a bar-related target
+                const isBarTarget = itarget === 'bar' || itarget === 'minuman' || itarget === 'minum' || itarget === 'drink' || itarget === 'coffee';
+                return (itarget === 'kitchen' || itarget === 'dapur' || itarget === 'kds' || !itarget || itarget === 'waitress') && !isBarTarget;
             }
-            // Bar takes 'bar', 'minuman', 'minum', or 'drink'
+            // Bar takes 'bar', 'minuman', 'minum', 'drink', or 'coffee'
             if (type === 'bar') {
-                return itarget === 'bar' || itarget === 'minuman' || itarget === 'minum' || itarget === 'drink';
+                return itarget === 'bar' || itarget === 'minuman' || itarget === 'minum' || itarget === 'drink' || itarget === 'coffee';
             }
             return itarget === type;
         });
@@ -524,7 +527,7 @@ export class PrinterManager {
         text += BOLD_ON + 'BUKTI FISIK KAS' + BOLD_OFF + '\n';
         text += this.padColumns('Total Penjualan Tunai:', (data.cashTotal || 0).toLocaleString('id-ID'), paperWidth, isPreview) + '\n';
         text += this.padColumns('Modal Awal:', (data.openingBalance || 0).toLocaleString('id-ID'), paperWidth, isPreview) + '\n';
-        text += BOLD_ON + this.padColumns('Total Seharusnya (Tunai+Modal):', (data.expectedCash || 0).toLocaleString('id-ID'), paperWidth, isPreview) + BOLD_OFF + '\n';
+        text += BOLD_ON + this.padColumns('Total (Uang Laci+Modal):', (data.expectedCash || 0).toLocaleString('id-ID'), paperWidth, isPreview) + BOLD_OFF + '\n';
         
         if (data.actualCash !== undefined) {
             text += this.padColumns('Kas Fisik Kasir:', (data.actualCash || 0).toLocaleString('id-ID'), paperWidth, isPreview) + '\n';

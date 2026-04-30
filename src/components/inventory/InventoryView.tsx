@@ -618,6 +618,77 @@ export function InventoryView({
                     </div>
                 </div>
             )}
+            {/* Stock Card Modal (History per Ingredient) */}
+            {isStockCardOpen && selectedIngredient && (
+                <div onClick={() => setIsStockCardOpen(false)} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                    <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-[40px] shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+                        <div className="p-8 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl">
+                                    <History className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <h3 className="text-xl font-black text-gray-800">Kartu Stok: {selectedIngredient.name}</h3>
+                                    <p className="text-gray-500 text-sm">Riwayat mutasi keluar masuk bahan baku.</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-6">
+                                <div className="text-right">
+                                    <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Stok Saat Ini</div>
+                                    <div className="text-xl font-black text-blue-600">{selectedIngredient.current_stock} <span className="text-xs font-medium text-gray-400">{selectedIngredient.unit}</span></div>
+                                </div>
+                                <button onClick={() => setIsStockCardOpen(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                                    <Plus className="w-6 h-6 rotate-45 text-gray-400" />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-auto p-0">
+                            <table className="w-full text-sm text-left border-collapse">
+                                <thead className="sticky top-0 bg-white z-10 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-50">
+                                    <tr>
+                                        <th className="px-8 py-4">Tanggal</th>
+                                        <th className="px-8 py-4 text-center">Tipe</th>
+                                        <th className="px-8 py-4 text-right">Mutasi</th>
+                                        <th className="px-8 py-4">Keterangan</th>
+                                        <th className="px-8 py-4 text-center">Petugas</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-50">
+                                    {movements
+                                        .filter(m => m.ingredientId === selectedIngredient.id)
+                                        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                                        .map(mov => (
+                                            <tr key={mov.id} className="hover:bg-gray-50/50 transition-colors">
+                                                <td className="px-8 py-4 text-gray-500 font-mono text-xs">{mov.date}</td>
+                                                <td className="px-8 py-4 text-center">
+                                                    <span className={`px-2 py-0.5 rounded-full font-black uppercase text-[9px] ${mov.type === 'IN' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
+                                                        {mov.type === 'IN' ? 'IN' : 'OUT'}
+                                                    </span>
+                                                </td>
+                                                <td className={`px-8 py-4 text-right font-bold ${mov.type === 'IN' ? 'text-emerald-600' : 'text-red-500'}`}>
+                                                    {mov.type === 'IN' ? '+' : '-'}{mov.quantity} {mov.unit}
+                                                </td>
+                                                <td className="px-8 py-4 text-gray-600 italic text-xs">"{mov.reason}"</td>
+                                                <td className="px-8 py-4 text-center">
+                                                    <span className="font-medium text-gray-500">{mov.user}</span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    {movements.filter(m => m.ingredientId === selectedIngredient.id).length === 0 && (
+                                        <tr>
+                                            <td colSpan={5} className="px-8 py-20 text-center text-gray-400 italic">Belum ada riwayat mutasi untuk bahan ini.</td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-end">
+                            <Button onClick={() => setIsStockCardOpen(false)}>Tutup</Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

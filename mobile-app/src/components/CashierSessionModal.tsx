@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Modal, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, ScrollView, Alert, Animated } from 'react-native';
+import { View, Text, Modal, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, ScrollView, Alert, Animated, Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { PrinterManager } from '../lib/PrinterManager';
 import { useSession } from '../context/SessionContext';
@@ -140,13 +140,55 @@ export default function CashierSessionModal({ visible, onClose, mode, session, o
                 }
             }
 
+            // [NEW] Fetch Returns during the shift (Subtract from Expected Cash)
+            let cashRefunds = 0;
+            try {
+                const { data: returnData } = await supabase
+                    .from('sales_returns')
+                    .select('refund_amount, payment_method')
+                    .eq('branch_id', currentBranchId || session.branch_id)
+                    .gte('created_at', openedAt);
+                
+                (returnData || []).forEach(ret => {
+                    const method = (ret.payment_method || '').toLowerCase().trim();
+                    if (['tunai', 'cash', 'uang tunai'].includes(method)) {
+                        cashRefunds += (Number(ret.refund_amount) || 0);
+                    }
+                });
+            } catch (err) {
+                console.error('[Shift] Error fetching refunds:', err);
+            }
+
+            // [NEW] Fetch Petty Cash Expenses during the shift (Subtract from Expected Cash)
+            let cashExpenses = 0;
+            let cashTopups = 0;
+            try {
+                const { data: expenseData } = await supabase
+                    .from('petty_cash_transactions')
+                    .select('amount, type, description')
+                    .gte('created_at', openedAt);
+                
+                (expenseData || []).forEach(exp => {
+                    if (exp.type === 'SPEND') {
+                        cashExpenses += (Number(exp.amount) || 0);
+                    } else if (exp.type === 'TOPUP' && exp.description !== 'Saldo Awal') {
+                        cashTopups += (Number(exp.amount) || 0);
+                    }
+                });
+            } catch (err) {
+                console.error('[Shift] Error fetching expenses:', err);
+            }
+
             const startCash = parseFloat(session.starting_cash) || 0;
             setClosingData({
                 cash_sales: cash,
                 non_cash_sales: nonCash,
+                cash_refunds: cashRefunds,
+                cash_expenses: cashExpenses,
+                cash_topups: cashTopups,
                 total_sales: total,
                 total_orders: completedCount, 
-                expected_cash: startCash + cash,
+                expected_cash: startCash + cash + cashTopups - cashRefunds - cashExpenses,
                 payment_summary: Object.entries(paySummary).map(([method, amount]) => ({ method, amount })),
                 category_summary: Object.entries(catSummary).map(([name, amount]) => ({ name, amount })),
                 product_summary: Object.entries(prodSummary).map(([name, data]) => ({ name, ...data }))
@@ -213,7 +255,15 @@ export default function CashierSessionModal({ visible, onClose, mode, session, o
             setLoading(false);
             onClose();
             setTimeout(async () => {
-                await supabase.auth.signOut();
+                try {
+                    // Non-blocking sign out with timeout
+                    await Promise.race([
+                        supabase.auth.signOut(),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('Sign out timeout')), 3000))
+                    ]).catch(err => console.warn('[Shift] Sign out timeout or error:', err));
+                } catch (e) {
+                    console.error('[Shift] Final sign out error:', e);
+                }
                 onComplete();
             }, 500);
         } catch (err: any) {
@@ -313,7 +363,7 @@ export default function CashierSessionModal({ visible, onClose, mode, session, o
                                         </View>
                                         
                                         <View style={styles.expectedBox}>
-                                            <Text style={styles.expectedLabel}>TOTAL (TUNAI+TUNAI SISTEM)</Text>
+                                            <Text style={styles.expectedLabel}>TOTAL (TUNAI+SISTEM)</Text>
                                             <Text style={styles.expectedValue}>{formatCurrency(closingData?.expected_cash)}</Text>
                                         </View>
 

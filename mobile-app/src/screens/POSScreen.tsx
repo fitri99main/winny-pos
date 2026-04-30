@@ -34,6 +34,31 @@ const generateNumericId = () => {
     return parseInt(`${timestamp}${random}`);
 };
 
+const resolveItemTarget = (product: any) => {
+    let target = (product.target || '').trim();
+    
+    // If target is already Bar or Kitchen, keep it (but normalize)
+    const lowTarget = target.toLowerCase();
+    if (lowTarget === 'bar' || lowTarget === 'kitchen' || lowTarget === 'dapur') {
+        return target;
+    }
+
+    // Heuristic based on category if target is empty or 'Waitress'
+    if (!target || lowTarget === 'waitress') {
+        const categoryLow = (product.category_name || product.category || '').toLowerCase();
+        if (categoryLow.includes('makan') || categoryLow.includes('food')) return 'Kitchen';
+        if (categoryLow.includes('minum') || categoryLow.includes('drink') || categoryLow.includes('bar') || 
+            categoryLow.includes('coffee') || categoryLow.includes('kopi') || categoryLow.includes('teh') ||
+            categoryLow.includes('jus') || categoryLow.includes('juice') || categoryLow.includes('susu') ||
+            categoryLow.includes('milk') || categoryLow.includes('es') || categoryLow.includes('ice') ||
+            categoryLow.includes('latte') || categoryLow.includes('boba') || categoryLow.includes('thai')) {
+            return 'Bar';
+        }
+    }
+
+    return target || 'Kitchen'; // Default to Kitchen
+};
+
 const ProductCard = memo(({ item, isTablet, onAdd, formatCurrency }: any) => {
     return (
         <TouchableOpacity
@@ -79,14 +104,19 @@ const ProductCard = memo(({ item, isTablet, onAdd, formatCurrency }: any) => {
                 }} numberOfLines={1}>
                     {item.name}
                 </Text>
-                <Text style={{
-                    fontSize: isTablet ? 10 : 7.5,
-                    color: '#fdba74',
-                    fontWeight: 'bold',
-                    marginTop: 0
-                }}>
-                    {formatCurrency(item.price)}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                    <Text style={{
+                        fontSize: isTablet ? 10 : 7.5,
+                        color: '#fdba74',
+                        fontWeight: 'bold',
+                        marginTop: 0
+                    }}>
+                        {formatCurrency(item.price)}
+                    </Text>
+                    {item.is_taxed !== false && (
+                        <Text style={{ color: '#fdba74', fontSize: isTablet ? 10 : 8, fontWeight: 'bold' }}>*</Text>
+                    )}
+                </View>
             </View>
         </TouchableOpacity>
     );
@@ -188,6 +218,7 @@ export default function POSScreen() {
     const lastFetchTime = React.useRef(0);
     const fetchInProgress = React.useRef(false);
     const fetchTimeoutRef = React.useRef<any>(null);
+    const paymentInProgress = React.useRef(false);
     const retryTimerRef = React.useRef<any>(null);
     const channelRef = React.useRef<any>(null);
     const isFirstRender = React.useRef(true);
@@ -689,12 +720,19 @@ export default function POSScreen() {
                 try {
                     let count = 1;
 
-                    // [ENHANCED] Multiplier logic with fallback to minAmount
+                    // [RESTORED] Previously working logic: Use multiplier if set, otherwise use minAmount as the multiple.
+                    // This ensures 15000 = 1 voucher, 30000 = 2 vouchers if multiplier is not explicitly set.
                     const effectiveMultiplier = multiplier > 0 ? multiplier : (minAmount > 0 ? minAmount : 15000);
-                    // Ensure at least 1 voucher if minimum amount is reached
-                    count = Math.max(1, Math.floor(totalAmount / effectiveMultiplier));
+                    
+                    // Calculate count based on multiples
+                    count = Math.floor(totalAmount / effectiveMultiplier);
+                    
+                    // Final safety: ensure at least 1 if they met the minimum spend
+                    if (count < 1 && totalAmount >= minAmount) {
+                        count = 1;
+                    }
 
-                    console.log(`[POSScreen] WiFi Voucher Logic: total=${totalAmount}, min=${minAmount}, mult=${multiplier}, effective=${effectiveMultiplier}, count=${count}`);
+                    console.log(`[POSScreen] WiFi Voucher Logic: total=${totalAmount}, min=${minAmount}, mult=${multiplier}, count=${count}`);
 
                     if (count > 0) {
                         wifiVoucher = await WifiVoucherService.getVoucherForSale(sale.id, currentBranchId || '1', count);
@@ -753,11 +791,11 @@ export default function POSScreen() {
             shop_phone: branchPhone,
             items: sale.sale_items.map((si: any) => ({
                 name: si.product ? si.product.name : si.product_name,
-                price: si.price,
-                quantity: si.quantity,
-                target: si.target || 'Kitchen',
+                price: Number(si.price || 0),
+                quantity: Number(si.quantity || 0),
+                target: resolveItemTarget(si.product ? { ...si.product, target: si.target } : { category: '', target: si.target }),
                 category: si.product?.category || '',
-                is_taxed: si.is_taxed || si.product?.is_taxed || false,
+                is_taxed: si.is_taxed !== false && si.product?.is_taxed !== false,
                 notes: si.notes || ''
             }))
         };
@@ -1088,7 +1126,7 @@ export default function POSScreen() {
                     name: si.product_name || si.product?.name,
                     price: si.price,
                     quantity: si.quantity,
-                    target: si.target,
+                    target: resolveItemTarget(si.product ? { ...si.product, target: si.target } : { category: '', target: si.target }),
                     notes: si.notes || ''
                 }));
 
@@ -1386,14 +1424,7 @@ export default function POSScreen() {
     };
 
     const addToCart = useCallback((product: any) => {
-        let target = product.target || 'Kitchen';
-
-        // Fallback heuristic if target is not defined or is 'Waitress'
-        if (target === 'Waitress' || !product.target) {
-            const categoryLow = (product.category_name || product.category || '').toLowerCase();
-            if (categoryLow.includes('makan') || categoryLow.includes('food')) target = 'Kitchen';
-            else if (categoryLow.includes('minum') || categoryLow.includes('drink') || categoryLow.includes('bar') || categoryLow.includes('coffee')) target = 'Bar';
-        }
+        const target = resolveItemTarget(product);
 
         setCart(prevCart => {
             const existingItem = prevCart.find(item => item.id === product.id);
@@ -1462,16 +1493,26 @@ export default function POSScreen() {
 
     const calculateTaxAmount = () => {
         const taxableSubtotal = calculateTaxableSubtotal();
+        const subtotal = calculateSubtotal();
         const taxRate = storeSettings?.tax_rate || 0;
 
-        return (taxableSubtotal * taxRate) / 100;
+        // Apply discount ratio to taxable amount to match web logic
+        const discountRatio = subtotal > 0 ? (subtotal - orderDiscount) / subtotal : 0;
+        const taxableAmount = taxableSubtotal * discountRatio;
+
+        return (taxableAmount * taxRate) / 100;
     };
 
     const calculateServiceAmount = () => {
         const taxableSubtotal = calculateTaxableSubtotal();
+        const subtotal = calculateSubtotal();
         const serviceRate = storeSettings?.service_rate || 0;
 
-        return (taxableSubtotal * serviceRate) / 100;
+        // Apply discount ratio to taxable amount to match web logic
+        const discountRatio = subtotal > 0 ? (subtotal - orderDiscount) / subtotal : 0;
+        const taxableAmount = taxableSubtotal * discountRatio;
+
+        return (taxableAmount * serviceRate) / 100;
     };
 
     const calculateTotal = () => {
@@ -1730,6 +1771,9 @@ export default function POSScreen() {
     };
 
     const handleCheckout = async () => {
+        if (paymentInProgress.current) return;
+        paymentInProgress.current = true;
+
         // [FIXED] Close Cart Modal immediately to remove the "floating" screen 
         // as soon as the user confirms their order.
         setShowCartModal(false);
@@ -1746,28 +1790,33 @@ export default function POSScreen() {
 
         if (!isSessionActive && cashierMode && !isActuallyDisplay && !isAdmin) {
             Alert.alert('Shift Belum Dibuka', 'Anda wajib membuka shift kasir terlebih dahulu sebelum bertransaksi.');
+            paymentInProgress.current = false;
             return;
         }
 
         if (sessionLoading) {
             Alert.alert('Satu Momen', 'Sedang mensinkronisasi data pengguna...');
+            paymentInProgress.current = false;
             return;
         }
 
         if (cart.length === 0) {
             Alert.alert('Info', 'Keranjang masih kosong');
+            paymentInProgress.current = false;
             return;
         }
 
 
         if (cashierMode && !isActuallyDisplay) {
             setShowPaymentModal(true);
+            paymentInProgress.current = false;
             return;
         }
 
         try {
             if (!currentBranchId) {
                 Alert.alert('Error', 'Data cabang belum dimuat. Silakan tunggu atau login ulang.');
+                paymentInProgress.current = false;
                 return;
             }
             const totalAmount = calculateTotal();
@@ -1802,9 +1851,9 @@ export default function POSScreen() {
                 quantity: item.quantity,
                 price: item.price,
                 cost: 0,
-                target: item.target || 'Kitchen',
+                target: resolveItemTarget(item),
                 status: 'Pending',
-                is_taxed: item.is_taxed || false,
+                is_taxed: item.is_taxed !== false,
                 notes: item.notes || ''
             }));
 
@@ -1854,8 +1903,12 @@ export default function POSScreen() {
             const runCheckoutPrints = async () => {
                 try {
                     if (finalSaleId) {
-                        // handlePrintReceipt(finalSaleId, orderNoText); removed to avoid double printing with payment
-                        maybeAutoPreviewReceipt(finalSaleId, orderNoText);
+                        const paymentOverride = {
+                            discount: orderDiscount,
+                            tax: calculateTaxAmount(),
+                            service_charge: calculateServiceAmount()
+                        };
+                        maybeAutoPreviewReceipt(finalSaleId, orderNoText, paymentOverride);
                     }
                     await triggerTargetPrints(orderNoText, itemsToInsert);
                 } catch (pErr) {
@@ -1954,12 +2007,18 @@ export default function POSScreen() {
             }
 
             Alert.alert('Gagal Mengirim Pesanan', errorMessage, alertButtons);
+        } finally {
+            paymentInProgress.current = false;
         }
     };
 
     const handlePaymentConfirm = async (paymentData: { method: string; amount: number; change: number }) => {
+        if (paymentInProgress.current) return;
+        paymentInProgress.current = true;
+
         if (!currentBranchId) {
             Alert.alert('Error', 'Data cabang belum dimuat.');
+            paymentInProgress.current = false;
             return;
         }
         try {
@@ -2027,7 +2086,7 @@ export default function POSScreen() {
                 quantity: item.quantity,
                 price: item.price,
                 cost: 0,
-                target: item.target || 'Waitress',
+                target: resolveItemTarget(item),
                 status: 'Pending',
                 is_taxed: item.is_taxed || false,
                 notes: item.notes || ''
@@ -2208,8 +2267,8 @@ export default function POSScreen() {
                             waiter_name: userName || selectedWaiter,
                             total_amount: finalTotal,
                             discount: orderDiscount,
-                            tax: currentTax || 0,
-                            service_charge: currentService || 0,
+                            tax: calculateTaxAmount(), // using calculated values
+                            service_charge: calculateServiceAmount(),
                             status: 'Paid',
                             payment_method: paymentData.method,
                             paid_amount: paymentData.amount,
@@ -2244,6 +2303,9 @@ export default function POSScreen() {
             }
 
             Alert.alert('Gagal Memproses Pembayaran', errorMessage, alertButtons);
+            throw error; // Re-throw to inform PaymentModal
+        } finally {
+            paymentInProgress.current = false;
         }
     };
 
@@ -3131,7 +3193,7 @@ export default function POSScreen() {
                                     <View key={item.id} style={{ marginBottom: 12, backgroundColor: 'white', borderRadius: 14, borderWidth: 1, borderColor: '#eef2f7', padding: 12 }}>
                                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                             <View style={{ flex: 1 }}>
-                                                <Text style={{ fontSize: 14, fontWeight: '700', color: '#111827' }}>{item.name}</Text>
+                                                <Text style={{ fontSize: 14, fontWeight: '700', color: '#111827' }}>{item.name}{item.is_taxed !== false ? '*' : ''}</Text>
                                                 <Text style={{ fontSize: 13, color: '#ea580c', fontWeight: '800', marginTop: 4 }}>{formatCurrency(item.price)}</Text>
                                                 <TextInput
                                                     style={{ backgroundColor: '#fff7ed', borderRadius: 8, padding: 8, marginTop: 8, fontSize: 12 }}

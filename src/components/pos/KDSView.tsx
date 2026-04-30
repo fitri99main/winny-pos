@@ -41,7 +41,7 @@ export function KDSView({ orders = [], onUpdateStatus }: KDSViewProps) {
         tableNo: sale.tableNo || '?',
         waiterName: sale.waiterName || 'Server',
         time: sale.time || (sale.date ? new Date(sale.date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-'),
-        items: (sale.items || []).map((item: any) => ({
+        items: (sale.productDetails || []).map((item: any) => ({
             name: productDetailsToName(item),
             quantity: item.quantity,
             status: item.status || 'Pending',

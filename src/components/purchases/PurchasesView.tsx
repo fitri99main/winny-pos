@@ -139,25 +139,21 @@ export function PurchasesView({
         toast.success(`Menambahkan ${item.name}`);
     };
 
-    const handleUpdateQty = (id: string, qty: number) => {
-        if (qty <= 0) {
-            setPurchaseItems(prev => prev.filter(i => i.id !== id));
-            return;
-        }
+    const handleUpdateQty = (id: string, qty: any) => {
         setPurchaseItems(prev => prev.map(i => i.id === id ? { ...i, quantity: qty } : i));
     };
 
-    const handleUpdatePrice = (id: string, price: number) => {
+    const handleUpdatePrice = (id: string, price: any) => {
         setPurchaseItems(prev => prev.map(i => i.id === id ? { ...i, price } : i));
     };
 
-    const handleUpdateSellingPrice = (id: string, sellingPrice: number) => {
+    const handleUpdateSellingPrice = (id: string, sellingPrice: any) => {
         setPurchaseItems(prev => prev.map(i => i.id === id ? { ...i, sellingPrice } : i));
     };
 
-    const totalAmount = useMemo(() => {
-        return purchaseItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    }, [purchaseItems]);
+    // Calculate total amount directly to ensure it's always fresh
+    const totalAmount = purchaseItems.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 0)), 0);
+    const totalItemsCount = purchaseItems.reduce((sum, item) => sum + (Number(item.quantity || 0)), 0);
 
     const handleInputSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -177,7 +173,7 @@ export function PurchasesView({
             supplier_invoice_no: inputForm.supplierInvoiceNo || '', // Add to payload
             supplier_name: inputForm.supplierName,
             date: inputForm.date || new Date().toISOString().split('T')[0],
-            items_count: purchaseItems.reduce((sum, i) => sum + i.quantity, 0),
+            items_count: totalItemsCount,
             total_amount: totalAmount,
             status: isEditing ? inputForm.status : 'Pending',
             payment_method: inputForm.payment_method || 'Tunai',
@@ -474,36 +470,51 @@ export function PurchasesView({
                                         <td className="px-4 py-3 text-center text-gray-400 text-[10px]">{item.unit || '-'}</td>
                                         <td className="px-4 py-3 text-center">
                                             <div className="flex items-center justify-center gap-1.5">
-                                                <button onClick={() => handleUpdateQty(item.id, item.quantity - 1)} className="w-5 h-5 rounded bg-gray-100 flex items-center justify-center text-xs font-bold">-</button>
+                                                <button onClick={() => handleUpdateQty(item.id, (Number(item.quantity) || 0) - 1)} className="w-5 h-5 rounded bg-gray-100 flex items-center justify-center text-xs font-bold">-</button>
                                                 <input
-                                                    type="number"
+                                                    type="text"
                                                     value={item.quantity}
                                                     onFocus={(e) => e.target.select()}
-                                                    onChange={(e) => handleUpdateQty(item.id, parseInt(e.target.value) || 0)}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        if (val === '' || /^\d+$/.test(val)) {
+                                                            handleUpdateQty(item.id, val === '' ? '' : parseInt(val));
+                                                        }
+                                                    }}
                                                     className="w-10 text-center border-none bg-transparent font-black text-xs"
                                                 />
-                                                <button onClick={() => handleUpdateQty(item.id, item.quantity + 1)} className="w-5 h-5 rounded bg-gray-100 flex items-center justify-center text-xs font-bold">+</button>
+                                                <button onClick={() => handleUpdateQty(item.id, (Number(item.quantity) || 0) + 1)} className="w-5 h-5 rounded bg-gray-100 flex items-center justify-center text-xs font-bold">+</button>
                                             </div>
                                         </td>
                                         <td className="px-4 py-3 text-right">
                                             <input
-                                                type="number"
+                                                type="text"
                                                 value={item.price}
                                                 onFocus={(e) => e.target.select()}
-                                                onChange={(e) => handleUpdatePrice(item.id, parseFloat(e.target.value) || 0)}
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                                                        handleUpdatePrice(item.id, val);
+                                                    }
+                                                }}
                                                 className="w-20 text-right border-gray-100 border rounded-lg px-2 py-1 bg-gray-50 font-bold text-xs"
                                             />
                                         </td>
                                         <td className="px-4 py-3 text-right">
                                             <input
-                                                type="number"
+                                                type="text"
                                                 value={item.sellingPrice}
                                                 onFocus={(e) => e.target.select()}
-                                                onChange={(e) => handleUpdateSellingPrice(item.id, parseFloat(e.target.value) || 0)}
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                                                        handleUpdateSellingPrice(item.id, val);
+                                                    }
+                                                }}
                                                 className="w-20 text-right border-blue-50 border rounded-lg px-2 py-1 bg-blue-50 text-blue-700 font-bold text-xs"
                                             />
                                         </td>
-                                        <td className="px-4 py-3 text-right font-black text-xs">Rp {(item.price * item.quantity).toLocaleString()}</td>
+                                        <td className="px-4 py-3 text-right font-black text-xs">Rp {(Number(item.price || 0) * Number(item.quantity || 0)).toLocaleString()}</td>
                                         <td className="px-4 py-3 text-center">
                                             <button onClick={() => handleUpdateQty(item.id, 0)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
                                                 <Trash2 className="w-3.5 h-3.5" />
@@ -640,25 +651,57 @@ export function PurchasesView({
                             </div>
                         </div>
 
-                        <Button 
-                            onClick={handleInputSubmit} 
-                            className={`w-full h-12 rounded-xl text-sm font-black shadow-lg transition-all ${
-                                isEditing 
-                                ? 'bg-indigo-600 hover:bg-indigo-700 text-white' 
-                                : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-100'
-                            }`} 
-                            disabled={purchaseItems.length === 0}
-                        >
-                            {isEditing ? 'UPDATE' : 'SIMPAN PEMBELIAN'}
-                        </Button>
+                        <div className="flex gap-3">
+                            <Button 
+                                variant="outline"
+                                onClick={() => {
+                                    setInputForm({ 
+                                        date: new Date().toISOString().split('T')[0], 
+                                        supplierName: '', 
+                                        supplierInvoiceNo: '',
+                                        purchaseNo: '',
+                                        payment_method: 'Tunai'
+                                    });
+                                    setPurchaseItems([]);
+                                    setIsEditing(false);
+                                    setIsManualSupplier(false);
+                                    setEditingId(null);
+                                    setActiveTab('history');
+                                }}
+                                className="flex-1 h-12 rounded-xl text-sm font-black border-gray-200 text-gray-400 hover:bg-gray-50 transition-all"
+                            >
+                                BATAL
+                            </Button>
+                            <Button 
+                                onClick={handleInputSubmit} 
+                                className={`flex-[2] h-12 rounded-xl text-sm font-black shadow-lg transition-all ${
+                                    isEditing 
+                                    ? 'bg-indigo-600 hover:bg-indigo-700 text-white' 
+                                    : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-100'
+                                }`} 
+                                disabled={purchaseItems.length === 0}
+                            >
+                                {isEditing ? 'UPDATE' : 'SIMPAN PEMBELIAN'}
+                            </Button>
+                        </div>
                     </div>
                 </div>
 
                 {/* Manual Item Input - Slim Version */}
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                        <Plus className="w-3 h-3 text-blue-600" /> Item Baru
-                    </h3>
+                    <div className="flex justify-between items-center mb-3">
+                        <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                            <Plus className="w-3 h-3 text-blue-600" /> Item Baru
+                        </h3>
+                        {(manualItemForm.name || manualItemForm.price) && (
+                            <button 
+                                onClick={() => setManualItemForm({ name: '', price: '', sellingPrice: '', selectedItemId: '' })}
+                                className="text-[9px] font-bold text-red-500 hover:text-red-700 uppercase"
+                            >
+                                [Hapus Draft]
+                            </button>
+                        )}
+                    </div>
                     <div className="space-y-2">
                         <div className="relative">
                             <input

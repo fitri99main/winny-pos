@@ -100,7 +100,7 @@ export default function PurchasesScreen() {
 
         setLoading(true);
         try {
-            const totalAmount = purchaseItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+            const totalAmount = purchaseItems.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 0)), 0);
             const finalPO = purchaseNo || `PO-MOB-${Date.now().toString().slice(-6)}`;
 
             const payload = {
@@ -473,8 +473,13 @@ export default function PurchasesScreen() {
                         </View>
                     </View>
 
-                    {/* Quick Item List for Prototype/Easy Add */}
                     <View style={styles.formGroup}>
+                        <View style={styles.totalSummaryBox}>
+                            <Text style={styles.totalSummaryLabel}>Total Bayar</Text>
+                            <Text style={styles.totalSummaryValue}>
+                                {formatCurrency(purchaseItems.reduce((sum, i) => sum + (Number(i.price || 0) * Number(i.quantity || 0)), 0))}
+                            </Text>
+                        </View>
                         <Text style={styles.label}>Klik untuk Tambah Item</Text>
                         <View style={styles.quickList}>
                             {masterItems.slice(0, 10).map(item => (
@@ -499,9 +504,30 @@ export default function PurchasesScreen() {
                         </View>
                     </View>
 
-                    <TouchableOpacity style={[styles.saveButton, isEditing && { backgroundColor: '#2563eb' }]} onPress={handleSavePurchase}>
-                        <Text style={styles.saveButtonText}>{isEditing ? 'Update Pembelian' : 'Simpan Pembelian'}</Text>
-                    </TouchableOpacity>
+                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
+                        <TouchableOpacity 
+                            style={[styles.saveButton, { flex: 1, backgroundColor: '#f1f5f9', marginTop: 0 }]} 
+                            onPress={() => {
+                                setPurchaseItems([]);
+                                setSupplier('');
+                                setManualSupplierName('');
+                                setIsManualSupplier(false);
+                                setIsEditing(false);
+                                setEditingId(null);
+                                setPurchaseNo('');
+                                setPaymentMethod('Tunai');
+                                setActiveTab('history');
+                            }}
+                        >
+                            <Text style={{ color: '#64748b', fontWeight: 'bold', fontSize: 16 }}>Batal</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={[styles.saveButton, { flex: 2, marginTop: 0 }, isEditing && { backgroundColor: '#2563eb' }]} 
+                            onPress={handleSavePurchase}
+                        >
+                            <Text style={styles.saveButtonText}>{isEditing ? 'Update' : 'Simpan'}</Text>
+                        </TouchableOpacity>
+                    </View>
 
                 </ScrollView>
                 </View>
@@ -559,7 +585,15 @@ export default function PurchasesScreen() {
             <Modal visible={showManualItemModal} animationType="fade" transparent={true}>
                 <View style={[styles.modalOverlay, { justifyContent: 'center', padding: 20 }]}>
                     <View style={[styles.modalContent, { height: 'auto', borderRadius: 20 }]}>
-                        <Text style={[styles.modalTitle, { marginBottom: 20 }]}>Tambah Item Manual</Text>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                            <Text style={styles.modalTitle}>Tambah Item Manual</Text>
+                            <TouchableOpacity onPress={() => {
+                                setShowManualItemModal(false);
+                                setManualItemForm({ name: '', price: '' });
+                            }}>
+                                <Text style={{ color: '#ef4444', fontWeight: 'bold' }}>Tutup</Text>
+                            </TouchableOpacity>
+                        </View>
                         
                         <View style={styles.formGroup}>
                             <Text style={styles.label}>Nama Item</Text>
@@ -582,9 +616,9 @@ export default function PurchasesScreen() {
                             />
                         </View>
 
-                        <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                        <View style={{ flexDirection: 'row', gap: 10, marginTop: 15 }}>
                             <TouchableOpacity 
-                                style={[styles.saveButton, { flex: 1, backgroundColor: '#f1f5f9' }]}
+                                style={[styles.saveButton, { flex: 1, backgroundColor: '#f1f5f9', marginTop: 0 }]}
                                 onPress={() => {
                                     setShowManualItemModal(false);
                                     setManualItemForm({ name: '', price: '' });
@@ -762,5 +796,25 @@ const styles = StyleSheet.create({
     },
     activePaymentTagText: {
         color: '#fff',
+    },
+    totalSummaryBox: {
+        backgroundColor: '#1e293b',
+        padding: 20,
+        borderRadius: 15,
+        marginBottom: 20,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    totalSummaryLabel: {
+        color: '#94a3b8',
+        fontSize: 12,
+        fontWeight: 'bold',
+        textTransform: 'uppercase',
+    },
+    totalSummaryValue: {
+        color: '#fff',
+        fontSize: 24,
+        fontWeight: '800',
     },
 });

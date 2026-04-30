@@ -107,7 +107,7 @@ export default function ReceiptPreviewModal({ visible, onClose, orderData, onPri
                 <SafeAreaView style={styles.safeArea}>
                     <View style={[styles.card, { maxWidth: is80mm ? 420 : 320 }]}>
                         <View style={styles.header}>
-                            <Text style={styles.headerTitle}>Pratinjau Struk ({receipt_paper_width || '58mm'})</Text>
+                            <Text style={styles.headerTitle}>Pratinjau Struk ({receipt_paper_width || '58mm'}) v2</Text>
                             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
                                 <Text style={styles.closeBtnText}>✕</Text>
                             </TouchableOpacity>

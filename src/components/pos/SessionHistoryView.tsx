@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, memo } from 'react';
 import { History, Calendar, User, Search, Download, Eye, TrendingUp, DollarSign, Clock, Trash2, AlertTriangle, FileSpreadsheet } from 'lucide-react';
 import { utils, writeFile } from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -13,6 +15,8 @@ interface SessionHistory {
     starting_cash: number;
     actual_cash: number | null;
     total_sales: number;
+    cash_sales?: number;
+    qris_sales?: number;
     expected_cash: number;
     difference: number;
     opened_at: string;
@@ -255,30 +259,68 @@ export const SessionHistoryView = memo(function SessionHistoryView({ branchId }:
         toast.success('Excel Export berhasil!');
     };
 
-    const exportToCSV = () => {
-        const headers = ['Kasir', 'Dibuka', 'Ditutup', 'Modal Awal', 'Total Sales', 'Uang Akhir', 'Variance', 'Status'];
-        const rows = filteredSessions.map(s => [
-            s.user_name,
-            new Date(s.opened_at).toLocaleString('id-ID'),
-            s.closed_at ? new Date(s.closed_at).toLocaleString('id-ID') : '-',
-            s.starting_cash,
-            s.total_sales,
-            s.actual_cash || 0,
-            s.difference,
+
+
+    const exportToPDF = () => {
+        const doc = new jsPDF('l', 'mm', 'a4'); // Landscape orientation
+        
+        // Add Title
+        doc.setFontSize(18);
+        doc.text('Riwayat Session Kasir', 14, 22);
+        doc.setFontSize(11);
+        doc.setTextColor(100);
+        
+        const dateStr = new Date().toLocaleDateString('id-ID', {
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric'
+        });
+        doc.text(`Dicetak pada: ${dateStr}`, 14, 30);
+
+        // Define the columns and data
+        const tableColumn = ['Kasir', 'Dibuka', 'Ditutup', 'Modal', 'Tunai', 'Non-Tunai', 'Total', 'U. Akhir', 'Selisih (Akhir - (Mdl+Tni))', 'Status'];
+        const tableRows = filteredSessions.map(s => [
+            s.user_name || '-',
+            formatDateTime(s.opened_at),
+            formatDateTime(s.closed_at),
+            formatCurrency(s.starting_cash),
+            formatCurrency(s.cash_sales || 0),
+            formatCurrency(s.qris_sales || 0),
+            formatCurrency(s.total_sales),
+            formatCurrency(s.actual_cash || 0),
+            formatCurrency(s.difference),
             s.status
         ]);
 
-        const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `session-history-${new Date().toISOString().split('T')[0]}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-        toast.success('Export berhasil!');
+        // Generate the table
+        autoTable(doc, {
+            head: [tableColumn],
+            body: tableRows,
+            startY: 35,
+            theme: 'grid',
+            headStyles: { fillColor: [59, 130, 246], textColor: 255, fontStyle: 'bold' },
+            alternateRowStyles: { fillColor: [249, 250, 251] },
+            margin: { top: 35 },
+            styles: { fontSize: 8 }, // Slightly smaller font to fit the long header
+            columnStyles: {
+                8: { cellWidth: 40 } // Give more width to the formula column
+            }
+        });
+
+        // Add Legend/Note
+        const finalY = (doc as any).lastAutoTable.finalY || 150;
+        doc.setFontSize(8);
+        doc.setTextColor(150);
+        doc.text('Keterangan:', 14, finalY + 10);
+        doc.text('* Modal: Saldo awal laci kasir', 14, finalY + 15);
+        doc.text('* Tunai: Total penjualan uang tunai', 14, finalY + 20);
+        doc.text('* U. Akhir: Jumlah uang fisik di laci saat tutup kasir', 14, finalY + 25);
+        doc.text('* Selisih: Perhitungan untuk mencocokkan uang fisik dengan sistem (Uang Akhir - (Modal + Tunai))', 14, finalY + 30);
+
+        // Save the PDF
+        const fileName = `riwayat-sesi-${new Date().toISOString().split('T')[0]}.pdf`;
+        doc.save(fileName);
+        toast.success('PDF Export berhasil!');
     };
 
     const formatCurrency = (amount: number) => {
@@ -392,9 +434,9 @@ export const SessionHistoryView = memo(function SessionHistoryView({ branchId }:
                         <FileSpreadsheet className="w-4 h-4 mr-2" />
                         Export Excel
                     </Button>
-                    <Button onClick={exportToCSV} className="bg-green-600 hover:bg-green-700 text-white">
+                    <Button onClick={exportToPDF} className="bg-red-600 hover:bg-red-700 text-white">
                         <Download className="w-4 h-4 mr-2" />
-                        Export CSV
+                        Export PDF
                     </Button>
                 </div>
             </div>

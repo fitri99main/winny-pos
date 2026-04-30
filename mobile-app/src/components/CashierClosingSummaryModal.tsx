@@ -7,6 +7,9 @@ import ShiftSummaryPreviewModal from './ShiftSummaryPreviewModal';
 interface SummaryData {
     cash_sales: number;
     non_cash_sales: number;
+    cash_refunds?: number;
+    cash_expenses?: number;
+    cash_topups?: number;
     total_sales: number;
     total_orders: number;
     expected_cash: number;
@@ -185,9 +188,21 @@ export default function CashierClosingSummaryModal({
                                     <Text style={styles.itemLabelLight}>MODAL AWAL</Text>
                                     <Text style={styles.itemValueLight}>{formatCurrency(data.starting_cash)}</Text>
                                 </View>
+                                {((data.cash_topups || 0) > 0) && (
+                                    <View style={styles.itemRow}>
+                                        <Text style={styles.itemLabelLight}>TOP UP KAS</Text>
+                                        <Text style={styles.itemValueLight}>{formatCurrency(data.cash_topups || 0)}</Text>
+                                    </View>
+                                )}
+                                {((data.cash_refunds || 0) > 0 || (data.cash_expenses || 0) > 0) && (
+                                    <View style={styles.itemRow}>
+                                        <Text style={[styles.itemLabelLight, { color: '#fca5a5' }]}>RETUR & PENGELUARAN</Text>
+                                        <Text style={[styles.itemValueLight, { color: '#fca5a5' }]}>- {formatCurrency((data.cash_refunds || 0) + (data.cash_expenses || 0))}</Text>
+                                    </View>
+                                )}
                                 <View style={styles.divider} />
                                 <View style={styles.itemRow}>
-                                    <Text style={styles.itemLabelHighlight}>TOTAL (TUNAI+TUNAI SISTEM)</Text>
+                                    <Text style={styles.itemLabelHighlight}>TOTAL (TUNAI+SISTEM)</Text>
                                     <Text style={styles.itemValueHighlight}>{formatCurrency(data.expected_cash)}</Text>
                                 </View>
                                 {data.actual_cash !== undefined && (

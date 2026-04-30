@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, FlatList, StyleSheet, useWindowDimensions, ActivityIndicator, TextInput, Modal, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -33,6 +33,7 @@ export default function HistoryScreen() {
     const [searchQuery, setSearchQuery] = useState('');
     const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'month' | 'custom'>('today');
     const [statusFilter, setStatusFilter] = useState<'all' | 'Paid' | 'Pending'>('all');
+    const [cashierFilter, setCashierFilter] = useState('all');
     const [effectiveBranchId, setEffectiveBranchId] = useState(currentBranchId);
 
     // Sync effectiveBranchId with context but allow fallback
@@ -88,12 +89,23 @@ export default function HistoryScreen() {
         }, [dateFilter, startDate, endDate, effectiveBranchId])
     );
 
+    const availableCashiers = useMemo(() => {
+        if (!history || history.length === 0) return ['all'];
+        const unique = new Set(history.map(item => item.waiter_name || 'Kasir').filter(Boolean));
+        return ['all', ...Array.from(unique).sort()];
+    }, [history]);
+
     useEffect(() => {
         let filtered = history;
         
         // Apply status filter
         if (statusFilter !== 'all') {
             filtered = filtered.filter(item => item.status === statusFilter);
+        }
+
+        // Apply cashier filter
+        if (cashierFilter !== 'all') {
+            filtered = filtered.filter(item => (item.waiter_name || 'Kasir') === cashierFilter);
         }
         
         // Apply search query
@@ -887,9 +899,35 @@ export default function HistoryScreen() {
                         ))}
 
                         {/* Summary Section */}
-                        <View style={styles.summaryRow}>
-                            <Text style={styles.summaryLabel}>Total Pembayaran</Text>
-                            <Text style={styles.summaryValue}>{formatCurrency(selectedSale?.total_amount || 0)}</Text>
+                        <View style={{ marginTop: 8, borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 12, gap: 4 }}>
+                            <View style={styles.summaryRow}>
+                                <Text style={styles.summaryLabel}>Subtotal</Text>
+                                <Text style={styles.summaryValue}>
+                                    {formatCurrency((selectedSale?.total_amount || 0) + (selectedSale?.discount || 0) - (selectedSale?.tax || 0) - (selectedSale?.service_charge || 0))}
+                                </Text>
+                            </View>
+                            {(selectedSale?.discount > 0) && (
+                                <View style={styles.summaryRow}>
+                                    <Text style={[styles.summaryLabel, { color: '#ef4444' }]}>Diskon</Text>
+                                    <Text style={[styles.summaryValue, { color: '#ef4444' }]}>-{formatCurrency(selectedSale.discount)}</Text>
+                                </View>
+                            )}
+                            {(selectedSale?.service_charge > 0) && (
+                                <View style={styles.summaryRow}>
+                                    <Text style={styles.summaryLabel}>Layanan</Text>
+                                    <Text style={styles.summaryValue}>{formatCurrency(selectedSale.service_charge)}</Text>
+                                </View>
+                            )}
+                            {(selectedSale?.tax > 0) && (
+                                <View style={styles.summaryRow}>
+                                    <Text style={styles.summaryLabel}>Pajak</Text>
+                                    <Text style={styles.summaryValue}>{formatCurrency(selectedSale.tax)}</Text>
+                                </View>
+                            )}
+                            <View style={[styles.summaryRow, { marginTop: 4, borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 8 }]}>
+                                <Text style={[styles.summaryLabel, { fontWeight: 'bold', color: '#1e293b' }]}>Total Pembayaran</Text>
+                                <Text style={[styles.summaryValue, { fontWeight: 'bold', color: '#1e293b', fontSize: 16 }]}>{formatCurrency(selectedSale?.total_amount || 0)}</Text>
+                            </View>
                         </View>
                         </ScrollView>
                         <View style={styles.modalFooter}>
@@ -1206,6 +1244,25 @@ export default function HistoryScreen() {
                         </TouchableOpacity>
                     </ScrollView>
                 </View>
+
+                {availableCashiers.length > 1 && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+                        <User size={14} color="#64748b" style={{ marginRight: 8 }} />
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
+                            {availableCashiers.map(cashier => (
+                                <TouchableOpacity 
+                                    key={cashier}
+                                    style={[styles.statusToggle, cashierFilter === cashier && styles.statusToggleActive, { paddingHorizontal: 12 }]}
+                                    onPress={() => setCashierFilter(cashier)}
+                                >
+                                    <Text style={[styles.statusToggleText, cashierFilter === cashier && styles.statusToggleTextActive]}>
+                                        {cashier === 'all' ? 'Semua Kasir' : cashier}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
+                )}
             </View>
 
             {loading && history.length === 0 ? (

@@ -121,6 +121,44 @@ export function CashierSessionModal({
                 }
             });
 
+            // [NEW] Fetch Returns during the shift (Subtract from Expected Cash)
+            let cashRefunds = 0;
+            try {
+                const { data: returnData } = await supabase
+                    .from('sales_returns')
+                    .select('refund_amount, payment_method')
+                    .eq('branch_id', session.branch_id)
+                    .gte('created_at', openedAt);
+                
+                (returnData || []).forEach(ret => {
+                    if (['tunai', 'cash', 'uang tunai'].includes((ret.payment_method || '').toLowerCase().trim())) {
+                        cashRefunds += (Number(ret.refund_amount) || 0);
+                    }
+                });
+            } catch (err) {
+                console.error('Error fetching refunds:', err);
+            }
+
+            // [NEW] Fetch Petty Cash Expenses during the shift (Subtract from Expected Cash)
+            let cashExpenses = 0;
+            let cashTopups = 0;
+            try {
+                const { data: expenseData } = await supabase
+                    .from('petty_cash_transactions')
+                    .select('amount, type, description')
+                    .gte('created_at', openedAt);
+                
+                (expenseData || []).forEach(exp => {
+                    if (exp.type === 'SPEND') {
+                        cashExpenses += (Number(exp.amount) || 0);
+                    } else if (exp.type === 'TOPUP' && exp.description !== 'Saldo Awal') {
+                        cashTopups += (Number(exp.amount) || 0);
+                    }
+                });
+            } catch (err) {
+                console.error('Error fetching expenses:', err);
+            }
+
             // Fetch Sale Items for Category & Product Summary
             const saleIds = allSales.map(s => s.id);
             let catSummary: Record<string, number> = {};
@@ -193,7 +231,10 @@ export function CashierSessionModal({
                 total_sales: total,
                 cash_sales: cash,
                 non_cash_sales: nonCash,
-                expected_cash: (parseFloat(session.starting_cash) || 0) + cash,
+                cash_refunds: cashRefunds,
+                cash_expenses: cashExpenses,
+                cash_topups: cashTopups,
+                expected_cash: (parseFloat(session.starting_cash) || 0) + cash + cashTopups - cashRefunds - cashExpenses,
                 completed_count: completed,
                 pending_count: pending,
                 total_discount: discount,
@@ -231,6 +272,8 @@ export function CashierSessionModal({
                 openingBalance: parseFloat(session.starting_cash) || 0,
                 cashTotal: closingData.cash_sales,
                 qrTotal: closingData.non_cash_sales,
+                cashRefunds: closingData.cash_refunds,
+                cashExpenses: closingData.cash_expenses,
                 expectedCash: closingData.expected_cash,
                 actualCash: parseFloat(actualCash) || 0,
                 variance: (parseFloat(actualCash) || 0) - closingData.expected_cash,
@@ -301,14 +344,14 @@ export function CashierSessionModal({
                 closed_at: new Date().toISOString(),
                 status: 'Closed',
                 cash_sales: closingData?.cash_sales || 0,
-                non_cash_sales: closingData?.non_cash_sales || 0,
-                total_income: closingData?.total_sales || 0, // Using total_sales as total_income
+                qris_sales: closingData?.non_cash_sales || 0,
+                total_income: closingData?.total_sales || 0,
                 total_sales: closingData?.total_sales || 0,
                 expected_cash: expected,
                 actual_cash: actual,
                 difference: difference,
-                payment_summary: closingData?.payment_summary || [], // [NEW] Save summary
-                category_summary: closingData?.category_summary || [], // [NEW] Save category breakdown
+                payment_summary: closingData?.payment_summary || [],
+                category_summary: closingData?.category_summary || [],
                 notes: notes
             };
 
@@ -347,7 +390,14 @@ export function CashierSessionModal({
 
             // Re-fetch session status in Home.tsx via context if needed
             setTimeout(async () => {
-                await supabase.auth.signOut();
+                try {
+                    await Promise.race([
+                        supabase.auth.signOut(),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
+                    ]).catch(err => console.warn('[Shift] Sign out timeout or error:', err));
+                } catch (e) {
+                    console.error('[Shift] Sign out error:', e);
+                }
                 onSessionComplete(null);
                 onOpenChange(false);
             }, 1500);
@@ -472,26 +522,39 @@ export function CashierSessionModal({
                                 </div>
                             </div>
                         )}
-
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px]">
                                             <div className="rounded-xl bg-white/80 border border-blue-100 px-3 py-2">
                                                 <span className="text-blue-500/90 block font-bold uppercase tracking-wide">Penjualan Tunai</span>
                                                 <span className="font-bold text-blue-950">{formatPrice(closingData?.cash_sales)}</span>
                                             </div>
                                             <div className="rounded-xl bg-white/80 border border-blue-100 px-3 py-2">
-                                                <span className="text-blue-500/90 block font-bold uppercase tracking-wide">Non Tunai</span>
+                                                <span className="text-blue-500/90 block font-bold uppercase tracking-wide">Penjualan Non-Tunai</span>
                                                 <span className="font-bold text-blue-950">{formatPrice(closingData?.non_cash_sales)}</span>
                                             </div>
-                                            <div className="rounded-xl bg-white/80 border border-blue-100 px-3 py-2">
-                                                <span className="text-blue-500/90 block font-bold uppercase tracking-wide">Modal</span>
-                                                <span className="font-bold text-blue-950">{formatPrice(parseFloat(session?.starting_cash) || 0)}</span>
+                                            <div className="rounded-xl bg-white/80 border border-red-100 px-3 py-2">
+                                                <span className="text-red-500/90 block font-bold uppercase tracking-wide">Retur & Pengeluaran</span>
+                                                <span className="font-bold text-red-950">{formatPrice((closingData?.cash_refunds || 0) + (closingData?.cash_expenses || 0))}</span>
                                             </div>
+                                            <div className="rounded-xl bg-white/80 border border-green-100 px-3 py-2">
+                                                <span className="text-green-500/90 block font-bold uppercase tracking-wide">Uang Tunai Seharusnya</span>
+                                                <span className="font-bold text-green-950">{formatPrice(closingData?.expected_cash)}</span>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-3 text-[11px] mt-2">
+                                            <div className="rounded-xl bg-white/80 border border-gray-100 px-3 py-2">
+                                                <span className="text-gray-500 block font-bold uppercase tracking-wide">Modal</span>
+                                                <span className="font-bold text-gray-800">{formatPrice(parseFloat(session?.starting_cash) || 0)}</span>
+                                            </div>
+                                            <div className="rounded-xl bg-white/80 border border-gray-100 px-3 py-2">
+                                                <span className="text-gray-500 block font-bold uppercase tracking-wide">Top Up Kas</span>
+                                                <span className="font-bold text-gray-800">{formatPrice(closingData?.cash_topups || 0)}</span>
+                                            </div>
+                                        </div>
                                             <div className="rounded-xl bg-blue-600 text-white px-3 py-2">
                                                 <span className="block font-bold uppercase tracking-wide text-[10px] text-blue-100">Total Seharusnya (Tunai+Modal)</span>
                                                 <span className="font-bold text-base">{formatPrice(closingData?.expected_cash)}</span>
                                             </div>
                                         </div>
-                                    </div>
                                     )}
 
                                     <div className="space-y-3">

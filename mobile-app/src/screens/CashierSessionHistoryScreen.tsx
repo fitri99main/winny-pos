@@ -698,7 +698,7 @@ export default function CashierSessionHistoryScreen() {
                                 <View style={[styles.infoBox, { backgroundColor: '#f8fafc', marginBottom: 15 }]}>
                                     <Text style={{ fontSize: 10, color: '#64748b', fontWeight: 'bold', marginBottom: 4 }}>PERHITUNGAN KAS (REKONSILIASI)</Text>
                                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#e2e8f0', paddingTop: 2 }}>
-                                        <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#1e293b' }}>TOTAL (TUNAI+TUNAI SISTEM)</Text>
+                                        <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#1e293b' }}>TOTAL (TUNAI+SISTEM)</Text>
                                         <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#ea580c' }}>{formatCurrency(selectedSession.expected_cash)}</Text>
                                     </View>
                                 </View>

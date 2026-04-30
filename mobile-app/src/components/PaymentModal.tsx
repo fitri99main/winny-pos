@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Modal, TouchableOpacity, TextInput, ScrollView, StyleSheet, Alert, useWindowDimensions } from 'react-native';
+import { View, Text, Modal, TouchableOpacity, TextInput, ScrollView, StyleSheet, Alert, useWindowDimensions, ActivityIndicator } from 'react-native';
 
 interface PaymentModalProps {
     visible: boolean;
@@ -74,6 +74,7 @@ export default function PaymentModal({
     const [paidAmount, setPaidAmount] = useState('');
     const [change, setChange] = useState(0);
     const [error, setError] = useState<string | null>(null);
+    const [loading, setLoading] = useState(false);
 
     // Calculate change whenever paid amount changes
     useEffect(() => {
@@ -90,6 +91,7 @@ export default function PaymentModal({
             setPaidAmount('');
             setChange(0);
             setError(null);
+            setLoading(false);
         }
     }, [visible]);
 
@@ -107,22 +109,29 @@ export default function PaymentModal({
         setPaidAmount((amount || 0).toString());
     };
 
-    const handleConfirm = () => {
-        const paid = parseFloat(paidAmount.replace(/,/g, '')) || 0;
-        const selectedObj = displayMethods.find(m => m.id === selectedMethod);
-        const isCashType = selectedObj ? selectedObj.type === 'cash' || selectedMethod === 'cash' : false;
+    const paid = parseFloat(paidAmount.replace(/,/g, '')) || 0;
+    const selectedObj = displayMethods.find(m => m.id === selectedMethod);
+    const isCashType = selectedObj ? selectedObj.type === 'cash' || selectedMethod === 'cash' : false;
 
+    const handleConfirm = async () => {
         if (isCashType && paid < total) {
             setError('Jumlah pembayaran kurang dari total');
             return;
         }
 
-        onConfirm({
-            method: selectedObj?.name || 'Tunai',
-            amount: paid || total,
-            change: isCashType ? change : 0
-        });
-        onClose();
+        setLoading(true);
+        try {
+            await onConfirm({
+                method: selectedObj?.name || 'Tunai',
+                amount: paid || total,
+                change: isCashType ? change : 0
+            });
+            // We don't call onClose() here because POSScreen will close the modal 
+            // after the full transaction (and possible success modal) is ready.
+        } catch (err: any) {
+            setError(err.message || 'Gagal memproses pembayaran');
+            setLoading(false);
+        }
     };
 
     const formatCurrency = (amount: number) => {
@@ -319,13 +328,19 @@ export default function PaymentModal({
                     <TouchableOpacity
                         style={[
                             styles.confirmButton,
-                            { backgroundColor: displayMethods.find(m => m.id === selectedMethod)?.color || '#10b981' }
+                            { backgroundColor: displayMethods.find(m => m.id === selectedMethod)?.color || '#10b981' },
+                            (loading || (isCashType && paid < total)) && { opacity: 0.6 }
                         ]}
                         onPress={handleConfirm}
+                        disabled={loading || (isCashType && paid < total)}
                     >
-                        <Text style={styles.confirmText}>
-                            Konfirmasi Pembayaran
-                        </Text>
+                        {loading ? (
+                            <ActivityIndicator color="white" size="small" />
+                        ) : (
+                            <Text style={styles.confirmText}>
+                                Konfirmasi Pembayaran
+                            </Text>
+                        )}
                     </TouchableOpacity>
                 </View>
             </View>

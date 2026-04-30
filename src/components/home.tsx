@@ -698,53 +698,42 @@ function Home() {
   const fetchTransactions = async () => {
     if (!currentBranchId) return;
 
-    // Fetch all sales in batches because Supabase select() can otherwise
-    // return only the default page and hide older transactions from history.
-    const pageSize = 1000;
-    let salesData: any[] = [];
-    let from = 0;
+    // [OPTIMIZED] Fetch only the most recent 500 sales to prevent lag during high traffic.
+    const { data: salesData, error: salesError } = await supabase
+      .from('sales')
+      .select(`
+        *,
+        items:sale_items(
+          id, 
+          product_name, 
+          quantity, 
+          price, 
+          target, 
+          status,
+          notes,
+          product:product_id(category)
+        )
+      `)
+      .eq('branch_id', currentBranchId)
+      .order('date', { ascending: false })
+      .limit(500);
 
-    // Optimize: Only fetch the last 45 days to keep the app fast.
-    // Older data can be fetched specifically in reports if needed.
-    const minDate = new Date();
-    minDate.setDate(minDate.getDate() - 45);
-    minDate.setHours(0, 0, 0, 0);
-
-    while (true) {
-      const { data: pageData, error: salesError } = await supabase
-        .from('sales')
-        .select(`
-          *,
-          items:sale_items(
-            *,
-            product:product_id(category)
-          )
-        `)
-        .eq('branch_id', currentBranchId)
-        .gte('date', minDate.toISOString())
-        .order('date', { ascending: false })
-        .range(from, from + pageSize - 1); // Sort by Payment Time (Date) not Creation Time
-
-      if (salesError) {
-        console.error('Error fetching sales:', salesError);
-        break;
-      }
-
-      if (!pageData || pageData.length === 0) {
-        break;
-      }
-
-      salesData = [...salesData, ...pageData];
-
-      if (pageData.length < pageSize) {
-        break;
-      }
-
-      from += pageSize;
+    if (salesError) {
+      console.error('Error fetching sales:', salesError);
+      return;
     }
 
     if (salesData) {
       const formattedSales = salesData.map(s => ({
+        productDetails: (s.items || []).map((i: any) => ({
+          name: i.product_name,
+          quantity: i.quantity,
+          price: i.price,
+          target: i.target,
+          status: i.status,
+          category: i.product?.category,
+          notes: i.notes
+        })),
         ...s,
         items: (s.items || []).length,
         id: s.id,
