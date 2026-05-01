@@ -719,7 +719,7 @@ export function PurchasesView({
                         </h3>
                         {(manualItemForm.name || manualItemForm.price) && (
                             <button 
-                                onClick={() => setManualItemForm({ name: '', price: '', sellingPrice: '', selectedItemId: '' })}
+                                onClick={() => setManualItemForm({ name: '', price: '', sellingPrice: '', selectedItemId: '', type: 'manual' })}
                                 className="text-[9px] font-bold text-red-500 hover:text-red-700 uppercase"
                             >
                                 [Hapus Draft]

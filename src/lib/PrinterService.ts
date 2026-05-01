@@ -387,6 +387,8 @@ class PrinterService {
         openingBalance?: number;
         cashTotal?: number;
         qrTotal?: number;
+        cashRefunds?: number;
+        cashExpenses?: number;
         expectedCash?: number;
         actualCash?: number;
         variance?: number;
@@ -494,6 +496,13 @@ class PrinterService {
         }
         if (reportData.qrTotal !== undefined) {
             commands.push(encoder.encode(`${'Total Non-Tunai:'.padEnd(labelWidth)}${reportData.qrTotal.toLocaleString('id-ID').padStart(valWidth)}\n`));
+        }
+
+        if (reportData.cashRefunds && reportData.cashRefunds > 0) {
+            commands.push(encoder.encode(`${'Total Retur:'.padEnd(labelWidth)}${('-' + reportData.cashRefunds.toLocaleString('id-ID')).padStart(valWidth)}\n`));
+        }
+        if (reportData.cashExpenses && reportData.cashExpenses > 0) {
+            commands.push(encoder.encode(`${'Total Pengeluaran:'.slice(0, labelWidth).padEnd(labelWidth)}${('-' + reportData.cashExpenses.toLocaleString('id-ID')).padStart(valWidth)}\n`));
         }
 
         if (reportData.totalTax && reportData.totalTax > 0) {

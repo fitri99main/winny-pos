@@ -1056,17 +1056,18 @@ function Home() {
 
           // 4. Special Handling for Kiosk OR Cashier Role (Auto-Open Cashier)
           // ONLY for Pending/Unpaid orders. Paid orders go straight to KDS and shouldn't interrupt Cashier.
+          }
+
+          // 4. Special Handling for Kiosk OR Cashier Role (Auto-Open Cashier)
+          // ONLY for Pending/Unpaid orders. Paid orders go straight to KDS and shouldn't interrupt Cashier.
           const isPaidCompleted = newOrder.status === 'Paid' || newOrder.status === 'Completed';
           const isMyOwnOrder = newOrder.id === lastProcessedOrderIdRef.current;
           
           // [REFINED] Robust Kiosk Detection
-          const isKioskOrder = (newOrder.status === 'Unpaid' || newOrder.status === 'Pending') && 
-                              (!newOrder.waiter_name || newOrder.waiter_name === 'Kiosk' || newOrder.waiter_name === 'User Display');
+          const isKioskOrder = (newOrder.status === 'Unpaid' || newOrder.status === 'Pending') && (!newOrder.waiter_name || newOrder.waiter_name === 'Kiosk' || newOrder.waiter_name === 'User Display');
           // Show notification for all incoming orders (respect suppression setting or specifically ignore Display/Kiosk)
           // [UPDATED] Always suppress for web version to avoid interruptions as requested
           const shouldSuppress = true;
-
-          
           if (!shouldSuppress) {
             toast.info(`Pesanan Masuk: ${formattedSale.orderNo}`);
           }
@@ -1444,7 +1445,7 @@ function Home() {
         // 2. If it's an INGREDIENT or (not found as product AND type is unknown), try Ingredient table
         if (!updated && (!itemType || itemType === 'ingredient')) {
           try {
-            const { data: ingredient } = await supabase.from('ingredients').select('id, current_stock').eq('id', numericId).maybeSingle();
+            const { data: ingredient } = await supabase.from('ingredients').select('id, current_stock, name').eq('id', numericId).maybeSingle();
             if (ingredient) {
               const addQty = Number(item.quantity) || 0;
               const newStock = (Number(ingredient.current_stock) || 0) + addQty;

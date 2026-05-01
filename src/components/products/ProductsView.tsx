@@ -575,7 +575,7 @@ export function ProductsView({
                                                 return (
                                                     <div className="flex flex-col items-end">
                                                         <div className="flex items-center gap-1">
-                                                            {isSynced && <Link className="w-2.5 h-2.5 text-blue-500" title="Sinkron Otomatis dengan Inventori" />}
+                                                            {isSynced && <Link className="w-2.5 h-2.5 text-blue-500" />}
                                                             <span className={`font-black ${isLow ? 'text-red-500' : 'text-gray-700'}`}>
                                                                 {displayStock}
                                                             </span>
