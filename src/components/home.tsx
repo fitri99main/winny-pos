@@ -413,6 +413,7 @@ function Home() {
   // --- Accounting State ---
   const [accounts, setAccounts] = useState<any[]>([]);
   const [journalEntries, setJournalEntries] = useState<any[]>([]);
+  const [activeCashierNames, setActiveCashierNames] = useState<string[]>([]);
 
   const [storeSettings, setStoreSettings] = useState<any>({
     store_name: 'Winny Pangeran Natakusuma',
@@ -440,6 +441,30 @@ function Home() {
   useEffect(() => {
     fetchVoucherStats();
     const interval = setInterval(fetchVoucherStats, 30000);
+    return () => clearInterval(interval);
+  }, [currentBranchId]);
+
+  // --- Active Cashiers Logic ---
+  const fetchActiveCashiers = async () => {
+    if (!currentBranchId) return;
+    try {
+      const { data, error } = await supabase
+        .from('cashier_sessions')
+        .select('employee_name')
+        .eq('branch_id', currentBranchId)
+        .eq('status', 'open');
+      
+      if (error) throw error;
+      const names = Array.from(new Set((data || []).map(s => s.employee_name).filter(Boolean)));
+      setActiveCashierNames(names as string[]);
+    } catch (err) {
+      console.error('Failed to fetch active cashiers:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchActiveCashiers();
+    const interval = setInterval(fetchActiveCashiers, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [currentBranchId]);
 
@@ -2161,7 +2186,7 @@ function Home() {
       if (!sale) throw new Error('Failed to save sale');
 
       // 2. Create Sale Items
-      const saleItems = saleData.productDetails.map(item => {
+      const saleItems = (saleData.productDetails || []).map(item => {
         const product = products.find(p => p.name === item.name);
         return {
           sale_id: sale.id,
@@ -2228,7 +2253,7 @@ function Home() {
         tableNo: saleData.tableNo,
         waiterName: saleData.waiterName || '',
         time: new Date().toLocaleString(),
-        items: saleData.productDetails.map(item => ({
+        items: (saleData.productDetails || []).map(item => ({
           name: item.name,
           quantity: item.quantity,
           price: item.price
@@ -2314,7 +2339,7 @@ function Home() {
       tableNo: orderData.tableNo || '-',
       waiterName: orderData.waiterName || '-',
       time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
-      items: orderData.productDetails.map((item: any) => {
+      items: (orderData.productDetails || []).map((item: any) => {
         const product = products.find(p => p.name === item.name);
         return {
           ...item,
@@ -2374,7 +2399,7 @@ function Home() {
         order.id === orderId
           ? {
             ...order,
-            items: order.items.map((i: any) => i.name === items.itemName ? { ...i, status: items.newStatus } : i)
+            items: (order.items || []).map((i: any) => i.name === items.itemName ? { ...i, status: items.newStatus } : i)
           }
           : order
       ));
@@ -2396,7 +2421,7 @@ function Home() {
           if (o.id === orderId) {
             return {
               ...o,
-              items: o.items.map((i: any) => 
+              items: (o.items || []).map((i: any) => 
                 (stationFilter === 'All' || i.target === stationFilter)
                   ? { ...i, status: 'Served' } 
                   : i
@@ -2412,7 +2437,7 @@ function Home() {
           await supabase.from('sale_items').update({ status: 'Served' }).eq('sale_id', orderId).eq('target', stationFilter);
         }
 
-        const updatedItems = order.items.map((i: any) => 
+        const updatedItems = (order.items || []).map((i: any) => 
           (stationFilter === 'All' || i.target === stationFilter)
             ? { ...i, status: 'Served' } 
             : i
@@ -2445,7 +2470,7 @@ function Home() {
         ? {
           ...order,
           status: status === 'Served' ? 'Served' : order.status,
-          items: status === 'ItemUpdate' ? order.items.map((i: any) => i.name === items.itemName ? { ...i, status: items.newStatus } : i) : order.items
+          items: status === 'ItemUpdate' ? (order.items || []).map((i: any) => i.name === items.itemName ? { ...i, status: items.newStatus } : i) : order.items
         }
         : order
     ).filter(order => status !== 'Served')); // Remove if served (optional, or keep for history)
@@ -3193,7 +3218,10 @@ function Home() {
             onAddReturn={handleAddReturn}
             onUpdateSale={handleUpdateSale}
             contacts={contacts}
-            employees={employees}
+            employees={employees.filter(e => {
+              if (activeCashierNames.length === 0) return true;
+              return activeCashierNames.includes(e.name);
+            })}
             paymentMethods={paymentMethods}
             tables={tables}
             onDeleteSale={handleDeleteSale}
@@ -3673,7 +3701,10 @@ function Home() {
             onAddSale={handleAddSale}
             onBack={() => { setIsCashierOpen(false); setAutoSelectedTable(''); }} // Clear selection on close
             contacts={contacts}
-            employees={employees}
+            employees={employees.filter(e => {
+              if (activeCashierNames.length === 0) return true;
+              return activeCashierNames.includes(e.name);
+            })}
             onSendToKDS={handleSendToKDS}
             products={products}
             topSellingProducts={topSellingProducts}

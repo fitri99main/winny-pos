@@ -268,7 +268,7 @@ export const SalesView = memo(function SalesView({
             return {
                 ...sale,
                 _cashierName: normalizedCashier,
-                _searchKey: `${sale.orderNo} ${sale.customerName || ''} ${sale.productDetails.map(p => p.name).join(' ')} ${normalizedCashier}`.toLowerCase(),
+                _searchKey: `${sale.orderNo} ${sale.customerName || ''} ${(sale.productDetails || []).map(p => p.name).join(' ')} ${normalizedCashier}`.toLowerCase(),
                 _dateOnly: normalizeDateOnly(sale.date),
                 _formattedDate: new Date(sale.date).toLocaleString('id-ID', {
                     year: 'numeric',
@@ -455,7 +455,7 @@ export const SalesView = memo(function SalesView({
                     tableNo: saleToProcess.tableNo || '-',
                     waiterName: saleToProcess.waiterName || '-',
                     time: new Date().toLocaleString(),
-                    items: saleToProcess.productDetails.map(item => ({
+                    items: (saleToProcess.productDetails || []).map(item => ({
                         name: item.name,
                         quantity: item.quantity,
                         price: item.price
@@ -570,7 +570,7 @@ export const SalesView = memo(function SalesView({
                     tableNo: sale.tableNo || '-',
                     waiterName: sale.waiterName || '-',
                     time: new Date(sale.date).toLocaleString(),
-                    items: sale.productDetails.map(item => ({
+                    items: (sale.productDetails || []).map(item => ({
                         name: item.name,
                         quantity: item.quantity,
                         price: item.price
@@ -778,7 +778,7 @@ export const SalesView = memo(function SalesView({
                                     <td className="px-3 py-2">
                                         <div className="font-mono text-blue-600 font-medium mb-1 whitespace-nowrap">{sale.orderNo}</div>
                                         <div className="text-[10px] text-gray-400 space-y-0.5 max-w-[120px] truncate">
-                                            {sale.productDetails.map((item, idx) => (
+                                            {(sale.productDetails || []).map((item, idx) => (
                                                 <div key={idx} className="flex items-center gap-1 truncate">
                                                     <span>• {item.name}</span>
                                                     <span className="text-gray-300">({item.quantity}x)</span>
@@ -1272,7 +1272,7 @@ export const SalesView = memo(function SalesView({
                                 <div className="space-y-3 mb-6">
                                     <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Item Pesanan</p>
                                     <div className="space-y-2 border-y border-gray-50 py-3">
-                                        {selectedOrderDetails.productDetails.map((item, idx) => (
+                                        {(selectedOrderDetails.productDetails || []).map((item, idx) => (
                                                 <div className="flex flex-col flex-1 border-b border-gray-50 pb-2" key={idx}>
                                                     <div className="flex justify-between items-center text-sm">
                                                         <div className="flex gap-2">

@@ -193,10 +193,20 @@ export function CashierSessionModal({
                     const soldProductIdList = Array.from(new Set(items.map(i => i.product_id).filter(id => id !== null && id !== undefined)));
 
                     // 3. Only fetch categories for these specific products (HEAVILY OPTIMIZED)
-                    const { data: specificProducts } = await supabase
-                        .from('products')
-                        .select('id, name, category')
-                        .or(`name.in.(${soldProductNameList.map(n => `"${n}"`).join(',')}),id.in.(${soldProductIdList.join(',')})`);
+                    const orConditions = [];
+                    if (soldProductNameList.length > 0) {
+                        orConditions.push(`name.in.(${soldProductNameList.map(n => `"${n}"`).join(',')})`);
+                    }
+                    if (soldProductIdList.length > 0) {
+                        orConditions.push(`id.in.(${soldProductIdList.join(',')})`);
+                    }
+
+                    const { data: specificProducts } = orConditions.length > 0 
+                        ? await supabase
+                            .from('products')
+                            .select('id, name, category')
+                            .or(orConditions.join(','))
+                        : { data: [] };
 
                     const productCatMap: Record<string, string> = {};
                     const productIdMap: Record<number, string> = {};

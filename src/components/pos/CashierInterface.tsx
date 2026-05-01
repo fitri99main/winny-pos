@@ -436,7 +436,7 @@ export function CashierInterface({
 
       if (existingSale) {
         // Reconstruct order items from sale
-        const items = existingSale.productDetails.map((detail: any, index: number) => {
+        const items = (existingSale.productDetails || []).map((detail: any, index: number) => {
           // Find original product to get ID and image if possible, otherwise mock
           const originalProduct = products.find(p => p.name === detail.name);
           return {
