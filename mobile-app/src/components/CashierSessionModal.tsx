@@ -215,10 +215,13 @@ export default function CashierSessionModal({ visible, onClose, mode, session, o
             if (!user) throw new Error('User not authenticated');
             if (!currentBranchId) throw new Error('Branch ID tidak ditemukan.');
 
+            const { data: emp } = await supabase.from('employees').select('name').eq('email', user.email).single();
+            const realName = emp?.name || user.email?.split('@')[0] || 'Kasir';
+
             const { error } = await supabase.from('cashier_sessions').insert({
                 user_id: user.id,
                 branch_id: currentBranchId, 
-                employee_name: user.email?.split('@')[0] || 'Kasir',
+                employee_name: realName,
                 opened_at: new Date().toISOString(),
                 starting_cash: cashValue,
                 status: 'Open',

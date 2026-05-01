@@ -82,33 +82,43 @@ export default function HistoryScreen() {
     const [pendingAction, setPendingAction] = useState<{ type: 'delete' | 'bulk_delete', sale?: any } | null>(null);
     const [authTitle, setAuthTitle] = useState('Otorisasi Manager');
 
+    const [availableCashiers, setAvailableCashiers] = useState<string[]>([]);
+
+    useEffect(() => {
+        if (effectiveBranchId || currentBranchId) {
+            fetchAvailableCashiers();
+        }
+    }, [effectiveBranchId, currentBranchId]);
+
+    const fetchAvailableCashiers = async () => {
+        try {
+            const bId = effectiveBranchId || currentBranchId;
+            // Fetch unique waiter names from sales table for this branch
+            const { data } = await supabase
+                .from('sales')
+                .select('waiter_name')
+                .eq('branch_id', bId);
+            
+            if (Array.isArray(data)) {
+                const uniqueNames = Array.from(new Set(data.map(s => s.waiter_name || 'Kasir'))).filter(Boolean).sort();
+                setAvailableCashiers(['all', ...uniqueNames]);
+            }
+        } catch (e) {
+            console.error('Fetch Cashiers Error:', e);
+        }
+    };
+
     useFocusEffect(
         useCallback(() => {
             setHasMore(true);
             fetchHistory(false);
-        }, [dateFilter, startDate, endDate, effectiveBranchId])
+        }, [dateFilter, startDate, endDate, effectiveBranchId, cashierFilter, statusFilter])
     );
-
-    const availableCashiers = useMemo(() => {
-        if (!history || history.length === 0) return ['all'];
-        const unique = new Set(history.map(item => item.waiter_name || 'Kasir').filter(Boolean));
-        return ['all', ...Array.from(unique).sort()];
-    }, [history]);
 
     useEffect(() => {
         let filtered = history;
         
-        // Apply status filter
-        if (statusFilter !== 'all') {
-            filtered = filtered.filter(item => item.status === statusFilter);
-        }
-
-        // Apply cashier filter
-        if (cashierFilter !== 'all') {
-            filtered = filtered.filter(item => (item.waiter_name || 'Kasir') === cashierFilter);
-        }
-        
-        // Apply search query
+        // Apply search query locally for fast feedback
         if (searchQuery) {
             const query = searchQuery.toLowerCase();
             filtered = filtered.filter(item => 
@@ -120,7 +130,7 @@ export default function HistoryScreen() {
         }
         
         setFilteredHistory(filtered);
-    }, [searchQuery, statusFilter, history]);
+    }, [searchQuery, history]);
 
     const fetchHistory = async (isLoadMore = false) => {
         const bId = effectiveBranchId || currentBranchId;
@@ -159,7 +169,6 @@ export default function HistoryScreen() {
             let filteredOfflineSales = branchOfflineSales;
 
             // Define Date Range for filtering
-            const now = new Date();
             let startLimit: Date | null = null;
             let endLimit: Date | null = null;
 
@@ -168,17 +177,17 @@ export default function HistoryScreen() {
                 startLimit.setHours(0, 0, 0, 0);
             } else if (dateFilter === 'week') {
                 startLimit = new Date();
-                startLimit.setDate(now.getDate() - 6);
+                startLimit.setDate(startLimit.getDate() - 6);
                 startLimit.setHours(0, 0, 0, 0);
             } else if (dateFilter === 'month') {
                 startLimit = new Date();
-                startLimit.setDate(now.getDate() - 29);
+                startLimit.setDate(startLimit.getDate() - 29);
                 startLimit.setHours(0, 0, 0, 0);
             } else if (dateFilter === 'custom') {
-                startLimit = new Date(startDate);
-                startLimit.setHours(0, 0, 0, 0);
-                endLimit = new Date(endDate);
-                endLimit.setHours(23, 59, 59, 999);
+                const [sY, sM, sD] = startDate.split('-').map(Number);
+                startLimit = new Date(sY, sM - 1, sD, 0, 0, 0, 0);
+                const [eY, eM, eD] = endDate.split('-').map(Number);
+                endLimit = new Date(eY, eM - 1, eD, 23, 59, 59, 999);
             }
 
             // Apply date filter to OFFLINE sales as well
@@ -189,6 +198,14 @@ export default function HistoryScreen() {
                     const isBeforeEnd = endLimit ? d <= endLimit : true;
                     return isAfterStart && isBeforeEnd;
                 });
+            }
+
+            // Apply cashier and status filters to OFFLINE sales
+            if (statusFilter !== 'all') {
+                filteredOfflineSales = filteredOfflineSales.filter(s => s.status === statusFilter);
+            }
+            if (cashierFilter !== 'all') {
+                filteredOfflineSales = filteredOfflineSales.filter(s => (s.waiter_name || 'Kasir') === cashierFilter);
             }
 
             if (online) {
@@ -204,14 +221,22 @@ export default function HistoryScreen() {
                     .eq('branch_id', bId)
                     .order('date', { ascending: false });
 
-                if (dateFilter === 'today' && startLimit) {
+                // Date Filters
+                if (startLimit) {
                     query = query.gte('date', startLimit.toISOString());
-                } else if (dateFilter === 'week' && startLimit) {
-                    query = query.gte('date', startLimit.toISOString());
-                } else if (dateFilter === 'month' && startLimit) {
-                    query = query.gte('date', startLimit.toISOString());
-                } else if (dateFilter === 'custom' && startLimit && endLimit) {
-                    query = query.gte('date', startLimit.toISOString()).lte('date', endLimit.toISOString());
+                    if (endLimit) {
+                        query = query.lte('date', endLimit.toISOString());
+                    }
+                }
+
+                // Status Filter
+                if (statusFilter !== 'all') {
+                    query = query.eq('status', statusFilter);
+                }
+
+                // Cashier Filter
+                if (cashierFilter !== 'all') {
+                    query = query.eq('waiter_name', cashierFilter);
                 }
 
                 const pageSize = 50;
@@ -1308,7 +1333,7 @@ export default function HistoryScreen() {
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
                         <User size={14} color="#64748b" style={{ marginRight: 8 }} />
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
-                            {availableCashiers.map(cashier => (
+                            {(availableCashiers || []).map(cashier => (
                                 <TouchableOpacity 
                                     key={cashier}
                                     style={[styles.statusToggle, cashierFilter === cashier && styles.statusToggleActive, { paddingHorizontal: 12 }]}

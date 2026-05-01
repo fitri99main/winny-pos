@@ -80,6 +80,7 @@ export default function CashierSessionHistoryScreen() {
 
     const fetchAvailableCashiers = async () => {
         try {
+            // Only show cashiers who have actually opened a session in this branch
             const { data, error } = await supabase
                 .from('cashier_sessions')
                 .select('employee_name')
@@ -87,8 +88,11 @@ export default function CashierSessionHistoryScreen() {
             
             if (error) throw error;
             
-            const uniqueCashiers = Array.from(new Set(data.map(s => s.employee_name))).filter(Boolean).sort();
-            setAvailableCashiers(uniqueCashiers);
+            if (Array.isArray(data)) {
+                // Extract unique names and sort them
+                const uniqueNames = Array.from(new Set(data.map(s => s.employee_name))).filter(Boolean).sort();
+                setAvailableCashiers(uniqueNames);
+            }
         } catch (error) {
             console.error('Fetch Cashiers Error:', error);
         }
@@ -104,26 +108,28 @@ export default function CashierSessionHistoryScreen() {
                 .order('opened_at', { ascending: false });
 
             // Apply Date Filters
-            const now = new Date();
             if (dateFilter === 'today') {
                 const start = new Date();
                 start.setHours(0, 0, 0, 0);
                 query = query.gte('opened_at', start.toISOString());
             } else if (dateFilter === 'week') {
                 const start = new Date();
-                start.setDate(now.getDate() - 6);
+                start.setDate(start.getDate() - 6);
                 start.setHours(0, 0, 0, 0);
                 query = query.gte('opened_at', start.toISOString());
             } else if (dateFilter === 'month') {
                 const start = new Date();
-                start.setDate(now.getDate() - 29);
+                start.setDate(start.getDate() - 29);
                 start.setHours(0, 0, 0, 0);
                 query = query.gte('opened_at', start.toISOString());
             } else if (dateFilter === 'custom') {
-                const start = new Date(startDate);
-                start.setHours(0, 0, 0, 0);
-                const end = new Date(endDate);
-                end.setHours(23, 59, 59, 999);
+                // Properly parse local YYYY-MM-DD string to start/end of day local time
+                const [sY, sM, sD] = startDate.split('-').map(Number);
+                const start = new Date(sY, sM - 1, sD, 0, 0, 0, 0);
+                
+                const [eY, eM, eD] = endDate.split('-').map(Number);
+                const end = new Date(eY, eM - 1, eD, 23, 59, 59, 999);
+                
                 query = query.gte('opened_at', start.toISOString()).lte('opened_at', end.toISOString());
             }
 
@@ -1017,7 +1023,7 @@ export default function CashierSessionHistoryScreen() {
                                             <Text style={[styles.cashierItemText, cashierFilter === 'all' && styles.cashierItemTextActive]}>Semua Kasir</Text>
                                             {cashierFilter === 'all' && <CheckCircle2 size={16} color="#ea580c" />}
                                         </TouchableOpacity>
-                                        {availableCashiers.map((name) => (
+                                        {(availableCashiers || []).map((name) => (
                                             <TouchableOpacity 
                                                 key={name}
                                                 style={[styles.cashierItem, cashierFilter === name && styles.cashierItemActive]}

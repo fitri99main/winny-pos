@@ -1113,7 +1113,7 @@ function Home() {
       // 2. Fetch branch names for metadata (Optional failure)
       const { data: bData } = await supabase.from('branches').select('id, name');
 
-      if (data) {
+      if (Array.isArray(data)) {
         setAttendanceLogs(data.map(log => {
           const branch = bData?.find(b => b.id === log.branch_id);
           return {
@@ -1141,12 +1141,24 @@ function Home() {
     return () => { subscription.unsubscribe(); };
   }, []);
 
+
+  useEffect(() => {
+    fetchAttendance();
+    const subscription = supabase.channel('attendance_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_logs' }, () => {
+        fetchAttendance();
+      })
+      .subscribe();
+
+    return () => { subscription.unsubscribe(); };
+  }, []);
+
   // --- Payroll Integration ---
   const fetchPayroll = async () => {
     try {
       const { data, error } = await supabase.from('payrolls').select('*').order('created_at', { ascending: false });
       if (error) throw error;
-      if (data) {
+      if (Array.isArray(data)) {
         setPayrollData(data.map(p => ({
           ...p,
           employeeName: p.employee_name,
@@ -1176,7 +1188,7 @@ function Home() {
       .select('*')
       .eq('branch_id', Number(currentBranchId))
       .order('evaluation_date', { ascending: false });
-    if (data) setPerformanceEvaluations(data);
+    if (Array.isArray(data)) setPerformanceEvaluations(data);
   };
 
   useEffect(() => {
@@ -1475,7 +1487,7 @@ function Home() {
                   const { data: links } = await supabase.from('product_recipes').select('product_id, amount').eq('ingredient_id', ingredient.id);
                   let syncedProductIds = new Set();
 
-                  if (links && links.length > 0) {
+                  if (Array.isArray(links) && links.length > 0) {
                     for (const link of links) {
                       if (Number(link.amount) === 1) {
                         await supabase.from('products').update({ stock: newStock }).eq('id', link.product_id);
@@ -1491,7 +1503,7 @@ function Home() {
                     .or(`name.eq."${ingredient.name}",code.eq."${item.name}",code.eq."${po.purchase_no}"`) // Simple matching logic
                     .eq('branch_id', po.branch_id);
                   
-                  if (matchingProducts) {
+                  if (Array.isArray(matchingProducts)) {
                     for (const mp of matchingProducts) {
                       if (!syncedProductIds.has(mp.id)) {
                         await supabase.from('products').update({ stock: newStock }).eq('id', mp.id);
@@ -1503,15 +1515,15 @@ function Home() {
 
                 // Update HPP of related products
                 const { data: recipes } = await supabase.from('product_recipes').select('product_id').eq('ingredient_id', ingredient.id);
-                if (recipes && recipes.length > 0) {
+                if (Array.isArray(recipes) && recipes.length > 0) {
                   const productIds = [...new Set(recipes.map(r => r.product_id))];
                   for (const pid of productIds) {
                     const { data: fullRecipe } = await supabase.from('product_recipes').select('ingredient_id, amount').eq('product_id', pid);
-                    if (fullRecipe) {
+                    if (Array.isArray(fullRecipe)) {
                       const ingIds = fullRecipe.map(r => r.ingredient_id);
                       const { data: allIngs } = await supabase.from('ingredients').select('id, cost_per_unit').in('id', ingIds);
                       const newHpp = fullRecipe.reduce((total, r) => {
-                        const ing = allIngs?.find(i => String(i.id) === String(r.ingredient_id));
+                        const ing = Array.isArray(allIngs) ? allIngs?.find(i => String(i.id) === String(r.ingredient_id)) : null;
                         return total + (Number(ing?.cost_per_unit || 0) * Number(r.amount || 0));
                       }, 0);
                       await supabase.from('products').update({ cost: newHpp }).eq('id', pid);

@@ -790,7 +790,7 @@ export default function POSScreen() {
             created_at: sale.date,
             shop_name: branchName,
             shop_phone: branchPhone,
-            items: sale.sale_items.map((si: any) => ({
+            items: (sale.sale_items || []).map((si: any) => ({
                 name: si.product ? si.product.name : si.product_name,
                 price: Number(si.price || 0),
                 quantity: Number(si.quantity || 0),
@@ -1121,7 +1121,7 @@ export default function POSScreen() {
                 }
 
                 // Map items to cart format
-                const items = sale.sale_items.map((si: any) => ({
+                const items = (sale.sale_items || []).map((si: any) => ({
                     ...si.product,
                     id: si.product_id,
                     name: si.product_name || si.product?.name,
