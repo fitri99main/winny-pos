@@ -1054,14 +1054,11 @@ function Home() {
             });
           }
 
-          // 4. Special Handling for Kiosk OR Cashier Role (Auto-Open Cashier)
-          // ONLY for Pending/Unpaid orders. Paid orders go straight to KDS and shouldn't interrupt Cashier.
-          }
 
-          // 4. Special Handling for Kiosk OR Cashier Role (Auto-Open Cashier)
-          // ONLY for Pending/Unpaid orders. Paid orders go straight to KDS and shouldn't interrupt Cashier.
-          const isPaidCompleted = newOrder.status === 'Paid' || newOrder.status === 'Completed';
-          const isMyOwnOrder = newOrder.id === lastProcessedOrderIdRef.current;
+
+
+
+          const isPaidCompleted = (newOrder.status === 'Paid' || newOrder.status === 'Completed'); const isMyOwnOrder = newOrder.id === lastProcessedOrderIdRef.current;
           
           // [REFINED] Robust Kiosk Detection
           const isKioskOrder = (newOrder.status === 'Unpaid' || newOrder.status === 'Pending') && (!newOrder.waiter_name || newOrder.waiter_name === 'Kiosk' || newOrder.waiter_name === 'User Display');
