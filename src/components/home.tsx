@@ -183,7 +183,7 @@ function Home() {
         .from('tables')
         .update({ status: 'Available' })
         .eq('number', tableNo)
-        .eq('branch_id', currentBranchId);
+        .eq('branch_id', Number(currentBranchId));
 
       if (error) throw error;
       toast.success(`Meja ${tableNo} sekarang tersedia`);
@@ -347,9 +347,38 @@ function Home() {
           .eq('id', ingredientId);
 
         if (updateError) throw updateError;
+
+        // Smart Sync: Link by Recipe OR Name Match
+        try {
+          const { data: links } = await supabase.from('product_recipes').select('product_id, amount').eq('ingredient_id', ingredientId);
+          let syncedIds = new Set();
+
+          if (links) {
+            for (const link of links) {
+              if (Number(link.amount) === 1) {
+                await supabase.from('products').update({ stock: newStock }).eq('id', link.product_id);
+                syncedIds.add(link.product_id);
+              }
+            }
+          }
+
+          // Fallback Name Match
+          const { data: matches } = await supabase.from('products')
+            .select('id')
+            .or(`name.eq."${ingredientName}",code.eq."${ingredientName}"`)
+            .eq('branch_id', currentBranchId);
+          
+          if (matches) {
+            for (const m of matches) {
+              if (!syncedIds.has(m.id)) {
+                await supabase.from('products').update({ stock: newStock }).eq('id', m.id);
+              }
+            }
+          }
+        } catch (e) { console.error('Smart sync error:', e); }
       }
 
-      toast.success('Stok berhasil disesuaikan');
+      toast.success('Stok bahan baku berhasil disesuaikan');
     } catch (err: any) {
       toast.error('Gagal update stok: ' + err.message);
     }
@@ -466,7 +495,7 @@ function Home() {
       const { data, error } = await supabase
         .from('sale_items')
         .select('product_name, quantity, sales!inner(date, branch_id)')
-        .eq('sales.branch_id', branchId)
+        .eq('sales.branch_id', Number(branchId))
         .gte('sales.date', thirtyDaysAgo.toISOString());
       if (error) throw error;
       const counts: Record<string, number> = {};
@@ -501,11 +530,11 @@ function Home() {
     minDate.setHours(0, 0, 0, 0);
 
     const results = await Promise.all([
-      safeFetch(supabase.from('products').select('*').eq('branch_id', branchId).order('sort_order', { ascending: true }), 'products'),
+      safeFetch(supabase.from('products').select('*').eq('branch_id', Number(branchId)).order('sort_order', { ascending: true }), 'products'),
       safeFetch(supabase.from('shift_schedules').select('*').order('date'), 'schedules'), 
-      safeFetch(supabase.from('tables').select('*').eq('branch_id', branchId).order('number'), 'tables'),
-      safeFetch(supabase.from('ingredients').select('*').eq('branch_id', branchId).order('name'), 'ingredients'),
-      safeFetch(supabase.from('stock_movements').select('*').eq('branch_id', branchId).gte('date', minDate.toISOString()).order('date', { ascending: false }).limit(500), 'movements'),
+      safeFetch(supabase.from('tables').select('*').eq('branch_id', Number(branchId)).order('number'), 'tables'),
+      safeFetch(supabase.from('ingredients').select('*').eq('branch_id', Number(branchId)).order('name'), 'ingredients'),
+      safeFetch(supabase.from('stock_movements').select('*').eq('branch_id', Number(branchId)).gte('date', minDate.toISOString()).order('date', { ascending: false }).limit(500), 'movements'),
     ]);
     const [productsRes, schedulesRes, tablesRes, ingredientsRes, movementsRes] = results;
     if (productsRes.data) setProducts(productsRes.data);
@@ -575,7 +604,7 @@ function Home() {
     minDate.setDate(minDate.getDate() - 45);
     minDate.setHours(0, 0, 0, 0);
 
-    const { data: pData } = await supabase.from('purchases').select('*').eq('branch_id', currentBranchId).gte('date', minDate.toISOString()).order('created_at', { ascending: false });
+    const { data: pData } = await supabase.from('purchases').select('*').eq('branch_id', Number(currentBranchId)).gte('date', minDate.toISOString()).order('created_at', { ascending: false });
     const { data: rData } = await supabase.from('purchase_returns').select('*').order('created_at', { ascending: false });
 
     if (pData) setPurchases(pData);
@@ -611,8 +640,8 @@ function Home() {
         const { count, error: countError } = await supabase
           .from('sales')
           .select('*', { count: 'exact', head: true })
-          .eq('branch_id', currentBranchId)
-          .eq('status', 'Pending');
+          .eq('branch_id', Number(currentBranchId))
+          .in('status', ['Pending', 'Unpaid']);
 
         if (isMounted && !countError) setPendingCount(count || 0);
 
@@ -620,8 +649,8 @@ function Home() {
         const { data } = await supabase
           .from('sales')
           .select('*, items:sale_items(id)')
-          .eq('branch_id', currentBranchId)
-          .eq('status', 'Pending')
+          .eq('branch_id', Number(currentBranchId))
+          .in('status', ['Pending', 'Unpaid'])
           .gt('id', lastProcessedOrderIdRef.current || 0)
           .order('id', { ascending: false })
           .limit(1);
@@ -714,7 +743,7 @@ function Home() {
           product:product_id(category)
         )
       `)
-      .eq('branch_id', currentBranchId)
+      .eq('branch_id', Number(currentBranchId))
       .order('date', { ascending: false })
       .limit(500);
 
@@ -725,6 +754,7 @@ function Home() {
 
     if (salesData) {
       const formattedSales = salesData.map(s => ({
+        ...s,
         productDetails: (s.items || []).map((i: any) => ({
           name: i.product_name,
           quantity: i.quantity,
@@ -734,17 +764,15 @@ function Home() {
           category: i.product?.category,
           notes: i.notes
         })),
-        ...s,
         items: (s.items || []).length,
         id: s.id,
         orderNo: s.order_no,
         date: s.date,
-        totalAmount: Number(s.total_amount || 0),
+        totalAmount: Number(s.total_amount || s.total || 0),
         paymentMethod: s.payment_method,
         status: s.status,
         waitingTime: (() => {
           if (s.waiting_time) return s.waiting_time;
-          // Calculate from created_at → date (payment time) if available
           if (s.created_at && s.date && (s.status === 'Paid' || s.status === 'Completed')) {
             const diffMs = new Date(s.date).getTime() - new Date(s.created_at).getTime();
             if (diffMs > 0) {
@@ -765,20 +793,13 @@ function Home() {
         waiterName: s.waiter_name,
         cashierName: s.cashier_name,
         tableNo: s.table_no,
-        productDetails: (s.items || []).map((i: any) => ({
-          name: i.product_name,
-          quantity: i.quantity,
-          price: i.price,
-          target: i.target,
-          category: i.product?.category
-        })),
         printCount: s.print_count || 0,
         lastPrintedAt: s.last_printed_at
       }));
       setSales(formattedSales);
 
       const pendingFromDB = salesData
-        .filter(s => ['Pending', 'Paid', 'Preparing', 'Ready'].includes(s.status)) // [FIX] Include ALL active statuses for KDS
+        .filter(s => ['Pending', 'Paid', 'Preparing', 'Ready', 'Unpaid'].includes(s.status))
         .map(s => ({
           id: s.id,
           orderNo: s.order_no,
@@ -786,19 +807,19 @@ function Home() {
           tableNo: s.table_no || '-',
           waiterName: s.waiter_name || 'Kiosk',
           time: new Date(s.date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
-          items: (s.items || []).map((i: any) => {
+          productDetails: (s.items || []).map((i: any) => {
             const product = products.find(p => p.name === i.product_name);
             return {
               name: i.product_name,
               quantity: i.quantity,
-              target: i.target || product?.target || 'Kitchen', // Prefer DB value, fallback to product data
+              target: i.target || product?.target || 'Kitchen',
               status: i.status || 'Pending',
+              notes: i.notes
             };
           })
         }));
 
       setPendingOrders(prev => {
-        // [FIX] Strict Sync: Remove stale DB orders, Add new DB orders, Keep Local orders
         const localOnlyOrders = prev.filter(p => typeof p.id === 'string' && p.id.startsWith('HOLD-'));
         return [...localOnlyOrders, ...pendingFromDB];
       });
@@ -834,13 +855,11 @@ function Home() {
 
   // --- Accounting Integration ---
   const fetchAccounting = async () => {
-    // 1. Fetch Master Data
     const { data: accData } = await supabase.from('accounts').select('*').order('code');
     if (accData) setAccounts(accData);
 
     const { data: journalData } = await supabase.from('journal_entries').select('*').order('date', { ascending: false });
     
-    // [NEW] Automated 'Ghost Hunter' Cleanup (Part 26 - Fix)
     const cleanupOrphans = async () => {
       if (!journalData) return;
       
@@ -936,6 +955,7 @@ function Home() {
   // --- Employees Integration ---
   const fetchEmployees = async () => {
     if (!currentBranchId) return;
+
     const branchIdNum = Number(currentBranchId); // [FIX] Ensure numeric comparison
     const { data: empData } = await supabase.from('employees').select('*').eq('branch_id', branchIdNum).order('name');
     if (empData) {
@@ -1026,6 +1046,13 @@ function Home() {
             if (prev.some(s => s.id === formattedSale.id)) return prev;
             return [formattedSale, ...prev];
           });
+
+          if (['Pending', 'Paid', 'Preparing', 'Ready', 'Unpaid'].includes(formattedSale.status)) {
+            setPendingOrders(prev => {
+              if (prev.some(o => o.id === formattedSale.id)) return prev;
+              return [formattedSale, ...prev];
+            });
+          }
 
           // 4. Special Handling for Kiosk OR Cashier Role (Auto-Open Cashier)
           // ONLY for Pending/Unpaid orders. Paid orders go straight to KDS and shouldn't interrupt Cashier.
@@ -1362,6 +1389,8 @@ function Home() {
         console.error('Petty Cash Sync Error:', pcErr);
       }
     }
+
+    await supabase.from('purchases').update({ is_synced: true }).eq('id', po.id);
   };
   
   const syncPurchaseWithStock = async (po: any) => {
@@ -1369,69 +1398,139 @@ function Home() {
       console.log('[StockSync] Starting sync for PO:', po.purchase_no, po);
       const items = po.items_list || po.itemsList || [];
       
-      if (!items.length) {
-        console.warn('[StockSync] No items found in PO:', po.purchase_no);
+      if (items.length === 0) {
+        console.warn('[StockSync] No items found in this purchase to sync.');
+        toast.error(`PO ${po.purchase_no} tidak memiliki daftar item untuk disinkronkan ke stok.`);
         return;
       }
 
+      let updatedProducts = 0;
+      let updatedIngredients = 0;
+
       for (const item of items) {
         const idToSync = item.itemId || item.id;
-        console.log('[StockSync] Processing item:', item.name, 'ID:', idToSync);
-
-        // Skip manual items that are not connected to DB records
+        
         if (typeof idToSync === 'string' && idToSync.startsWith('manual-')) {
           console.log('[StockSync] Skipping manual item:', item.name);
           continue;
         }
 
-        // 1. Try to find if it's a product
-        const { data: product } = await supabase.from('products').select('id, stock').eq('id', idToSync).maybeSingle();
-        if (product) {
-          const oldStock = Number(product.stock) || 0;
-          const addQty = Number(item.quantity) || 0;
-          const newStock = oldStock + addQty;
-          
-          console.log(`[StockSync] Updating Product ${item.name}: ${oldStock} -> ${newStock}`);
-          const { error: pErr } = await supabase.from('products').update({ 
-            stock: newStock,
-            cost: Number(item.price) || 0, // Update Modal (Cost)
-            price: Number(item.sellingPrice) || undefined // Update Harga Jual (if provided)
-          }).eq('id', product.id);
-          if (pErr) console.error('[StockSync] Product Update Error:', pErr);
-        } else {
-          // 2. Try to find if it's an ingredient
-          const { data: ingredient } = await supabase.from('ingredients').select('id, current_stock').eq('id', idToSync).maybeSingle();
-          if (ingredient) {
-            const oldStock = Number(ingredient.current_stock) || 0;
-            const addQty = Number(item.quantity) || 0;
-            const newStock = oldStock + addQty;
+        const numericId = Number(idToSync);
+        if (isNaN(numericId) || !numericId) continue;
 
-            console.log(`[StockSync] Updating Ingredient ${item.name}: ${oldStock} -> ${newStock}`);
-            const { error: iErr } = await supabase.from('ingredients').update({ 
-              current_stock: newStock,
-              cost_per_unit: Number(item.price) || 0 // Update Modal (Cost per Unit)
-            }).eq('id', ingredient.id);
-            if (iErr) console.error('[StockSync] Ingredient Update Error:', iErr);
-            
-            // Record stock movement for ingredient
-            await supabase.from('stock_movements').insert([{
-              ingredient_id: ingredient.id,
-              ingredient_name: item.name,
-              branch_id: po.branch_id,
-              type: 'IN',
-              quantity: addQty,
-              unit: item.unit || '',
-              reason: `Pembelian PO: ${po.purchase_no}`,
-              user: profileName || user?.user_metadata?.name || 'System'
-            }]);
-          } else {
-            console.warn('[StockSync] Item ID not found in Products or Ingredients:', idToSync, item.name);
-          }
+        const itemType = item.type; // 'product' | 'ingredient'
+        console.log(`[StockSync] Syncing ${item.name} (ID: ${numericId}, Type: ${itemType})`);
+
+        let updated = false;
+
+        // 1. If it's a PRODUCT or type is unknown, try Product table first
+        if (!itemType || itemType === 'product') {
+          try {
+            const { data: product } = await supabase.from('products').select('id, stock').eq('id', numericId).maybeSingle();
+            if (product) {
+              const addQty = Number(item.quantity) || 0;
+              const newStock = (Number(product.stock) || 0) + addQty;
+              await supabase.from('products').update({ 
+                stock: newStock,
+                cost: Number(item.price) || 0
+              }).eq('id', product.id);
+              updatedProducts++;
+              updated = true;
+              console.log(`[StockSync] Updated Product stock for ${item.name}`);
+            }
+          } catch (e) { console.error(e); }
+        }
+
+        // 2. If it's an INGREDIENT or (not found as product AND type is unknown), try Ingredient table
+        if (!updated && (!itemType || itemType === 'ingredient')) {
+          try {
+            const { data: ingredient } = await supabase.from('ingredients').select('id, current_stock').eq('id', numericId).maybeSingle();
+            if (ingredient) {
+              const addQty = Number(item.quantity) || 0;
+              const newStock = (Number(ingredient.current_stock) || 0) + addQty;
+
+              const { error: iErr } = await supabase.from('ingredients').update({ 
+                current_stock: newStock,
+                cost_per_unit: Number(item.price) || 0
+              }).eq('id', ingredient.id);
+              
+              if (!iErr) {
+                updatedIngredients++;
+                updated = true;
+                toast.success(`Stok Bahan: ${item.name} bertambah +${addQty}`);
+                
+                // Record movement
+                await supabase.from('stock_movements').insert([{
+                  ingredient_id: ingredient.id,
+                  ingredient_name: item.name,
+                  branch_id: po.branch_id,
+                  type: 'IN',
+                  quantity: addQty,
+                  unit: item.unit || '',
+                  reason: `Pembelian PO: ${po.purchase_no}`,
+                  user: profileName || user?.user_metadata?.name || 'System'
+                }]);
+
+                // [NEW] Smart Sync: Link Ingredient to Product by Recipe OR Name/Code
+                try {
+                  // A. By Recipe (Formal link)
+                  const { data: links } = await supabase.from('product_recipes').select('product_id, amount').eq('ingredient_id', ingredient.id);
+                  let syncedProductIds = new Set();
+
+                  if (links && links.length > 0) {
+                    for (const link of links) {
+                      if (Number(link.amount) === 1) {
+                        await supabase.from('products').update({ stock: newStock }).eq('id', link.product_id);
+                        syncedProductIds.add(link.product_id);
+                        console.log(`[StockSync] Synced Product (Recipe) ${link.product_id} to ${newStock}`);
+                      }
+                    }
+                  }
+
+                  // B. By Name/Code Match (Fallback for unlinked items like P052)
+                  const { data: matchingProducts } = await supabase.from('products')
+                    .select('id')
+                    .or(`name.eq."${ingredient.name}",code.eq."${item.name}",code.eq."${po.purchase_no}"`) // Simple matching logic
+                    .eq('branch_id', po.branch_id);
+                  
+                  if (matchingProducts) {
+                    for (const mp of matchingProducts) {
+                      if (!syncedProductIds.has(mp.id)) {
+                        await supabase.from('products').update({ stock: newStock }).eq('id', mp.id);
+                        console.log(`[StockSync] Synced Product (Name/Code Match) ${mp.id} to ${newStock}`);
+                      }
+                    }
+                  }
+                } catch (linkErr) { console.error('Link sync error:', linkErr); }
+
+                // Update HPP of related products
+                const { data: recipes } = await supabase.from('product_recipes').select('product_id').eq('ingredient_id', ingredient.id);
+                if (recipes && recipes.length > 0) {
+                  const productIds = [...new Set(recipes.map(r => r.product_id))];
+                  for (const pid of productIds) {
+                    const { data: fullRecipe } = await supabase.from('product_recipes').select('ingredient_id, amount').eq('product_id', pid);
+                    if (fullRecipe) {
+                      const ingIds = fullRecipe.map(r => r.ingredient_id);
+                      const { data: allIngs } = await supabase.from('ingredients').select('id, cost_per_unit').in('id', ingIds);
+                      const newHpp = fullRecipe.reduce((total, r) => {
+                        const ing = allIngs?.find(i => String(i.id) === String(r.ingredient_id));
+                        return total + (Number(ing?.cost_per_unit || 0) * Number(r.amount || 0));
+                      }, 0);
+                      await supabase.from('products').update({ cost: newHpp }).eq('id', pid);
+                    }
+                  }
+                  toast.info(`${productIds.length} resep produk diperbarui`);
+                }
+              }
+            }
+          } catch (e) { console.error(e); }
+        }
+
+        if (!updated && itemType !== 'manual') {
+          toast.warning(`Item "${item.name}" tidak ditemukan di database.`);
         }
       }
-      toast.success('Stok produk/bahan baku telah diperbarui otomatis');
-      
-      // Proactively refresh branch data to show updated stock in UI
+
       if (currentBranchId) fetchBranchData(currentBranchId);
       
     } catch (err) {
@@ -1445,6 +1544,7 @@ function Home() {
     action: 'create' | 'update' | 'delete',
     data: any
   ) => {
+    console.log(`[MasterCRUD] Action: ${action} Table: ${table}`, data);
     try {
       if (action === 'create') {
         const { id, ...payload } = data; // Strip ID for auto-generation
@@ -1459,7 +1559,8 @@ function Home() {
         toast.success(`Data berhasil ditambahkan`);
 
         // [NEW] Accounting & Stock Integration for New Purchases
-        if (table === 'purchases' && insertedData?.status === 'Completed') {
+        if (table === 'purchases' && insertedData?.status === 'Completed' && !insertedData?.is_synced) {
+          console.log('[MasterCRUD] New Completed Purchase detected, syncing...');
           await syncPurchaseWithAccounting(insertedData);
           await syncPurchaseWithStock(insertedData);
         }
@@ -1469,13 +1570,34 @@ function Home() {
         if (error) throw error;
 
         // [NEW] Accounting & Stock Integration for Updated Purchases
-        if (table === 'purchases' && data.status === 'Completed') {
-          // Fetch full purchase data for journaling & stock sync
-          const { data: po } = await supabase.from('purchases').select('*').eq('id', data.id).single();
-          if (po) {
-            await syncPurchaseWithAccounting(po);
-            await syncPurchaseWithStock(po);
-            toast.success('Pembelian dicatat ke Akuntansi & Stok diperbarui');
+        if (table === 'purchases') {
+          const statusLower = String(data.status || '').trim().toLowerCase();
+          console.log('[MasterCRUD] Checking purchase sync. Target Status: completed, Actual:', statusLower);
+          
+          if (statusLower === 'completed') {
+            // Fetch full purchase data for journaling & stock sync
+            const { data: po, error: fetchErr } = await supabase.from('purchases').select('*').eq('id', data.id).single();
+            
+            if (fetchErr) {
+              console.error('[MasterCRUD] Error fetching PO for sync:', fetchErr);
+              toast.error('Gagal mengambil data PO untuk sinkronisasi');
+            } else if (po) {
+              if (!po.is_synced) {
+                console.log('[MasterCRUD] Triggering sync for PO:', po.purchase_no);
+                const syncToastId = toast.loading(`Sedang sinkronisasi PO ${po.purchase_no}...`);
+                try {
+                  await syncPurchaseWithAccounting(po);
+                  await syncPurchaseWithStock(po);
+                  toast.success(`PO ${po.purchase_no} berhasil disinkronkan ke Stok & Akuntansi`, { id: syncToastId });
+                } catch (syncErr: any) {
+                  console.error('[MasterCRUD] Sync Error:', syncErr);
+                  toast.error(`Gagal sinkronisasi otomatis: ${syncErr.message}`, { id: syncToastId });
+                }
+              } else {
+                console.log('[MasterCRUD] PO already synced, skipping.');
+                toast.info(`PO ${po.purchase_no} sudah pernah disinkronkan sebelumnya.`);
+              }
+            }
           }
         }
         
@@ -2055,6 +2177,37 @@ function Home() {
       if (isOnline && sale.syncStatus !== 'pending') {
          const { error: itemsError } = await supabase.from('sale_items').insert(saleItems);
          if (itemsError) console.error('Sale items insert failed:', itemsError);
+
+         // Stock Deduction
+         try {
+           for (const item of saleItems) {
+             if (!item.product_id) continue;
+             const { data: recipe } = await supabase.from('product_recipes').select('ingredient_id, amount').eq('product_id', item.product_id);
+             if (recipe && recipe.length > 0) {
+               for (const comp of recipe) {
+                 const deductQty = (Number(item.quantity) || 0) * (Number(comp.amount) || 0);
+                 const { data: ing } = await supabase.from('ingredients').select('current_stock, name, unit').eq('id', comp.ingredient_id).single();
+                 if (ing) {
+                   const newStock = (Number(ing.current_stock) || 0) - deductQty;
+                   await supabase.from('ingredients').update({ current_stock: newStock }).eq('id', comp.ingredient_id);
+                   await supabase.from('stock_movements').insert([{
+                     ingredient_id: comp.ingredient_id, ingredient_name: ing.name, branch_id: currentBranchId, type: 'OUT', quantity: deductQty, unit: ing.unit || '', reason: `Penjualan: ${orderNo}`, user: user?.user_metadata?.name || 'System'
+                   }]);
+                 }
+               }
+             } else {
+               const { data: matchingIng } = await supabase.from('ingredients').select('*').or(`name.eq."${item.product_name}",code.eq."${item.product_name}"`).eq('branch_id', currentBranchId).maybeSingle();
+               if (matchingIng) {
+                 const deductQty = Number(item.quantity) || 0;
+                 const newStock = (Number(matchingIng.current_stock) || 0) - deductQty;
+                 await supabase.from('ingredients').update({ current_stock: newStock }).eq('id', matchingIng.id);
+                 await supabase.from('stock_movements').insert([{
+                   ingredient_id: matchingIng.id, ingredient_name: matchingIng.name, branch_id: currentBranchId, type: 'OUT', quantity: deductQty, unit: matchingIng.unit || '', reason: `Penjualan: ${orderNo} (Auto-Match)`, user: user?.user_metadata?.name || 'System'
+                 }]);
+               }
+             }
+           }
+         } catch (e) { console.error(e); }
 
          // [NEW] Post to Accounting immediately for online sales
          if (saleData.totalAmount > 0) {

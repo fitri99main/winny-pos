@@ -313,6 +313,8 @@ export default function CashierSessionHistoryScreen() {
             let cash = 0;
             let nonCash = 0;
             let total = 0;
+            let totalTax = 0;
+            let totalDiscount = 0;
             let completedCount = 0;
             let paySummary: Record<string, number> = {};
             let catSummary: Record<string, number> = {};
@@ -326,6 +328,8 @@ export default function CashierSessionHistoryScreen() {
                     // ALWAYS use total_amount for revenue/cash calculations to prevent change (kembalian) from inflating the cash drawer amount
                     const amount = (sale.total_amount || 0);
                     total += amount;
+                    totalTax += Number(sale.tax || sale.tax_amount || 0);
+                    totalDiscount += Number(sale.discount || sale.discount_amount || 0);
                     const method = (sale.payment_method || 'Tunai').trim();
                     paySummary[method] = (paySummary[method] || 0) + amount;
 
@@ -379,6 +383,8 @@ export default function CashierSessionHistoryScreen() {
                 cash_sales: cash,
                 non_cash_sales: nonCash,
                 total_sales: total,
+                total_tax: totalTax,
+                total_discount: totalDiscount,
                 total_orders: completedCount,
                 expected_cash: session.starting_cash + cash,
                 starting_cash: session.starting_cash,
@@ -409,8 +415,8 @@ export default function CashierSessionHistoryScreen() {
                 dateRange: `${new Date(summaryData.opened_at).toLocaleString('id-ID')} - ${new Date(summaryData.closed_at || new Date()).toLocaleString('id-ID')}`,
                 totalOrders: summaryData.total_orders,
                 totalSales: summaryData.total_sales,
-                totalTax: 0,
-                totalDiscount: 0,
+                totalTax: summaryData.total_tax || 0,
+                totalDiscount: summaryData.total_discount || 0,
                 paymentSummary: summaryData.payment_summary,
                 categorySummary: summaryData.category_summary.map((c: any) => ({ category: c.name, amount: c.amount })),
                 productSummary: [],

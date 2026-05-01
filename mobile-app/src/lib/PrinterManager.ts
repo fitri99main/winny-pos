@@ -241,7 +241,7 @@ export class PrinterManager {
 
         let hasTaxedItems = false;
         (orderData.items || []).forEach((item: any) => {
-            const isTaxed = item.is_taxed !== false;
+            const isTaxed = item.is_taxed === true;
             if (isTaxed) hasTaxedItems = true;
             const label = `${item.quantity}x ${item.product_name || item.name}${isTaxed ? '*' : ''}`;
             const price = (item.price * item.quantity).toLocaleString('id-ID');

@@ -86,7 +86,7 @@ export default function ShiftSummaryPreviewModal({ visible, onClose, data, onPri
                         <View style={styles.header}>
                             <View style={styles.titleWrapper}>
                                 <Eye size={20} color="#1e293b" />
-                                <Text style={styles.headerTitle}>Pratinjau Struk ({paperWidthStr})</Text>
+                                <Text style={styles.headerTitle}>Pratinjau Struk ({paperWidthStr}) v2</Text>
                             </View>
                             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
                                 <X size={24} color="#94a3b8" />

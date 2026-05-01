@@ -16,6 +16,7 @@ interface PurchaseItem {
     price: number; // Purchase Cost
     sellingPrice?: number; // Target Selling Price
     unit?: string;
+    type?: 'product' | 'ingredient' | 'manual';
 }
 
 interface PurchaseOrder {
@@ -69,17 +70,18 @@ export function PurchasesView({
     const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
 
     // Form Tracking
-    const [inputForm, setInputForm] = useState<Partial<PurchaseOrder>>({
+    const [inputForm, setInputForm] = useState<any>({
         date: new Date().toISOString().split('T')[0],
         supplierName: '',
         supplierInvoiceNo: '',
         purchaseNo: '',
-        payment_method: 'Tunai'
+        payment_method: 'Tunai',
+        adjustment: 0
     });
     const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([]);
     const [returnForm, setReturnForm] = useState<Partial<PurchaseReturn>>({ date: new Date().toISOString().split('T')[0] });
     const [isManualSupplier, setIsManualSupplier] = useState(false);
-    const [manualItemForm, setManualItemForm] = useState({ name: '', price: '', sellingPrice: '', selectedItemId: '' });
+    const [manualItemForm, setManualItemForm] = useState({ name: '', price: '', sellingPrice: '', selectedItemId: '', type: 'manual' as 'product' | 'ingredient' | 'manual' });
 
     const [isEditing, setIsEditing] = useState(false);
     const [editingId, setEditingId] = useState<number | null>(null);
@@ -90,13 +92,14 @@ export function PurchasesView({
         onScan: (code) => {
             if (activeTab !== 'input') return;
 
-            // Try to find ingredient by code first (purchases usually involve ingredients)
+            // Try to find ingredient by code first
             const ingredient = ingredients.find(i => i.code === code);
             if (ingredient) {
                 handleAddItem({
                     itemId: ingredient.id,
                     name: ingredient.name,
-                    price: ingredient.costPerUnit || 0
+                    price: ingredient.cost_per_unit || 0,
+                    type: 'ingredient'
                 });
                 return;
             }
@@ -108,7 +111,8 @@ export function PurchasesView({
                     itemId: product.id,
                     name: product.name,
                     price: product.cost || 0,
-                    sellingPrice: product.price || 0
+                    sellingPrice: product.price || 0,
+                    type: 'product'
                 });
                 return;
             }
@@ -120,20 +124,25 @@ export function PurchasesView({
 
     // --- Handlers ---
 
-    const handleAddItem = (item: { itemId: number | string, name: string, price: number, sellingPrice?: number, unit?: string }) => {
+    const handleAddItem = (item: { itemId: number | string, name: string, price: number, sellingPrice?: number, unit?: string, type?: 'product' | 'ingredient' | 'manual' }) => {
+        // Detect if it's a manual item (starts with 'manual-') or a DB item
+        const isManual = typeof item.itemId === 'string' && item.itemId.startsWith('manual-');
+        const normalizedId = isManual ? item.itemId : Number(item.itemId);
+
         setPurchaseItems(prev => {
-            const existing = prev.find(i => i.itemId === item.itemId);
+            const existing = prev.find(i => i.itemId === normalizedId);
             if (existing) {
-                return prev.map(i => i.itemId === item.itemId ? { ...i, quantity: i.quantity + 1 } : i);
+                return prev.map(i => i.itemId === normalizedId ? { ...i, quantity: (Number(i.quantity) || 0) + 1 } : i);
             }
             return [...prev, {
                 id: `pitem-${Date.now()}`,
-                itemId: item.itemId,
+                itemId: normalizedId,
                 name: item.name,
                 quantity: 1,
                 price: item.price,
                 sellingPrice: item.sellingPrice || item.price * 1.2, // Default 20% margin if not set
-                unit: item.unit
+                unit: item.unit,
+                type: item.type || 'manual'
             }];
         });
         toast.success(`Menambahkan ${item.name}`);
@@ -174,7 +183,8 @@ export function PurchasesView({
             supplier_name: inputForm.supplierName,
             date: inputForm.date || new Date().toISOString().split('T')[0],
             items_count: totalItemsCount,
-            total_amount: totalAmount,
+            total_amount: totalAmount + (Number(inputForm.adjustment) || 0),
+            adjustment: Number(inputForm.adjustment) || 0,
             status: isEditing ? inputForm.status : 'Pending',
             payment_method: inputForm.payment_method || 'Tunai',
             branch_id: currentBranchId,
@@ -217,7 +227,8 @@ export function PurchasesView({
                 supplierName: '', 
                 supplierInvoiceNo: '',
                 purchaseNo: '',
-                payment_method: 'Tunai'
+                payment_method: 'Tunai',
+                adjustment: 0
             });
             setPurchaseItems([]);
             setIsEditing(false);
@@ -264,7 +275,8 @@ export function PurchasesView({
             purchaseNo: po.purchase_no,
             supplierInvoiceNo: po.supplier_invoice_no || '',
             status: po.status,
-            payment_method: po.payment_method || 'Tunai'
+            payment_method: po.payment_method || 'Tunai',
+            adjustment: po.adjustment || 0
         });
         setPurchaseItems(po.items_list || []);
         setActiveTab('input');
@@ -643,11 +655,23 @@ export function PurchasesView({
                         </div>
 
                         <div className="pt-4 border-t border-dashed border-gray-100 space-y-3">
-                            <div className="bg-gray-50 rounded-xl p-3 flex justify-between items-center">
-                                <span className="text-[10px] font-black text-gray-400 uppercase">Total Bayar</span>
-                                <span className="text-lg font-black text-gray-800">
-                                    Rp {totalAmount.toLocaleString()}
-                                </span>
+                            <div className="space-y-2">
+                                <div className="flex justify-between items-center px-1">
+                                    <label className="text-[10px] font-black text-gray-400 uppercase">Potongan / Biaya Lain</label>
+                                    <input 
+                                        type="text"
+                                        className="w-24 text-right p-1 text-xs border-b border-gray-200 outline-none focus:border-blue-500 font-bold"
+                                        placeholder="0"
+                                        value={inputForm.adjustment}
+                                        onChange={e => setInputForm({...inputForm, adjustment: e.target.value})}
+                                    />
+                                </div>
+                                <div className="bg-gray-900 rounded-xl p-4 flex justify-between items-center shadow-lg">
+                                    <span className="text-[10px] font-black text-blue-400 uppercase">Total Akhir PO</span>
+                                    <span className="text-xl font-black text-white">
+                                        Rp {(totalAmount + (Number(inputForm.adjustment) || 0)).toLocaleString()}
+                                    </span>
+                                </div>
                             </div>
                         </div>
 
@@ -711,7 +735,7 @@ export function PurchasesView({
                                 value={manualItemForm.name}
                                 onChange={e => {
                                     const val = e.target.value;
-                                    setManualItemForm({ ...manualItemForm, name: val, selectedItemId: '', sellingPrice: '' });
+                                    setManualItemForm({ ...manualItemForm, name: val, selectedItemId: '', sellingPrice: '', type: 'manual' });
                                 }}
                             />
                             <Search className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-300" />
@@ -729,9 +753,10 @@ export function PurchasesView({
                                                 onClick={() => {
                                                     setManualItemForm({
                                                         name: item.name,
-                                                        price: String(item.cost || item.cost_per_unit || ''),
-                                                        sellingPrice: String(item.price || ''),
-                                                        selectedItemId: String(item.id)
+                                                        price: String(item.cost || (item as any).cost_per_unit || ''),
+                                                        sellingPrice: String((item as any).price || ''),
+                                                        selectedItemId: String(item.id),
+                                                        type: (item as any).cost_per_unit !== undefined ? 'ingredient' : 'product'
                                                     });
                                                 }}
                                             >
@@ -765,14 +790,14 @@ export function PurchasesView({
 
                         <div className="grid grid-cols-2 gap-2">
                             <input
-                                type="number"
+                                type="text"
                                 placeholder="Harga Beli"
                                 className="w-full p-2 text-xs border border-gray-100 rounded-lg outline-none"
                                 value={manualItemForm.price}
                                 onChange={e => setManualItemForm({ ...manualItemForm, price: e.target.value })}
                             />
                             <input
-                                type="number"
+                                type="text"
                                 placeholder="Harga Jual"
                                 className="w-full p-2 text-xs border border-gray-100 rounded-lg outline-none bg-blue-50/30"
                                 value={manualItemForm.sellingPrice}
@@ -791,9 +816,10 @@ export function PurchasesView({
                                     itemId: manualItemForm.selectedItemId || `manual-${Date.now()}`,
                                     name: manualItemForm.name,
                                     price: Number(manualItemForm.price),
-                                    sellingPrice: Number(manualItemForm.sellingPrice) || undefined
+                                    sellingPrice: Number(manualItemForm.sellingPrice) || undefined,
+                                    type: manualItemForm.type
                                 });
-                                setManualItemForm({ name: '', price: '', sellingPrice: '', selectedItemId: '' });
+                                setManualItemForm({ name: '', price: '', sellingPrice: '', selectedItemId: '', type: 'manual' });
                             }}
                         >
                             TAMBAH ITEM

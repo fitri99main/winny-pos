@@ -156,41 +156,62 @@ export default function HistoryScreen() {
             setIsOnline(online);
             
             let onlineSales: any[] = [];
+            let filteredOfflineSales = branchOfflineSales;
+
+            // Define Date Range for filtering
+            const now = new Date();
+            let startLimit: Date | null = null;
+            let endLimit: Date | null = null;
+
+            if (dateFilter === 'today') {
+                startLimit = new Date();
+                startLimit.setHours(0, 0, 0, 0);
+            } else if (dateFilter === 'week') {
+                startLimit = new Date();
+                startLimit.setDate(now.getDate() - 6);
+                startLimit.setHours(0, 0, 0, 0);
+            } else if (dateFilter === 'month') {
+                startLimit = new Date();
+                startLimit.setDate(now.getDate() - 29);
+                startLimit.setHours(0, 0, 0, 0);
+            } else if (dateFilter === 'custom') {
+                startLimit = new Date(startDate);
+                startLimit.setHours(0, 0, 0, 0);
+                endLimit = new Date(endDate);
+                endLimit.setHours(23, 59, 59, 999);
+            }
+
+            // Apply date filter to OFFLINE sales as well
+            if (startLimit) {
+                filteredOfflineSales = filteredOfflineSales.filter(s => {
+                    const d = new Date(s.date);
+                    const isAfterStart = d >= (startLimit as Date);
+                    const isBeforeEnd = endLimit ? d <= endLimit : true;
+                    return isAfterStart && isBeforeEnd;
+                });
+            }
 
             if (online) {
-                const now = new Date();
                 let query = supabase
                     .from('sales')
                     .select(`
                         *,
                         sale_items (
                             *,
-                            product:product_id (name, category)
+                            product:product_id (name, category, is_taxed)
                         )
                     `)
                     .eq('branch_id', bId)
                     .order('date', { ascending: false });
 
-                if (dateFilter === 'today') {
-                    const startOfDay = new Date();
-                    startOfDay.setHours(0, 0, 0, 0);
-                    query = query.gte('date', startOfDay.toISOString());
-                } else if (dateFilter === 'week') {
-                    const weekAgo = new Date();
-                    weekAgo.setDate(now.getDate() - 6);
-                    weekAgo.setHours(0, 0, 0, 0);
-                    query = query.gte('date', weekAgo.toISOString());
-                } else if (dateFilter === 'month') {
-                    const monthAgo = new Date();
-                    monthAgo.setDate(now.getDate() - 29);
-                    monthAgo.setHours(0, 0, 0, 0);
-                    query = query.gte('date', monthAgo.toISOString());
-                } else if (dateFilter === 'custom') {
-                    const start = new Date(startDate);
-                    start.setHours(0, 0, 0, 0);
-                    const end = new Date(endDate);
-                    end.setHours(23, 59, 59, 999);
-                    query = query.gte('date', start.toISOString()).lte('date', end.toISOString());
+                if (dateFilter === 'today' && startLimit) {
+                    query = query.gte('date', startLimit.toISOString());
+                } else if (dateFilter === 'week' && startLimit) {
+                    query = query.gte('date', startLimit.toISOString());
+                } else if (dateFilter === 'month' && startLimit) {
+                    query = query.gte('date', startLimit.toISOString());
+                } else if (dateFilter === 'custom' && startLimit && endLimit) {
+                    query = query.gte('date', startLimit.toISOString()).lte('date', endLimit.toISOString());
                 }
 
                 const pageSize = 50;
@@ -218,8 +239,8 @@ export default function HistoryScreen() {
                 history.forEach(s => combinedMap.set(s.order_no, s));
             }
 
-            // Add offline items next
-            branchOfflineSales.forEach(s => combinedMap.set(s.order_no, s));
+            // Add filtered offline items next
+            filteredOfflineSales.forEach(s => combinedMap.set(s.order_no, s));
             
             // Add online items (overwrite offline if they exist online already)
             onlineSales.forEach(s => combinedMap.set(s.order_no, { ...s, is_offline: false }));
@@ -285,21 +306,24 @@ export default function HistoryScreen() {
 
         // WiFi Voucher Fetching
         let wifiVoucher = null;
-        const minAmount = storeSettings?.wifi_voucher_min_amount || 0;
-        
-        if (storeSettings?.enable_wifi_vouchers && Number(selectedSale.total_amount) >= minAmount) {
-            try {
-                const multiplier = storeSettings?.wifi_voucher_multiplier || 0;
-                let count = 1;
-                if (multiplier > 0) {
-                    count = Math.floor(Number(selectedSale.total_amount) / multiplier);
-                }
-                
-                if (count > 0) {
+        if (storeSettings?.enable_wifi_vouchers) {
+            const minAmount = Number(storeSettings?.wifi_voucher_min_amount) || 0;
+            const multiplier = Number(storeSettings?.wifi_voucher_multiplier) || 0;
+            const totalAmount = Number(selectedSale.total_amount || selectedSale.total || 0);
+
+            if (totalAmount >= minAmount && totalAmount > 0) {
+                try {
+                    const step = multiplier > 0 ? multiplier : (minAmount > 0 ? minAmount : 0);
+                    let count = 1;
+                    if (step > 0) {
+                        count = Math.floor(totalAmount / step);
+                    }
+                    if (count < 1) count = 1;
+                    
                     wifiVoucher = await WifiVoucherService.getVoucherForSale(selectedSale.id, currentBranchId || 'default', count);
+                } catch (e) {
+                    console.warn('[HistoryScreen] Failed to fetch WiFi voucher:', e);
                 }
-            } catch (e) {
-                console.warn('[HistoryScreen] Failed to fetch WiFi voucher:', e);
             }
         }
 
@@ -334,7 +358,7 @@ export default function HistoryScreen() {
                     target: item.target || '',
                     category: item.product?.category || '',
                     // @ts-ignore
-                    isManual: !!item.isManual,
+                    is_taxed: item.is_taxed === true || item.product?.is_taxed === true,
                     notes: item.notes
                 };
             }),
@@ -378,26 +402,25 @@ export default function HistoryScreen() {
 
             // WiFi Voucher Fetching
             let wifiVoucher = null;
-            const minAmount = storeSettings?.wifi_voucher_min_amount || 0;
-            const totalStr = String(selectedSale.total_amount || '0');
-            const total = Number(totalStr);
-            
-            if (storeSettings?.enable_wifi_vouchers && total >= minAmount) {
-                try {
-                    const multiplier = storeSettings?.wifi_voucher_multiplier || 0;
-                    let count = 1;
-                    if (multiplier > 0) {
-                        count = Math.floor(total / multiplier);
-                    }
+            if (storeSettings?.enable_wifi_vouchers) {
+                const minAmount = Number(storeSettings?.wifi_voucher_min_amount) || 0;
+                const multiplier = Number(storeSettings?.wifi_voucher_multiplier) || 0;
+                const totalAmount = Number(selectedSale.total_amount || selectedSale.total || 0);
 
-                    console.log(`[HistoryScreen] Reprint Logic: total=${total}, min=${minAmount}, multiplier=${multiplier}, calculatedCount=${count}`);
+                if (totalAmount >= minAmount && totalAmount > 0) {
+                    try {
+                        const step = multiplier > 0 ? multiplier : (minAmount > 0 ? minAmount : 0);
+                        let count = 1;
+                        if (step > 0) {
+                            count = Math.floor(totalAmount / step);
+                        }
+                        if (count < 1) count = 1;
 
-                    if (count > 0) {
+                        console.log(`[HistoryScreen] Reprint Logic: total=${totalAmount}, min=${minAmount}, mult=${multiplier}, step=${step}, count=${count}`);
                         wifiVoucher = await WifiVoucherService.getVoucherForSale(selectedSale.id, currentBranchId || 'default', count);
-                        console.log(`[HistoryScreen] Reprint WiFi Voucher Result: ${wifiVoucher}`);
+                    } catch (e) {
+                        console.warn('[HistoryScreen] Failed to fetch WiFi voucher:', e);
                     }
-                } catch (e) {
-                    console.warn('[HistoryScreen] Failed to fetch WiFi voucher:', e);
                 }
             }
 
@@ -431,7 +454,7 @@ export default function HistoryScreen() {
                         target: item.target || '',
                         category: item.product?.category || '',
                         // @ts-ignore
-                        isManual: !!item.isManual,
+                        is_taxed: item.is_taxed === true || item.product?.is_taxed === true,
                         notes: item.notes
                     };
                 }),
@@ -518,28 +541,34 @@ export default function HistoryScreen() {
                     onPress: async () => {
                         try {
                             setLoading(true);
-                            // 1. Delete associated data first to avoid Foreign Key constraints
-                            await supabase.from('sale_items').delete().eq('sale_id', sale.id);
-                            await supabase.from('sales_returns').delete().eq('sale_id', sale.id);
                             
-                            // Financial Sync Deletion
-                            await supabase.from('journal_entries').delete().eq('reference_id', String(sale.id)).eq('source_type', 'sale');
-                            if (sale.order_no) {
-                                await supabase.from('journal_entries').delete().ilike('description', `%${sale.order_no}%`);
+                            // If it's an offline sale, remove it from local queue
+                            if (sale.is_offline) {
+                                await OfflineService.removeSaleFromQueue(sale.id);
+                            } else {
+                                // 1. Delete associated data first to avoid Foreign Key constraints
+                                await supabase.from('sale_items').delete().eq('sale_id', sale.id);
+                                await supabase.from('sales_returns').delete().eq('sale_id', sale.id);
+                                
+                                // Financial Sync Deletion
+                                await supabase.from('journal_entries').delete().eq('reference_id', String(sale.id)).eq('source_type', 'sale');
+                                if (sale.order_no) {
+                                    await supabase.from('journal_entries').delete().ilike('description', `%${sale.order_no}%`);
+                                }
+
+                                // Unlink WiFi Vouchers
+                                await supabase.from('wifi_vouchers')
+                                    .update({ is_used: false, used_at: null, sale_id: null })
+                                    .eq('sale_id', sale.id);
+
+                                // 2. Delete the sale record
+                                const { error: saleError } = await supabase
+                                    .from('sales')
+                                    .delete()
+                                    .eq('id', sale.id);
+
+                                if (saleError) throw saleError;
                             }
-
-                            // Unlink WiFi Vouchers
-                            await supabase.from('wifi_vouchers')
-                                .update({ is_used: false, used_at: null, sale_id: null })
-                                .eq('sale_id', sale.id);
-
-                            // 2. Delete the sale record
-                            const { error: saleError } = await supabase
-                                .from('sales')
-                                .delete()
-                                .eq('id', sale.id);
-
-                            if (saleError) throw saleError;
 
                             // 3. Free up table if needed
                             if (sale.table_no && sale.table_no !== 'Tanpa Meja') {
@@ -591,26 +620,36 @@ export default function HistoryScreen() {
                         try {
                             setLoading(true);
                             const ids = filteredHistory.map(h => h.id);
+                            const offlineIds = filteredHistory.filter(h => h.is_offline).map(h => h.id);
+                            const onlineIds = filteredHistory.filter(h => !h.is_offline).map(h => h.id);
                             
-                            // 1. Delete associated data for all selected IDs
-                            await supabase.from('sale_items').delete().in('sale_id', ids);
-                            await supabase.from('sales_returns').delete().in('sale_id', ids);
-                            
-                            // Financial Sync Deletion (Bulk)
-                            await supabase.from('journal_entries').delete().in('reference_id', ids.map(id => String(id))).eq('source_type', 'sale');
+                            // 1. Handle Offline Deletions
+                            for (const offId of offlineIds) {
+                                await OfflineService.removeSaleFromQueue(offId);
+                            }
 
-                            // Unlink WiFi Vouchers (Bulk)
-                            await supabase.from('wifi_vouchers')
-                                .update({ is_used: false, used_at: null, sale_id: null })
-                                .in('sale_id', ids);
+                            // 2. Handle Online Deletions
+                            if (onlineIds.length > 0) {
+                                // Delete associated data for all selected IDs
+                                await supabase.from('sale_items').delete().in('sale_id', onlineIds);
+                                await supabase.from('sales_returns').delete().in('sale_id', onlineIds);
+                                
+                                // Financial Sync Deletion (Bulk)
+                                await supabase.from('journal_entries').delete().in('reference_id', onlineIds.map(id => String(id))).eq('source_type', 'sale');
 
-                            // 2. Delete sales records
-                            const { error: saleError } = await supabase
-                                .from('sales')
-                                .delete()
-                                .in('id', ids);
+                                // Unlink WiFi Vouchers (Bulk)
+                                await supabase.from('wifi_vouchers')
+                                    .update({ is_used: false, used_at: null, sale_id: null })
+                                    .in('sale_id', onlineIds);
 
-                            if (saleError) throw saleError;
+                                // Delete sales records
+                                const { error: saleError } = await supabase
+                                    .from('sales')
+                                    .delete()
+                                    .in('id', onlineIds);
+
+                                if (saleError) throw saleError;
+                            }
 
                             // 3. Reset tables status if these sales were active
                             const tableNumbers = filteredHistory
@@ -1171,6 +1210,26 @@ export default function HistoryScreen() {
                     >
                         <Trash2 size={18} color="#ef4444" />
                     </TouchableOpacity>
+                    {history.some(h => h.is_offline) && (
+                        <TouchableOpacity 
+                            style={{ backgroundColor: '#fff7ed', padding: 6, borderRadius: 8, borderWidth: 1, borderColor: '#ffedd5' }} 
+                            onPress={() => {
+                                Alert.alert(
+                                    'Bersihkan Antrean',
+                                    'Hapus semua transaksi offline yang belum tersinkron? Data ini akan hilang permanen jika belum masuk ke server.',
+                                    [
+                                        { text: 'Batal', style: 'cancel' },
+                                        { text: 'Bersihkan', style: 'destructive', onPress: async () => {
+                                            await OfflineService.clearQueue();
+                                            fetchHistory();
+                                        }}
+                                    ]
+                                );
+                            }}
+                        >
+                            <X size={18} color="#ea580c" />
+                        </TouchableOpacity>
+                    )}
                     <TouchableOpacity style={styles.refreshBtn} onPress={fetchHistory} disabled={loading}>
                         <RefreshCw size={20} color={loading ? "#94a3b8" : "#ea580c"} />
                     </TouchableOpacity>
@@ -1299,10 +1358,25 @@ export default function HistoryScreen() {
                                     <View style={styles.slimHeader}>
                                         <Text style={styles.slimOrderNo}>{item.order_no}</Text>
                                         {item.is_offline && (
-                                            <View style={styles.offlineTagSmall}>
+                                            <TouchableOpacity 
+                                                onPress={() => {
+                                                    Alert.alert(
+                                                        'Hapus Offline',
+                                                        'Hapus transaksi offline ini?',
+                                                        [
+                                                            { text: 'Batal', style: 'cancel' },
+                                                            { text: 'Hapus', style: 'destructive', onPress: async () => {
+                                                                await OfflineService.removeSaleFromQueue(item.id);
+                                                                fetchHistory();
+                                                            }}
+                                                        ]
+                                                    );
+                                                }}
+                                                style={styles.offlineTagSmall}
+                                            >
                                                 <RefreshCw size={10} color="#f59e0b" />
-                                                <Text style={styles.offlineTagText}>Syncing</Text>
-                                            </View>
+                                                <Text style={styles.offlineTagText}>Syncing (Tap to Clear)</Text>
+                                            </TouchableOpacity>
                                         )}
                                         <View style={styles.dot} />
                                         <Text style={styles.slimTable}>{resolveOrderTypeDisplay(item.table_no, storeSettings).orderTypeLabel || resolveOrderTypeDisplay(item.table_no, storeSettings).tableValue || '-'}</Text>

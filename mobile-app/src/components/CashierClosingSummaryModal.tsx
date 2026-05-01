@@ -116,7 +116,7 @@ export default function CashierClosingSummaryModal({
                     <View style={styles.header}>
                         <View style={styles.titleWrapper}>
                             <PieChart size={22} color="#1e293b" />
-                            <Text style={styles.title}>{title}</Text>
+                            <Text style={styles.title}>{title} v2</Text>
                         </View>
                         <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
                             <X size={24} color="#94a3b8" />

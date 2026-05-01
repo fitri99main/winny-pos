@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Package, Tags, Scale, Ticket, Plus, Search, Edit, Trash2, Filter, ChefHat, Info, Calculator, Puzzle, Settings2, X, Check, Coffee, Barcode, Printer, ChevronUp, ChevronDown, GripVertical, Calendar } from 'lucide-react';
+import { Package, Tags, Scale, Ticket, Plus, Search, Edit, Trash2, Filter, ChefHat, Info, Calculator, Puzzle, Settings2, X, Check, Coffee, Barcode, Printer, ChevronUp, ChevronDown, GripVertical, Calendar, Link } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -558,11 +558,38 @@ export function ProductsView({
                                             Rp {p.price.toLocaleString()}
                                         </td>
                                         <td className="px-4 py-5 text-right">
-                                            <span className={`font-black ${(p.stock || 0) <= (p.min_stock ?? 5) ? 'text-red-500' : 'text-gray-700'}`}>{p.stock}</span>
-                                            <span className="text-gray-400 text-[10px] ml-1 uppercase font-bold">{p.unit}</span>
-                                            {(p.stock || 0) <= (p.min_stock ?? 5) && (
-                                                <div className="text-[9px] text-red-400 font-bold leading-none mt-0.5">LOW STOCK</div>
-                                            )}
+                                            {(() => {
+                                                // 1. Check if it's a 1:1 linked item via Recipe
+                                                const linkedRecipe = p.recipe?.find(r => Number(r.amount) === 1);
+                                                let linkedIng = linkedRecipe ? ingredients.find(i => i.id === linkedRecipe.ingredientId) : null;
+                                                
+                                                // 2. Fallback: Auto-match by Code or Name if no recipe
+                                                if (!linkedIng && p.code) {
+                                                    linkedIng = ingredients.find(i => (i.code === p.code || i.name === p.name));
+                                                }
+
+                                                const displayStock = linkedIng ? linkedIng.current_stock : (p.stock || 0);
+                                                const isLow = displayStock <= (p.min_stock ?? 5);
+                                                const isSynced = !!linkedIng;
+                                                
+                                                return (
+                                                    <div className="flex flex-col items-end">
+                                                        <div className="flex items-center gap-1">
+                                                            {isSynced && <Link className="w-2.5 h-2.5 text-blue-500" title="Sinkron Otomatis dengan Inventori" />}
+                                                            <span className={`font-black ${isLow ? 'text-red-500' : 'text-gray-700'}`}>
+                                                                {displayStock}
+                                                            </span>
+                                                            <span className="text-gray-400 text-[10px] uppercase font-bold">{p.unit || linkedIng?.unit}</span>
+                                                        </div>
+                                                        {isLow && (
+                                                            <div className="text-[9px] text-red-400 font-bold leading-none mt-0.5">LOW STOCK</div>
+                                                        )}
+                                                        {isSynced && (
+                                                            <div className="text-[8px] text-blue-400 font-black uppercase tracking-tighter">Synced</div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })()}
                                         </td>
                                         <td className="px-4 py-5 text-center">
                                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${p.is_sellable !== false ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
@@ -1038,7 +1065,14 @@ export function ProductsView({
                                                 <div key={idx} className={`flex items-center justify-between p-4 rounded-[24px] border transition-all group ${isEditing ? 'bg-primary/5 border-primary/30 ring-2 ring-primary/10' : 'bg-gray-50 border-gray-100/50'}`}>
                                                     <div className="flex flex-col">
                                                         <span className="text-sm font-black text-gray-800">{ing?.name || 'Bahan tidak ditemukan'}</span>
-                                                        <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wide">{item.amount} {ing?.unit} @ Rp {(ing?.cost_per_unit ?? 0).toLocaleString()}</span>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wide">{item.amount} {ing?.unit} @ Rp {(ing?.cost_per_unit ?? 0).toLocaleString()}</span>
+                                                            {ing && (
+                                                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-tighter ${ing.current_stock <= (ing.min_stock || 0) ? 'bg-red-50 text-red-500' : 'bg-gray-100 text-gray-400'}`}>
+                                                                    Sisa Stok: {ing.current_stock} {ing.unit}
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                     <div className="flex items-center gap-2">
                                                         <div className="text-right mr-2">
@@ -1108,7 +1142,9 @@ export function ProductsView({
                                             >
                                                 <option value="">Pilih bahan...</option>
                                                 {ingredients.map(i => (
-                                                    <option key={i.id} value={i.id}>{i.name} ({i.unit})</option>
+                                                    <option key={i.id} value={i.id}>
+                                                        {i.name} ({i.unit}) - Stok: {i.current_stock}
+                                                    </option>
                                                 ))}
                                             </select>
                                             <div className="flex gap-2">

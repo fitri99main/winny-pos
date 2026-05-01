@@ -714,25 +714,26 @@ export default function POSScreen() {
         if (storeSettings?.enable_wifi_vouchers) {
             const minAmount = Number(storeSettings?.wifi_voucher_min_amount) || 0;
             const multiplier = Number(storeSettings?.wifi_voucher_multiplier) || 0;
-            const totalAmount = Number(sale.total_amount) || 0;
+            const totalAmount = Number(sale.total_amount || sale.total || 0);
 
-            if (totalAmount >= minAmount) {
+            if (totalAmount >= minAmount && totalAmount > 0) {
                 try {
-                    let count = 1;
-
-                    // [RESTORED] Previously working logic: Use multiplier if set, otherwise use minAmount as the multiple.
-                    // This ensures 15000 = 1 voucher, 30000 = 2 vouchers if multiplier is not explicitly set.
-                    const effectiveMultiplier = multiplier > 0 ? multiplier : (minAmount > 0 ? minAmount : 15000);
-                    
                     // Calculate count based on multiples
-                    count = Math.floor(totalAmount / effectiveMultiplier);
+                    // Use multiplier if set (>0), otherwise use minAmount as the step.
+                    // If both are 0, default to 1 voucher.
+                    const step = multiplier > 0 ? multiplier : (minAmount > 0 ? minAmount : 0);
+                    
+                    let count = 1;
+                    if (step > 0) {
+                        count = Math.floor(totalAmount / step);
+                    }
                     
                     // Final safety: ensure at least 1 if they met the minimum spend
-                    if (count < 1 && totalAmount >= minAmount) {
+                    if (count < 1) {
                         count = 1;
                     }
 
-                    console.log(`[POSScreen] WiFi Voucher Logic: total=${totalAmount}, min=${minAmount}, mult=${multiplier}, count=${count}`);
+                    console.log(`[POSScreen] WiFi Voucher Logic: total=${totalAmount}, min=${minAmount}, mult=${multiplier}, step=${step}, count=${count}`);
 
                     if (count > 0) {
                         wifiVoucher = await WifiVoucherService.getVoucherForSale(sale.id, currentBranchId || '1', count);
@@ -795,7 +796,7 @@ export default function POSScreen() {
                 quantity: Number(si.quantity || 0),
                 target: resolveItemTarget(si.product ? { ...si.product, target: si.target } : { category: '', target: si.target }),
                 category: si.product?.category || '',
-                is_taxed: si.is_taxed !== false && si.product?.is_taxed !== false,
+                is_taxed: si.is_taxed === true || si.product?.is_taxed === true,
                 notes: si.notes || ''
             }))
         };
@@ -1494,7 +1495,7 @@ export default function POSScreen() {
     const calculateTaxAmount = () => {
         const taxableSubtotal = calculateTaxableSubtotal();
         const subtotal = calculateSubtotal();
-        const taxRate = storeSettings?.tax_rate || 0;
+        const taxRate = Number(storeSettings?.tax_rate || 0);
 
         // Apply discount ratio to taxable amount to match web logic
         const discountRatio = subtotal > 0 ? (subtotal - orderDiscount) / subtotal : 0;
@@ -1506,7 +1507,7 @@ export default function POSScreen() {
     const calculateServiceAmount = () => {
         const taxableSubtotal = calculateTaxableSubtotal();
         const subtotal = calculateSubtotal();
-        const serviceRate = storeSettings?.service_rate || 0;
+        const serviceRate = Number(storeSettings?.service_rate || 0);
 
         // Apply discount ratio to taxable amount to match web logic
         const discountRatio = subtotal > 0 ? (subtotal - orderDiscount) / subtotal : 0;

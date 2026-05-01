@@ -83,8 +83,8 @@ export default function CashierSessionModal({ visible, onClose, mode, session, o
                     // ALWAYS use total_amount for revenue/cash calculations to prevent change (kembalian) from inflating the cash drawer amount
                     const amount = (sale.total_amount || 0);
                     total += amount;
-                    totalTax += (sale.tax || 0);
-                    totalDiscount += (sale.discount || 0);
+                    totalTax += Number(sale.tax || sale.tax_amount || 0);
+                    totalDiscount += Number(sale.discount || sale.discount_amount || 0);
                     const method = (sale.payment_method || 'Tunai').trim();
                     paySummary[method] = (paySummary[method] || 0) + amount;
 
