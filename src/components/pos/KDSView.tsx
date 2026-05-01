@@ -35,7 +35,7 @@ export function KDSView({ orders = [], onUpdateStatus }: KDSViewProps) {
     };
 
     // Helper to map DB sales to KDS format
-    const kdsOrders = orders.map(sale => ({
+    const kdsOrders = (orders || []).filter(Boolean).map(sale => ({
         id: sale.id,
         orderNo: sale.orderNo || `#${sale.id}`,
         tableNo: sale.tableNo || '?',
@@ -49,7 +49,7 @@ export function KDSView({ orders = [], onUpdateStatus }: KDSViewProps) {
             notes: item.notes
         })),
         rawSale: sale
-    })).filter(o => o.items.length > 0);
+    })).filter(o => o.items && o.items.length > 0);
 
     // Mock helpers for migration (can be refined)
     function productDetailsToName(item: any) {
@@ -94,8 +94,8 @@ export function KDSView({ orders = [], onUpdateStatus }: KDSViewProps) {
     const getFilteredOrders = (targetFilter: string) => {
         return kdsOrders.map(order => ({
             ...order,
-            items: (targetFilter === 'All' ? order.items : order.items.filter((i: any) => i.target === targetFilter)).filter((i: any) => i.status !== 'Served')
-        })).filter(order => order.items.length > 0);
+            items: (targetFilter === 'All' ? (order.items || []) : (order.items || []).filter((i: any) => i.target === targetFilter)).filter((i: any) => i && i.status !== 'Served')
+        })).filter(order => order.items && order.items.length > 0);
     };
 
     const renderCard = (order: any) => (
@@ -124,7 +124,7 @@ export function KDSView({ orders = [], onUpdateStatus }: KDSViewProps) {
             </div>
 
             <div className="flex-1 p-6 space-y-4">
-                {order.items.map((item: any, idx: number) => (
+                {(order.items || []).map((item: any, idx: number) => (
                     <div key={idx} className="flex flex-col gap-2">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
@@ -160,8 +160,8 @@ export function KDSView({ orders = [], onUpdateStatus }: KDSViewProps) {
             </div>
 
             <div className="p-4 bg-gray-50 border-t border-gray-100">
-                <Button onClick={() => handleCompleteOrder(order.id)} disabled={!order.items.every((i: any) => i.status === 'Ready')} className={`w-full h-12 rounded-2xl font-black gap-2 ${order.items.every((i: any) => i.status === 'Ready') ? 'bg-gray-900 hover:bg-black text-white' : 'bg-gray-100 text-gray-400'}`}>
-                    {order.items.every((i: any) => i.status === 'Ready') ? <><CheckCircle2 className="w-5 h-5" /> Siap Sajikan</> : <><Clock className="w-5 h-5" /> Diproses</>}
+                <Button onClick={() => handleCompleteOrder(order.id)} disabled={!(order.items || []).every((i: any) => i && i.status === 'Ready')} className={`w-full h-12 rounded-2xl font-black gap-2 ${(order.items || []).every((i: any) => i && i.status === 'Ready') ? 'bg-gray-900 hover:bg-black text-white' : 'bg-gray-100 text-gray-400'}`}>
+                    {(order.items || []).every((i: any) => i && i.status === 'Ready') ? <><CheckCircle2 className="w-5 h-5" /> Siap Sajikan</> : <><Clock className="w-5 h-5" /> Diproses</>}
                 </Button>
             </div>
         </div>
