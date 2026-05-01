@@ -2179,36 +2179,8 @@ function Home() {
          const { error: itemsError } = await supabase.from('sale_items').insert(saleItems);
          if (itemsError) console.error('Sale items insert failed:', itemsError);
 
-         // Stock Deduction
-         try {
-           for (const item of saleItems) {
-             if (!item.product_id) continue;
-             const { data: recipe } = await supabase.from('product_recipes').select('ingredient_id, amount').eq('product_id', item.product_id);
-             if (recipe && recipe.length > 0) {
-               for (const comp of recipe) {
-                 const deductQty = (Number(item.quantity) || 0) * (Number(comp.amount) || 0);
-                 const { data: ing } = await supabase.from('ingredients').select('current_stock, name, unit').eq('id', comp.ingredient_id).single();
-                 if (ing) {
-                   const newStock = (Number(ing.current_stock) || 0) - deductQty;
-                   await supabase.from('ingredients').update({ current_stock: newStock }).eq('id', comp.ingredient_id);
-                   await supabase.from('stock_movements').insert([{
-                     ingredient_id: comp.ingredient_id, ingredient_name: ing.name, branch_id: currentBranchId, type: 'OUT', quantity: deductQty, unit: ing.unit || '', reason: `Penjualan: ${orderNo}`, user: user?.user_metadata?.name || 'System'
-                   }]);
-                 }
-               }
-             } else {
-               const { data: matchingIng } = await supabase.from('ingredients').select('*').or(`name.eq."${item.product_name}",code.eq."${item.product_name}"`).eq('branch_id', currentBranchId).maybeSingle();
-               if (matchingIng) {
-                 const deductQty = Number(item.quantity) || 0;
-                 const newStock = (Number(matchingIng.current_stock) || 0) - deductQty;
-                 await supabase.from('ingredients').update({ current_stock: newStock }).eq('id', matchingIng.id);
-                 await supabase.from('stock_movements').insert([{
-                   ingredient_id: matchingIng.id, ingredient_name: matchingIng.name, branch_id: currentBranchId, type: 'OUT', quantity: deductQty, unit: matchingIng.unit || '', reason: `Penjualan: ${orderNo} (Auto-Match)`, user: user?.user_metadata?.name || 'System'
-                 }]);
-               }
-             }
-           }
-         } catch (e) { console.error(e); }
+         // Stock deduction is handled by database trigger (deduct_stock_trigger.sql)
+         // This prevents double deduction and ensures offline mobile sales are processed correctly upon sync.
 
          // [NEW] Post to Accounting immediately for online sales
          if (saleData.totalAmount > 0) {

@@ -8,16 +8,19 @@ BEGIN
     -- Get product name for logging (optional, but good for history)
     SELECT name INTO v_product_name FROM products WHERE id = NEW.product_id;
 
-    -- 1. Check if product has a recipe (Composite Product)
+    -- 1. Deduct directly from Product Stock (Always do this for consistency)
+    UPDATE products
+    SET stock = stock - NEW.quantity
+    WHERE id = NEW.product_id;
+
+    -- 2. Check if product has a recipe (Composite Product)
     IF EXISTS (SELECT 1 FROM product_recipes WHERE product_id = NEW.product_id) THEN
-        
         -- Loop through all ingredients in the recipe
         FOR r_recipe IN 
             SELECT ingredient_id, amount 
             FROM product_recipes 
             WHERE product_id = NEW.product_id
         LOOP
-            -- Calculate total amount to deduct (Recipe Amount * Sale Quantity)
             DECLARE
                 v_deduct_amount NUMERIC := r_recipe.amount * NEW.quantity;
                 v_ingredient_name TEXT;
@@ -53,12 +56,45 @@ BEGIN
                 );
             END;
         END LOOP;
-
     ELSE
-        -- 2. No Recipe (Simple Product) -> Deduct directly from Product Stock
-        UPDATE products
-        SET stock = stock - NEW.quantity
-        WHERE id = NEW.product_id;
+        -- 3. No Recipe -> Try Auto-Match with Ingredients Table by Name
+        DECLARE
+            v_match_id UUID;
+            v_match_name TEXT;
+            v_match_unit TEXT;
+        BEGIN
+            SELECT id, name, unit INTO v_match_id, v_match_name, v_match_unit
+            FROM ingredients 
+            WHERE name = v_product_name OR code = v_product_name
+            LIMIT 1;
+
+            IF v_match_id IS NOT NULL THEN
+                -- Deduct from Ingredients Table
+                UPDATE ingredients 
+                SET current_stock = current_stock - NEW.quantity,
+                    last_updated = CURRENT_DATE
+                WHERE id = v_match_id;
+
+                -- Log Movement
+                INSERT INTO stock_movements (
+                    ingredient_id, 
+                    ingredient_name, 
+                    type, 
+                    quantity, 
+                    unit, 
+                    reason, 
+                    "user"
+                ) VALUES (
+                    v_match_id,
+                    v_match_name,
+                    'OUT',
+                    NEW.quantity,
+                    v_match_unit,
+                    'Sold: ' || v_product_name || ' (' || NEW.quantity || ') [Auto-Match]',
+                    'System'
+                );
+            END IF;
+        END;
     END IF;
 
     RETURN NEW;
