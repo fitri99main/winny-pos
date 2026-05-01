@@ -1138,20 +1138,11 @@ function Home() {
       })
       .subscribe();
 
-    return () => { subscription.unsubscribe(); };
+    return () => { 
+      supabase.removeChannel(subscription);
+    };
   }, []);
 
-
-  useEffect(() => {
-    fetchAttendance();
-    const subscription = supabase.channel('attendance_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_logs' }, () => {
-        fetchAttendance();
-      })
-      .subscribe();
-
-    return () => { subscription.unsubscribe(); };
-  }, []);
 
   // --- Payroll Integration ---
   const fetchPayroll = async () => {
