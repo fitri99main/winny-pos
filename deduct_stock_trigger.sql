@@ -8,12 +8,7 @@ BEGIN
     -- Get product name for logging (optional, but good for history)
     SELECT name INTO v_product_name FROM products WHERE id = NEW.product_id;
 
-    -- 1. Deduct directly from Product Stock (Always do this for consistency)
-    UPDATE products
-    SET stock = stock - NEW.quantity
-    WHERE id = NEW.product_id;
-
-    -- 2. Check if product has a recipe (Composite Product)
+    -- 1. Check if product has a recipe (Composite Product)
     IF EXISTS (SELECT 1 FROM product_recipes WHERE product_id = NEW.product_id) THEN
         -- Loop through all ingredients in the recipe
         FOR r_recipe IN 
@@ -57,7 +52,7 @@ BEGIN
             END;
         END LOOP;
     ELSE
-        -- 3. No Recipe -> Try Auto-Match with Ingredients Table by Name
+        -- 2. No Recipe -> Try Auto-Match with Ingredients Table by Name
         DECLARE
             v_match_id UUID;
             v_match_name TEXT;
@@ -69,7 +64,7 @@ BEGIN
             LIMIT 1;
 
             IF v_match_id IS NOT NULL THEN
-                -- Deduct from Ingredients Table
+                -- Deduct from Ingredients Table (Auto-Match)
                 UPDATE ingredients 
                 SET current_stock = current_stock - NEW.quantity,
                     last_updated = CURRENT_DATE
@@ -93,6 +88,11 @@ BEGIN
                     'Sold: ' || v_product_name || ' (' || NEW.quantity || ') [Auto-Match]',
                     'System'
                 );
+            ELSE
+                -- 3. No Recipe AND No Auto-Match -> Deduct directly from Product Stock
+                UPDATE products
+                SET stock = stock - NEW.quantity
+                WHERE id = NEW.product_id;
             END IF;
         END;
     END IF;

@@ -250,31 +250,26 @@ function Home() {
   // --- END HANDLERS ---
 
   // Inventory Handlers
-  const handleIngredientCRUD = async (action: 'create' | 'update' | 'delete', data: any) => {
-    const buildIngredientPayload = (rawData: any) => {
-      const payload: Record<string, any> = {
-        last_updated: formatLocalDateForInput(new Date())
-      };
-
-      if (rawData.name !== undefined) payload.name = String(rawData.name || '').trim();
-      if (rawData.unit !== undefined) payload.unit = String(rawData.unit || '').trim();
-      if (rawData.category !== undefined) payload.category = String(rawData.category || '').trim();
-      if (rawData.current_stock !== undefined) payload.current_stock = Number(rawData.current_stock || 0);
-      if (rawData.min_stock !== undefined) payload.min_stock = Number(rawData.min_stock || 0);
-      if (rawData.cost_per_unit !== undefined) payload.cost_per_unit = Number(rawData.cost_per_unit || 0);
-      if (rawData.branch_id !== undefined) payload.branch_id = rawData.branch_id;
-
-      return payload;
+  const buildIngredientPayload = (rawData: any) => {
+    const payload: Record<string, any> = {
+      last_updated: formatLocalDateForInput(new Date())
     };
 
+    if (rawData.name !== undefined) payload.name = String(rawData.name || '').trim();
+    if (rawData.unit !== undefined) payload.unit = String(rawData.unit || '').trim();
+    if (rawData.category !== undefined) payload.category = String(rawData.category || '').trim();
+    if (rawData.current_stock !== undefined) payload.current_stock = Number(rawData.current_stock || 0);
+    if (rawData.min_stock !== undefined) payload.min_stock = Number(rawData.min_stock || 0);
+    if (rawData.cost_per_unit !== undefined) payload.cost_per_unit = Number(rawData.cost_per_unit || 0);
+    if (rawData.branch_id !== undefined) payload.branch_id = rawData.branch_id;
+
+    return payload;
+  };
+
+  const handleIngredientCRUD = async (action: 'create' | 'update' | 'delete' | 'delete_movement', data: any) => {
     try {
       if (action === 'create') {
-        const payload = buildIngredientPayload({
-          ...data,
-          current_stock: data.current_stock ?? 0,
-          branch_id: currentBranchId
-        });
-
+        const payload = buildIngredientPayload(data);
         const { data: insertedIngredient, error } = await supabase
           .from('ingredients')
           .insert([payload])
@@ -305,14 +300,28 @@ function Home() {
         toast.success('Bahan baku berhasil diupdate');
       } else if (action === 'delete') {
         const { error } = await supabase.from('ingredients').delete().eq('id', data.id);
-        if (error) throw error;
+        
+        if (error) {
+          if (error.code === '23503') {
+            toast.error('Gagal menghapus: Bahan baku ini sudah memiliki riwayat stok atau resep. Gunakan fitur "Hapus Mutasi" jika ingin membersihkan riwayat.');
+            return;
+          }
+          throw error;
+        }
+        
         setInventoryIngredients(prev => prev.filter(item => item.id !== data.id));
         toast.success('Bahan baku berhasil dihapus');
+      } else if (action === 'delete_movement') {
+        const { error } = await supabase.from('stock_movements').delete().eq('id', data.id);
+        if (error) throw error;
+        setInventoryHistory(prev => prev.filter(m => m.id !== data.id));
+        toast.success('Catatan mutasi berhasil dihapus');
       }
-      // Proactive re-fetch for immediate feedback
+      
       if (currentBranchId) fetchBranchData(currentBranchId);
     } catch (err: any) {
-      toast.error('Error Ingredient: ' + err.message);
+      console.error('Error Ingredient:', err);
+      toast.error('Gagal memproses bahan baku: ' + (err.message || 'Error tidak dikenal'));
     }
   };
 
@@ -380,16 +389,13 @@ function Home() {
 
       toast.success('Stok bahan baku berhasil disesuaikan');
     } catch (err: any) {
-      toast.error('Gagal update stok: ' + err.message);
+      console.error('Error Stock Adjustment:', err);
+      toast.error('Gagal update stok: ' + (err.message || 'Error tidak dikenal'));
     }
   };
 
-  // --- Payment Methods State ---
+  // --- State ---
   const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
-
-
-
-
   const [payrollData, setPayrollData] = useState<any[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
   const [shifts, setShifts] = useState<any[]>([]);

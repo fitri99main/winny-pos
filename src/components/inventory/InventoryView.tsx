@@ -348,29 +348,41 @@ export function InventoryView({
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
-                                {movements.map(mov => (
-                                    <tr key={mov.id} className="hover:bg-gray-50/50 transition-colors text-xs">
-                                        <td className="px-8 py-4 text-gray-500 font-mono">{mov.date ? new Date(mov.date).toLocaleString('id-ID') : '-'}</td>
-                                        <td className="px-8 py-4 font-bold text-gray-800">{(mov as any).ingredient_name || mov.ingredientName}</td>
-                                        <td className="px-8 py-4 text-center">
-                                            <span className={`px-2.5 py-1 rounded-lg font-black uppercase text-[9px] ${mov.type === 'IN' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
-                                                {mov.type === 'IN' ? 'Barang Masuk' : 'Barang Keluar'}
-                                            </span>
-                                        </td>
-                                        <td className={`px-8 py-4 text-right font-bold ${mov.type === 'IN' ? 'text-emerald-600' : 'text-red-500'}`}>
-                                            {mov.type === 'IN' ? '+' : '-'}{mov.quantity} {mov.unit}
-                                        </td>
-                                        <td className="px-8 py-4 text-gray-600 italic">"{mov.reason}"</td>
-                                        <td className="px-8 py-4 text-center">
-                                            <div className="flex items-center justify-center gap-2">
-                                                <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-black text-primary">
-                                                    {((mov as any).user || 'S').charAt(0)}
+                                    {movements.map(mov => (
+                                        <tr key={mov.id} className="hover:bg-gray-50/50 transition-colors text-xs group">
+                                            <td className="px-8 py-4 text-gray-500 font-mono">{mov.date ? new Date(mov.date).toLocaleString('id-ID') : '-'}</td>
+                                            <td className="px-8 py-4 font-bold text-gray-800">{(mov as any).ingredient_name || mov.ingredientName}</td>
+                                            <td className="px-8 py-4 text-center">
+                                                <span className={`px-2.5 py-1 rounded-lg font-black uppercase text-[9px] ${mov.type === 'IN' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
+                                                    {mov.type === 'IN' ? 'Barang Masuk' : 'Barang Keluar'}
+                                                </span>
+                                            </td>
+                                            <td className={`px-8 py-4 text-right font-bold ${mov.type === 'IN' ? 'text-emerald-600' : 'text-red-500'}`}>
+                                                {mov.type === 'IN' ? '+' : '-'}{mov.quantity} {mov.unit}
+                                            </td>
+                                            <td className="px-8 py-4 text-gray-600 italic">"{mov.reason}"</td>
+                                            <td className="px-8 py-4">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-black text-primary">
+                                                            {((mov as any).user || 'S').charAt(0)}
+                                                        </div>
+                                                        <span className="font-medium text-gray-500">{(mov as any).user || 'System'}</span>
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => {
+                                                            if (window.confirm('Hapus catatan mutasi ini? Ini tidak akan mengembalikan stok secara otomatis.')) {
+                                                                onIngredientAction('delete_movement', mov);
+                                                            }
+                                                        }}
+                                                        className="opacity-0 group-hover:opacity-100 p-1.5 text-red-400 hover:text-red-600 transition-all"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
                                                 </div>
-                                                <span className="font-medium text-gray-500">{(mov as any).user || 'System'}</span>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
+                                            </td>
+                                        </tr>
+                                    ))}
                             </tbody>
                         </table>
                     )}
