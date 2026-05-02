@@ -607,7 +607,7 @@ function Home() {
       safeFetch(supabase.from('shift_schedules').select('*').order('date'), 'schedules'), 
       safeFetch(supabase.from('tables').select('*').eq('branch_id', Number(branchId)).order('number'), 'tables'),
       safeFetch(supabase.from('ingredients').select('*').eq('branch_id', Number(branchId)).order('name'), 'ingredients'),
-      safeFetch(supabase.from('stock_movements').select('*').eq('branch_id', Number(branchId)).gte('date', minDate.toISOString()).order('date', { ascending: false }).limit(500), 'movements'),
+      safeFetch(supabase.from('stock_movements').select('*').eq('branch_id', Number(branchId)).order('created_at', { ascending: false }).limit(500), 'movements'),
     ]);
     const [productsRes, schedulesRes, tablesRes, ingredientsRes, movementsRes] = results;
     if (productsRes.data) setProducts(productsRes.data);

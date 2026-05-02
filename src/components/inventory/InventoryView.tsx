@@ -353,7 +353,7 @@ export function InventoryView({
                             <tbody className="divide-y divide-gray-50">
                                     {movements.map(mov => (
                                         <tr key={mov.id} className="hover:bg-gray-50/50 transition-colors text-xs group">
-                                            <td className="px-8 py-4 text-gray-500 font-mono">{mov.date ? new Date(mov.date).toLocaleString('id-ID') : '-'}</td>
+                                            <td className="px-8 py-4 text-gray-500 font-mono">{(mov.date || mov.created_at) ? new Date(mov.date || mov.created_at).toLocaleString('id-ID') : '-'}</td>
                                             <td className="px-8 py-4 font-bold text-gray-800">{(mov as any).ingredient_name || mov.ingredientName}</td>
                                             <td className="px-8 py-4 text-center">
                                                 <span className={`px-2.5 py-1 rounded-lg font-black uppercase text-[9px] ${mov.type === 'IN' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
@@ -680,7 +680,9 @@ export function InventoryView({
                                         })
                                         .map(mov => (
                                             <tr key={mov.id} className="hover:bg-gray-50/50 transition-colors">
-                                                <td className="px-8 py-4 text-gray-500 font-mono text-xs">{mov.date || (mov.created_at ? new Date(mov.created_at).toLocaleString('id-ID') : '-')}</td>
+                                                <td className="px-8 py-4 text-gray-500 font-mono text-xs">
+                                                    {(mov.date || mov.created_at) ? new Date(mov.date || mov.created_at).toLocaleString('id-ID') : '-'}
+                                                </td>
                                                 <td className="px-8 py-4 text-center">
                                                     <span className={`px-2 py-0.5 rounded-full font-black uppercase text-[9px] ${mov.type === 'IN' ? 'bg-emerald-50 text-emerald-600' : (mov.type === 'OUT' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600')}`}>
                                                         {mov.type}
