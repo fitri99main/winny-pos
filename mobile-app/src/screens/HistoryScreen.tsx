@@ -83,6 +83,9 @@ export default function HistoryScreen() {
     const [authTitle, setAuthTitle] = useState('Otorisasi Manager');
 
     const [availableCashiers, setAvailableCashiers] = useState<string[]>([]);
+    const [selectedSaleRecipes, setSelectedSaleRecipes] = useState<any[]>([]);
+    const [loadingRecipes, setLoadingRecipes] = useState(false);
+    const [showHPPInDetail, setShowHPPInDetail] = useState(false);
 
     useEffect(() => {
         if (effectiveBranchId || currentBranchId) {
@@ -290,7 +293,82 @@ export default function HistoryScreen() {
     const handleOpenDetail = (sale: any) => {
         setSelectedSale(sale);
         setShowDetailModal(true);
+        setShowHPPInDetail(false); // Reset toggle
+        fetchRecipesForSale(sale);
     };
+
+    const fetchRecipesForSale = async (sale: any) => {
+        if (!sale?.sale_items || sale.sale_items.length === 0) {
+            setSelectedSaleRecipes([]);
+            return;
+        }
+        
+        try {
+            setLoadingRecipes(true);
+            const productIds = sale.sale_items.map((item: any) => item.product_id).filter(Boolean);
+            
+            if (productIds.length === 0) {
+                setSelectedSaleRecipes([]);
+                return;
+            }
+
+            const { data, error } = await supabase
+                .from('product_recipes')
+                .select(`
+                    product_id,
+                    amount,
+                    ingredient:ingredient_id (
+                        id,
+                        name,
+                        unit,
+                        cost_per_unit
+                    )
+                `)
+                .in('product_id', productIds);
+
+            if (error) throw error;
+            setSelectedSaleRecipes(data || []);
+        } catch (e) {
+            console.error('Fetch Recipes Error:', e);
+            setSelectedSaleRecipes([]);
+        } finally {
+            setLoadingRecipes(false);
+        }
+    };
+
+    const aggregatedIngredients = useMemo(() => {
+        if (!selectedSale || !selectedSaleRecipes.length) return [];
+        
+        const summary: Record<number, { name: string, unit: string, amount: number, cost: number }> = {};
+        
+        selectedSale.sale_items.forEach((item: any) => {
+            const recipes = selectedSaleRecipes.filter(r => r.product_id === item.product_id);
+            recipes.forEach(r => {
+                if (!r.ingredient) return;
+                const id = r.ingredient.id;
+                const qty = r.amount * item.quantity;
+                const cost = (r.ingredient.cost_per_unit || 0) * qty;
+                
+                if (summary[id]) {
+                    summary[id].amount += qty;
+                    summary[id].cost += cost;
+                } else {
+                    summary[id] = {
+                        name: r.ingredient.name,
+                        unit: r.ingredient.unit,
+                        amount: qty,
+                        cost: cost
+                    };
+                }
+            });
+        });
+        
+        return Object.values(summary).sort((a, b) => a.name.localeCompare(b.name));
+    }, [selectedSale, selectedSaleRecipes]);
+
+    const totalHPP = useMemo(() => {
+        return aggregatedIngredients.reduce((sum, ing) => sum + ing.cost, 0);
+    }, [aggregatedIngredients]);
 
     const handlePayFromDetail = () => {
         setShowDetailModal(false);
@@ -961,6 +1039,53 @@ export default function HistoryScreen() {
                                 <Text style={[styles.detailItemTotal, { fontSize: 13 }]}>{formatCurrency(item.quantity * item.price)}</Text>
                             </View>
                         ))}
+
+                        {/* Ingredients & HPP Section */}
+                        {(aggregatedIngredients.length > 0 || loadingRecipes) && (
+                            <View style={{ marginTop: 16, backgroundColor: '#f8fafc', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#e2e8f0' }}>
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                        <Text style={{ fontSize: 13, fontWeight: 'bold', color: '#334155' }}>Kebutuhan Bahan Baku</Text>
+                                        {loadingRecipes && <ActivityIndicator size="small" color="#ea580c" />}
+                                    </View>
+                                    <TouchableOpacity 
+                                        onPress={() => setShowHPPInDetail(!showHPPInDetail)}
+                                        style={{ backgroundColor: showHPPInDetail ? '#fff7ed' : '#f1f5f9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}
+                                    >
+                                        <Text style={{ fontSize: 11, color: showHPPInDetail ? '#ea580c' : '#64748b', fontWeight: '600' }}>
+                                            {showHPPInDetail ? 'Sembunyikan HPP' : 'Lihat HPP'}
+                                        </Text>
+                                    </TouchableOpacity>
+                                </View>
+                                
+                                {aggregatedIngredients.map((ing, idx) => (
+                                    <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                                        <Text style={{ fontSize: 12, color: '#475569', flex: 1 }}>• {ing.name}</Text>
+                                        <View style={{ alignItems: 'flex-end' }}>
+                                            <Text style={{ fontSize: 12, fontWeight: '600', color: '#1e293b' }}>
+                                                {ing.amount % 1 === 0 ? ing.amount : ing.amount.toFixed(2)} {ing.unit}
+                                            </Text>
+                                            {showHPPInDetail && (
+                                                <Text style={{ fontSize: 10, color: '#94a3b8' }}>
+                                                    Est. Cost: {formatCurrency(ing.cost)}
+                                                </Text>
+                                            )}
+                                        </View>
+                                    </View>
+                                ))}
+                                
+                                {showHPPInDetail && aggregatedIngredients.length > 0 && (
+                                    <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#e2e8f0', flexDirection: 'row', justifyContent: 'space-between' }}>
+                                        <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#334155' }}>Total Estimasi HPP</Text>
+                                        <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#ea580c' }}>{formatCurrency(totalHPP)}</Text>
+                                    </View>
+                                )}
+                                
+                                {!loadingRecipes && aggregatedIngredients.length === 0 && (
+                                    <Text style={{ fontSize: 11, color: '#94a3b8', fontStyle: 'italic' }}>Tidak ada data resep untuk produk ini.</Text>
+                                )}
+                            </View>
+                        )}
 
                         {/* Summary Section */}
                         <View style={{ marginTop: 8, borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 12, gap: 4 }}>

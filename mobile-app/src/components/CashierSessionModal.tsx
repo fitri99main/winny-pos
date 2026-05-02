@@ -200,6 +200,7 @@ export default function CashierSessionModal({ visible, onClose, mode, session, o
                 product_summary: Object.entries(prodSummary).map(([name, data]) => ({ name, ...data }))
             });
         } catch (err: any) {
+            console.error('[Shift] Calculation Error:', err);
             Alert.alert('Error', 'Gagal memuat ringkasan: ' + err.message);
         } finally {
             clearTimeout(calcTimeout);
@@ -259,25 +260,31 @@ export default function CashierSessionModal({ visible, onClose, mode, session, o
                 difference: actual - expected,
                 notes: notes
             }).eq('id', session.id);
+            
             if (error) throw error;
 
+            // [FIX] Ensure loading is off before proceeding to next steps
             setLoading(false);
             onClose();
+
+            // Use a safer logout sequence to prevent hanging
             setTimeout(async () => {
                 try {
-                    // Non-blocking sign out with timeout
                     await Promise.race([
                         supabase.auth.signOut(),
-                        new Promise((_, reject) => setTimeout(() => reject(new Error('Sign out timeout')), 3000))
-                    ]).catch(err => console.warn('[Shift] Sign out timeout or error:', err));
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
+                    ]).catch(e => console.warn('[Shift] Signout skipped/timeout'));
                 } catch (e) {
-                    console.error('[Shift] Final sign out error:', e);
+                    console.log('[Shift] Silent logout error');
+                } finally {
+                    onComplete();
                 }
-                onComplete();
-            }, 500);
+            }, 300);
+            
         } catch (err: any) {
-            Alert.alert('Error', 'Gagal menutup shift: ' + err.message);
             setLoading(false);
+            console.error('[Shift] Close Error:', err);
+            Alert.alert('Error', 'Gagal menutup shift: ' + err.message);
         }
     };
 

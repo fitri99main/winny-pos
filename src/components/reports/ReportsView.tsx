@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
+import { useAuth } from '../auth/AuthProvider';
 import { supabase } from '../../lib/supabase';
-import { FileText, Download, FileSpreadsheet, Printer, TrendingUp, DollarSign, ShoppingBag, CreditCard, Search, Calendar, Filter, X, ShoppingCart } from 'lucide-react';
+import { FileText, Download, FileSpreadsheet, Printer, TrendingUp, DollarSign, ShoppingBag, CreditCard, Search, Calendar, Filter, X, ShoppingCart, Loader2, Archive, Eye } from 'lucide-react';
 import { SalesOrder, SalesReturn } from '../pos/SalesView';
 import { Button } from '../ui/button';
 import * as XLSX from 'xlsx';
@@ -52,6 +53,12 @@ const normalizeDateValue = (value: unknown) => {
 };
 
 export function ReportsView({ sales: initialSales, returns: initialReturns, purchases: initialPurchases = [], purchaseReturns: initialPurchaseReturns = [], paymentMethods, storeSettings, branchId }: ReportsViewProps) {
+    const { role } = useAuth();
+    const isAdmin = useMemo(() => {
+        const r = role?.toLowerCase() || '';
+        return r === 'admin' || r === 'owner' || r === 'administrator' || r === 'superadmin';
+    }, [role]);
+
     const [realSales, setRealSales] = useState<SalesOrder[]>([]);
     const [realReturns, setRealReturns] = useState<SalesReturn[]>([]);
     const [realPurchases, setRealPurchases] = useState<any[]>([]);
@@ -73,6 +80,13 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
         subtitle: string;
         items: { name: string; value: number; category: string }[];
     }>(null);
+
+    // [Detail Modal States]
+    const [selectedSaleDetail, setSelectedSaleDetail] = useState<SalesOrder | null>(null);
+    const [showDetailModal, setShowDetailModal] = useState(false);
+    const [selectedOrderRecipes, setSelectedOrderRecipes] = useState<any[]>([]);
+    const [loadingRecipes, setLoadingRecipes] = useState(false);
+    const [showHPPInDetail, setShowHPPInDetail] = useState(false);
     
     // [Part 25] Helper for quick date selection
     const handlePreset = (type: 'today' | 'yesterday' | 'week' | 'month') => {
@@ -97,6 +111,94 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
         setStartDate(formatDate(start));
         setEndDate(formatDate(end));
     };
+
+    const fetchRecipesForOrder = async (sale: SalesOrder) => {
+        if (!sale) return;
+        
+        try {
+            setLoadingRecipes(true);
+            setSelectedOrderRecipes([]);
+            
+            let finalProductIds: number[] = [];
+            
+            // Try to get product IDs from productDetails
+            const productIds = (sale.productDetails || []).map(p => (p as any).product_id).filter(Boolean);
+            
+            if (productIds.length > 0) {
+                finalProductIds = productIds;
+            } else if (sale.id) {
+                // Fallback: Fetch from sale_items table
+                const { data: items } = await supabase
+                    .from('sale_items')
+                    .select('product_id')
+                    .eq('sale_id', sale.id);
+                if (items) finalProductIds = items.map(i => i.product_id).filter(Boolean);
+            }
+
+            if (finalProductIds.length === 0) {
+                setLoadingRecipes(false);
+                return;
+            }
+
+            const { data: recipes, error } = await supabase
+                .from('product_recipes')
+                .select(`
+                    product_id,
+                    amount,
+                    ingredient:ingredient_id (
+                        id,
+                        name,
+                        unit,
+                        cost_per_unit
+                    )
+                `)
+                .in('product_id', finalProductIds);
+
+            if (error) throw error;
+            setSelectedOrderRecipes(recipes || []);
+        } catch (err) {
+            console.error('Error fetching recipes:', err);
+        } finally {
+            setLoadingRecipes(false);
+        }
+    };
+
+    const handleViewDetails = (sale: SalesOrder) => {
+        setSelectedSaleDetail(sale);
+        setShowDetailModal(true);
+        setShowHPPInDetail(false);
+        fetchRecipesForOrder(sale);
+    };
+
+    const aggregatedIngredients = useMemo(() => {
+        if (!selectedSaleDetail || !selectedOrderRecipes.length) return [];
+        
+        const summary: Record<number, { name: string, unit: string, amount: number, cost: number }> = {};
+        
+        (selectedSaleDetail.productDetails || []).forEach((item: any) => {
+            const recipes = selectedOrderRecipes.filter(r => r.product_id === item.product_id);
+            recipes.forEach(r => {
+                if (!r.ingredient) return;
+                const id = r.ingredient.id;
+                const qty = r.amount * (item.quantity || 0);
+                const cost = (r.ingredient.cost_per_unit || 0) * qty;
+                
+                if (summary[id]) {
+                    summary[id].amount += qty;
+                    summary[id].cost += cost;
+                } else {
+                    summary[id] = {
+                        name: r.ingredient.name,
+                        unit: r.ingredient.unit,
+                        amount: qty,
+                        cost: cost
+                    };
+                }
+            });
+        });
+        
+        return Object.values(summary).sort((a, b) => a.name.localeCompare(b.name));
+    }, [selectedSaleDetail, selectedOrderRecipes]);
 
     const fetchRealData = async () => {
         if (!branchId || !startDate || !endDate) return;
@@ -870,6 +972,7 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
                                 <th className="px-8 py-4">{reportType === 'sales' ? 'Metode' : 'Supplier'}</th>
                                 <th className="px-8 py-4 text-right">Total</th>
                                 <th className="px-8 py-4 text-center">Status</th>
+                                <th className="px-8 py-4 text-center">Aksi</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
@@ -907,6 +1010,15 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
                                                     }`}>
                                                     {sale.status === 'Completed' ? 'Selesai' : 'Retur'}
                                                 </span>
+                                            </td>
+                                            <td className="px-8 py-5 text-center">
+                                                <button
+                                                    onClick={() => handleViewDetails(sale)}
+                                                    className="p-2 hover:bg-primary/5 text-primary rounded-xl transition-colors"
+                                                    title="Lihat Detail"
+                                                >
+                                                    <Eye className="w-4 h-4" />
+                                                </button>
                                             </td>
                                         </tr>
                                     ))
@@ -1139,6 +1251,125 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
                                 <Printer className="w-4 h-4 mr-2" />
                                 Cetak Sekarang
                             </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Transaction Detail Modal */}
+            {showDetailModal && selectedSaleDetail && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4 animate-in fade-in duration-300">
+                    <div className="bg-white rounded-[32px] w-full max-w-lg shadow-2xl overflow-hidden flex flex-col">
+                        <div className="px-8 py-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                            <div>
+                                <h3 className="font-bold text-gray-800">Detail Transaksi</h3>
+                                <p className="text-xs font-mono text-blue-600">{selectedSaleDetail.orderNo}</p>
+                            </div>
+                            <Button variant="ghost" size="icon" onClick={() => setShowDetailModal(false)}>
+                                <X className="w-5 h-5" />
+                            </Button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-8 scrollbar-thin scrollbar-thumb-gray-100 max-h-[70vh]">
+                            <div className="grid grid-cols-2 gap-6 mb-8 text-sm">
+                                <div>
+                                    <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mb-1">Tanggal</p>
+                                    <p className="font-bold text-gray-700">{selectedSaleDetail.date.substring(0, 16).replace('T', ' ')}</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mb-1">Kasir</p>
+                                    <p className="font-bold text-gray-700">{selectedSaleDetail.cashierName || '-'}</p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-4 mb-8">
+                                <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] border-b border-gray-50 pb-2">Item Pesanan</p>
+                                {(selectedSaleDetail.productDetails || []).map((item, idx) => (
+                                    <div key={idx} className="flex justify-between items-center text-sm">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center font-bold text-gray-400 text-xs">
+                                                {item.quantity}x
+                                            </div>
+                                            <div>
+                                                <p className="font-bold text-gray-700">{item.name}</p>
+                                                <p className="text-[10px] text-gray-400 uppercase tracking-wide">{item.category}</p>
+                                            </div>
+                                        </div>
+                                        <p className="font-bold text-gray-800">Rp {(item.price * item.quantity).toLocaleString()}</p>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Aggregated Ingredients Section */}
+                            {isAdmin && (aggregatedIngredients.length > 0 || loadingRecipes) && (
+                                <div className="mb-8 p-6 bg-blue-50/50 rounded-2xl border border-blue-100">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="flex items-center gap-2">
+                                            <Archive className="w-4 h-4 text-blue-600" />
+                                            <h4 className="text-xs font-black text-blue-800 uppercase tracking-widest">Estimasi Bahan Baku</h4>
+                                            {loadingRecipes && <Loader2 className="w-3 h-3 animate-spin text-blue-600" />}
+                                        </div>
+                                        <button 
+                                            onClick={() => setShowHPPInDetail(!showHPPInDetail)}
+                                            className={`text-[10px] font-bold px-2 py-1 rounded-lg border transition-all ${showHPPInDetail ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-600 border-blue-200'}`}
+                                        >
+                                            {showHPPInDetail ? 'Sembunyikan HPP' : 'Lihat HPP'}
+                                        </button>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {aggregatedIngredients.map((ing, i) => (
+                                            <div key={i} className="bg-white/80 p-2.5 rounded-xl border border-blue-100/50 shadow-sm">
+                                                <p className="text-[10px] font-bold text-gray-400 uppercase truncate mb-0.5" title={ing.name}>{ing.name}</p>
+                                                <div className="flex items-baseline justify-between">
+                                                    <p className="text-xs font-black text-blue-700">
+                                                        {ing.amount % 1 === 0 ? ing.amount : ing.amount.toFixed(2)} {ing.unit}
+                                                    </p>
+                                                    {showHPPInDetail && (
+                                                        <span className="text-[9px] font-bold text-blue-400">
+                                                            Rp {ing.cost.toLocaleString()}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {showHPPInDetail && (
+                                        <div className="mt-4 pt-4 border-t border-blue-100 flex justify-between items-center">
+                                            <span className="text-[10px] font-black text-blue-800 uppercase tracking-wider">Total Estimasi HPP</span>
+                                            <span className="text-sm font-black text-blue-900">
+                                                Rp {aggregatedIngredients.reduce((sum, i) => sum + i.cost, 0).toLocaleString()}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {!loadingRecipes && aggregatedIngredients.length === 0 && (
+                                <div className="mb-8 p-4 bg-gray-50 rounded-2xl border border-gray-100 flex items-center gap-3">
+                                    <Archive className="w-4 h-4 text-gray-300" />
+                                    <p className="text-[11px] text-gray-400 font-medium italic">Resep bahan baku belum dikonfigurasi untuk transaksi ini.</p>
+                                </div>
+                            )}
+
+                            <div className="space-y-2 pt-4 border-t border-gray-50">
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-400">Diskon</span>
+                                    <span className="text-red-500 font-bold">- Rp {(selectedSaleDetail.discount || 0).toLocaleString()}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-400">Pajak</span>
+                                    <span className="text-blue-500 font-bold">+ Rp {(selectedSaleDetail.tax || 0).toLocaleString()}</span>
+                                </div>
+                                <div className="flex justify-between items-center pt-2">
+                                    <span className="font-black text-gray-800 uppercase tracking-widest text-xs">Total Pembayaran</span>
+                                    <span className="text-xl font-black text-gray-900">Rp {selectedSaleDetail.totalAmount.toLocaleString()}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="p-8 bg-gray-50 flex gap-3">
+                            <Button variant="outline" className="flex-1" onClick={() => setShowDetailModal(false)}>Tutup</Button>
                         </div>
                     </div>
                 </div>

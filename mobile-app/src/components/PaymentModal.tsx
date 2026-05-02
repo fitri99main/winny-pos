@@ -128,6 +128,8 @@ export default function PaymentModal({
             });
             // We don't call onClose() here because POSScreen will close the modal 
             // after the full transaction (and possible success modal) is ready.
+            // But we should reset loading if it takes a while to unmount/close
+            setLoading(false);
         } catch (err: any) {
             setError(err.message || 'Gagal memproses pembayaran');
             setLoading(false);

@@ -10,6 +10,7 @@ interface OrderPanelProps {
   total: number;
   tax?: number;
   service?: number;
+  ingredients?: any[];
   onQuantityChange: (itemId: string, newQuantity: number) => void;
   onRemoveItem: (itemId: string) => void;
   onNotesChange?: (itemId: string, notes: string) => void;
@@ -22,6 +23,7 @@ export function OrderPanel({
   total,
   tax = 0,
   service = 0,
+  ingredients = [],
   onQuantityChange,
   onRemoveItem,
   onNotesChange,

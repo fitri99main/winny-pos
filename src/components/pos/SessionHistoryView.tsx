@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, memo } from 'react';
-import { History, Calendar, User, Search, Download, Eye, TrendingUp, DollarSign, Clock, Trash2, AlertTriangle, FileSpreadsheet } from 'lucide-react';
+import { History, Calendar, User, Search, Download, Eye, TrendingUp, DollarSign, Clock, Trash2, AlertTriangle, FileSpreadsheet, Loader2, Info, Archive } from 'lucide-react';
 import { utils, writeFile } from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -30,6 +30,12 @@ interface SessionHistoryViewProps {
 }
 
 export const SessionHistoryView = memo(function SessionHistoryView({ branchId }: SessionHistoryViewProps) {
+    const { role } = useAuth();
+    const isAdmin = useMemo(() => {
+        const r = role?.toLowerCase() || '';
+        return r === 'admin' || r === 'owner' || r === 'administrator' || r === 'superadmin';
+    }, [role]);
+
     const [sessions, setSessions] = useState<SessionHistory[]>([]);
     const [filteredSessions, setFilteredSessions] = useState<SessionHistory[]>([]);
     const [loading, setLoading] = useState(true);
@@ -41,6 +47,9 @@ export const SessionHistoryView = memo(function SessionHistoryView({ branchId }:
     const [selectedSession, setSelectedSession] = useState<SessionHistory | null>(null);
     const [selectedCategorySummary, setSelectedCategorySummary] = useState<{ category: string; amount: number }[]>([]);
     const [detailModalOpen, setDetailModalOpen] = useState(false);
+    const [sessionIngredients, setSessionIngredients] = useState<any[]>([]);
+    const [loadingIngredients, setLoadingIngredients] = useState(false);
+    const [showHPPInSessionDetail, setShowHPPInSessionDetail] = useState(false);
 
     useEffect(() => {
         if (selectedSession && detailModalOpen) {
@@ -50,6 +59,8 @@ export const SessionHistoryView = memo(function SessionHistoryView({ branchId }:
 
     const fetchCategorySummary = async (openedAt: string, closedAt: string | null) => {
         try {
+            setLoadingIngredients(true);
+            setShowHPPInSessionDetail(false);
             let allSales: any[] = [];
             let from = 0;
             const pageSize = 1000;
@@ -106,17 +117,64 @@ export const SessionHistoryView = memo(function SessionHistoryView({ branchId }:
                     summaryMap[cat] = (summaryMap[cat] || 0) + ((item.quantity || 0) * (item.price || 0));
                 });
                 setSelectedCategorySummary(Object.entries(summaryMap).map(([category, amount]) => ({ category, amount })));
+
+                // --- AGGREGATE INGREDIENTS FOR SESSION ---
+                const productIds = Array.from(new Set(items.map(i => i.product_id).filter(Boolean)));
+                if (productIds.length > 0) {
+                    const { data: recipes } = await supabase
+                        .from('product_recipes')
+                        .select(`
+                            product_id,
+                            amount,
+                            ingredient:ingredient_id (
+                                id,
+                                name,
+                                unit,
+                                cost_per_unit
+                            )
+                        `)
+                        .in('product_id', productIds);
+
+                    if (recipes) {
+                        const ingSummary: Record<number, { name: string, unit: string, amount: number, cost: number }> = {};
+                        
+                        items.forEach(item => {
+                            const itemRecipes = recipes.filter(r => r.product_id === item.product_id);
+                            itemRecipes.forEach(r => {
+                                if (!r.ingredient) return;
+                                const id = r.ingredient.id;
+                                const qty = r.amount * (item.quantity || 0);
+                                const cost = (r.ingredient.cost_per_unit || 0) * qty;
+                                
+                                if (ingSummary[id]) {
+                                    ingSummary[id].amount += qty;
+                                    ingSummary[id].cost += cost;
+                                } else {
+                                    ingSummary[id] = {
+                                        name: r.ingredient.name,
+                                        unit: r.ingredient.unit,
+                                        amount: qty,
+                                        cost: cost
+                                    };
+                                }
+                            });
+                        });
+                        setSessionIngredients(Object.values(ingSummary).sort((a, b) => a.name.localeCompare(b.name)));
+                    }
+                } else {
+                    setSessionIngredients([]);
+                }
             }
         } catch (err) {
             console.error('Error fetching category summary:', err);
+        } finally {
+            setLoadingIngredients(false);
         }
     };
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [sessionToDelete, setSessionToDelete] = useState<SessionHistory | null>(null);
     const [forceCloseOpen, setForceCloseOpen] = useState(false);
     const [isDeletingFiltered, setIsDeletingFiltered] = useState(false);
-    const { role } = useAuth();
-    const isAdmin = ['admin', 'owner', 'administrator', 'superadmin'].includes(role?.toLowerCase() || '');
 
     useEffect(() => {
         fetchSessions();
@@ -729,6 +787,51 @@ export const SessionHistoryView = memo(function SessionHistoryView({ branchId }:
                                         </div>
                                     ))}
                                 </div>
+                            </div>
+                        )}
+
+                        {/* Session Ingredient Summary */}
+                        {isAdmin && (sessionIngredients.length > 0 || loadingIngredients) && (
+                            <div className="mt-6 pt-6 border-t border-gray-100">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-2">
+                                        <Archive className="w-4 h-4 text-gray-400" />
+                                        <h3 className="text-sm font-bold text-gray-500 uppercase tracking-widest">Total Bahan Terpakai</h3>
+                                        {loadingIngredients && <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />}
+                                    </div>
+                                    <button 
+                                        type="button"
+                                        onClick={() => setShowHPPInSessionDetail(!showHPPInSessionDetail)}
+                                        className={`text-[10px] font-bold px-2 py-1 rounded-lg border transition-all ${showHPPInSessionDetail ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-gray-100 text-gray-500 border-gray-200'}`}
+                                    >
+                                        {showHPPInSessionDetail ? 'Sembunyikan HPP' : 'Lihat HPP'}
+                                    </button>
+                                </div>
+                                
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                    {sessionIngredients.map((ing, i) => (
+                                        <div key={i} className="p-3 bg-blue-50/30 dark:bg-blue-900/10 rounded-2xl border border-blue-100/50">
+                                            <span className="text-[10px] font-bold text-gray-400 uppercase block mb-0.5 truncate" title={ing.name}>{ing.name}</span>
+                                            <p className="text-sm font-bold text-blue-700">
+                                                {ing.amount % 1 === 0 ? ing.amount : ing.amount.toFixed(2)} {ing.unit}
+                                            </p>
+                                            {showHPPInSessionDetail && (
+                                                <p className="text-[9px] text-blue-500/70 font-medium mt-1">
+                                                    Cost: Rp {ing.cost.toLocaleString()}
+                                                </p>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {showHPPInSessionDetail && sessionIngredients.length > 0 && (
+                                    <div className="mt-4 p-3 bg-blue-600 rounded-2xl flex justify-between items-center text-white">
+                                        <span className="text-xs font-bold uppercase opacity-80">Total Estimasi HPP Sesi</span>
+                                        <span className="text-lg font-black">
+                                            Rp {sessionIngredients.reduce((sum, i) => sum + i.cost, 0).toLocaleString()}
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                         )}
 

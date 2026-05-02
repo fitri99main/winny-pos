@@ -69,6 +69,7 @@ interface CashierInterfaceProps {
   autoOpenSaleId?: number | null;
   onAutoPaymentProcessed?: () => void;
   topSellingProducts?: string[];
+  ingredients?: any[];
 }
 
 interface HeldOrder {
@@ -102,7 +103,8 @@ export function CashierInterface({
   autoOpenPayment,
   autoOpenSaleId,
   onAutoPaymentProcessed,
-  topSellingProducts = []
+  topSellingProducts = [],
+  ingredients = []
 }: CashierInterfaceProps) {
   const isMobile = useIsMobile();
   // console.log('CashierInterface Props:', { productsLength: products?.length, categoriesLength: categories?.length }); 

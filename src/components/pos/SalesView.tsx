@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo, memo } from 'react';
-import { History, RotateCcw, Search, FileText, CheckCircle, XCircle, X, ShoppingCart, Printer, ChevronDown, Users, Trash2 } from 'lucide-react';
+import { useAuth } from '../auth/AuthProvider';
+import { History, RotateCcw, Search, FileText, CheckCircle, XCircle, X, ShoppingCart, Printer, ChevronDown, Users, Trash2, Loader2, Info, Eye, Archive } from 'lucide-react';
 import { Button } from '../ui/button';
+import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
 import { ContactData } from '../contacts/ContactsView';
 import { PaymentModal } from './PaymentModal';
@@ -214,7 +216,11 @@ export const SalesView = memo(function SalesView({
     settings = {},
     userRole
 }: SalesViewProps) {
-    const isAdmin = ['administrator', 'admin', 'owner', 'superadmin'].includes(userRole?.toLowerCase() || '');
+    const { role } = useAuth();
+    const isAdmin = useMemo(() => {
+        const r = role?.toLowerCase() || '';
+        return r === 'admin' || r === 'owner' || r === 'administrator' || r === 'superadmin';
+    }, [role]);
     
     // 1. All State Hooks
     const [activeTab, setActiveTab] = useState<'history' | 'returns'>(initialTab);
@@ -244,6 +250,9 @@ export const SalesView = memo(function SalesView({
     const [receiptPreviewData, setReceiptPreviewData] = useState<SalesOrder | null>(null);
     const [visibleCount, setVisibleCount] = useState(50);
     const [sortConfig, setSortConfig] = useState<{ key: keyof SalesOrder | '_cashier'; direction: 'asc' | 'desc' }>({ key: 'date', direction: 'desc' });
+    const [selectedOrderRecipes, setSelectedOrderRecipes] = useState<any[]>([]);
+    const [loadingRecipes, setLoadingRecipes] = useState(false);
+    const [showHPPInDetail, setShowHPPInDetail] = useState(false);
 
     // 1. Debounce Search
     useEffect(() => {
@@ -612,7 +621,99 @@ export const SalesView = memo(function SalesView({
     const handleViewDetails = (sale: SalesOrder) => {
         setSelectedOrderDetails(sale);
         setIsDetailsModalOpen(true);
+        setShowHPPInDetail(false);
+        fetchRecipesForOrder(sale);
     };
+
+    const fetchRecipesForOrder = async (sale: SalesOrder) => {
+        const productIds = (sale.productDetails || []).map(p => {
+            // Need to find product_id. In web SalesOrder, productDetails usually comes from sale_items
+            // We might need to ensure product_id is available in productDetails or sale.id lookup
+            return (p as any).product_id; 
+        }).filter(Boolean);
+
+        // If product_id is not in productDetails, we fetch from sale_items table
+        let finalProductIds = productIds;
+        if (finalProductIds.length === 0 && sale.id) {
+            try {
+                setLoadingRecipes(true);
+                const { data: items } = await supabase
+                    .from('sale_items')
+                    .select('product_id')
+                    .eq('sale_id', sale.id);
+                if (items) finalProductIds = items.map(i => i.product_id).filter(Boolean);
+            } catch (e) {
+                console.error('Error fetching sale_items:', e);
+            }
+        }
+
+        if (finalProductIds.length === 0) {
+            setSelectedOrderRecipes([]);
+            setLoadingRecipes(false);
+            return;
+        }
+
+        try {
+            setLoadingRecipes(true);
+            const { data, error } = await supabase
+                .from('product_recipes')
+                .select(`
+                    product_id,
+                    amount,
+                    ingredient:ingredient_id (
+                        id,
+                        name,
+                        unit,
+                        cost_per_unit
+                    )
+                `)
+                .in('product_id', finalProductIds);
+
+            if (error) throw error;
+            setSelectedOrderRecipes(data || []);
+        } catch (e) {
+            console.error('Fetch Recipes Error:', e);
+            setSelectedOrderRecipes([]);
+        } finally {
+            setLoadingRecipes(false);
+        }
+    };
+
+    const aggregatedIngredients = useMemo(() => {
+        if (!selectedOrderDetails || !selectedOrderRecipes.length) return [];
+        
+        const summary: Record<number, { name: string, unit: string, amount: number, cost: number }> = {};
+        
+        (selectedOrderDetails.productDetails || []).forEach((item: any) => {
+            // Match by name if product_id is missing, or by product_id if available
+            const recipes = selectedOrderRecipes.filter(r => r.product_id === item.product_id);
+            
+            recipes.forEach(r => {
+                if (!r.ingredient) return;
+                const id = r.ingredient.id;
+                const qty = r.amount * item.quantity;
+                const cost = (r.ingredient.cost_per_unit || 0) * qty;
+                
+                if (summary[id]) {
+                    summary[id].amount += qty;
+                    summary[id].cost += cost;
+                } else {
+                    summary[id] = {
+                        name: r.ingredient.name,
+                        unit: r.ingredient.unit,
+                        amount: qty,
+                        cost: cost
+                    };
+                }
+            });
+        });
+        
+        return Object.values(summary).sort((a, b) => a.name.localeCompare(b.name));
+    }, [selectedOrderDetails, selectedOrderRecipes]);
+
+    const totalHPP = useMemo(() => {
+        return aggregatedIngredients.reduce((sum, ing) => sum + ing.cost, 0);
+    }, [aggregatedIngredients]);
 
     const handleOpenReturn = (order: SalesOrder) => {
         setSelectedOrder(order);
@@ -881,9 +982,9 @@ export const SalesView = memo(function SalesView({
                                         <button
                                             onClick={() => handleViewDetails(sale)}
                                             className="p-1.5 hover:bg-blue-50 text-blue-600 rounded-lg group"
-                                            title="Detail"
+                                            title="Lihat Detail & Bahan Baku"
                                         >
-                                            <Search className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+                                            <Eye className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
                                         </button>
                                         {sale.status === 'Unpaid' && (
                                             <button
@@ -1014,9 +1115,9 @@ export const SalesView = memo(function SalesView({
                                                 else toast.error('Data transaksi asli tidak ditemukan');
                                             }}
                                             className="p-1.5 hover:bg-blue-50 text-blue-600 rounded-lg group"
-                                            title="Detail Transaksi Asli"
+                                            title="Detail Transaksi Asli & Bahan Baku"
                                         >
-                                            <Search className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+                                            <Eye className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
                                         </button>
                                     </td>
                                 </tr>
@@ -1038,6 +1139,7 @@ export const SalesView = memo(function SalesView({
             </div>
         </div>
     );
+
 
     return (
         <div className="flex flex-col h-full bg-gray-50/50 relative overflow-hidden">
@@ -1251,7 +1353,7 @@ export const SalesView = memo(function SalesView({
                                     <X className="w-5 h-5" />
                                 </button>
                             </div>
-                            <div className="p-6">
+                            <div className="p-6 max-h-[75vh] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200">
                                 <div className="flex justify-between mb-6 text-sm">
                                     <div>
                                         <p className="text-gray-400 mb-1">Tanggal</p>
@@ -1313,6 +1415,60 @@ export const SalesView = memo(function SalesView({
                                         <span>Rp {selectedOrderDetails.totalAmount.toLocaleString()}</span>
                                     </div>
                                 </div>
+
+                                {/* Ingredients & HPP Section */}
+                                {isAdmin && (aggregatedIngredients.length > 0 || loadingRecipes) && (
+                                    <div className="mt-6 bg-blue-50/50 rounded-2xl p-5 border border-blue-100 shadow-sm">
+                                        <div className="flex items-center justify-between mb-4">
+                                            <div className="flex items-center gap-2">
+                                                <div className="p-1.5 bg-blue-600 rounded-lg">
+                                                    <Archive className="w-3.5 h-3.5 text-white" />
+                                                </div>
+                                                <h4 className="text-xs font-black text-blue-800 uppercase tracking-widest">Estimasi Bahan Baku</h4>
+                                                {loadingRecipes && <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />}
+                                            </div>
+                                            <button 
+                                                type="button"
+                                                onClick={() => setShowHPPInDetail(!showHPPInDetail)}
+                                                className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all ${showHPPInDetail ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-100' : 'bg-white text-blue-600 border-blue-200'}`}
+                                            >
+                                                {showHPPInDetail ? 'Sembunyikan HPP' : 'Lihat HPP'}
+                                            </button>
+                                        </div>
+                                        
+                                        <div className="space-y-2">
+                                            {aggregatedIngredients.map((ing, idx) => (
+                                                <div key={idx} className="flex justify-between items-start text-[11px]">
+                                                    <span className="text-gray-500 font-medium">• {ing.name}</span>
+                                                    <div className="text-right">
+                                                        <span className="font-bold text-gray-700">
+                                                            {ing.amount % 1 === 0 ? ing.amount : ing.amount.toFixed(2)} {ing.unit}
+                                                        </span>
+                                                        {showHPPInDetail && (
+                                                            <p className="text-[9px] text-gray-400 font-medium">
+                                                                Cost: Rp {ing.cost.toLocaleString()}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        
+                                        {showHPPInDetail && aggregatedIngredients.length > 0 && (
+                                            <div className="mt-3 pt-3 border-t border-gray-200 flex justify-between items-center">
+                                                <span className="text-[11px] font-bold text-gray-600">Total Estimasi HPP</span>
+                                                <span className="text-sm font-extrabold text-blue-600">Rp {totalHPP.toLocaleString()}</span>
+                                            </div>
+                                        )}
+                                        
+                                        {!loadingRecipes && aggregatedIngredients.length === 0 && (
+                                            <div className="flex items-center gap-2 text-[11px] text-gray-400 italic py-2">
+                                                <Info className="w-3 h-3" />
+                                                <span>Data resep belum dikonfigurasi.</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                             <div className="px-6 py-4 bg-gray-50 flex justify-between items-center gap-3">
                                 <Button 

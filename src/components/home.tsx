@@ -603,7 +603,7 @@ function Home() {
     minDate.setHours(0, 0, 0, 0);
 
     const results = await Promise.all([
-      safeFetch(supabase.from('products').select('*').eq('branch_id', Number(branchId)).order('sort_order', { ascending: true }), 'products'),
+      safeFetch(supabase.from('products').select('*, recipe:product_recipes(ingredientId:ingredient_id, amount), addons:product_addons(*)').eq('branch_id', Number(branchId)).order('sort_order', { ascending: true }), 'products'),
       safeFetch(supabase.from('shift_schedules').select('*').order('date'), 'schedules'), 
       safeFetch(supabase.from('tables').select('*').eq('branch_id', Number(branchId)).order('number'), 'tables'),
       safeFetch(supabase.from('ingredients').select('*').eq('branch_id', Number(branchId)).order('name'), 'ingredients'),
@@ -681,6 +681,8 @@ function Home() {
       supabase.channel('tables_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'tables' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
       supabase.channel('employee_assessments').on('postgres_changes', { event: '*', schema: 'public', table: 'employee_assessments' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
       supabase.channel('assessment_criteria').on('postgres_changes', { event: '*', schema: 'public', table: 'assessment_criteria' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
+      supabase.channel('product_recipes_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'product_recipes' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
+      supabase.channel('product_addons_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'product_addons' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
       supabase.channel('wifi_vouchers_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'wifi_vouchers' }, () => fetchVoucherStats()).subscribe(),
     ];
 
@@ -827,6 +829,7 @@ function Home() {
         *,
         items:sale_items(
           id, 
+          product_id,
           product_name, 
           quantity, 
           price, 
@@ -849,6 +852,7 @@ function Home() {
       const formattedSales = salesData.map(s => ({
         ...s,
         productDetails: (s.items || []).map((i: any) => ({
+          product_id: i.product_id,
           name: i.product_name,
           quantity: i.quantity,
           price: i.price,
@@ -3177,7 +3181,7 @@ function Home() {
               console.log('onProductCRUD triggered:', { action, data });
               if (action === 'create' || action === 'update') {
                 const { recipe, addons, id, ...rest } = data;
-                const validColumns = ['code', 'name', 'category', 'brand', 'unit', 'price', 'cost', 'stock', 'min_stock', 'image_url', 'is_sellable', 'is_taxed', 'is_stock_ready', 'target', 'branch_id', 'sort_order'];
+                const validColumns = ['code', 'name', 'category', 'brand', 'unit', 'price', 'cost', 'stock', 'min_stock', 'image_url', 'is_sellable', 'is_taxed', 'is_stock_ready', 'target', 'branch_id', 'sort_order', 'recipe_date'];
                 const productData: any = {};
                 validColumns.forEach(col => {
                   if (rest[col] !== undefined) productData[col] = rest[col];
@@ -3628,8 +3632,9 @@ function Home() {
         {/* Header - Fixed Height, Flex None */}
         <header className="h-20 flex-none bg-white/90 dark:bg-gray-900/90 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-800 px-6 flex items-center justify-between shadow-sm z-50">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800 dark:text-white tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-400">
+            <h1 className="text-2xl font-bold text-gray-800 dark:text-white tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-400 flex items-center gap-2">
               {menuGroups.flatMap(g => g.modules).find(m => m.id === activeModule)?.label || 'WinPOS'}
+              <span className="text-[10px] bg-red-500 text-white px-2 py-0.5 rounded-full animate-bounce">V2.2</span>
             </h1>
             <p className="text-[10px] text-gray-500 font-medium mt-0.5 tracking-wide uppercase opacity-80">Sistem Terintegrasi</p>
           </div>
@@ -3756,6 +3761,7 @@ function Home() {
             })}
             onSendToKDS={handleSendToKDS}
             products={products}
+            ingredients={inventoryIngredients}
             topSellingProducts={topSellingProducts}
             categories={categories}
             tables={tables}

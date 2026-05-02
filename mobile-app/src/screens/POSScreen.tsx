@@ -1918,29 +1918,17 @@ export default function POSScreen() {
             };
             runCheckoutPrints();
 
-            // [GHOST BUSTER] Explicitly clear cart and UI state AFTER printing is done
-            setCart([]);
-
-            // [PRIORITY UI] Show success modal
-            setTimeout(() => {
-                setSuccessModalConfig({
-                    title: 'Pesanan Terkirim!',
-                    message: isActuallyDisplay 
-                        ? 'Pesanan Anda telah masuk ke sistem kasir. Silakan tunggu.'
-                        : (existingSaleId ? 'Pesanan berhasil diperbarui' : 'Pesanan baru berhasil dibuat')
-                });
-                setShowSuccessModal(true);
-            }, 50);
+            // [PRIORITY UI] Show success modal and reset state
+            setSuccessModalConfig({
+                title: 'Pesanan Terkirim!',
+                message: isActuallyDisplay 
+                    ? 'Pesanan Anda telah masuk ke sistem kasir. Silakan tunggu.'
+                    : (existingSaleId ? 'Pesanan berhasil diperbarui' : 'Pesanan baru berhasil dibuat')
+            });
+            setShowSuccessModal(true);
 
             // [INSTANT CLEAN]
-            // We clear context variables (customerName, tableNo) only after prints are triggered
-            if (isActuallyDisplay) {
-                clearCart();
-            } else {
-                clearCart();
-                setExistingSaleId(null);
-            }
-
+            await clearCart();
             setExistingSaleId(null);
             setSelectedCustomerId(null);
             setCustomerName('');
@@ -2211,20 +2199,16 @@ export default function POSScreen() {
                     message: 'Silakan cetak struk untuk bagian ini jika diperlukan.'
                 });
                 setShowSuccessModal(true);
-                // maybeAutoPrintReceipt(sale.id, orderNoText); removed: redundant with runPaymentPrints
             } else {
-                // Clear Cart
-                clearCart();
-                await clearCart();
+                // Final Payment: Clear everything
                 setOrderDiscount(0);
                 setExistingSaleId(null);
-                setIsPartialSplit(false); // Ensure final mode
-
+                setIsPartialSplit(false); 
 
                 setLastOrderNo(orderNoText);
                 setLastSaleId(sale.id);
+                setCurrentSaleId(sale.id);
                 
-                // [UPDATED] Always show Success Modal, including in Display Mode.
                 setSuccessModalConfig({
                     title: 'Pembayaran Berhasil!',
                     message: isActuallyDisplay 
@@ -2232,12 +2216,17 @@ export default function POSScreen() {
                         : 'Transaksi telah selesai dan pembayaran diterima.'
                 });
                 setShowSuccessModal(true);
-                // maybeAutoPrintReceipt(sale.id, orderNoText); removed: redundant with runPaymentPrints
             }
+            
+            // [IMPROVED] Close modals immediately for instant UI feedback
             setShowPaymentModal(false);
             setShowCartModal(false);
+
+            // [IMPROVED] Heavy storage operations done after modals are dismissed
+            if (!isSplitPayment) {
+                await clearCart();
+            }
             setCurrentSaleId(sale.id);
-            await clearCart();
         } catch (error: any) {
             console.error('Payment Confirm Error:', error);
 

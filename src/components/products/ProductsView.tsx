@@ -1,4 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo, memo } from 'react';
+if (typeof window !== 'undefined') {
+    (window as any).WINPOS_VERSION = '2.2';
+    console.log('WINPOS VERSION 2.2 LOADED');
+    window.alert('System Loaded: WinPOS v2.2');
+}
 import { Package, Tags, Scale, Ticket, Plus, Search, Edit, Trash2, Filter, ChefHat, Info, Calculator, Puzzle, Settings2, X, Check, Coffee, Barcode, Printer, ChevronUp, ChevronDown, GripVertical, Calendar, Link } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../ui/button';
@@ -96,7 +101,7 @@ export function ProductsView({
     onBrandCRUD,
     currentBranchId
 }: ProductsViewProps) {
-    const [activeTab, setActiveTab] = useState<'products' | 'categories' | 'units' | 'brands' | 'ingredients'>('products');
+    const [activeTab, setActiveTab] = useState<'products' | 'categories' | 'units' | 'brands' | 'recipes'>('products');
 
     // Form states
     const [isFormOpen, setIsFormOpen] = useState(false);
@@ -116,7 +121,11 @@ export function ProductsView({
     const [historyData, setHistoryData] = useState<any[]>([]);
     const [isLoadingHistory, setIsLoadingHistory] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const { user } = useAuth();
+    const { user, role } = useAuth();
+    const isAdmin = useMemo(() => {
+        const r = role?.toLowerCase() || '';
+        return r === 'admin' || r === 'owner' || r === 'administrator' || r === 'superadmin';
+    }, [role]);
 
 
     // --- Generic Handlers ---
@@ -136,12 +145,13 @@ export function ProductsView({
 
     const logRecipeHppChange = async (product: Product, oldCost: number, newCost: number) => {
         try {
-            await supabase.from('recipe_hpp_history').insert({
+                       const { error } = await supabase.from('recipe_hpp_history').insert({
                 product_id: product.id,
                 product_name: product.name,
                 old_cost: oldCost,
                 new_cost: newCost,
                 recipe_snapshot: product.recipe,
+                effective_date: product.recipe_date || new Date().toISOString().split('T')[0],
                 changed_by: user?.email || 'System'
             });
         } catch (error) {
@@ -478,12 +488,11 @@ export function ProductsView({
                 <table className="w-full text-sm">
                     <thead className="bg-gray-50/50 text-gray-400 text-left border-b border-gray-100">
                         <tr>
-
                             <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px]">Kode</th>
-                            <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px]">Nama Produk</th>
-                            <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px]">Kategori</th>
-                            <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px] text-right">Modal</th>
-                            <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px] text-right">Harga</th>
+                            <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px] text-gray-500">Nama Produk</th>
+                            <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px] text-gray-500">Kategori</th>
+                            {isAdmin && <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px] text-gray-500 text-right">Modal (HPP)</th>}
+                            <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px] text-gray-500 text-right">Harga Jual</th>
                             <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px] text-right">Stok</th>
                             <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px] text-center">Status</th>
                             <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px] text-center">Aksi</th>
@@ -551,9 +560,11 @@ export function ProductsView({
                                                 {p.category}
                                             </span>
                                         </td>
-                                        <td className="px-4 py-5 text-right font-black text-orange-600">
-                                            Rp {currentHPP.toLocaleString()}
-                                        </td>
+                                        {isAdmin && (
+                                            <td className="px-4 py-5 text-right font-black text-orange-600">
+                                                Rp {currentHPP.toLocaleString()}
+                                            </td>
+                                        )}
                                         <td className="px-4 py-5 text-right font-black text-blue-600">
                                             Rp {p.price.toLocaleString()}
                                         </td>
@@ -600,7 +611,16 @@ export function ProductsView({
                                             </span>
                                         </td>
                                         <td className="px-4 py-5 flex justify-center gap-1">
-                                            <button onClick={() => { setSelectedProduct(p); setIsRecipeOpen(true); }} className="p-2.5 bg-orange-50 text-orange-600 rounded-xl hover:bg-orange-100 transition-colors" title="Atur Resep & HPP"><ChefHat className="w-4.5 h-4.5" /></button>
+                                            {isAdmin && (
+                                                <button 
+                                                    onClick={() => { setSelectedProduct(p); setIsRecipeOpen(true); }} 
+                                                    className="flex items-center gap-1.5 px-3 py-2 bg-orange-50 text-orange-600 rounded-xl hover:bg-orange-600 hover:text-white transition-all group/btn" 
+                                                    title="Atur Resep & HPP"
+                                                >
+                                                    <ChefHat className="w-4 h-4" />
+                                                    <span className="text-[9px] font-black uppercase hidden group-hover/btn:inline-block">Resep</span>
+                                                </button>
+                                            )}
                                             <button onClick={() => { setSelectedProduct(p); setIsAddonOpen(true); }} className="p-2.5 bg-purple-50 text-purple-600 rounded-xl hover:bg-purple-100 transition-colors" title="Atur Toping / Add-ons"><Puzzle className="w-4.5 h-4.5" /></button>
                                             <button onClick={() => { setSelectedProduct(p); setIsPrintModalOpen(true); }} className="p-2.5 bg-gray-50 text-gray-600 rounded-xl hover:bg-gray-100 transition-colors" title="Cetak Barcode"><Barcode className="w-4.5 h-4.5" /></button>
                                             <button onClick={() => handleOpenForm(p)} className="p-2.5 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors" title="Edit"><Edit className="w-4.5 h-4.5" /></button>
@@ -675,32 +695,145 @@ export function ProductsView({
         </div>
     );
 
+    const renderRecipeHppTable = () => (
+        <div className="bg-white rounded-[32px] shadow-sm border border-gray-100 overflow-hidden flex flex-col">
+            <div className="p-6 border-b border-gray-100 bg-gray-50/30 flex justify-between items-center">
+                <div>
+                    <h3 className="font-black text-gray-800 tracking-tight">Ringkasan Resep & HPP</h3>
+                    <p className="text-xs text-gray-500 font-medium">Pantau margin keuntungan berdasarkan komposisi bahan baku.</p>
+                </div>
+                <div className="flex gap-2">
+                    <div className="px-4 py-2 bg-blue-50 text-blue-600 rounded-xl text-[10px] font-bold uppercase ring-1 ring-blue-100">
+                        {products.filter(p => p.recipe && p.recipe.length > 0).length} Produk Ber-resep
+                    </div>
+                </div>
+            </div>
+            <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                    <thead className="bg-gray-50 text-gray-400 border-b border-gray-50">
+                        <tr>
+                            <th className="px-6 py-5 font-bold uppercase tracking-normal text-[11px] text-gray-500">Nama Produk</th>
+                            <th className="px-6 py-5 font-bold uppercase tracking-normal text-[11px] text-gray-500 text-center">Tgl Update</th>
+                            <th className="px-6 py-5 font-bold uppercase tracking-normal text-[11px] text-gray-500">Komposisi Bahan</th>
+                            <th className="px-6 py-5 font-bold uppercase tracking-normal text-[11px] text-gray-500 text-right">Modal (HPP)</th>
+                            <th className="px-6 py-5 font-bold uppercase tracking-normal text-[11px] text-gray-500 text-right">Harga Jual</th>
+                            <th className="px-6 py-5 font-bold uppercase tracking-normal text-[11px] text-gray-500 text-right">Margin (Rp)</th>
+                            <th className="px-6 py-5 font-bold uppercase tracking-normal text-[11px] text-gray-500 text-right">Margin (%)</th>
+                            <th className="px-6 py-5 font-bold uppercase tracking-normal text-[11px] text-gray-500 text-center">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                        {products
+                            .filter(p => !currentBranchId || String(p.branch_id) === String(currentBranchId) || !p.branch_id)
+                            .sort((a, b) => (a.sort_order ?? a.id) - (b.sort_order ?? b.id))
+                            .map((p) => {
+                                const hpp = calculateHPP(p.recipe);
+                                const manualHpp = p.cost || 0;
+                                const finalHpp = (p.recipe && p.recipe.length > 0) ? hpp : manualHpp;
+                                const margin = p.price - finalHpp;
+                                const marginPercent = p.price > 0 ? (margin / p.price) * 100 : 0;
+                                
+                                return (
+                                    <tr 
+                                        key={p.id} 
+                                        className="group hover:bg-blue-50/30 transition-all cursor-pointer"
+                                        onClick={() => { setSelectedProduct(p); setIsRecipeOpen(true); }}
+                                    >
+                                        <td className="px-6 py-5">
+                                            <div className="font-bold text-gray-800 text-sm">{p.name}</div>
+                                            <div className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">{p.category}</div>
+                                        </td>
+                                        <td className="px-6 py-5 text-center">
+                                            <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-1 rounded-lg">
+                                                {p.recipe_date ? new Date(p.recipe_date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-5">
+                                            {p.recipe && p.recipe.length > 0 ? (
+                                                <div className="flex flex-wrap gap-1.5 max-w-md">
+                                                    {p.recipe.map((item, i) => {
+                                                        const ing = ingredients.find(ing => ing.id === item.ingredientId);
+                                                        return (
+                                                            <span key={i} className="px-2.5 py-1 bg-white text-blue-800 rounded-lg text-[11px] font-bold border border-blue-100 shadow-sm">
+                                                                {ing?.name || 'Unknown'}: <span className="text-blue-600">{item.amount} {ing?.unit}</span>
+                                                            </span>
+                                                        );
+                                                    })}
+                                                </div>
+                                            ) : (
+                                                <span className="text-[11px] text-gray-400 italic bg-gray-50 px-3 py-1 rounded-lg border border-gray-100">Resep belum diatur (Pakai HPP Manual)</span>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-5 text-right font-black text-orange-600">
+                                            Rp {finalHpp.toLocaleString()}
+                                            {p.recipe && p.recipe.length > 0 && <div className="text-[8px] text-orange-400 uppercase mt-0.5">Calculated</div>}
+                                        </td>
+                                        <td className="px-6 py-5 text-right font-black text-blue-600">
+                                            Rp {p.price.toLocaleString()}
+                                        </td>
+                                        <td className={`px-6 py-5 text-right font-black ${margin >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                            Rp {margin.toLocaleString()}
+                                        </td>
+                                        <td className="px-6 py-5 text-right">
+                                            <span className={`px-2 py-1 rounded-lg font-black text-[10px] ${marginPercent >= 30 ? 'bg-emerald-50 text-emerald-600' : (marginPercent >= 10 ? 'bg-amber-50 text-amber-600' : 'bg-red-50 text-red-600')}`}>
+                                                {marginPercent.toFixed(1)}%
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-5 text-center">
+                                            <button 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setSelectedProduct(p);
+                                                    setIsRecipeOpen(true);
+                                                }}
+                                                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-md shadow-blue-100 group-hover:scale-105"
+                                                title="Edit Resep"
+                                            >
+                                                <ChefHat className="w-4 h-4" />
+                                                <span className="text-[10px] font-black uppercase">Atur Resep</span>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+
     return (
         <div className="flex flex-col h-full bg-gray-50/50 relative overflow-hidden">
             {/* Top Navigation Header */}
             <div className="w-full bg-white border-b border-gray-100 px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 z-20 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] flex-shrink-0">
                 <div>
-                    <h2 className="text-xl font-black text-gray-800 tracking-tight">Master Data</h2>
+                    <h2 className="text-xl font-black text-gray-800 tracking-tight">Master Data <span className="text-red-500">[V2.1 - ACTIVE]</span></h2>
                     <p className="text-[10px] text-gray-400 font-medium tracking-wide">Katalog Produk & Inventaris</p>
                 </div>
 
                 <div className="flex items-center gap-1 bg-gray-50 p-1.5 rounded-2xl overflow-x-auto no-scrollbar border border-gray-100">
                     {[
                         { id: 'products', label: 'Daftar Produk', icon: Package },
+                        { id: 'recipes', label: 'Resep & HPP', icon: ChefHat, adminOnly: false, isNew: true },
                         { id: 'categories', label: 'Kategori', icon: Filter },
                         { id: 'units', label: 'Satuan', icon: Scale },
                         { id: 'brands', label: 'Merek', icon: Ticket },
-                    ].map(item => (
+                    ].filter(item => !item.adminOnly || isAdmin).map(item => (
                         <button
                             key={item.id}
                             onClick={() => setActiveTab(item.id as any)}
-                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all font-bold text-xs whitespace-nowrap ${activeTab === item.id
+                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all font-bold text-xs whitespace-nowrap relative ${activeTab === item.id
                                 ? 'bg-white text-primary shadow-sm ring-1 ring-gray-100'
                                 : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
                                 }`}
                         >
                             <item.icon className={`w-4 h-4 ${activeTab === item.id ? 'text-primary' : 'text-gray-400'}`} />
                             {item.label}
+                            {(item as any).isNew && (
+                                <span className="absolute -top-1 -right-1 flex h-4 w-8 items-center justify-center rounded-full bg-emerald-500 text-[8px] text-white font-black animate-pulse">
+                                    NEW
+                                </span>
+                            )}
                         </button>
                     ))}
                 </div>
@@ -709,6 +842,7 @@ export function ProductsView({
             {/* Content */}
             <div className="flex-1 p-6 overflow-y-auto">
                 {activeTab === 'products' && renderProductsTable()}
+                {activeTab === 'recipes' && renderRecipeHppTable()}
                 {activeTab === 'categories' && renderSimpleTable(categories, 'category', 'Kategori')}
                 {activeTab === 'units' && renderSimpleTable(units, 'unit', 'Satuan')}
                 {activeTab === 'brands' && renderSimpleTable(brands, 'brand', 'Merek')}
@@ -852,17 +986,19 @@ export function ProductsView({
 
                                             {/* Row 3: Pricing & Stock Readiness */}
                                             <div className="grid grid-cols-2 gap-4">
-                                                <div className="space-y-1.5">
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Harga Modal (HPP) (Rp)</label>
-                                                    <input 
-                                                        type="number" 
-                                                        className="w-full px-4 py-2.5 bg-orange-50/30 border border-orange-100 rounded-xl outline-none focus:ring-4 focus:ring-orange-500/5 transition-all font-bold text-orange-600 text-xs" 
-                                                        value={formData.cost === 0 ? '0' : (formData.cost || '')} 
-                                                        onChange={e => setFormData(prev => ({ ...prev, cost: parseFloat(e.target.value) || 0 }))} 
-                                                        placeholder="0" 
-                                                    />
-                                                    <p className="text-[8px] text-gray-400 px-1 italic">Diabaikan jika menggunakan resep.</p>
-                                                </div>
+                                                 {isAdmin && (
+                                                    <div className="space-y-1.5">
+                                                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Harga Modal (HPP) (Rp)</label>
+                                                        <input 
+                                                            type="number" 
+                                                            className="w-full px-4 py-2.5 bg-orange-50/30 border border-orange-100 rounded-xl outline-none focus:ring-4 focus:ring-orange-500/5 transition-all font-bold text-orange-600 text-xs" 
+                                                            value={formData.cost === 0 ? '0' : (formData.cost || '')} 
+                                                            onChange={e => setFormData(prev => ({ ...prev, cost: parseFloat(e.target.value) || 0 }))} 
+                                                            placeholder="0" 
+                                                        />
+                                                        <p className="text-[8px] text-gray-400 px-1 italic">Diabaikan jika menggunakan resep.</p>
+                                                    </div>
+                                                 )}
                                                 <div className="space-y-1.5">
                                                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Harga Jual (Rp)</label>
                                                     <input 
@@ -1037,7 +1173,23 @@ export function ProductsView({
                         <div className="px-10 py-8 border-b border-gray-50 flex items-center justify-between bg-gray-50/50">
                             <div>
                                 <h3 className="text-2xl font-black text-gray-800 tracking-tight">Resep & Kalkulasi HPP</h3>
-                                <p className="text-sm text-gray-500 font-medium">{selectedProduct.name} <span className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded ml-1">{selectedProduct.code}</span></p>
+                                <div className="flex items-center gap-3 mt-1">
+                                    <p className="text-sm text-gray-500 font-medium">{selectedProduct.name} <span className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded ml-1">{selectedProduct.code}</span></p>
+                                    <div className="h-4 w-[1px] bg-gray-300" />
+                                    <div className="flex items-center gap-2">
+                                        <Calendar className="w-3.5 h-3.5 text-primary" />
+                                        <input 
+                                            type="date" 
+                                            className="bg-transparent border-none text-[11px] font-bold text-primary outline-none focus:ring-0 p-0 cursor-pointer"
+                                            value={selectedProduct.recipe_date || new Date().toISOString().split('T')[0]}
+                                            onChange={(e) => {
+                                                const updated = { ...selectedProduct, recipe_date: e.target.value };
+                                                setProducts(products.map(p => p.id === updated.id ? updated : p));
+                                                setSelectedProduct(updated);
+                                            }}
+                                        />
+                                    </div>
+                                </div>
                             </div>
                             <div className="flex items-center gap-2">
                                 <Button 
@@ -1081,7 +1233,7 @@ export function ProductsView({
                                                         <div className="text-right mr-2">
                                                             <div className="text-sm font-black text-primary">Rp {(item.amount * (ing?.cost_per_unit || 0)).toLocaleString()}</div>
                                                         </div>
-                                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <div className="flex items-center gap-1 transition-opacity">
                                                             <button
                                                                 onClick={() => {
                                                                     setEditingRecipeIdx(idx);
@@ -1143,15 +1295,37 @@ export function ProductsView({
                                                 disabled={editingRecipeIdx !== null}
                                                 className="w-full p-4 text-sm font-bold border-none bg-gray-50 rounded-2xl outline-none ring-1 ring-gray-100 focus:ring-2 focus:ring-primary/20 transition-all disabled:opacity-50"
                                             >
-                                                <option value="">Pilih bahan...</option>
+                                                <option value="">Pilih bahan baku...</option>
                                                 {ingredients.map(i => (
                                                     <option key={i.id} value={i.id}>
-                                                        {i.name} ({i.unit}) - Stok: {i.current_stock}
+                                                        {i.name} ({i.unit}) - Rp {i.cost_per_unit?.toLocaleString()}/{i.unit}
                                                     </option>
                                                 ))}
                                             </select>
                                             <div className="flex gap-2">
-                                                <input id="ing-amount" type="number" step="0.01" placeholder="Jumlah / Qty" className="flex-1 p-4 text-sm font-bold border-none bg-gray-50 rounded-2xl outline-none ring-1 ring-gray-100 focus:ring-2 focus:ring-primary/20 transition-all" />
+                                                <div className="flex-1 space-y-1">
+                                                    <input 
+                                                        id="ing-amount" 
+                                                        type="number" 
+                                                        step="0.01" 
+                                                        placeholder="Jumlah / Qty" 
+                                                        className="w-full p-4 text-sm font-bold border-none bg-gray-50 rounded-2xl outline-none ring-1 ring-gray-100 focus:ring-2 focus:ring-primary/20 transition-all" 
+                                                        onChange={(e) => {
+                                                            const id = parseInt((document.getElementById('ing-select') as HTMLSelectElement).value);
+                                                            const amt = parseFloat(e.target.value);
+                                                            const previewEl = document.getElementById('ing-preview-cost');
+                                                            if (id && !isNaN(amt) && previewEl) {
+                                                                const ing = ingredients.find(i => i.id === id);
+                                                                const cost = (ing?.cost_per_unit || 0) * amt;
+                                                                previewEl.innerText = `Estimasi: Rp ${cost.toLocaleString()}`;
+                                                                previewEl.className = "text-[10px] font-bold text-blue-600 px-1 animate-in fade-in";
+                                                            } else if (previewEl) {
+                                                                previewEl.innerText = "";
+                                                            }
+                                                        }}
+                                                    />
+                                                    <p id="ing-preview-cost" className="text-[10px] h-3"></p>
+                                                </div>
                                                 <Button
                                                     className={`h-14 px-6 rounded-2xl ${editingRecipeIdx !== null ? 'bg-orange-500 hover:bg-orange-600' : ''}`}
                                                     onClick={() => {
@@ -1184,6 +1358,8 @@ export function ProductsView({
 
                                                         (document.getElementById('ing-select') as HTMLSelectElement).value = '';
                                                         (document.getElementById('ing-amount') as HTMLInputElement).value = '';
+                                                        const previewEl = document.getElementById('ing-preview-cost');
+                                                        if (previewEl) previewEl.innerText = "";
                                                     }}
                                                 >
                                                     {editingRecipeIdx !== null ? <Check className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
@@ -1413,14 +1589,17 @@ export function ProductsView({
                                                 <Calendar className="w-5 h-5" />
                                             </div>
                                             <div className="flex-1">
-                                                <div className="flex justify-between items-start mb-2">
-                                                    <div className="text-xs font-black text-gray-800 uppercase tracking-wider">
-                                                        {new Date(h.created_at).toLocaleString('id-ID')}
+                                                    <div className="flex flex-col">
+                                                        <div className="text-[10px] font-black text-primary uppercase tracking-widest flex items-center gap-1 mb-1">
+                                                            <Calendar className="w-3 h-3" /> Tanggal Mulai: {h.effective_date ? new Date(h.effective_date).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'}
+                                                        </div>
+                                                        <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">
+                                                            Dicatat pada: {new Date(h.created_at).toLocaleString('id-ID')}
+                                                        </div>
                                                     </div>
                                                     <span className="text-[9px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-bold">
                                                         {h.changed_by}
                                                     </span>
-                                                </div>
                                                 <div className="grid grid-cols-2 gap-4">
                                                     <div className="p-3 bg-white rounded-xl border border-gray-100">
                                                         <p className="text-[8px] font-bold text-gray-400 uppercase mb-1">HPP Lama</p>

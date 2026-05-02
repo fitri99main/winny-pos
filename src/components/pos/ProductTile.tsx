@@ -67,6 +67,7 @@ export function ProductTile({ product, onAddToCart }: ProductTileProps) {
             Stok: {product.stock}
           </p>
         )}
+        
       </div>
       {(product.stock === 0 && !product.is_stock_ready) && (
         <div className="absolute inset-0 bg-gray-900/60 flex items-center justify-center">
