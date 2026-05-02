@@ -563,14 +563,17 @@ export function ProductsView({
                                                 const linkedRecipe = p.recipe?.find(r => Number(r.amount) === 1);
                                                 let linkedIng = linkedRecipe ? ingredients.find(i => i.id === linkedRecipe.ingredientId) : null;
                                                 
-                                                // 2. Fallback: Auto-match by Code or Name if no recipe
-                                                if (!linkedIng && p.code) {
-                                                    linkedIng = ingredients.find(i => (i.code === p.code || i.name === p.name));
+                                                // 2. Fallback: Auto-match by Code or Name if no recipe (Case-Insensitive)
+                                                if (!linkedIng) {
+                                                    linkedIng = ingredients.find(i => 
+                                                        (p.code && i.code === p.code) || 
+                                                        (i.name && p.name && i.name.toLowerCase().trim() === p.name.toLowerCase().trim())
+                                                    );
                                                 }
 
-                                                const displayStock = linkedIng ? linkedIng.current_stock : (p.stock || 0);
+                                                const isSynced = !!linkedIng && p.is_stock_ready !== false;
+                                                const displayStock = isSynced ? linkedIng.current_stock : (p.stock || 0);
                                                 const isLow = displayStock <= (p.min_stock ?? 5);
-                                                const isSynced = !!linkedIng;
                                                 
                                                 return (
                                                     <div className="flex flex-col items-end">

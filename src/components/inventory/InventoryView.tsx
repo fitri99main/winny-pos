@@ -30,13 +30,16 @@ export interface Ingredient {
 
 export interface StockMovement {
     id: number;
-    ingredientId: number;
-    ingredientName: string;
-    type: 'IN' | 'OUT';
+    ingredient_id?: number;
+    ingredientId?: number; // Support both for backward compatibility
+    ingredient_name?: string;
+    ingredientName?: string;
+    type: 'IN' | 'OUT' | 'ADJUSTMENT';
     quantity: number;
     unit: string;
     reason: string;
     date: string;
+    created_at?: string;
     user: string;
 }
 
@@ -664,38 +667,81 @@ export function InventoryView({
                                         <th className="px-8 py-4 text-right">Mutasi</th>
                                         <th className="px-8 py-4">Keterangan</th>
                                         <th className="px-8 py-4 text-center">Petugas</th>
+                                        <th className="px-8 py-4 text-center">Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
                                     {movements
-                                        .filter(m => m.ingredientId === selectedIngredient.id)
-                                        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                                        .filter(m => (m.ingredient_id === selectedIngredient.id) || (m.ingredientId === selectedIngredient.id))
+                                        .sort((a, b) => {
+                                            const dateA = new Date(a.date || a.created_at || 0).getTime();
+                                            const dateB = new Date(b.date || b.created_at || 0).getTime();
+                                            return dateB - dateA;
+                                        })
                                         .map(mov => (
                                             <tr key={mov.id} className="hover:bg-gray-50/50 transition-colors">
-                                                <td className="px-8 py-4 text-gray-500 font-mono text-xs">{mov.date}</td>
+                                                <td className="px-8 py-4 text-gray-500 font-mono text-xs">{mov.date || (mov.created_at ? new Date(mov.created_at).toLocaleString('id-ID') : '-')}</td>
                                                 <td className="px-8 py-4 text-center">
-                                                    <span className={`px-2 py-0.5 rounded-full font-black uppercase text-[9px] ${mov.type === 'IN' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
-                                                        {mov.type === 'IN' ? 'IN' : 'OUT'}
+                                                    <span className={`px-2 py-0.5 rounded-full font-black uppercase text-[9px] ${mov.type === 'IN' ? 'bg-emerald-50 text-emerald-600' : (mov.type === 'OUT' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600')}`}>
+                                                        {mov.type}
                                                     </span>
                                                 </td>
-                                                <td className={`px-8 py-4 text-right font-bold ${mov.type === 'IN' ? 'text-emerald-600' : 'text-red-500'}`}>
-                                                    {mov.type === 'IN' ? '+' : '-'}{mov.quantity} {mov.unit}
+                                                <td className={`px-8 py-4 text-right font-bold ${mov.type === 'IN' ? 'text-emerald-600' : (mov.type === 'OUT' ? 'text-red-500' : 'text-blue-500')}`}>
+                                                    {mov.type === 'IN' ? '+' : (mov.type === 'OUT' ? '-' : '')}{mov.quantity} {mov.unit}
                                                 </td>
                                                 <td className="px-8 py-4 text-gray-600 italic text-xs">"{mov.reason}"</td>
                                                 <td className="px-8 py-4 text-center">
                                                     <span className="font-medium text-gray-500">{mov.user}</span>
                                                 </td>
+                                                <td className="px-8 py-4 text-center">
+                                                    <div className="flex items-center justify-center gap-2">
+                                                        <button 
+                                                            onClick={() => {
+                                                                const newReason = window.prompt('Masukkan alasan baru:', mov.reason);
+                                                                if (newReason !== null) {
+                                                                    onIngredientAction('update_movement', { id: mov.id, reason: newReason, user: mov.user });
+                                                                }
+                                                            }}
+                                                            className="p-2 hover:bg-blue-50 text-blue-400 hover:text-blue-600 rounded-lg transition-colors"
+                                                            title="Edit Keterangan"
+                                                        >
+                                                            <MoreVertical className="w-4 h-4" />
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => {
+                                                                if (window.confirm('Yakin ingin menghapus mutasi ini? Stok akan dikembalikan otomatis.')) {
+                                                                    onIngredientAction('delete_movement', { id: mov.id });
+                                                                }
+                                                            }}
+                                                            className="p-2 hover:bg-red-50 text-red-400 hover:text-red-600 rounded-lg transition-colors"
+                                                            title="Hapus Mutasi & Revert Stok"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                </td>
                                             </tr>
                                         ))}
-                                    {movements.filter(m => m.ingredientId === selectedIngredient.id).length === 0 && (
+                                    {movements.filter(m => (m.ingredient_id === selectedIngredient.id) || (m.ingredientId === selectedIngredient.id)).length === 0 && (
                                         <tr>
-                                            <td colSpan={5} className="px-8 py-20 text-center text-gray-400 italic">Belum ada riwayat mutasi untuk bahan ini.</td>
+                                            <td colSpan={6} className="px-8 py-20 text-center text-gray-400 italic">Belum ada riwayat mutasi untuk bahan ini.</td>
                                         </tr>
                                     )}
                                 </tbody>
                             </table>
                         </div>
-                        <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-end">
+                        <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-between items-center">
+                            <button 
+                                onClick={() => {
+                                    setStockAction('IN');
+                                    setStockForm({ quantity: 0, reason: '' });
+                                    setIsStockModalOpen(true);
+                                }}
+                                className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
+                            >
+                                <Plus className="w-5 h-5" />
+                                Input Mutasi Baru
+                            </button>
                             <Button onClick={() => setIsStockCardOpen(false)}>Tutup</Button>
                         </div>
                     </div>

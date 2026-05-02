@@ -575,7 +575,12 @@ export default function SettingsScreen() {
             if (result.failed === 0) {
                 showToast(`Berhasil sinkronisasi ${result.success} transaksi`, 'success');
             } else {
-                showToast(`Sinkronisasi selesai: ${result.success} berhasil, ${result.failed} gagal. Periksa koneksi internet Anda.`, 'error');
+                const firstError = result.errors && result.errors.length > 0 ? result.errors[0] : 'Error tidak diketahui';
+                Alert.alert(
+                    'Sinkronisasi Selesai Sebagian',
+                    `Berhasil: ${result.success}\nGagal: ${result.failed}\n\nDetail Error Pertama:\n${firstError}\n\nCek koneksi atau hubungi admin jika error berlanjut.`,
+                    [{ text: 'OK' }]
+                );
             }
         } catch (error: any) {
             showToast(error.message || 'Gagal sinkronisasi', 'error');

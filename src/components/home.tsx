@@ -40,10 +40,10 @@ import { toast } from 'sonner';
 
 type ModuleType = 'dashboard' | 'users' | 'contacts' | 'products' | 'purchases' | 'pos' | 'kds' | 'reports' | 'accounting' | 'settings' | 'employees' | 'attendance' | 'payroll' | 'branches' | 'shifts' | 'performance_indicators' | 'inventory' | 'session_history' | 'promos';
 
-const formatLocalDateForInput = (date: Date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
+const formatLocalDateForInput = (d: Date) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 };
 
@@ -312,10 +312,52 @@ function Home() {
         setInventoryIngredients(prev => prev.filter(item => item.id !== data.id));
         toast.success('Bahan baku berhasil dihapus');
       } else if (action === 'delete_movement') {
-        const { error } = await supabase.from('stock_movements').delete().eq('id', data.id);
+        // 1. Get movement details to know how much to revert
+        const { data: movement } = await supabase.from('stock_movements').select('*').eq('id', data.id).single();
+        
+        if (movement) {
+          const { error: delError } = await supabase.from('stock_movements').delete().eq('id', data.id);
+          if (delError) throw delError;
+
+          // 2. Revert the stock (Inverse of the original movement)
+          const qtyToRevert = Number(movement.quantity);
+          const { data: ing } = await supabase.from('ingredients').select('current_stock').eq('id', movement.ingredient_id).single();
+          
+          if (ing) {
+            let newStock = Number(ing.current_stock);
+            if (movement.type === 'IN') newStock -= qtyToRevert;
+            else if (movement.type === 'OUT') newStock += qtyToRevert;
+            
+            await supabase.from('ingredients').update({ current_stock: newStock }).eq('id', movement.ingredient_id);
+            
+            // 3. Sync to linked products (via Recipe OR Name Match)
+            const { data: links } = await supabase.from('product_recipes').select('product_id, amount').eq('ingredient_id', movement.ingredient_id);
+            if (links && links.length > 0) {
+              for (const link of links) {
+                if (Number(link.amount) === 1) {
+                  await supabase.from('products').update({ stock: newStock }).eq('id', link.product_id);
+                }
+              }
+            } else {
+              // No recipe found, try Smart Sync via Name Match
+              await supabase.from('products').update({ stock: newStock }).eq('name', movement.ingredient_name);
+            }
+          }
+          
+          setInventoryHistory(prev => prev.filter(m => m.id !== data.id));
+          toast.success('Catatan mutasi dihapus & stok berhasil dikembalikan');
+        }
+      } else if (action === 'update_movement') {
+        const { id, reason, user: movUser } = data;
+        const { error } = await supabase
+          .from('stock_movements')
+          .update({ reason, user: movUser })
+          .eq('id', id);
+        
         if (error) throw error;
-        setInventoryHistory(prev => prev.filter(m => m.id !== data.id));
-        toast.success('Catatan mutasi berhasil dihapus');
+        
+        setInventoryHistory(prev => prev.map(m => m.id === id ? { ...m, reason, user: movUser } : m));
+        toast.success('Catatan mutasi berhasil diperbarui');
       }
       
       if (currentBranchId) fetchBranchData(currentBranchId);
@@ -1436,8 +1478,8 @@ function Home() {
         return;
       }
 
-      let updatedProducts = 0;
-      let updatedIngredients = 0;
+      let updatedProductsCount = 0;
+      let updatedIngredientsCount = 0;
 
       for (const item of items) {
         const idToSync = item.itemId || item.id;
@@ -1451,123 +1493,84 @@ function Home() {
         if (isNaN(numericId) || !numericId) continue;
 
         const itemType = item.type; // 'product' | 'ingredient'
+        const addQty = Number(item.quantity) || 0;
+        const buyPrice = Number(item.price) || 0;
+        
         console.log(`[StockSync] Syncing ${item.name} (ID: ${numericId}, Type: ${itemType})`);
 
-        let updated = false;
+        // PRIORITY 1: Update as Ingredient (to ensure Stock Card / Movement is recorded)
+        if (!itemType || itemType === 'ingredient') {
+          const { data: ingredient } = await supabase.from('ingredients').select('id, current_stock, name').eq('id', numericId).maybeSingle();
+          if (ingredient) {
+            updatedIngredientsCount++;
+            
+            // IDEMPOTENCY CHECK: Only add stock and record movement if not already recorded for this PO
+            const { data: existingMove } = await supabase.from('stock_movements')
+              .select('id')
+              .eq('ingredient_id', ingredient.id)
+              .eq('reason', `Pembelian PO: ${po.purchase_no}`)
+              .maybeSingle();
 
-        // 1. If it's a PRODUCT or type is unknown, try Product table first
-        if (!itemType || itemType === 'product') {
-          try {
-            const { data: product } = await supabase.from('products').select('id, stock').eq('id', numericId).maybeSingle();
-            if (product) {
-              const addQty = Number(item.quantity) || 0;
-              const newStock = (Number(product.stock) || 0) + addQty;
-              await supabase.from('products').update({ 
-                stock: newStock,
-                cost: Number(item.price) || 0
-              }).eq('id', product.id);
-              updatedProducts++;
-              updated = true;
-              console.log(`[StockSync] Updated Product stock for ${item.name}`);
-            }
-          } catch (e) { console.error(e); }
-        }
-
-        // 2. If it's an INGREDIENT or (not found as product AND type is unknown), try Ingredient table
-        if (!updated && (!itemType || itemType === 'ingredient')) {
-          try {
-            const { data: ingredient } = await supabase.from('ingredients').select('id, current_stock, name').eq('id', numericId).maybeSingle();
-            if (ingredient) {
-              const addQty = Number(item.quantity) || 0;
+            if (!existingMove) {
               const newStock = (Number(ingredient.current_stock) || 0) + addQty;
-
-              const { error: iErr } = await supabase.from('ingredients').update({ 
+              await supabase.from('ingredients').update({ 
                 current_stock: newStock,
-                cost_per_unit: Number(item.price) || 0
+                cost_per_unit: buyPrice,
+                last_updated: new Date()
               }).eq('id', ingredient.id);
-              
-              if (!iErr) {
-                updatedIngredients++;
-                updated = true;
-                toast.success(`Stok Bahan: ${item.name} bertambah +${addQty}`);
-                
-                // Record movement
-                await supabase.from('stock_movements').insert([{
-                  ingredient_id: ingredient.id,
-                  ingredient_name: item.name,
-                  branch_id: po.branch_id,
-                  type: 'IN',
-                  quantity: addQty,
-                  unit: item.unit || '',
-                  reason: `Pembelian PO: ${po.purchase_no}`,
-                  user: profileName || user?.user_metadata?.name || 'System'
-                }]);
 
-                // [NEW] Smart Sync: Link Ingredient to Product by Recipe OR Name/Code
-                try {
-                  // A. By Recipe (Formal link)
-                  const { data: links } = await supabase.from('product_recipes').select('product_id, amount').eq('ingredient_id', ingredient.id);
-                  let syncedProductIds = new Set();
+              toast.success(`Stok Bahan: ${item.name} +${addQty}`);
 
-                  if (Array.isArray(links) && links.length > 0) {
-                    for (const link of links) {
-                      if (Number(link.amount) === 1) {
-                        await supabase.from('products').update({ stock: newStock }).eq('id', link.product_id);
-                        syncedProductIds.add(link.product_id);
-                        console.log(`[StockSync] Synced Product (Recipe) ${link.product_id} to ${newStock}`);
-                      }
-                    }
+              // Record movement for Stock Card
+              await supabase.from('stock_movements').insert([{
+                ingredient_id: ingredient.id,
+                ingredient_name: item.name,
+                branch_id: po.branch_id,
+                type: 'IN',
+                quantity: addQty,
+                unit: item.unit || 'pcs',
+                reason: `Pembelian PO: ${po.purchase_no}`,
+                user: profileName || user?.user_metadata?.name || 'System'
+              }]);
+
+              // Sync to Products
+              const { data: links } = await supabase.from('product_recipes').select('product_id, amount').eq('ingredient_id', ingredient.id);
+              if (links && links.length > 0) {
+                for (const link of links) {
+                  if (Number(link.amount) === 1) {
+                    await supabase.from('products').update({ stock: newStock, cost: buyPrice }).eq('id', link.product_id);
                   }
-
-                  // B. By Name/Code Match (Fallback for unlinked items like P052)
-                  const { data: matchingProducts } = await supabase.from('products')
-                    .select('id')
-                    .or(`name.eq."${ingredient.name}",code.eq."${item.name}",code.eq."${po.purchase_no}"`) // Simple matching logic
-                    .eq('branch_id', po.branch_id);
-                  
-                  if (Array.isArray(matchingProducts)) {
-                    for (const mp of matchingProducts) {
-                      if (!syncedProductIds.has(mp.id)) {
-                        await supabase.from('products').update({ stock: newStock }).eq('id', mp.id);
-                        console.log(`[StockSync] Synced Product (Name/Code Match) ${mp.id} to ${newStock}`);
-                      }
-                    }
-                  }
-                } catch (linkErr) { console.error('Link sync error:', linkErr); }
-
-                // Update HPP of related products
-                const { data: recipes } = await supabase.from('product_recipes').select('product_id').eq('ingredient_id', ingredient.id);
-                if (Array.isArray(recipes) && recipes.length > 0) {
-                  const productIds = [...new Set(recipes.map(r => r.product_id))];
-                  for (const pid of productIds) {
-                    const { data: fullRecipe } = await supabase.from('product_recipes').select('ingredient_id, amount').eq('product_id', pid);
-                    if (Array.isArray(fullRecipe)) {
-                      const ingIds = fullRecipe.map(r => r.ingredient_id);
-                      const { data: allIngs } = await supabase.from('ingredients').select('id, cost_per_unit').in('id', ingIds);
-                      const newHpp = fullRecipe.reduce((total, r) => {
-                        const ing = Array.isArray(allIngs) ? allIngs?.find(i => String(i.id) === String(r.ingredient_id)) : null;
-                        return total + (Number(ing?.cost_per_unit || 0) * Number(r.amount || 0));
-                      }, 0);
-                      await supabase.from('products').update({ cost: newHpp }).eq('id', pid);
-                    }
-                  }
-                  toast.info(`${productIds.length} resep produk diperbarui`);
                 }
+              } else {
+                await supabase.from('products').update({ stock: newStock, cost: buyPrice }).eq('name', ingredient.name);
               }
+            } else {
+              console.log(`[StockSync] Item ${item.name} already synced for this PO, skipping stock update.`);
             }
-          } catch (e) { console.error(e); }
+            continue; // Successfully processed as ingredient
+          }
         }
 
-        if (!updated && itemType !== 'manual') {
-          toast.warning(`Item "${item.name}" tidak ditemukan di database.`);
+        // PRIORITY 2: Update as Product directly if not an ingredient
+        if (!itemType || itemType === 'product') {
+          const { data: product } = await supabase.from('products').select('id, stock').eq('id', numericId).maybeSingle();
+          if (product) {
+            const newStock = (Number(product.stock) || 0) + addQty;
+            await supabase.from('products').update({ 
+              stock: newStock,
+              cost: buyPrice
+            }).eq('id', product.id);
+            updatedProductsCount++;
+            toast.success(`Stok Produk: ${item.name} +${addQty}`);
+          }
         }
       }
 
       if (currentBranchId) fetchBranchData(currentBranchId);
       
     } catch (err) {
-      console.error('[StockSync] Critical error:', err);
-      toast.error('Gagal memperbarui stok otomatis');
+      console.error('[StockSync] Critical error during purchase sync:', err);
+      toast.error('Gagal memperbarui stok otomatis dari pembelian');
     }
   };
 
@@ -1614,20 +1617,17 @@ function Home() {
               console.error('[MasterCRUD] Error fetching PO for sync:', fetchErr);
               toast.error('Gagal mengambil data PO untuk sinkronisasi');
             } else if (po) {
-              if (!po.is_synced) {
-                console.log('[MasterCRUD] Triggering sync for PO:', po.purchase_no);
-                const syncToastId = toast.loading(`Sedang sinkronisasi PO ${po.purchase_no}...`);
-                try {
-                  await syncPurchaseWithAccounting(po);
-                  await syncPurchaseWithStock(po);
-                  toast.success(`PO ${po.purchase_no} berhasil disinkronkan ke Stok & Akuntansi`, { id: syncToastId });
-                } catch (syncErr: any) {
-                  console.error('[MasterCRUD] Sync Error:', syncErr);
-                  toast.error(`Gagal sinkronisasi otomatis: ${syncErr.message}`, { id: syncToastId });
-                }
-              } else {
-                console.log('[MasterCRUD] PO already synced, skipping.');
-                toast.info(`PO ${po.purchase_no} sudah pernah disinkronkan sebelumnya.`);
+              console.log('[MasterCRUD] Triggering sync for PO:', po.purchase_no);
+              const syncToastId = toast.loading(`Sedang sinkronisasi PO ${po.purchase_no}...`);
+              try {
+                // If it was already synced, we might want to warn, but for now let's just re-sync 
+                // to catch any newly added items from the edit.
+                await syncPurchaseWithAccounting(po);
+                await syncPurchaseWithStock(po);
+                toast.success(`PO ${po.purchase_no} berhasil disinkronkan ke Stok & Akuntansi`, { id: syncToastId });
+              } catch (syncErr: any) {
+                console.error('[MasterCRUD] Sync Error:', syncErr);
+                toast.error(`Gagal sinkronisasi otomatis: ${syncErr.message}`, { id: syncToastId });
               }
             }
           }
@@ -1868,7 +1868,8 @@ function Home() {
 
       for (const sale of pendingSales) {
         try {
-          // Mapping based on SalesOrder interface
+          // Sync Map
+
           const salePayload = {
             order_no: sale.orderNo,
             date: sale.date,
@@ -1925,20 +1926,28 @@ function Home() {
           const { error: itemsError } = await supabase.from('sale_items').insert(itemsPayload);
           if (itemsError) throw itemsError;
 
-          // [NEW] Accounting Sync for Offline Orders
-          if (sale.status === 'Paid') {
-            await recordAccountingEntry(sale, itemsPayload);
+                              if (sale.status === 'Paid') {
+            await recordAccountingEntry({ ...sale, id: saleData.id }, itemsPayload);
           }
 
-          // Update local state to synced
           const index = newSales.findIndex(s => s.id === sale.id);
           if (index !== -1) {
             newSales[index] = { ...newSales[index], syncStatus: 'synced' };
           }
           successCount++;
-
-        } catch (err) {
+        } catch (err: any) {
           console.error("Sync error for sale:", sale.orderNo, err);
+          const errMsg = err.message || 'Error Database';
+          const isNetworkError = errMsg.toLowerCase().includes('fetch') || 
+                                errMsg.toLowerCase().includes('network') ||
+                                err.status === 0;
+          
+          if (isNetworkError) {
+            toast.error(`Gagal Sinkron: Cek koneksi internet Anda.`, { id: toastId });
+            break; // Stop loop if network is down
+          }
+          
+          toast.error(`Gagal Sinkron ${sale.orderNo}: ${errMsg}`, { duration: 5000 });
           // Keep as pending
         }
       }
@@ -1953,9 +1962,13 @@ function Home() {
     };
 
     if (isOnline) {
-      // Debounce slightly
       const timer = setTimeout(() => syncData(), 2000);
       return () => clearTimeout(timer);
+
+
+
+
+
     }
   }, [isOnline, sales]);
 
@@ -3650,10 +3663,20 @@ function Home() {
               <div className="w-[1px] h-4 bg-gray-200" />
               <PWAInstallButton />
               <div className="w-[1px] h-4 bg-gray-200" />
-              <div className="flex items-center gap-1.5">
+              <button 
+                onClick={() => {
+                  if (!isOnline) {
+                    toast.warning('Anda sedang offline. Hubungkan ke internet untuk sinkronisasi.');
+                    return;
+                  }
+                  syncData();
+                }}
+                disabled={isSyncing}
+                className={`flex items-center gap-1.5 p-1 rounded-lg transition-all ${!isOnline ? 'opacity-50 grayscale' : 'hover:bg-gray-100'}`}
+              >
                 {sales.some(s => s.syncStatus === 'pending') ? (
                   <div className="flex items-center gap-1.5 text-orange-500 text-[10px] font-semibold">
-                    <Clock className="w-3 h-3" />
+                    <RotateCcw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
                     <span>{sales.filter(s => s.syncStatus === 'pending').length} Pending</span>
                   </div>
                 ) : (
@@ -3662,7 +3685,7 @@ function Home() {
                     <span>Sync</span>
                   </div>
                 )}
-              </div>
+              </button>
             </div>
 
             <div className="h-6 w-[1px] bg-gray-200 hidden lg:block" />

@@ -185,7 +185,7 @@ export function PurchasesView({
             items_count: totalItemsCount,
             total_amount: totalAmount + (Number(inputForm.adjustment) || 0),
             adjustment: Number(inputForm.adjustment) || 0,
-            status: isEditing ? inputForm.status : 'Pending',
+            status: isEditing ? 'Completed' : 'Pending',
             payment_method: inputForm.payment_method || 'Tunai',
             branch_id: currentBranchId,
             items_list: purchaseItems
