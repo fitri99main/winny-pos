@@ -36,6 +36,7 @@ export interface Product {
     recipe?: RecipeItem[];
     addons?: Addon[];
     is_sellable?: boolean;
+    recipe_date?: string;
 }
 
 export interface Addon {
@@ -101,7 +102,7 @@ export function ProductsView({
     onBrandCRUD,
     currentBranchId
 }: ProductsViewProps) {
-    const [activeTab, setActiveTab] = useState<'products' | 'categories' | 'units' | 'brands' | 'recipes'>('products');
+    const [activeTab, setActiveTab] = useState<'products' | 'categories' | 'units' | 'brands' | 'recipes' | 'ingredients'>('products');
 
     // Form states
     const [isFormOpen, setIsFormOpen] = useState(false);

@@ -142,17 +142,21 @@ export const SessionHistoryView = memo(function SessionHistoryView({ branchId }:
                             const itemRecipes = recipes.filter(r => r.product_id === item.product_id);
                             itemRecipes.forEach(r => {
                                 if (!r.ingredient) return;
-                                const id = r.ingredient.id;
+                                // Handle both array and single object results from Supabase join
+                                const ing = Array.isArray(r.ingredient) ? r.ingredient[0] : r.ingredient;
+                                if (!ing) return;
+
+                                const id = ing.id;
                                 const qty = r.amount * (item.quantity || 0);
-                                const cost = (r.ingredient.cost_per_unit || 0) * qty;
+                                const cost = (ing.cost_per_unit || 0) * qty;
                                 
                                 if (ingSummary[id]) {
                                     ingSummary[id].amount += qty;
                                     ingSummary[id].cost += cost;
                                 } else {
                                     ingSummary[id] = {
-                                        name: r.ingredient.name,
-                                        unit: r.ingredient.unit,
+                                        name: ing.name,
+                                        unit: ing.unit,
                                         amount: qty,
                                         cost: cost
                                     };
