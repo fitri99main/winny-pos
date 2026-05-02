@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, ShoppingCart, Settings, Coffee, FileText,
   LogOut, Bell, Search, Menu, Calculator, ChefHat, MonitorCheck,
   Contact, Archive, MapPin, CalendarCheck, History as ClockHistory, Wallet, Award, Target,
-  Store, ChevronLeft, ChevronRight, CheckCircle, Package, RefreshCw, ShieldCheck, Clock, Percent, Fingerprint
+  Store, ChevronLeft, ChevronRight, CheckCircle, Package, RefreshCw, ShieldCheck, Clock, Percent, Fingerprint, RotateCcw
 } from 'lucide-react';
 import { printerService } from '../lib/PrinterService';
 import { WifiVoucherService } from '../lib/WifiVoucherService';
@@ -625,6 +625,26 @@ function Home() {
 
 
 
+
+  const syncData = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    const toastId = toast.loading('Mensinkronisasi data...');
+    try {
+      await Promise.all([
+        fetchGlobalData(),
+        fetchBranchData(currentBranchId),
+        fetchActiveCashiers(),
+        fetchTopSellingProducts(currentBranchId)
+      ]);
+      toast.success('Data berhasil disinkronkan', { id: toastId });
+    } catch (err) {
+      console.error('Sync failed:', err);
+      toast.error('Gagal sinkronisasi data', { id: toastId });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   useEffect(() => {
     fetchGlobalData();

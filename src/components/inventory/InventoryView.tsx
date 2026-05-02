@@ -60,7 +60,7 @@ const INITIAL_MOVEMENTS: StockMovement[] = [
 interface InventoryViewProps {
     ingredients: Ingredient[];
     movements: StockMovement[];
-    onIngredientAction: (action: 'create' | 'update' | 'delete', data: any) => Promise<void>;
+    onIngredientAction: (action: 'create' | 'update' | 'delete' | 'delete_movement' | 'update_movement', data: any) => Promise<void>;
     onStockAdjustment: (adjustment: any) => Promise<void>;
     categories: any[];
     units: any[];
