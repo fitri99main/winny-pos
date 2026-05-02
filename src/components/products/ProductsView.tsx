@@ -4,7 +4,7 @@ if (typeof window !== 'undefined') {
     console.log('WINPOS VERSION 2.2 LOADED');
     window.alert('System Loaded: WinPOS v2.2');
 }
-import { Package, Tags, Scale, Ticket, Plus, Search, Edit, Trash2, Filter, ChefHat, Info, Calculator, Puzzle, Settings2, X, Check, Coffee, Barcode, Printer, ChevronUp, ChevronDown, GripVertical, Calendar, Link } from 'lucide-react';
+import { Package, Tags, Scale, Ticket, Plus, Search, Edit, Trash2, Filter, ChefHat, Info, Calculator, Puzzle, Settings2, X, Check, Coffee, Barcode, Printer, ChevronUp, ChevronDown, GripVertical, Calendar, Link, AlertTriangle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -586,18 +586,31 @@ export function ProductsView({
                                                 const isSynced = !!linkedIng && p.is_stock_ready !== false;
                                                 const displayStock = isSynced ? linkedIng.current_stock : (p.stock || 0);
                                                 const isLow = displayStock <= (p.min_stock ?? 5);
-                                                
+                                                const lowIngredientsList = (p.recipe || []).map(r => {
+                                                    const ing = (ingredients || []).find(i => i.id === r.ingredientId);
+                                                    if (ing && ing.current_stock <= (ing.min_stock || 0)) return ing.name;
+                                                    return null;
+                                                }).filter(Boolean) as string[];
+
                                                 return (
                                                     <div className="flex flex-col items-end">
                                                         <div className="flex items-center gap-1">
                                                             {isSynced && <Link className="w-2.5 h-2.5 text-blue-500" />}
-                                                            <span className={`font-black ${isLow ? 'text-red-500' : 'text-gray-700'}`}>
+                                                            <span className={`font-black ${isLow || lowIngredientsList.length > 0 ? 'text-red-500' : 'text-gray-700'}`}>
                                                                 {displayStock}
                                                             </span>
                                                             <span className="text-gray-400 text-[10px] uppercase font-bold">{p.unit || linkedIng?.unit}</span>
                                                         </div>
-                                                        {isLow && (
-                                                            <div className="text-[9px] text-red-400 font-bold leading-none mt-0.5">LOW STOCK</div>
+                                                        {(isLow || lowIngredientsList.length > 0) && (
+                                                            <div className="text-[8px] text-red-500 font-black leading-none mt-1 text-right uppercase bg-red-50 px-1.5 py-0.5 rounded-md border border-red-100 flex flex-col gap-0.5">
+                                                                {isLow && <span>STOK RENDAH</span>}
+                                                                {lowIngredientsList.map(name => (
+                                                                    <div key={name} className="flex items-center gap-1">
+                                                                        <AlertTriangle className="w-2 h-2" />
+                                                                        <span>RESTOK: {name}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
                                                         )}
                                                         {isSynced && (
                                                             <div className="text-[8px] text-blue-400 font-black uppercase tracking-tighter">Synced</div>

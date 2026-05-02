@@ -413,23 +413,50 @@ function Home() {
             }
           }
 
-          // Fallback Name Match
+          // Fallback Name Match (Improved syntax)
           const { data: matches } = await supabase.from('products')
-            .select('id')
-            .or(`name.eq."${ingredientName}",code.eq."${ingredientName}"`)
+            .select('id, name')
+            .or(`name.ilike.${ingredientName},code.ilike.${ingredientName}`)
             .eq('branch_id', currentBranchId);
           
+          let syncedNames: string[] = [];
+          
+          // Smart Portion Sync: Update product stock based on ingredient stock / recipe amount
+          if (links && links.length > 0) {
+            for (const link of links) {
+                const amount = Number(link.amount) || 0;
+                if (amount > 0) {
+                    // Calculate available portions: floor(total_stock / amount_per_portion)
+                    const portionCount = Math.floor(newStock / amount);
+                    await supabase.from('products').update({ stock: portionCount }).eq('id', link.product_id);
+                    syncedIds.add(link.product_id);
+                    
+                    // Fetch name for notification
+                    const { data: p } = await supabase.from('products').select('name').eq('id', link.product_id).single();
+                    if (p) syncedNames.push(`${p.name} (${portionCount} porsi)`);
+                }
+            }
+          }
+
           if (matches) {
             for (const m of matches) {
               if (!syncedIds.has(m.id)) {
                 await supabase.from('products').update({ stock: newStock }).eq('id', m.id);
+                syncedNames.push(m.name);
               }
             }
           }
+
+          if (syncedNames.length > 0) {
+            toast.success('Stok & Porsi Diperbarui', {
+              description: `Berhasil update porsi: ${Array.from(new Set(syncedNames)).join(', ')}`,
+              duration: 5000
+            });
+          } else {
+            toast.success('Stok bahan baku diperbarui');
+          }
         } catch (e) { console.error('Smart sync error:', e); }
       }
-
-      toast.success('Stok bahan baku berhasil disesuaikan');
     } catch (err: any) {
       console.error('Error Stock Adjustment:', err);
       toast.error('Gagal update stok: ' + (err.message || 'Error tidak dikenal'));
@@ -3472,6 +3499,7 @@ function Home() {
           onStockAdjustment={handleStockAdjustment}
           categories={categories}
           units={units}
+          currentBranchId={currentBranchId}
         />
       );
       case 'settings': return (

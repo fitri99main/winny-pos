@@ -9,7 +9,8 @@ import {
     AlertTriangle,
     MoreVertical,
     CheckCircle2,
-    Trash2
+    Trash2,
+    Edit
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -199,11 +200,27 @@ export function InventoryView({
         }
     };
 
-    const filteredIngredients = ingredients.filter(ing =>
-        (!currentBranchId || String(ing.branch_id) === String(currentBranchId) || !ing.branch_id) &&
-        (ing.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            ing.category.toLowerCase().includes(searchQuery.toLowerCase()))
-    );
+    const filteredIngredients = ingredients.filter(ing => {
+        const matchesBranch = !currentBranchId || String(ing.branch_id) === String(currentBranchId) || !ing.branch_id;
+        const query = searchQuery.toLowerCase();
+        const matchesQuery = 
+            (ing.name?.toLowerCase() || '').includes(query) ||
+            (ing.category?.toLowerCase() || '').includes(query) ||
+            ((ing as any).code?.toLowerCase() || '').includes(query);
+        
+        return matchesBranch && matchesQuery;
+    });
+
+    const filteredMovements = movements.filter(mov => {
+        const query = searchQuery.toLowerCase();
+        const ingName = (mov as any).ingredient_name || mov.ingredientName || '';
+        const reason = mov.reason || '';
+        const user = mov.user || '';
+        
+        return ingName.toLowerCase().includes(query) || 
+               reason.toLowerCase().includes(query) || 
+               user.toLowerCase().includes(query);
+    });
 
     return (
         <div className="p-8 h-full bg-gray-50/50 flex flex-col space-y-8 overflow-hidden">
@@ -296,13 +313,13 @@ export function InventoryView({
                                             )}
                                         </td>
                                         <td className="px-8 py-5">
-                                            <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <div className="flex justify-center gap-2 transition-opacity">
                                                 <button
                                                     onClick={() => openEditModal(ing)}
                                                     className="p-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors"
                                                     title="Edit Data"
                                                 >
-                                                    <MoreVertical className="w-5 h-5" />
+                                                    <Edit className="w-4 h-4" />
                                                 </button>
                                                 <button
                                                     onClick={() => { setSelectedIngredient(ing); setStockAction('IN'); setIsStockModalOpen(true); }}
@@ -351,7 +368,7 @@ export function InventoryView({
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
-                                    {movements.map(mov => (
+                                    {filteredMovements.map(mov => (
                                         <tr key={mov.id} className="hover:bg-gray-50/50 transition-colors text-xs group">
                                             <td className="px-8 py-4 text-gray-500 font-mono">{(mov.date || mov.created_at) ? new Date(mov.date || mov.created_at).toLocaleString('id-ID') : '-'}</td>
                                             <td className="px-8 py-4 font-bold text-gray-800">{(mov as any).ingredient_name || mov.ingredientName}</td>
@@ -444,7 +461,7 @@ export function InventoryView({
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
-                                        <label className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Jumlah</label>
+                                        <label className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Stok Minimum (Batas Alert)</label>
                                         <input
                                             type="number"
                                             className="w-full p-4 bg-gray-50 border border-gray-100 rounded-[20px] outline-none"
@@ -525,7 +542,7 @@ export function InventoryView({
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
-                                        <label className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Jumlah</label>
+                                        <label className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Stok Minimum (Batas Alert)</label>
                                         <input
                                             type="number"
                                             className="w-full p-4 bg-gray-50 border border-gray-100 rounded-[20px] outline-none"
@@ -546,7 +563,7 @@ export function InventoryView({
                                     </div>
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Stok Aktif</label>
+                                    <label className="text-xs font-black text-amber-600 uppercase tracking-widest pl-1">Stok Saat Ini (Total Inventaris)</label>
                                     <div className="relative">
                                         <input
                                             type="number"
