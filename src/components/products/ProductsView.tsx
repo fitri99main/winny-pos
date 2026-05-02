@@ -583,8 +583,9 @@ export function ProductsView({
                                                     );
                                                 }
 
-                                                const isSynced = !!linkedIng && p.is_stock_ready !== false;
-                                                const displayStock = isSynced ? linkedIng.current_stock : (p.stock || 0);
+                                                const hasRecipe = p.recipe && p.recipe.length > 0;
+                                                const isSynced = (!!linkedIng || hasRecipe) && p.is_stock_ready !== false;
+                                                const displayStock = (isSynced && !hasRecipe && !!linkedIng) ? linkedIng.current_stock : (p.stock || 0);
                                                 const isLow = displayStock <= (p.min_stock ?? 5);
                                                 const lowIngredientsList = (p.recipe || []).map(r => {
                                                     const ing = (ingredients || []).find(i => i.id === r.ingredientId);
