@@ -3307,6 +3307,7 @@ function Home() {
             onExit={() => setActiveModule('dashboard')}
             settings={storeSettings}
             userRole={role}
+            products={products}
           />
         );
       case 'reports':

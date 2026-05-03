@@ -20,7 +20,7 @@ export interface SalesOrder {
     order_no?: string;
     date: string;
     items: number;
-    productDetails: { name: string; quantity: number; price: number; isManual?: boolean; target?: 'Kitchen' | 'Bar' | 'Waitress'; category?: string; notes?: string; cost?: number }[];
+    productDetails: { name: string; quantity: number; price: number; isManual?: boolean; target?: 'Kitchen' | 'Bar' | 'Waitress'; category?: string; notes?: string; cost?: number; product_id?: number }[];
     subtotal?: number;
     discount?: number;
     tax?: number;
@@ -192,6 +192,7 @@ interface SalesViewProps {
     onClearTableStatus?: (tableNo: string) => void;
     settings?: any;
     userRole?: string;
+    products?: any[];
 }
 
 export const SalesView = memo(function SalesView({
@@ -214,7 +215,8 @@ export const SalesView = memo(function SalesView({
     tables = [],
     onClearTableStatus,
     settings = {},
-    userRole
+    userRole,
+    products = []
 }: SalesViewProps) {
     const { role } = useAuth();
     const isAdmin = useMemo(() => {
@@ -895,7 +897,7 @@ export const SalesView = memo(function SalesView({
                                                 <div key={idx} className="flex items-center gap-1 truncate">
                                                     <span className="flex items-center gap-1">
                                                         • {item.name}
-                                                        {item.cost > 0 && <ChefHat className="w-2.5 h-2.5 text-orange-500" title="Resep Aktif" />}
+                                                        {(item.cost || 0) > 0 && <span title="Resep Aktif Terhitung"><ChefHat className="w-2.5 h-2.5 text-orange-500" /></span>}
                                                     </span>
                                                     <span className="text-gray-300">({item.quantity}x)</span>
                                                 </div>
