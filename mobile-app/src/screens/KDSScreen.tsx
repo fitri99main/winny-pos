@@ -13,7 +13,7 @@ export default function KDSScreen() {
     const isSmallDevice = width < 480;
     const isLandscape = width > height;
     const isWide = width >= 600;
-    const numColumns = isWide ? 4 : (width >= 500 ? 2 : 1);
+    const numColumns = isWide ? 4 : (width >= 380 ? 2 : 1);
     const { currentBranchId } = useSession();
 
     const [orders, setOrders] = useState<any[]>([]);
@@ -493,26 +493,26 @@ const styles = StyleSheet.create({
     header: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 20,
+        padding: 10,
         backgroundColor: 'white',
         borderBottomWidth: 1,
         borderBottomColor: '#e5e7eb',
     },
     backButton: {
-        width: 60,
-        height: 60,
-        borderRadius: 30,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         backgroundColor: '#f1f5f9',
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 12,
+        marginRight: 8,
     },
     backButtonText: {
-        fontSize: 40,
-        lineHeight: 40,
+        fontSize: 24,
+        lineHeight: 24,
         color: '#1f2937',
         textAlign: 'center',
-        marginTop: -4,
+        marginTop: -2,
     },
     headerTitle: {
         fontSize: 20,
@@ -521,14 +521,14 @@ const styles = StyleSheet.create({
     },
     tabsContainer: {
         flexDirection: 'row',
-        padding: 12,
+        padding: 6,
         backgroundColor: 'white',
-        gap: 8,
+        gap: 6,
     },
     tab: {
         flex: 1,
-        paddingVertical: 10,
-        borderRadius: 12,
+        paddingVertical: 6,
+        borderRadius: 8,
         backgroundColor: '#f3f4f6',
         alignItems: 'center',
     },
@@ -553,28 +553,28 @@ const styles = StyleSheet.create({
         fontWeight: '500',
     },
     listContent: {
-        padding: 12,
+        padding: 6,
     },
     columnWrapper: {
         justifyContent: 'space-between',
     },
     orderCard: {
-        width: '48.5%',
+        flex: 1,
+        margin: 4,
         backgroundColor: 'white',
-        borderRadius: 20,
-        padding: 16,
-        marginBottom: 12,
+        borderRadius: 12,
+        padding: 10,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
+        shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 3,
+        shadowRadius: 2,
+        elevation: 2,
     },
     orderHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        marginBottom: 12,
-        paddingBottom: 12,
+        marginBottom: 8,
+        paddingBottom: 8,
         borderBottomWidth: 1,
         borderBottomColor: '#f3f4f6',
     },
@@ -584,7 +584,7 @@ const styles = StyleSheet.create({
         color: '#ea580c',
     },
     tableName: {
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: '900',
         color: '#1f2937',
     },
@@ -592,7 +592,7 @@ const styles = StyleSheet.create({
         alignItems: 'flex-end',
     },
     timeText: {
-        fontSize: 10,
+        fontSize: 9,
         color: '#6b7280',
     },
     timeWarning: {
@@ -600,18 +600,18 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
     },
     waiterName: {
-        fontSize: 10,
+        fontSize: 9,
         color: '#9ca3af',
-        marginTop: 2,
+        marginTop: 1,
     },
     itemsList: {
-        marginBottom: 16,
+        marginBottom: 8,
     },
     itemRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 8,
+        marginBottom: 4,
     },
     itemMain: {
         flexDirection: 'row',
@@ -619,24 +619,24 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     quantityBadge: {
-        width: 24,
-        height: 24,
-        borderRadius: 8,
+        width: 20,
+        height: 20,
+        borderRadius: 6,
         backgroundColor: '#f3f4f6',
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 8,
+        marginRight: 6,
     },
     quantityBadgeReady: {
         backgroundColor: '#dcfce7',
     },
     quantityText: {
-        fontSize: 11,
+        fontSize: 10,
         fontWeight: 'bold',
         color: '#4b5563',
     },
     itemName: {
-        fontSize: 11,
+        fontSize: 10,
         color: '#374151',
         fontWeight: '500',
         flex: 1,
@@ -646,15 +646,15 @@ const styles = StyleSheet.create({
         textDecorationLine: 'line-through',
     },
     readyButton: {
-        paddingVertical: 10,
-        paddingHorizontal: 16,
-        borderRadius: 10,
+        paddingVertical: 4,
+        paddingHorizontal: 8,
+        borderRadius: 6,
         backgroundColor: '#fff7ed',
         borderWidth: 1,
         borderColor: '#fdba74',
     },
     readyButtonText: {
-        fontSize: 12,
+        fontSize: 10,
         fontWeight: 'bold',
         color: '#ea580c',
     },
@@ -663,8 +663,8 @@ const styles = StyleSheet.create({
     },
     completeButton: {
         backgroundColor: '#1f2937',
-        paddingVertical: 12,
-        borderRadius: 12,
+        paddingVertical: 8,
+        borderRadius: 8,
         alignItems: 'center',
     },
     completeButtonDisabled: {

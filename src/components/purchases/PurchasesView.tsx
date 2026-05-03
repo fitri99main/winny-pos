@@ -378,6 +378,7 @@ export function PurchasesView({
                         <th className="px-6 py-4">No. PO</th>
                         <th className="px-6 py-4">Tanggal</th>
                         <th className="px-6 py-4">Supplier</th>
+                        <th className="px-6 py-4 text-center">Metode</th>
                         <th className="px-6 py-4">Item</th>
                         <th className="px-6 py-4 text-right">Harga</th>
                         <th className="px-6 py-4 text-center">Jumlah</th>
@@ -394,6 +395,17 @@ export function PurchasesView({
                             <td className="px-6 py-4 font-mono font-medium text-blue-600">{row.purchase_no}</td>
                             <td className="px-6 py-4 text-gray-500">{row.date}</td>
                             <td className="px-6 py-4 font-bold text-gray-700">{row.supplier_name}</td>
+                            <td className="px-6 py-4 text-center">
+                                {row.isFirst && (
+                                    <span className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase border ${
+                                        row.payment_method === 'Hutang' ? 'bg-red-50 text-red-700 border-red-100' :
+                                        row.payment_method === 'Kas Kecil' ? 'bg-amber-50 text-amber-700 border-amber-100' :
+                                        'bg-blue-50 text-blue-700 border-blue-100'
+                                    }`}>
+                                        {row.payment_method || 'Tunai'}
+                                    </span>
+                                )}
+                            </td>
                             <td className="px-6 py-4 text-gray-700">{row.itemName}</td>
                             <td className="px-6 py-4 text-right">Rp {(row.itemPrice || 0).toLocaleString()}</td>
                             <td className="px-6 py-4 text-center font-bold">
@@ -439,7 +451,7 @@ export function PurchasesView({
                     ))}
                     {flatPurchaseHistory.length === 0 && (
                         <tr>
-                            <td colSpan={10} className="px-6 py-10 text-center text-gray-400">Belum ada riwayat pembelian</td>
+                            <td colSpan={12} className="px-6 py-10 text-center text-gray-400">Belum ada riwayat pembelian</td>
                         </tr>
                     )}
                 </tbody>

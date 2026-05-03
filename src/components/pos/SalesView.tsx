@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, memo } from 'react';
 import { useAuth } from '../auth/AuthProvider';
-import { History, RotateCcw, Search, FileText, CheckCircle, XCircle, X, ShoppingCart, Printer, ChevronDown, Users, Trash2, Loader2, Info, Eye, Archive } from 'lucide-react';
+import { History, RotateCcw, Search, FileText, CheckCircle, XCircle, X, ShoppingCart, Printer, ChevronDown, Users, Trash2, Loader2, Info, Eye, Archive, ChefHat, Zap } from 'lucide-react';
 import { Button } from '../ui/button';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
@@ -821,7 +821,11 @@ export const SalesView = memo(function SalesView({
     const renderHistory = () => (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden h-full flex flex-col">
             <div className="p-3 border-b bg-gray-50/50 flex justify-between items-center">
-                <div className="text-xs text-gray-500 font-medium">
+                <div className="text-xs text-gray-500 font-medium flex items-center gap-3">
+                    <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500 text-white rounded-full font-black text-[10px] animate-pulse">
+                        <Zap className="w-3 h-3 fill-current" />
+                        FITUR HPP AKTIF
+                    </div>
                     Menampilkan <span className="text-blue-600 font-bold">{filteredSales.length}</span> transaksi terfilter
                 </div>
                 {onDeleteSales && (
@@ -877,11 +881,22 @@ export const SalesView = memo(function SalesView({
                             filteredSales.slice(0, visibleCount).map(sale => (
                                 <tr key={sale.id} className="hover:bg-gray-50">
                                     <td className="px-3 py-2">
-                                        <div className="font-mono text-blue-600 font-medium mb-1 whitespace-nowrap">{sale.orderNo}</div>
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <div className="font-mono text-blue-600 font-bold whitespace-nowrap">{sale.orderNo}</div>
+                                            {(sale.productDetails || []).some(p => Number(p.cost || 0) > 0) && (
+                                                <span className="bg-emerald-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black flex items-center gap-0.5 shadow-sm shadow-emerald-100" title="HPP & Resep Aktif Terhitung">
+                                                    <Zap className="w-2 h-2 fill-current" />
+                                                    HPP AKTIF
+                                                </span>
+                                            )}
+                                        </div>
                                         <div className="text-[10px] text-gray-400 space-y-0.5 max-w-[120px] truncate">
                                             {(sale.productDetails || []).map((item, idx) => (
                                                 <div key={idx} className="flex items-center gap-1 truncate">
-                                                    <span>• {item.name}</span>
+                                                    <span className="flex items-center gap-1">
+                                                        • {item.name}
+                                                        {item.cost > 0 && <ChefHat className="w-2.5 h-2.5 text-orange-500" title="Resep Aktif" />}
+                                                    </span>
                                                     <span className="text-gray-300">({item.quantity}x)</span>
                                                 </div>
                                             ))}
@@ -1377,9 +1392,32 @@ export const SalesView = memo(function SalesView({
                                         {(selectedOrderDetails.productDetails || []).map((item, idx) => (
                                                 <div className="flex flex-col flex-1 border-b border-gray-50 pb-2" key={idx}>
                                                     <div className="flex justify-between items-center text-sm">
-                                                        <div className="flex gap-2">
+                                                        <div className="flex gap-2 items-center">
                                                             <span className="text-gray-500">{item.quantity}x</span>
-                                                            <span className="font-medium text-gray-800">{item.name}</span>
+                                                            <span className="font-medium text-gray-800 flex items-center gap-1.5">
+                                                                {item.name}
+                                                                {(() => {
+                                                                    const currentProduct = products.find(p => p.id === item.product_id);
+                                                                    const saleCost = Number(item.cost || 0);
+                                                                    const currentCost = Number(currentProduct?.cost || 0);
+                                                                    
+                                                                    if (saleCost > 0) {
+                                                                        const isCurrent = Math.abs(saleCost - currentCost) < 0.01;
+                                                                        return (
+                                                                            <span className={`text-[9px] px-1.5 py-0.5 rounded flex items-center gap-1 font-black uppercase tracking-tighter border ${isCurrent ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>
+                                                                                <Zap className={`w-2.5 h-2.5 ${isCurrent ? 'fill-current' : ''}`} />
+                                                                                {isCurrent ? 'HPP VERSI TERBARU' : 'HPP VERSI LAMA'}
+                                                                            </span>
+                                                                        );
+                                                                    }
+                                                                    return (
+                                                                        <span className="bg-gray-100 text-gray-400 text-[9px] px-1.5 py-0.5 rounded flex items-center gap-1 font-medium uppercase tracking-tighter border border-gray-200 italic">
+                                                                            <Info className="w-2.5 h-2.5" />
+                                                                            Resep Belum Diatur
+                                                                        </span>
+                                                                    );
+                                                                })()}
+                                                            </span>
                                                         </div>
                                                         <span className="text-gray-600">Rp {(item.price * item.quantity).toLocaleString()}</span>
                                                     </div>

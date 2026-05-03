@@ -4,7 +4,7 @@ if (typeof window !== 'undefined') {
     console.log('WINPOS VERSION 2.2 LOADED');
     window.alert('System Loaded: WinPOS v2.2');
 }
-import { Package, Tags, Scale, Ticket, Plus, Search, Edit, Trash2, Filter, ChefHat, Info, Calculator, Puzzle, Settings2, X, Check, Coffee, Barcode, Printer, ChevronUp, ChevronDown, GripVertical, Calendar, Link, AlertTriangle } from 'lucide-react';
+import { Package, Tags, Scale, Ticket, Plus, Search, Edit, Trash2, Filter, ChefHat, Info, Calculator, Puzzle, Settings2, X, Check, Coffee, Barcode, Printer, ChevronUp, ChevronDown, GripVertical, Calendar, Link, AlertTriangle, History } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -822,7 +822,7 @@ export function ProductsView({
             {/* Top Navigation Header */}
             <div className="w-full bg-white border-b border-gray-100 px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 z-20 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] flex-shrink-0">
                 <div>
-                    <h2 className="text-xl font-black text-gray-800 tracking-tight">Master Data <span className="text-red-500">[V2.1 - ACTIVE]</span></h2>
+                    <h2 className="text-xl font-black text-gray-800 tracking-tight">Master Data</h2>
                     <p className="text-[10px] text-gray-400 font-medium tracking-wide">Katalog Produk & Inventaris</p>
                 </div>
 
@@ -1187,7 +1187,7 @@ export function ProductsView({
                     <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-[44px] shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="px-10 py-8 border-b border-gray-50 flex items-center justify-between bg-gray-50/50">
                             <div>
-                                <h3 className="text-2xl font-black text-gray-800 tracking-tight">Resep & Kalkulasi HPP</h3>
+                                <h3 className="text-2xl font-black text-gray-800 tracking-tight">Manajemen Resep & HPP</h3>
                                 <div className="flex items-center gap-3 mt-1">
                                     <p className="text-sm text-gray-500 font-medium">{selectedProduct.name} <span className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded ml-1">{selectedProduct.code}</span></p>
                                     <div className="h-4 w-[1px] bg-gray-300" />
@@ -1222,12 +1222,17 @@ export function ProductsView({
                         </div>
 
                         <div className="p-10">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                                <div className="space-y-6">
-                                    <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                                        <ChefHat className="w-4 h-4 text-primary" /> Komposisi Bahan Baku
-                                    </h4>
-                                    <div className="space-y-2 max-h-72 overflow-y-auto pr-3 -mr-3">
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                                {/* Current Recipe Editor (2/3 width) */}
+                                <div className="lg:col-span-2 space-y-6">
+                                    <div className="flex items-center justify-between">
+                                        <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                                            <ChefHat className="w-4 h-4 text-primary" /> Komposisi Bahan Baku Aktif
+                                        </h4>
+                                        <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full font-black uppercase tracking-tighter animate-pulse">Sedang Digunakan</span>
+                                    </div>
+                                    
+                                    <div className="space-y-2 max-h-96 overflow-y-auto pr-3 -mr-3">
                                         {selectedProduct.recipe?.map((item, idx) => {
                                             const ing = ingredients.find(i => i.id === item.ingredientId);
                                             const isEditing = editingRecipeIdx === idx;
@@ -1237,18 +1242,13 @@ export function ProductsView({
                                                         <span className="text-sm font-black text-gray-800">{ing?.name || 'Bahan tidak ditemukan'}</span>
                                                         <div className="flex items-center gap-2">
                                                             <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wide">{item.amount} {ing?.unit} @ Rp {(ing?.cost_per_unit ?? 0).toLocaleString()}</span>
-                                                            {ing && (
-                                                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-tighter ${ing.current_stock <= (ing.min_stock || 0) ? 'bg-red-50 text-red-500' : 'bg-gray-100 text-gray-400'}`}>
-                                                                    Sisa Stok: {ing.current_stock} {ing.unit}
-                                                                </span>
-                                                            )}
                                                         </div>
                                                     </div>
                                                     <div className="flex items-center gap-2">
                                                         <div className="text-right mr-2">
                                                             <div className="text-sm font-black text-primary">Rp {(item.amount * (ing?.cost_per_unit || 0)).toLocaleString()}</div>
                                                         </div>
-                                                        <div className="flex items-center gap-1 transition-opacity">
+                                                        <div className="flex items-center gap-1">
                                                             <button
                                                                 onClick={() => {
                                                                     setEditingRecipeIdx(idx);
@@ -1258,7 +1258,6 @@ export function ProductsView({
                                                                     if (input) input.value = String(item.amount);
                                                                 }}
                                                                 className="p-2 hover:bg-primary/10 text-primary rounded-xl transition-colors"
-                                                                title="Edit Jumlah"
                                                             >
                                                                 <Edit className="w-4 h-4" />
                                                             </button>
@@ -1270,8 +1269,7 @@ export function ProductsView({
                                                                     setSelectedProduct(updated);
                                                                     if (editingRecipeIdx === idx) setEditingRecipeIdx(null);
                                                                 }}
-                                                                className="p-2 hover:bg-red-50 text-red-400 hover:text-red-500 rounded-xl transition-colors"
-                                                                title="Hapus"
+                                                                className="p-2 hover:bg-red-50 text-red-400 rounded-xl transition-colors"
                                                             >
                                                                 <Trash2 className="w-4 h-4" />
                                                             </button>
@@ -1283,151 +1281,116 @@ export function ProductsView({
                                         {(!selectedProduct.recipe || selectedProduct.recipe.length === 0) && (
                                             <div className="py-12 text-center border-2 border-dashed border-gray-100 rounded-[32px]">
                                                 <Info className="w-8 h-8 text-gray-200 mx-auto mb-2" />
-                                                <p className="text-gray-400 text-xs italic font-medium">Bahan belum ditentukan</p>
+                                                <p className="text-gray-400 text-xs italic font-medium">Belum ada bahan</p>
                                             </div>
                                         )}
                                     </div>
 
-                                    <div className="pt-6 border-t border-gray-50">
-                                        <div className="flex items-center justify-between mb-3">
-                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{editingRecipeIdx !== null ? 'Update Komposisi' : 'Tambahkan Komposisi'}</p>
+                                    <div className="pt-6 border-t border-gray-50 bg-gray-50/50 p-6 rounded-[32px] space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{editingRecipeIdx !== null ? 'Update Komposisi' : 'Tambah Bahan Baru'}</p>
                                             {editingRecipeIdx !== null && (
-                                                <button 
-                                                    onClick={() => {
-                                                        setEditingRecipeIdx(null);
-                                                        (document.getElementById('ing-select') as HTMLSelectElement).value = '';
-                                                        (document.getElementById('ing-amount') as HTMLInputElement).value = '';
-                                                    }}
-                                                    className="text-[10px] font-bold text-red-500 hover:underline uppercase tracking-widest"
-                                                >
-                                                    Batal Edit
-                                                </button>
+                                                <button onClick={() => setEditingRecipeIdx(null)} className="text-[10px] font-bold text-red-500 uppercase">Batal</button>
                                             )}
                                         </div>
-                                        <div className="space-y-3">
+                                        <div className="flex gap-3">
                                             <select 
                                                 id="ing-select" 
-                                                disabled={editingRecipeIdx !== null}
-                                                className="w-full p-4 text-sm font-bold border-none bg-gray-50 rounded-2xl outline-none ring-1 ring-gray-100 focus:ring-2 focus:ring-primary/20 transition-all disabled:opacity-50"
+                                                className="flex-1 p-4 text-sm font-bold border-none bg-white rounded-2xl outline-none ring-1 ring-gray-100 focus:ring-2 focus:ring-primary/20 transition-all"
                                             >
-                                                <option value="">Pilih bahan baku...</option>
-                                                {ingredients.map(i => (
-                                                    <option key={i.id} value={i.id}>
-                                                        {i.name} ({i.unit}) - Rp {i.cost_per_unit?.toLocaleString()}/{i.unit}
-                                                    </option>
-                                                ))}
+                                                <option value="">Pilih bahan...</option>
+                                                {ingredients.map(i => <option key={i.id} value={i.id}>{i.name} ({i.unit})</option>)}
                                             </select>
-                                            <div className="flex gap-2">
-                                                <div className="flex-1 space-y-1">
-                                                    <input 
-                                                        id="ing-amount" 
-                                                        type="number" 
-                                                        step="0.01" 
-                                                        placeholder="Jumlah / Qty" 
-                                                        className="w-full p-4 text-sm font-bold border-none bg-gray-50 rounded-2xl outline-none ring-1 ring-gray-100 focus:ring-2 focus:ring-primary/20 transition-all" 
-                                                        onChange={(e) => {
-                                                            const id = parseInt((document.getElementById('ing-select') as HTMLSelectElement).value);
-                                                            const amt = parseFloat(e.target.value);
-                                                            const previewEl = document.getElementById('ing-preview-cost');
-                                                            if (id && !isNaN(amt) && previewEl) {
-                                                                const ing = ingredients.find(i => i.id === id);
-                                                                const cost = (ing?.cost_per_unit || 0) * amt;
-                                                                previewEl.innerText = `Estimasi: Rp ${cost.toLocaleString()}`;
-                                                                previewEl.className = "text-[10px] font-bold text-blue-600 px-1 animate-in fade-in";
-                                                            } else if (previewEl) {
-                                                                previewEl.innerText = "";
-                                                            }
-                                                        }}
-                                                    />
-                                                    <p id="ing-preview-cost" className="text-[10px] h-3"></p>
-                                                </div>
-                                                <Button
-                                                    className={`h-14 px-6 rounded-2xl ${editingRecipeIdx !== null ? 'bg-orange-500 hover:bg-orange-600' : ''}`}
-                                                    onClick={() => {
-                                                        const id = parseInt((document.getElementById('ing-select') as HTMLSelectElement).value);
-                                                        const amt = parseFloat((document.getElementById('ing-amount') as HTMLInputElement).value);
-                                                        if (!id || isNaN(amt)) return toast.error('Lengkapi data bahan');
-
-                                                        let newRecipe = [...(selectedProduct.recipe || [])];
-                                                        
-                                                        if (editingRecipeIdx !== null) {
-                                                            // Update existing
-                                                            newRecipe[editingRecipeIdx] = { ingredientId: id, amount: amt };
-                                                            setEditingRecipeIdx(null);
-                                                            toast.success('Bahan diperbarui');
-                                                        } else {
-                                                            // Add new or update duplicate
-                                                            const existingIdx = newRecipe.findIndex(r => r.ingredientId === id);
-                                                            if (existingIdx !== -1) {
-                                                                newRecipe[existingIdx].amount += amt;
-                                                                toast.success('Jumlah bahan ditambahkan');
-                                                            } else {
-                                                                newRecipe.push({ ingredientId: id, amount: amt });
-                                                                toast.success('Bahan ditambahkan');
-                                                            }
-                                                        }
-
-                                                        const updated = { ...selectedProduct, recipe: newRecipe };
-                                                        setProducts(products.map(p => p.id === updated.id ? updated : p));
-                                                        setSelectedProduct(updated);
-
-                                                        (document.getElementById('ing-select') as HTMLSelectElement).value = '';
-                                                        (document.getElementById('ing-amount') as HTMLInputElement).value = '';
-                                                        const previewEl = document.getElementById('ing-preview-cost');
-                                                        if (previewEl) previewEl.innerText = "";
-                                                    }}
-                                                >
-                                                    {editingRecipeIdx !== null ? <Check className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
-                                                </Button>
-                                            </div>
+                                            <input id="ing-amount" type="number" step="0.01" placeholder="Qty" className="w-24 p-4 text-sm font-bold border-none bg-white rounded-2xl outline-none ring-1 ring-gray-100 focus:ring-2 focus:ring-primary/20 transition-all" />
+                                            <Button
+                                                className="h-14 px-6 rounded-2xl"
+                                                onClick={() => {
+                                                    const id = parseInt((document.getElementById('ing-select') as HTMLSelectElement).value);
+                                                    const amt = parseFloat((document.getElementById('ing-amount') as HTMLInputElement).value);
+                                                    if (!id || isNaN(amt)) return toast.error('Lengkapi data');
+                                                    let newRecipe = [...(selectedProduct.recipe || [])];
+                                                    if (editingRecipeIdx !== null) newRecipe[editingRecipeIdx] = { ingredientId: id, amount: amt };
+                                                    else newRecipe.push({ ingredientId: id, amount: amt });
+                                                    const updated = { ...selectedProduct, recipe: newRecipe };
+                                                    setProducts(products.map(p => p.id === updated.id ? updated : p));
+                                                    setSelectedProduct(updated);
+                                                    setEditingRecipeIdx(null);
+                                                    (document.getElementById('ing-select') as HTMLSelectElement).value = '';
+                                                    (document.getElementById('ing-amount') as HTMLInputElement).value = '';
+                                                }}
+                                            >
+                                                <Check className="w-5 h-5" />
+                                            </Button>
                                         </div>
                                     </div>
                                 </div>
 
-                                <div className="bg-primary/5 rounded-[40px] p-10 flex flex-col justify-between border border-primary/10">
-                                    <div className="space-y-8">
-                                        <h4 className="font-black text-primary flex items-center gap-2">
-                                            <Calculator className="w-5 h-5" /> Summary Harga
+                                {/* Sidebar: History & Total (1/3 width) */}
+                                <div className="space-y-8 border-l border-gray-50 pl-10">
+                                    <div className="space-y-4">
+                                        <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                                            <History className="w-4 h-4 text-primary" /> Sejarah Versi Resep
                                         </h4>
-                                        <div className="space-y-5">
-                                            <div className="flex justify-between items-center text-gray-500">
-                                                <span className="text-sm font-medium">Total Biaya Bahan</span>
-                                                <span className="text-lg font-black text-gray-800 font-mono">Rp {calculateHPP(selectedProduct.recipe).toLocaleString()}</span>
-                                            </div>
-                                            <div className="p-6 bg-white rounded-3xl border border-primary/10 shadow-sm space-y-2">
-                                                <div className="flex justify-between items-center text-gray-400 text-[10px] font-black uppercase tracking-widest">
-                                                    <span>Harga Jual</span>
-                                                    <span>Profit Margin</span>
-                                                </div>
-                                                <div className="flex justify-between items-center">
-                                                    <span className="text-xl font-black text-primary font-mono">Rp {selectedProduct.price.toLocaleString()}</span>
-                                                    <span className="text-xl font-black text-emerald-600 font-mono">Rp {(selectedProduct.price - calculateHPP(selectedProduct.recipe)).toLocaleString()}</span>
-                                                </div>
-                                            </div>
-                                            <div className="text-center pt-2">
-                                                <span className="px-4 py-2 bg-emerald-100 text-emerald-700 rounded-2xl text-xs font-black uppercase tracking-widest">
-                                                    Margin: {(((selectedProduct.price - calculateHPP(selectedProduct.recipe)) / selectedProduct.price) * 100).toFixed(1)}%
-                                                </span>
-                                            </div>
+                                        <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
+                                            {historyData.length === 0 ? (
+                                                <p className="text-[10px] text-gray-300 italic py-4">Belum ada riwayat perubahan</p>
+                                            ) : (
+                                                historyData.map((h, idx) => (
+                                                    <div key={idx} className="p-3 bg-gray-50 rounded-2xl border border-gray-100 space-y-2">
+                                                        <div className="flex justify-between items-center">
+                                                            <span className="text-[9px] font-black text-gray-500">{new Date(h.created_at).toLocaleDateString('id-ID', {day:'numeric', month:'short'})}</span>
+                                                            <button 
+                                                                onClick={() => {
+                                                                    if (confirm('Gunakan kembali resep versi ini?')) {
+                                                                        const updated = { ...selectedProduct, recipe: h.recipe_snapshot || [] };
+                                                                        setSelectedProduct(updated);
+                                                                        setProducts(products.map(p => p.id === updated.id ? updated : p));
+                                                                        toast.success('Resep lama dimuat');
+                                                                    }
+                                                                }}
+                                                                className="text-[9px] font-bold text-primary hover:underline"
+                                                            >
+                                                                Gunakan
+                                                            </button>
+                                                        </div>
+                                                        <p className="text-[11px] font-black text-gray-800">Rp {Number(h.new_cost).toLocaleString()}</p>
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {(h.recipe_snapshot || []).slice(0, 3).map((rs: any, i: number) => (
+                                                                <span key={i} className="text-[8px] bg-white px-1.5 py-0.5 rounded border border-gray-100 text-gray-400">{ingredients.find(ing => ing.id === rs.ingredientId)?.name || 'Item'}</span>
+                                                            ))}
+                                                            {(h.recipe_snapshot || []).length > 3 && <span className="text-[8px] text-gray-300">...</span>}
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            )}
                                         </div>
                                     </div>
-                                    <Button                                         onClick={async () => {
-                                            setIsRecipeOpen(false);
-                                            if (selectedProduct) {
-                                                const oldProduct = products.find(p => p.id === selectedProduct.id);
-                                                const updatedHpp = calculateHPP(selectedProduct.recipe);
-                                                
-                                                if (oldProduct && (oldProduct.cost !== updatedHpp || JSON.stringify(oldProduct.recipe) !== JSON.stringify(selectedProduct.recipe))) {
-                                                    await logRecipeHppChange(selectedProduct, oldProduct.cost || 0, updatedHpp);
-                                                }
 
-                                                await onProductCRUD('update', { ...selectedProduct, cost: updatedHpp });
-                                                toast.success('HPP Produk diperbarui');
-                                            }
-                                        }} 
- className="w-full h-16 rounded-[24px] bg-gray-900 hover:bg-black text-white shadow-2xl shadow-gray-200 transition-all font-black text-lg">
-                                        Selesai & Simpan
-                                    </Button>
+                                    <div className="pt-8 border-t border-gray-100">
+                                        <div className="p-6 bg-gray-900 rounded-[32px] text-white shadow-2xl space-y-4">
+                                            <div>
+                                                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 text-center">Estimasi HPP Per Unit</p>
+                                                <p className="text-3xl font-black text-center tracking-tighter">Rp {calculateHPP(selectedProduct.recipe).toLocaleString()}</p>
+                                            </div>
+                                            <Button 
+                                                onClick={async () => {
+                                                    setIsRecipeOpen(false);
+                                                    if (selectedProduct) {
+                                                        const oldProduct = products.find(p => p.id === selectedProduct.id);
+                                                        const updatedHpp = calculateHPP(selectedProduct.recipe);
+                                                        if (oldProduct && (oldProduct.cost !== updatedHpp || JSON.stringify(oldProduct.recipe) !== JSON.stringify(selectedProduct.recipe))) {
+                                                            await logRecipeHppChange(selectedProduct, oldProduct.cost || 0, updatedHpp);
+                                                        }
+                                                        await onProductCRUD('update', { ...selectedProduct, cost: updatedHpp });
+                                                        toast.success('Resep Terpilih Disimpan');
+                                                    }
+                                                }} 
+                                                className="w-full h-14 rounded-2xl bg-primary hover:bg-primary/90 text-white font-black"
+                                            >
+                                                Simpan & Terapkan
+                                            </Button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>

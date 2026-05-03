@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState, Fragment } from 'react';
 import {
     Package,
     Plus,
@@ -10,7 +10,8 @@ import {
     MoreVertical,
     CheckCircle2,
     Trash2,
-    Edit
+    Edit,
+    Calendar
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -98,6 +99,8 @@ export function InventoryView({
         quantity: 0,
         reason: ''
     });
+
+    const [stockCardDate, setStockCardDate] = useState('');
 
     const getUnitOptionValue = (unitOption: any) => {
         const abbreviation = String(unitOption?.abbreviation || '').trim();
@@ -368,41 +371,81 @@ export function InventoryView({
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
-                                    {filteredMovements.map(mov => (
-                                        <tr key={mov.id} className="hover:bg-gray-50/50 transition-colors text-xs group">
-                                            <td className="px-8 py-4 text-gray-500 font-mono">{(mov.date || mov.created_at) ? new Date(mov.date || mov.created_at).toLocaleString('id-ID') : '-'}</td>
-                                            <td className="px-8 py-4 font-bold text-gray-800">{(mov as any).ingredient_name || mov.ingredientName}</td>
-                                            <td className="px-8 py-4 text-center">
-                                                <span className={`px-2.5 py-1 rounded-lg font-black uppercase text-[9px] ${mov.type === 'IN' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
-                                                    {mov.type === 'IN' ? 'Barang Masuk' : 'Barang Keluar'}
-                                                </span>
-                                            </td>
-                                            <td className={`px-8 py-4 text-right font-bold ${mov.type === 'IN' ? 'text-emerald-600' : 'text-red-500'}`}>
-                                                {mov.type === 'IN' ? '+' : '-'}{mov.quantity} {mov.unit}
-                                            </td>
-                                            <td className="px-8 py-4 text-gray-600 italic">"{mov.reason}"</td>
-                                            <td className="px-8 py-4">
-                                                <div className="flex items-center justify-between gap-2">
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-black text-primary">
-                                                            {((mov as any).user || 'S').charAt(0)}
-                                                        </div>
-                                                        <span className="font-medium text-gray-500">{(mov as any).user || 'System'}</span>
-                                                    </div>
-                                                    <button 
-                                                        onClick={() => {
-                                                            if (window.confirm('Hapus catatan mutasi ini? Ini tidak akan mengembalikan stok secara otomatis.')) {
-                                                                onIngredientAction('delete_movement', mov);
-                                                            }
-                                                        }}
-                                                        className="opacity-0 group-hover:opacity-100 p-1.5 text-red-400 hover:text-red-600 transition-all"
-                                                    >
-                                                        <Trash2 className="w-3.5 h-3.5" />
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ))}
+                                    {(() => {
+                                        if (filteredMovements.length === 0) {
+                                            return (
+                                                <tr>
+                                                    <td colSpan={6} className="px-6 py-10 text-center text-gray-400 italic">Belum ada riwayat mutasi.</td>
+                                                </tr>
+                                            );
+                                        }
+
+                                        // Group by date
+                                        const groups: { [key: string]: StockMovement[] } = {};
+                                        filteredMovements.forEach(m => {
+                                            const dateKey = new Date(m.date || m.created_at || 0).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
+                                            if (!groups[dateKey]) groups[dateKey] = [];
+                                            groups[dateKey].push(m);
+                                        });
+
+                                        return Object.entries(groups).map(([date, dateMovements]) => {
+                                            const totalIn = dateMovements.reduce((sum, m) => m.type === 'IN' ? sum + Number(m.quantity) : sum, 0);
+                                            const totalOut = dateMovements.reduce((sum, m) => m.type === 'OUT' ? sum + Number(m.quantity) : sum, 0);
+
+                                            return (
+                                                <Fragment key={date}>
+                                                    <tr className="bg-gray-50/80 border-y border-gray-100">
+                                                        <td colSpan={6} className="px-8 py-2">
+                                                            <div className="flex justify-between items-center text-[10px]">
+                                                                <span className="font-black text-gray-400 uppercase tracking-widest">{date}</span>
+                                                                <div className="flex gap-4">
+                                                                    <span className="text-emerald-600 font-bold">TOTAL MASUK: +{totalIn.toLocaleString()}</span>
+                                                                    <span className="text-red-600 font-bold">TOTAL KELUAR: -{totalOut.toLocaleString()}</span>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                    {dateMovements.map(mov => (
+                                                        <tr key={mov.id} className="hover:bg-gray-50/50 transition-colors text-xs group">
+                                                            <td className="px-8 py-4 text-gray-500 font-mono">
+                                                                {new Date(mov.date || mov.created_at || 0).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                                                            </td>
+                                                            <td className="px-8 py-4 font-bold text-gray-800">{(mov as any).ingredient_name || mov.ingredientName}</td>
+                                                            <td className="px-8 py-4 text-center">
+                                                                <span className={`px-2.5 py-1 rounded-lg font-black uppercase text-[9px] ${mov.type === 'IN' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
+                                                                    {mov.type === 'IN' ? 'Barang Masuk' : 'Barang Keluar'}
+                                                                </span>
+                                                            </td>
+                                                            <td className={`px-8 py-4 text-right font-bold ${mov.type === 'IN' ? 'text-emerald-600' : 'text-red-500'}`}>
+                                                                {mov.type === 'IN' ? '+' : '-'}{mov.quantity} {mov.unit}
+                                                            </td>
+                                                            <td className="px-8 py-4 text-gray-600 italic">"{mov.reason}"</td>
+                                                            <td className="px-8 py-4">
+                                                                <div className="flex items-center justify-between gap-2">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-black text-primary">
+                                                                            {((mov as any).user || 'S').charAt(0)}
+                                                                        </div>
+                                                                        <span className="font-medium text-gray-500">{(mov as any).user || 'System'}</span>
+                                                                    </div>
+                                                                    <button 
+                                                                        onClick={() => {
+                                                                            if (window.confirm('Hapus catatan mutasi ini? Ini tidak akan mengembalikan stok secara otomatis.')) {
+                                                                                onIngredientAction('delete_movement', mov);
+                                                                            }
+                                                                        }}
+                                                                        className="opacity-0 group-hover:opacity-100 p-1.5 text-red-400 hover:text-red-600 transition-all"
+                                                                    >
+                                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </Fragment>
+                                            );
+                                        });
+                                    })()}
                             </tbody>
                         </table>
                     )}
@@ -675,11 +718,37 @@ export function InventoryView({
                             </div>
                         </div>
 
+                        <div className="px-8 py-4 bg-gray-50/50 border-b border-gray-100 flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-gray-200 shadow-sm">
+                                    <Calendar className="w-3.5 h-3.5 text-blue-500" />
+                                    <span className="text-[10px] font-black text-gray-400 uppercase">Filter Tanggal</span>
+                                    <input 
+                                        type="date" 
+                                        value={stockCardDate}
+                                        onChange={(e) => setStockCardDate(e.target.value)}
+                                        className="text-xs font-bold text-gray-700 focus:outline-none"
+                                    />
+                                </div>
+                                {stockCardDate && (
+                                    <button 
+                                        onClick={() => setStockCardDate('')}
+                                        className="text-[10px] font-black text-red-500 hover:text-red-600 uppercase"
+                                    >
+                                        Tampilkan Semua
+                                    </button>
+                                )}
+                            </div>
+                            <div className="text-[10px] font-medium text-gray-400 italic">
+                                {stockCardDate ? `* Menampilkan mutasi untuk tanggal ${new Date(stockCardDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })}` : '* Menampilkan semua riwayat mutasi'}
+                            </div>
+                        </div>
+
                         <div className="flex-1 overflow-auto p-0">
                             <table className="w-full text-sm text-left border-collapse">
                                 <thead className="sticky top-0 bg-white z-10 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-50">
                                     <tr>
-                                        <th className="px-8 py-4">Tanggal</th>
+                                        <th className="px-8 py-4">Waktu</th>
                                         <th className="px-8 py-4 text-center">Tipe</th>
                                         <th className="px-8 py-4 text-right">Mutasi</th>
                                         <th className="px-8 py-4">Keterangan</th>
@@ -688,64 +757,136 @@ export function InventoryView({
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
-                                    {movements
-                                        .filter(m => (m.ingredient_id === selectedIngredient.id) || (m.ingredientId === selectedIngredient.id))
-                                        .sort((a, b) => {
-                                            const dateA = new Date(a.date || a.created_at || 0).getTime();
-                                            const dateB = new Date(b.date || b.created_at || 0).getTime();
-                                            return dateB - dateA;
-                                        })
-                                        .map(mov => (
-                                            <tr key={mov.id} className="hover:bg-gray-50/50 transition-colors">
-                                                <td className="px-8 py-4 text-gray-500 font-mono text-xs">
-                                                    {(mov.date || mov.created_at) ? new Date(mov.date || mov.created_at).toLocaleString('id-ID') : '-'}
-                                                </td>
-                                                <td className="px-8 py-4 text-center">
-                                                    <span className={`px-2 py-0.5 rounded-full font-black uppercase text-[9px] ${mov.type === 'IN' ? 'bg-emerald-50 text-emerald-600' : (mov.type === 'OUT' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600')}`}>
-                                                        {mov.type}
-                                                    </span>
-                                                </td>
-                                                <td className={`px-8 py-4 text-right font-bold ${mov.type === 'IN' ? 'text-emerald-600' : (mov.type === 'OUT' ? 'text-red-500' : 'text-blue-500')}`}>
-                                                    {mov.type === 'IN' ? '+' : (mov.type === 'OUT' ? '-' : '')}{mov.quantity} {mov.unit}
-                                                </td>
-                                                <td className="px-8 py-4 text-gray-600 italic text-xs">"{mov.reason}"</td>
-                                                <td className="px-8 py-4 text-center">
-                                                    <span className="font-medium text-gray-500">{mov.user}</span>
-                                                </td>
-                                                <td className="px-8 py-4 text-center">
-                                                    <div className="flex items-center justify-center gap-2">
-                                                        <button 
-                                                            onClick={() => {
-                                                                const newReason = window.prompt('Masukkan alasan baru:', mov.reason);
-                                                                if (newReason !== null) {
-                                                                    onIngredientAction('update_movement', { id: mov.id, reason: newReason, user: mov.user });
-                                                                }
-                                                            }}
-                                                            className="p-2 hover:bg-blue-50 text-blue-400 hover:text-blue-600 rounded-lg transition-colors"
-                                                            title="Edit Keterangan"
-                                                        >
-                                                            <MoreVertical className="w-4 h-4" />
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => {
-                                                                if (window.confirm('Yakin ingin menghapus mutasi ini? Stok akan dikembalikan otomatis.')) {
-                                                                    onIngredientAction('delete_movement', { id: mov.id });
-                                                                }
-                                                            }}
-                                                            className="p-2 hover:bg-red-50 text-red-400 hover:text-red-600 rounded-lg transition-colors"
-                                                            title="Hapus Mutasi & Revert Stok"
-                                                        >
-                                                            <Trash2 className="w-4 h-4" />
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    {movements.filter(m => (m.ingredient_id === selectedIngredient.id) || (m.ingredientId === selectedIngredient.id)).length === 0 && (
-                                        <tr>
-                                            <td colSpan={6} className="px-8 py-20 text-center text-gray-400 italic">Belum ada riwayat mutasi untuk bahan ini.</td>
-                                        </tr>
-                                    )}
+                                    {(() => {
+                                        try {
+                                            const ingredientMovements = (movements || [])
+                                                .filter(m => {
+                                                    const mId = m.ingredient_id || m.ingredientId;
+                                                    const sId = selectedIngredient.id;
+                                                    
+                                                    // Match by ID (flexible string/number comparison)
+                                                    const isMatch = mId != null && sId != null && String(mId) == String(sId);
+                                                    if (!isMatch) return false;
+
+                                                    // Single date filter
+                                                    const mDateObj = new Date(m.date || m.created_at || 0);
+                                                    if (stockCardDate && !isNaN(mDateObj.getTime())) {
+                                                        const y = mDateObj.getFullYear();
+                                                        const m_ = String(mDateObj.getMonth() + 1).padStart(2, '0');
+                                                        const d = String(mDateObj.getDate()).padStart(2, '0');
+                                                        const mDateStr = `${y}-${m_}-${d}`;
+                                                        if (mDateStr !== stockCardDate) return false;
+                                                    }
+
+                                                    return true;
+                                                })
+                                                .sort((a, b) => {
+                                                    const dateA = new Date(a.date || a.created_at || 0).getTime();
+                                                    const dateB = new Date(b.date || b.created_at || 0).getTime();
+                                                    return dateB - dateA;
+                                                });
+
+                                            if (ingredientMovements.length === 0) {
+                                                return (
+                                                    <tr>
+                                                        <td colSpan={6} className="px-8 py-20 text-center text-gray-400 italic">Belum ada riwayat mutasi untuk bahan ini.</td>
+                                                    </tr>
+                                                );
+                                            }
+
+                                            // Group by date string (YYYY-MM-DD)
+                                            const groups: { [key: string]: { label: string, items: typeof ingredientMovements } } = {};
+                                            ingredientMovements.forEach(m => {
+                                                const d = new Date(m.date || m.created_at || Date.now());
+                                                const key = isNaN(d.getTime()) ? 'unknown' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                                                const label = isNaN(d.getTime()) ? 'Tanggal Tidak Diketahui' : d.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
+                                                if (!groups[key]) groups[key] = { label, items: [] };
+                                                groups[key].items.push(m);
+                                            });
+
+                                            return Object.entries(groups).map(([key, group]) => {
+                                                const totalIn = group.items.reduce((sum, m) => m.type === 'IN' ? sum + Number(m.quantity) : sum, 0);
+                                                const totalOut = group.items.reduce((sum, m) => m.type === 'OUT' ? sum + Number(m.quantity) : sum, 0);
+
+                                                return (
+                                                <Fragment key={key}>
+                                                    <tr className="bg-slate-800 border-y-2 border-slate-900">
+                                                        <td colSpan={6} className="px-8 py-2">
+                                                            <div className="flex justify-between items-center">
+                                                                <span className="text-[11px] font-black text-white uppercase tracking-widest flex items-center gap-2">
+                                                                    <Calendar className="w-3.5 h-3.5 text-blue-400" />
+                                                                    {group.label}
+                                                                </span>
+                                                                <div className="flex gap-4 text-[11px] font-black">
+                                                                    <div className="flex items-center gap-1.5 text-emerald-400 bg-white/10 px-2 py-0.5 rounded-lg border border-white/10">
+                                                                        <ArrowUpCircle className="w-3 h-3" />
+                                                                        TOTAL MASUK: +{totalIn.toLocaleString()} {selectedIngredient.unit}
+                                                                    </div>
+                                                                    <div className="flex items-center gap-1.5 text-red-400 bg-white/10 px-2 py-0.5 rounded-lg border border-white/10">
+                                                                        <ArrowDownCircle className="w-3 h-3" />
+                                                                        TOTAL KELUAR: -{totalOut.toLocaleString()} {selectedIngredient.unit}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                        {group.items.map(mov => (
+                                                            <tr key={mov.id} className="hover:bg-gray-50/50 transition-colors">
+                                                                <td className="px-8 py-4 text-gray-500 font-mono text-xs">
+                                                                    {(() => {
+                                                                        const d = new Date(mov.date || mov.created_at || 0);
+                                                                        return isNaN(d.getTime()) ? '-' : d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+                                                                    })()}
+                                                                </td>
+                                                                <td className="px-8 py-4 text-center">
+                                                                    <span className={`px-2 py-0.5 rounded-full font-black uppercase text-[9px] ${mov.type === 'IN' ? 'bg-emerald-50 text-emerald-600' : (mov.type === 'OUT' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600')}`}>
+                                                                        {mov.type}
+                                                                    </span>
+                                                                </td>
+                                                                <td className={`px-8 py-4 text-right font-bold ${mov.type === 'IN' ? 'text-emerald-600' : (mov.type === 'OUT' ? 'text-red-500' : 'text-blue-500')}`}>
+                                                                    {mov.type === 'IN' ? '+' : (mov.type === 'OUT' ? '-' : '')}{mov.quantity} {mov.unit}
+                                                                </td>
+                                                                <td className="px-8 py-4 text-gray-600 italic text-xs">"{mov.reason}"</td>
+                                                                <td className="px-8 py-4 text-center">
+                                                                    <span className="font-medium text-gray-500">{mov.user}</span>
+                                                                </td>
+                                                                <td className="px-8 py-4 text-center">
+                                                                    <div className="flex items-center justify-center gap-2">
+                                                                        <button 
+                                                                            onClick={() => {
+                                                                                const newReason = window.prompt('Masukkan alasan baru:', mov.reason);
+                                                                                if (newReason !== null) {
+                                                                                    onIngredientAction('update_movement', { id: mov.id, reason: newReason, user: mov.user });
+                                                                                }
+                                                                            }}
+                                                                            className="p-2 hover:bg-blue-50 text-blue-400 hover:text-blue-600 rounded-lg transition-colors"
+                                                                            title="Edit Keterangan"
+                                                                        >
+                                                                            <MoreVertical className="w-4 h-4" />
+                                                                        </button>
+                                                                        <button 
+                                                                            onClick={() => {
+                                                                                if (window.confirm('Yakin ingin menghapus mutasi ini? Stok akan dikembalikan otomatis.')) {
+                                                                                    onIngredientAction('delete_movement', { id: mov.id });
+                                                                                }
+                                                                            }}
+                                                                            className="p-2 hover:bg-red-50 text-red-400 hover:text-red-600 rounded-lg transition-colors"
+                                                                            title="Hapus Mutasi & Revert Stok"
+                                                                        >
+                                                                            <Trash2 className="w-4 h-4" />
+                                                                        </button>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </Fragment>
+                                                );
+                                            });
+                                        } catch (e) {
+                                            console.error('Stock Card Render Error:', e);
+                                            return <tr><td colSpan={6} className="text-center text-red-500 py-4">Gagal menampilkan riwayat mutasi.</td></tr>;
+                                        }
+                                    })()}
                                 </tbody>
                             </table>
                         </div>

@@ -47,6 +47,8 @@ function HppReportTab({ startDate, endDate, currentBranchId }: { startDate: stri
     const [viewMode, setViewMode] = useState<'monthly' | 'product' | 'transactions'>('monthly');
     const [searchProduct, setSearchProduct] = useState('');
     const [searchTransaction, setSearchTransaction] = useState(''); // Search for raw transactions
+    const [hppHistory, setHppHistory] = useState<any[]>([]);
+    const [loadingHistory, setLoadingHistory] = useState(false);
     const [localStart, setLocalStart] = useState(startDate);
     const [localEnd, setLocalEnd] = useState(endDate);
     const fetchingRef = useRef(false);
@@ -135,6 +137,17 @@ function HppReportTab({ startDate, endDate, currentBranchId }: { startDate: stri
             setMonthlyData(Object.entries(monthMap).map(([month, d]) => ({ month, ...d, grossProfit: d.revenue - d.hpp, margin: d.revenue > 0 ? ((d.revenue - d.hpp) / d.revenue) * 100 : 0 })).sort((a, b) => a.month.localeCompare(b.month)));
             setProductData(Object.entries(productMap).map(([name, d]) => ({ name, ...d, grossProfit: d.revenue - d.hpp, margin: d.revenue > 0 ? ((d.revenue - d.hpp) / d.revenue) * 100 : 0 })).sort((a, b) => b.grossProfit - a.grossProfit));
             setAllRawItems(allItems.sort((a, b) => (b.sales?.date || '').localeCompare(a.sales?.date || '')));
+
+            // Also fetch recipe HPP change history
+            setLoadingHistory(true);
+            const { data: histData } = await supabase
+                .from('recipe_hpp_history')
+                .select('*')
+                .order('effective_date', { ascending: false })
+                .limit(100);
+            setHppHistory(histData || []);
+            setLoadingHistory(false);
+
             setHasLoaded(true);
         } catch (err: any) {
             console.error('[HPP] Error:', err);
@@ -295,6 +308,7 @@ function HppReportTab({ startDate, endDate, currentBranchId }: { startDate: stri
                     <button onClick={() => setViewMode('monthly')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${viewMode === 'monthly' ? 'bg-white text-primary shadow-sm' : 'text-gray-500'}`}>Per Bulan</button>
                     <button onClick={() => setViewMode('product')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${viewMode === 'product' ? 'bg-white text-primary shadow-sm' : 'text-gray-500'}`}>Per Produk</button>
                     <button onClick={() => setViewMode('transactions')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${viewMode === 'transactions' ? 'bg-white text-primary shadow-sm' : 'text-gray-500'}`}>Riwayat Detail</button>
+                    <button onClick={() => setViewMode('hpp_history' as any)} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${viewMode === ('hpp_history' as any) ? 'bg-white text-primary shadow-sm' : 'text-gray-500'}`}>Log Perubahan HPP</button>
                 </div>
                 {viewMode === 'product' && (
                     <input
@@ -523,6 +537,66 @@ function HppReportTab({ startDate, endDate, currentBranchId }: { startDate: stri
                                                     {cost === 0 ? 'HPP=0' : formatPct(margin)}
                                                 </span>
                                             </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
+            {/* HPP Change History Table */}
+            {viewMode === ('hpp_history' as any) && (
+                <div className="bg-white rounded-2xl border shadow-sm overflow-hidden animate-in slide-in-from-bottom-4">
+                    <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
+                        <div>
+                            <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                                <History className="w-4 h-4 text-primary" /> Log Perubahan HPP & Resep
+                            </h3>
+                            <p className="text-xs text-gray-400 mt-1">Daftar tanggal kapan resep/HPP diubah untuk menentukan rentang laporan akuntansi.</p>
+                        </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead className="bg-gray-50 text-gray-500 font-bold">
+                                <tr>
+                                    <th className="px-6 py-4 text-left">Tgl Berlaku</th>
+                                    <th className="px-6 py-4 text-left">Produk</th>
+                                    <th className="px-6 py-4 text-right">HPP Lama</th>
+                                    <th className="px-6 py-4 text-center"></th>
+                                    <th className="px-6 py-4 text-right text-emerald-600">HPP Baru</th>
+                                    <th className="px-6 py-4 text-right">Perubahan</th>
+                                    <th className="px-6 py-4 text-left">Oleh</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-50">
+                                {hppHistory.length === 0 && (
+                                    <tr><td colSpan={7} className="p-12 text-center text-gray-400 italic">Belum ada riwayat perubahan HPP yang tercatat.</td></tr>
+                                )}
+                                {hppHistory.map((log, idx) => {
+                                    const diff = Number(log.new_cost || 0) - Number(log.old_cost || 0);
+                                    const diffPct = Number(log.old_cost || 0) > 0 ? (diff / Number(log.old_cost)) * 100 : 0;
+                                    return (
+                                        <tr key={idx} className="hover:bg-gray-50">
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                                                    <span className="font-bold text-gray-700">{log.effective_date}</span>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <p className="font-bold text-gray-800">{log.product_name}</p>
+                                            </td>
+                                            <td className="px-6 py-4 text-right text-gray-500 font-mono">Rp {Number(log.old_cost || 0).toLocaleString()}</td>
+                                            <td className="px-6 py-4 text-center text-gray-300">→</td>
+                                            <td className="px-6 py-4 text-right text-emerald-600 font-black font-mono text-base">Rp {Number(log.new_cost || 0).toLocaleString()}</td>
+                                            <td className="px-6 py-4 text-right">
+                                                <span className={`px-2 py-1 rounded text-[10px] font-black ${diff > 0 ? 'bg-red-50 text-red-600' : (diff < 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-50 text-gray-400')}`}>
+                                                    {diff > 0 ? '+' : ''}{diff.toLocaleString()} ({diffPct > 0 ? '+' : ''}{diffPct.toFixed(1)}%)
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 text-gray-400 text-xs">{log.changed_by || 'System'}</td>
                                         </tr>
                                     );
                                 })}

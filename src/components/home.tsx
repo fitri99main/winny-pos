@@ -634,7 +634,7 @@ function Home() {
       safeFetch(supabase.from('shift_schedules').select('*').order('date'), 'schedules'), 
       safeFetch(supabase.from('tables').select('*').eq('branch_id', Number(branchId)).order('number'), 'tables'),
       safeFetch(supabase.from('ingredients').select('*').eq('branch_id', Number(branchId)).order('name'), 'ingredients'),
-      safeFetch(supabase.from('stock_movements').select('*').eq('branch_id', Number(branchId)).order('created_at', { ascending: false }).limit(500), 'movements'),
+      safeFetch(supabase.from('stock_movements').select('*').eq('branch_id', Number(branchId)).order('created_at', { ascending: false }).limit(2000), 'movements'),
     ]);
     const [productsRes, schedulesRes, tablesRes, ingredientsRes, movementsRes] = results;
     if (productsRes.data) setProducts(productsRes.data);
@@ -863,6 +863,7 @@ function Home() {
           target, 
           status,
           notes,
+          cost,
           product:product_id(category)
         )
       `)
@@ -886,7 +887,8 @@ function Home() {
           target: i.target,
           status: i.status,
           category: i.product?.category,
-          notes: i.notes
+          notes: i.notes,
+          cost: i.cost
         })),
         items: (s.items || []).length,
         id: s.id,
