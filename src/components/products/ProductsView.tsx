@@ -118,6 +118,7 @@ export function ProductsView({
     const [isAutoSKU, setIsAutoSKU] = useState(true);
     const [isStockReady, setIsStockReady] = useState(true);
     const [editingRecipeIdx, setEditingRecipeIdx] = useState<number | null>(null);
+    const [newIngredient, setNewIngredient] = useState({ ingredientId: '', amount: '' });
     const [isHistoryOpen, setIsHistoryOpen] = useState(false);
     const [historyData, setHistoryData] = useState<any[]>([]);
     const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -1184,7 +1185,7 @@ export function ProductsView({
             {/* Recipe Modal */}
             {isRecipeOpen && selectedProduct && (
                 <div onClick={() => setIsRecipeOpen(false)} className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-                    <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-[44px] shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                    <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-[44px] shadow-2xl w-full max-w-4xl overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="px-10 py-8 border-b border-gray-50 flex items-center justify-between bg-gray-50/50">
                             <div>
                                 <h3 className="text-2xl font-black text-gray-800 tracking-tight">Manajemen Resep & HPP</h3>
@@ -1221,10 +1222,10 @@ export function ProductsView({
                             </div>
                         </div>
 
-                        <div className="p-10">
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-                                {/* Current Recipe Editor (2/3 width) */}
-                                <div className="lg:col-span-2 space-y-6">
+                        <div className="p-8 lg:p-10">
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-8 lg:gap-10">
+                                {/* Current Recipe Editor (7/12 width) */}
+                                <div className="md:col-span-7 space-y-6">
                                     <div className="flex items-center justify-between">
                                         <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
                                             <ChefHat className="w-4 h-4 text-primary" /> Komposisi Bahan Baku Aktif
@@ -1250,12 +1251,12 @@ export function ProductsView({
                                                         </div>
                                                         <div className="flex items-center gap-1">
                                                             <button
-                                                                onClick={() => {
+                                                                 onClick={() => {
                                                                     setEditingRecipeIdx(idx);
-                                                                    const select = document.getElementById('ing-select') as HTMLSelectElement;
-                                                                    const input = document.getElementById('ing-amount') as HTMLInputElement;
-                                                                    if (select) select.value = String(item.ingredientId);
-                                                                    if (input) input.value = String(item.amount);
+                                                                    setNewIngredient({ 
+                                                                        ingredientId: String(item.ingredientId), 
+                                                                        amount: String(item.amount) 
+                                                                    });
                                                                 }}
                                                                 className="p-2 hover:bg-primary/10 text-primary rounded-xl transition-colors"
                                                             >
@@ -1293,40 +1294,58 @@ export function ProductsView({
                                                 <button onClick={() => setEditingRecipeIdx(null)} className="text-[10px] font-bold text-red-500 uppercase">Batal</button>
                                             )}
                                         </div>
-                                        <div className="flex gap-3">
-                                            <select 
-                                                id="ing-select" 
-                                                className="flex-1 p-4 text-sm font-bold border-none bg-white rounded-2xl outline-none ring-1 ring-gray-100 focus:ring-2 focus:ring-primary/20 transition-all"
-                                            >
-                                                <option value="">Pilih bahan...</option>
-                                                {ingredients.map(i => <option key={i.id} value={i.id}>{i.name} ({i.unit})</option>)}
-                                            </select>
-                                            <input id="ing-amount" type="number" step="0.01" placeholder="Qty" className="w-24 p-4 text-sm font-bold border-none bg-white rounded-2xl outline-none ring-1 ring-gray-100 focus:ring-2 focus:ring-primary/20 transition-all" />
-                                            <Button
-                                                className="h-14 px-6 rounded-2xl"
-                                                onClick={() => {
-                                                    const id = parseInt((document.getElementById('ing-select') as HTMLSelectElement).value);
-                                                    const amt = parseFloat((document.getElementById('ing-amount') as HTMLInputElement).value);
-                                                    if (!id || isNaN(amt)) return toast.error('Lengkapi data');
-                                                    let newRecipe = [...(selectedProduct.recipe || [])];
-                                                    if (editingRecipeIdx !== null) newRecipe[editingRecipeIdx] = { ingredientId: id, amount: amt };
-                                                    else newRecipe.push({ ingredientId: id, amount: amt });
-                                                    const updated = { ...selectedProduct, recipe: newRecipe };
-                                                    setProducts(products.map(p => p.id === updated.id ? updated : p));
-                                                    setSelectedProduct(updated);
-                                                    setEditingRecipeIdx(null);
-                                                    (document.getElementById('ing-select') as HTMLSelectElement).value = '';
-                                                    (document.getElementById('ing-amount') as HTMLInputElement).value = '';
-                                                }}
-                                            >
-                                                <Check className="w-5 h-5" />
-                                            </Button>
+                                         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                                            <div className="sm:col-span-7">
+                                                <select 
+                                                    value={newIngredient.ingredientId}
+                                                    onChange={(e) => setNewIngredient(prev => ({ ...prev, ingredientId: e.target.value }))}
+                                                    className="w-full p-4 text-sm font-bold border-none bg-white rounded-2xl outline-none ring-1 ring-gray-100 focus:ring-2 focus:ring-primary/20 transition-all"
+                                                >
+                                                    <option value="">Pilih bahan...</option>
+                                                    {ingredients.map(i => <option key={i.id} value={i.id}>{i.name} ({i.unit})</option>)}
+                                                </select>
+                                            </div>
+                                            <div className="sm:col-span-3">
+                                                <input 
+                                                    type="number" 
+                                                    step="0.01" 
+                                                    placeholder="Qty" 
+                                                    value={newIngredient.amount}
+                                                    onChange={(e) => setNewIngredient(prev => ({ ...prev, amount: e.target.value }))}
+                                                    className="w-full p-4 text-sm font-bold border-none bg-white rounded-2xl outline-none ring-1 ring-gray-100 focus:ring-2 focus:ring-primary/20 transition-all text-center" 
+                                                />
+                                            </div>
+                                            <div className="sm:col-span-2">
+                                                <Button
+                                                    className="w-full h-full min-h-[56px] rounded-2xl"
+                                                    onClick={() => {
+                                                        const id = parseInt(newIngredient.ingredientId);
+                                                        const amt = parseFloat(newIngredient.amount);
+                                                        if (!id || isNaN(amt)) return toast.error('Lengkapi data');
+                                                        
+                                                        let newRecipe = [...(selectedProduct.recipe || [])];
+                                                        if (editingRecipeIdx !== null) {
+                                                            newRecipe[editingRecipeIdx] = { ingredientId: id, amount: amt };
+                                                        } else {
+                                                            newRecipe.push({ ingredientId: id, amount: amt });
+                                                        }
+                                                        
+                                                        const updated = { ...selectedProduct, recipe: newRecipe };
+                                                        setProducts(products.map(p => p.id === updated.id ? updated : p));
+                                                        setSelectedProduct(updated);
+                                                        setEditingRecipeIdx(null);
+                                                        setNewIngredient({ ingredientId: '', amount: '' });
+                                                    }}
+                                                >
+                                                    <Check className="w-5 h-5" />
+                                                </Button>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Sidebar: History & Total (1/3 width) */}
-                                <div className="space-y-8 border-l border-gray-50 pl-10">
+                                {/* Sidebar: History & Total (5/12 width) */}
+                                <div className="md:col-span-5 space-y-8 border-l border-gray-50 pl-8 lg:pl-10">
                                     <div className="space-y-4">
                                         <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
                                             <History className="w-4 h-4 text-primary" /> Sejarah Versi Resep
@@ -1368,24 +1387,64 @@ export function ProductsView({
 
                                     <div className="pt-8 border-t border-gray-100">
                                         <div className="p-6 bg-gray-900 rounded-[32px] text-white shadow-2xl space-y-4">
-                                            <div>
-                                                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 text-center">Estimasi HPP Per Unit</p>
-                                                <p className="text-3xl font-black text-center tracking-tighter">Rp {calculateHPP(selectedProduct.recipe).toLocaleString()}</p>
+                                            <div className="space-y-4">
+                                                <div className="text-center">
+                                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">
+                                                        {selectedProduct.recipe && selectedProduct.recipe.length > 0 ? 'Estimasi HPP (Dari Resep)' : 'Harga Modal Manual (HPP)'}
+                                                    </p>
+                                                    {selectedProduct.recipe && selectedProduct.recipe.length > 0 ? (
+                                                        <p className="text-3xl font-black tracking-tighter text-emerald-400">Rp {calculateHPP(selectedProduct.recipe).toLocaleString()}</p>
+                                                    ) : (
+                                                        <div className="relative mt-2">
+                                                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold">Rp</span>
+                                                            <input 
+                                                                type="number"
+                                                                value={selectedProduct.cost || 0}
+                                                                onChange={(e) => {
+                                                                    const val = parseFloat(e.target.value) || 0;
+                                                                    const updated = { ...selectedProduct, cost: val };
+                                                                    setSelectedProduct(updated);
+                                                                }}
+                                                                className="w-full h-14 bg-gray-800 border-none rounded-2xl pl-12 pr-4 font-black text-xl text-white outline-none focus:ring-2 focus:ring-primary/50 text-center"
+                                                                placeholder="0"
+                                                            />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                
+                                                {selectedProduct.recipe && selectedProduct.recipe.length > 0 && (
+                                                    <div className="p-3 bg-gray-800/50 rounded-2xl border border-gray-700/50">
+                                                        <p className="text-[8px] font-bold text-gray-500 uppercase mb-1 text-center">HPP Manual (Backup)</p>
+                                                        <input 
+                                                            type="number"
+                                                            value={selectedProduct.cost || 0}
+                                                            onChange={(e) => {
+                                                                const val = parseFloat(e.target.value) || 0;
+                                                                const updated = { ...selectedProduct, cost: val };
+                                                                setSelectedProduct(updated);
+                                                            }}
+                                                            className="w-full bg-transparent border-none text-center font-bold text-sm text-gray-400 outline-none p-0"
+                                                        />
+                                                    </div>
+                                                )}
                                             </div>
                                             <Button 
                                                 onClick={async () => {
                                                     setIsRecipeOpen(false);
                                                     if (selectedProduct) {
                                                         const oldProduct = products.find(p => p.id === selectedProduct.id);
-                                                        const updatedHpp = calculateHPP(selectedProduct.recipe);
+                                                        const hppFromRecipe = calculateHPP(selectedProduct.recipe);
+                                                        const hasRecipe = selectedProduct.recipe && selectedProduct.recipe.length > 0;
+                                                        const updatedHpp = hasRecipe ? hppFromRecipe : (selectedProduct.cost || 0);
+                                                        
                                                         if (oldProduct && (oldProduct.cost !== updatedHpp || JSON.stringify(oldProduct.recipe) !== JSON.stringify(selectedProduct.recipe))) {
                                                             await logRecipeHppChange(selectedProduct, oldProduct.cost || 0, updatedHpp);
                                                         }
                                                         await onProductCRUD('update', { ...selectedProduct, cost: updatedHpp });
-                                                        toast.success('Resep Terpilih Disimpan');
+                                                        toast.success('HPP & Resep Berhasil Disimpan');
                                                     }
                                                 }} 
-                                                className="w-full h-14 rounded-2xl bg-primary hover:bg-primary/90 text-white font-black"
+                                                className="w-full h-14 rounded-2xl bg-primary hover:bg-primary/90 text-white font-black shadow-lg shadow-primary/20"
                                             >
                                                 Simpan & Terapkan
                                             </Button>
