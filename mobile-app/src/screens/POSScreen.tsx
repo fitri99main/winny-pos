@@ -2081,14 +2081,25 @@ export default function POSScreen() {
                 notes: item.notes || ''
             }));
 
-            // [ATOMIC FIX] Use Upsert RPC for Primary Payment Record
-            const { data: rpcData, error: rpcError } = await supabase.rpc('upsert_sale_with_items', {
+            // [ATOMIC FIX] Use Upsert RPC with Safety Timeout (12s)
+            const rpcPromise = supabase.rpc('upsert_sale_with_items', {
                 p_sale_data: saleData,
                 p_items_data: itemsToInsert,
                 p_target_sale_id: (existingSaleId && !isSplitPayment) ? existingSaleId : null
             });
 
-            if (rpcError) throw rpcError;
+            // Race RPC against a 12-second timeout
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('TIMEOUT_DB')), 12000)
+            );
+
+            console.log('[POSScreen] Executing payment RPC...');
+            const { data: rpcData, error: rpcError } = await Promise.race([rpcPromise, timeoutPromise]) as any;
+
+            if (rpcError) {
+                console.error('[POSScreen] RPC Error:', rpcError);
+                throw rpcError;
+            }
             
             const sale = rpcData;
             const orderNoText = sale.order_no;
@@ -2177,11 +2188,17 @@ export default function POSScreen() {
                             is_taxed: item.is_taxed || false
                         }));
 
-                        await supabase.rpc('upsert_sale_with_items', {
+                        // [ATOMIC FIX] Update original held order after split with safety timeout
+                        const remRpcPromise = supabase.rpc('upsert_sale_with_items', {
                             p_sale_data: remSaleData,
                             p_items_data: remItemsData,
                             p_target_sale_id: existingSaleId
                         });
+
+                        await Promise.race([
+                            remRpcPromise,
+                            new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT_DB')), 10000))
+                        ]);
 
                         console.log('[POSScreen] Original held order updated atomically after split.');
                     } catch (err) {
@@ -2222,19 +2239,21 @@ export default function POSScreen() {
             setShowPaymentModal(false);
             setShowCartModal(false);
 
-            // [IMPROVED] Heavy storage operations done after modals are dismissed
+            // [IMPROVED] Storage operations done in background to avoid blocking SuccessModal display
             if (!isSplitPayment) {
-                await clearCart();
+                clearCart();
             }
             setCurrentSaleId(sale.id);
         } catch (error: any) {
             console.error('Payment Confirm Error:', error);
-
-            // [STRICT ONLINE] Payment fallback is now interactive
-            const errorMessage = error.message || 'Koneksi terganggu saat memproses pembayaran';
+            
+            let errorMessage = error.message || 'Koneksi terganggu saat memproses pembayaran';
+            if (error.message === 'TIMEOUT_DB') {
+                errorMessage = 'Server tidak merespon dalam waktu lama (Database Sibuk). Cek daftar pesanan untuk memastikan transaksi sudah masuk.';
+            }
             
             const alertButtons: any[] = [
-                { text: 'Batal', style: 'cancel' },
+                { text: 'Tutup', style: 'cancel' },
                 { text: 'Coba Lagi', onPress: () => handlePaymentConfirm(paymentData) }
             ];
 

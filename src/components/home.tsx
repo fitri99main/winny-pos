@@ -3267,6 +3267,7 @@ function Home() {
           onUnitCRUD={(action, data) => handleMasterDataCRUD('units', action, data)}
           onBrandCRUD={(action, data) => handleMasterDataCRUD('brands', action, data)}
           currentBranchId={currentBranchId}
+          permissions={permissions}
         />
       );
       case 'purchases': return (

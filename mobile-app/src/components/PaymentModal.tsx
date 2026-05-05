@@ -120,17 +120,29 @@ export default function PaymentModal({
         }
 
         setLoading(true);
+
+        // Safety timeout: if onConfirm takes more than 15 seconds, force-stop the spinner
+        const timeoutId = setTimeout(() => {
+            if (loading) {
+                console.warn('[PaymentModal] onConfirm timed out after 15s');
+                setLoading(false);
+                setError('Waktu habis: Transaksi mungkin sudah masuk tapi aplikasi tidak menerima respon. Cek daftar pesanan.');
+            }
+        }, 15000);
+
         try {
             await onConfirm({
                 method: selectedObj?.name || 'Tunai',
                 amount: paid || total,
                 change: isCashType ? change : 0
             });
+            clearTimeout(timeoutId);
             // We don't call onClose() here because POSScreen will close the modal 
             // after the full transaction (and possible success modal) is ready.
             // But we should reset loading if it takes a while to unmount/close
             setLoading(false);
         } catch (err: any) {
+            clearTimeout(timeoutId);
             setError(err.message || 'Gagal memproses pembayaran');
             setLoading(false);
         }

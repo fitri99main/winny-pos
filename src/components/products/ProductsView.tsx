@@ -84,6 +84,7 @@ interface ProductsViewProps {
     onUnitCRUD: (action: 'create' | 'update' | 'delete', data: any) => Promise<void>;
     onBrandCRUD: (action: 'create' | 'update' | 'delete', data: any) => Promise<void>;
     currentBranchId?: string;
+    permissions?: string[];
 }
 
 export function ProductsView({
@@ -100,7 +101,8 @@ export function ProductsView({
     onCategoryCRUD,
     onUnitCRUD,
     onBrandCRUD,
-    currentBranchId
+    currentBranchId,
+    permissions = []
 }: ProductsViewProps) {
     const [activeTab, setActiveTab] = useState<'products' | 'categories' | 'units' | 'brands' | 'recipes' | 'ingredients'>('products');
 
@@ -124,10 +126,15 @@ export function ProductsView({
     const [isLoadingHistory, setIsLoadingHistory] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const { user, role } = useAuth();
-    const isAdmin = useMemo(() => {
+    const canSeeHpp = useMemo(() => {
         const r = role?.toLowerCase() || '';
-        return r === 'admin' || r === 'owner' || r === 'administrator' || r === 'superadmin';
-    }, [role]);
+        // Owner/Superadmin/Administrator bypass the checklist
+        const isSuper = r === 'owner' || r === 'superadmin' || r === 'administrator';
+        if (isSuper) return true;
+
+        // Check for specific permission 'view_hpp_recipe'
+        return permissions.includes('view_hpp_recipe');
+    }, [role, permissions]);
 
 
     // --- Generic Handlers ---
@@ -493,7 +500,7 @@ export function ProductsView({
                             <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px]">Kode</th>
                             <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px] text-gray-500">Nama Produk</th>
                             <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px] text-gray-500">Kategori</th>
-                            {isAdmin && <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px] text-gray-500 text-right">Modal (HPP)</th>}
+                            {canSeeHpp && <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px] text-gray-500 text-right">Modal (HPP)</th>}
                             <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px] text-gray-500 text-right">Harga Jual</th>
                             <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px] text-right">Stok</th>
                             <th className="px-4 py-5 font-bold uppercase tracking-normal text-[10px] text-center">Status</th>
@@ -562,7 +569,7 @@ export function ProductsView({
                                                 {p.category}
                                             </span>
                                         </td>
-                                        {isAdmin && (
+                                        {canSeeHpp && (
                                             <td className="px-4 py-5 text-right font-black text-orange-600">
                                                 Rp {currentHPP.toLocaleString()}
                                             </td>
@@ -627,7 +634,7 @@ export function ProductsView({
                                             </span>
                                         </td>
                                         <td className="px-4 py-5 flex justify-center gap-1">
-                                            {isAdmin && (
+                                            {canSeeHpp && (
                                                 <button 
                                                     onClick={() => { setSelectedProduct(p); setIsRecipeOpen(true); }} 
                                                     className="flex items-center gap-1.5 px-3 py-2 bg-orange-50 text-orange-600 rounded-xl hover:bg-orange-600 hover:text-white transition-all group/btn" 
@@ -830,11 +837,11 @@ export function ProductsView({
                 <div className="flex items-center gap-1 bg-gray-50 p-1.5 rounded-2xl overflow-x-auto no-scrollbar border border-gray-100">
                     {[
                         { id: 'products', label: 'Daftar Produk', icon: Package },
-                        { id: 'recipes', label: 'Resep & HPP', icon: ChefHat, adminOnly: false, isNew: true },
+                        { id: 'recipes', label: 'Resep & HPP', icon: ChefHat, adminOnly: true, isNew: true },
                         { id: 'categories', label: 'Kategori', icon: Filter },
                         { id: 'units', label: 'Satuan', icon: Scale },
                         { id: 'brands', label: 'Merek', icon: Ticket },
-                    ].filter(item => !item.adminOnly || isAdmin).map(item => (
+                    ].filter(item => !item.adminOnly || canSeeHpp).map(item => (
                         <button
                             key={item.id}
                             onClick={() => setActiveTab(item.id as any)}
@@ -1002,7 +1009,7 @@ export function ProductsView({
 
                                             {/* Row 3: Pricing & Stock Readiness */}
                                             <div className="grid grid-cols-2 gap-4">
-                                                 {isAdmin && (
+                                                 {canSeeHpp && (
                                                     <div className="space-y-1.5">
                                                         <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Harga Modal (HPP) (Rp)</label>
                                                         <input 

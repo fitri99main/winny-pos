@@ -2028,6 +2028,7 @@ export function AccountingView({
 
     const [activeTab, setActiveTab] = useState('overview');
     const [journalSearch, setJournalSearch] = useState('');
+    const [selectedLedgerAccount, setSelectedLedgerAccount] = useState<string | null>(null);
     
     const [realSales, setRealSales] = useState<any[]>([]);
     const [realPurchases, setRealPurchases] = useState<any[]>([]);
@@ -3320,27 +3321,188 @@ export function AccountingView({
                 )}
 
                 {activeTab === 'ledger' && (
-                    <div className="bg-white p-8 rounded-2xl shadow-sm border text-center">
-                        <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                        <h3 className="text-lg font-bold text-gray-800">Buku Besar</h3>
-                        <p className="text-gray-500">Pilih akun untuk melihat detail pergerakan saldo periode {startDate} s/d {endDate}.</p>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-8 text-left">
-                            {accounts.map(acc => (
-                                <div 
-                                    key={acc.code} 
-                                    onClick={() => {
-                                        setJournalSearch(acc.code);
-                                        setActiveTab('journal');
-                                        toast.info(`Menampilkan jurnal untuk akun: ${acc.name}`);
-                                    }}
-                                    className="p-4 border rounded-xl hover:bg-primary/5 hover:border-primary/30 cursor-pointer group transition-all"
-                                >
-                                    <div className="font-bold text-gray-700 group-hover:text-primary">{acc.code} - {acc.name}</div>
-                                    <div className="text-xs text-gray-400 uppercase mt-1">{acc.type}</div>
-                                    <div className="text-right font-mono font-bold mt-2">Rp {getDisplayBalance(acc.code).toLocaleString()}</div>
-                                    <div className="text-[10px] text-primary font-bold mt-2 opacity-0 group-hover:opacity-100 transition-opacity">KLIK UNTUK LIHAT JURNAL →</div>
+                    <div className="flex flex-col lg:flex-row gap-6 h-[700px] animate-in fade-in slide-in-from-bottom-4">
+                        {/* Sidebar: Account List */}
+                        <div className="w-full lg:w-80 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
+                            <div className="p-4 border-b bg-gray-50/50">
+                                <h3 className="font-bold text-gray-800 text-sm mb-3">Pilih Akun</h3>
+                                <div className="relative">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                                    <input 
+                                        type="text"
+                                        placeholder="Cari kode atau nama..."
+                                        className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                                        onChange={(e) => setJournalSearch(e.target.value)}
+                                        value={journalSearch}
+                                    />
                                 </div>
-                            ))}
+                            </div>
+                            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                                {accounts.filter(a => 
+                                    a.code.toLowerCase().includes(journalSearch.toLowerCase()) || 
+                                    a.name.toLowerCase().includes(journalSearch.toLowerCase())
+                                ).map(acc => {
+                                    const isSelected = selectedLedgerAccount === acc.code;
+                                    const bal = getDisplayBalance(acc.code);
+                                    return (
+                                        <button 
+                                            key={acc.code}
+                                            onClick={() => setSelectedLedgerAccount(acc.code)}
+                                            className={`w-full text-left p-3 rounded-xl transition-all group ${
+                                                isSelected 
+                                                    ? 'bg-primary text-white shadow-md shadow-primary/20' 
+                                                    : 'hover:bg-gray-50 text-gray-700'
+                                            }`}
+                                        >
+                                            <div className="flex justify-between items-start">
+                                                <span className={`text-[10px] font-bold uppercase tracking-wider mb-0.5 ${isSelected ? 'text-white/70' : 'text-gray-400'}`}>
+                                                    {acc.code}
+                                                </span>
+                                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                                                    isSelected ? 'bg-white/20' : 'bg-gray-100 text-gray-500'
+                                                }`}>
+                                                    {acc.type}
+                                                </span>
+                                            </div>
+                                            <div className="font-bold text-xs truncate mb-1">{acc.name}</div>
+                                            <div className={`text-[11px] font-mono font-bold text-right ${isSelected ? 'text-white' : 'text-primary'}`}>
+                                                Rp {bal.toLocaleString()}
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* Main Content: Ledger Detail */}
+                        <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
+                            {!selectedLedgerAccount ? (
+                                <div className="flex-1 flex flex-col items-center justify-center text-gray-400 p-12">
+                                    <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+                                        <BookOpen className="w-8 h-8 text-gray-200" />
+                                    </div>
+                                    <h3 className="font-bold text-gray-800 mb-1">Buku Besar</h3>
+                                    <p className="text-sm text-center max-w-xs">Pilih salah satu akun di samping untuk melihat rincian mutasi dan saldo berjalan.</p>
+                                </div>
+                            ) : (() => {
+                                const acc = accounts.find(a => a.code === selectedLedgerAccount);
+                                if (!acc) return null;
+
+                                // 1. Saldo Awal (Transactions before startDate)
+                                const saldoAwalRaw = transactions.filter(tx => 
+                                    String(tx.date).split('T')[0] < startDate && 
+                                    (tx.debitAccount === acc.code || tx.creditAccount === acc.code)
+                                ).reduce((sum, tx) => {
+                                    if (tx.debitAccount === acc.code) return sum + tx.amount;
+                                    return sum - tx.amount;
+                                }, 0);
+
+                                const isDebitNormal = acc.type === 'Asset' || acc.type === 'Expense';
+                                const saldoAwal = isDebitNormal ? saldoAwalRaw : -saldoAwalRaw;
+
+                                // 2. Current Transactions (Mutasi)
+                                const mutasi = transactions.filter(tx => {
+                                    const d = String(tx.date).split('T')[0];
+                                    return d >= startDate && d <= endDate && (tx.debitAccount === acc.code || tx.creditAccount === acc.code);
+                                }).sort((a, b) => a.date.localeCompare(b.date));
+
+                                // 3. Build Ledger Rows with Running Balance
+                                let runningRaw = saldoAwalRaw;
+                                const rows = mutasi.map(tx => {
+                                    const isDebit = tx.debitAccount === acc.code;
+                                    if (isDebit) runningRaw += tx.amount;
+                                    else runningRaw -= tx.amount;
+
+                                    return {
+                                        ...tx,
+                                        debit: isDebit ? tx.amount : 0,
+                                        credit: !isDebit ? tx.amount : 0,
+                                        balance: isDebitNormal ? runningRaw : -runningRaw
+                                    };
+                                });
+
+                                const totalDebit = rows.reduce((s, r) => s + r.debit, 0);
+                                const totalCredit = rows.reduce((s, r) => s + r.credit, 0);
+                                const saldoAkhir = isDebitNormal ? runningRaw : -runningRaw;
+
+                                return (
+                                    <>
+                                        <div className="p-6 border-b bg-gradient-to-r from-gray-50 to-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                            <div>
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <span className="px-2 py-0.5 bg-primary/10 text-primary text-[10px] font-black rounded uppercase tracking-widest">{acc.code}</span>
+                                                    <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">{acc.type}</span>
+                                                </div>
+                                                <h2 className="text-xl font-black text-gray-800">{acc.name}</h2>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Saldo Berjalan</p>
+                                                <p className="text-2xl font-black text-primary font-mono">Rp {saldoAkhir.toLocaleString()}</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex-1 overflow-y-auto">
+                                            <table className="w-full text-xs border-collapse">
+                                                <thead className="bg-gray-50/50 sticky top-0 z-10">
+                                                    <tr className="text-gray-500 font-bold border-b">
+                                                        <th className="px-6 py-4 text-left">Tanggal</th>
+                                                        <th className="px-6 py-4 text-left">Keterangan</th>
+                                                        <th className="px-6 py-4 text-right">Debit</th>
+                                                        <th className="px-6 py-4 text-right">Kredit</th>
+                                                        <th className="px-6 py-4 text-right bg-gray-100/30">Saldo</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-50">
+                                                    {/* Row Saldo Awal */}
+                                                    <tr className="bg-blue-50/20 italic">
+                                                        <td className="px-6 py-4 text-gray-400">{startDate}</td>
+                                                        <td className="px-6 py-4 font-bold text-gray-600">Saldo Awal (Awal Periode)</td>
+                                                        <td className="px-6 py-4 text-right">-</td>
+                                                        <td className="px-6 py-4 text-right">-</td>
+                                                        <td className="px-6 py-4 text-right font-black bg-blue-50/30 text-blue-700">Rp {saldoAwal.toLocaleString()}</td>
+                                                    </tr>
+
+                                                    {rows.map((row, idx) => (
+                                                        <tr key={idx} className="hover:bg-gray-50/80 transition-colors group">
+                                                            <td className="px-6 py-4 text-gray-500">{row.date}</td>
+                                                            <td className="px-6 py-4 font-medium text-gray-800">{row.description}</td>
+                                                            <td className="px-6 py-4 text-right text-green-600 font-bold">{row.debit > 0 ? `Rp ${row.debit.toLocaleString()}` : '-'}</td>
+                                                            <td className="px-6 py-4 text-right text-red-600 font-bold">{row.credit > 0 ? `Rp ${row.credit.toLocaleString()}` : '-'}</td>
+                                                            <td className="px-6 py-4 text-right font-black text-gray-900 bg-gray-50/20 group-hover:bg-primary/5 transition-all">Rp {row.balance.toLocaleString()}</td>
+                                                        </tr>
+                                                    ))}
+
+                                                    {rows.length === 0 && (
+                                                        <tr>
+                                                            <td colSpan={5} className="px-6 py-12 text-center text-gray-400 italic">Tidak ada mutasi transaksi pada periode ini.</td>
+                                                        </tr>
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+
+                                        <div className="p-6 bg-gray-50 border-t grid grid-cols-2 lg:grid-cols-4 gap-6">
+                                            <div>
+                                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Total Debit (+)</p>
+                                                <p className="text-lg font-bold text-green-600">Rp {totalDebit.toLocaleString()}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Total Kredit (-)</p>
+                                                <p className="text-lg font-bold text-red-600">Rp {totalCredit.toLocaleString()}</p>
+                                            </div>
+                                            <div className="lg:col-span-2 text-right">
+                                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Saldo Akhir</p>
+                                                <div className="inline-flex items-center gap-3">
+                                                    <span className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-tighter ${saldoAkhir >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                        {isDebitNormal ? (saldoAkhir >= 0 ? 'DEBIT' : 'KREDIT') : (saldoAkhir >= 0 ? 'KREDIT' : 'DEBIT')}
+                                                    </span>
+                                                    <p className="text-2xl font-black text-gray-900 font-mono">Rp {saldoAkhir.toLocaleString()}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </>
+                                );
+                            })()}
                         </div>
                     </div>
                 )}

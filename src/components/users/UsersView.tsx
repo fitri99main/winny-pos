@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Users, Shield, Plus, Search, MoreVertical, X, Edit, Info } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { Button } from '../ui/button';
@@ -28,6 +28,7 @@ export function UsersView({ branches: propsBranches = [] }: { branches?: any[] }
 
         // Inventori & Produk
         { id: 'products', label: 'Produk & Menu', description: 'Kelola menu makanan' },
+        { id: 'view_hpp_recipe', label: 'Lihat Resep & HPP', description: 'Bisa melihat modal (HPP) dan komposisi resep di Master Data' },
         { id: 'inventory', label: 'Stok Bahan', description: 'Kelola stok bahan baku' },
         { id: 'purchases', label: 'Pembelian', description: 'Belanja stok masuk' },
         { id: 'contacts', label: 'Kontak', description: 'Data pelanggan & supplier' },
@@ -744,60 +745,99 @@ export function UsersView({ branches: propsBranches = [] }: { branches?: any[] }
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
-                                    {filteredUsers.map((user) => {
-                                        const branchId = user.branchId || user.branch_id;
-                                        const status = user.status || 'Aktif';
-                                        return (
-                                            <tr key={user.id} className="hover:bg-gray-50/80 transition-colors group">
-                                                <td className="px-6 py-4 font-bold text-gray-700">
-                                                    {user.name || user.full_name || 'Tanpa Nama'}
-                                                </td>
-                                                <td className="px-6 py-4 text-gray-500">
-                                                    {user.email || user.username || '-'}
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-50 text-blue-600">
-                                                        {user.role || 'Tanpa Peran'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <span className="text-gray-600 text-xs text-nowrap">
-                                                        {allBranches.find(b => b.id == branchId)?.name || `ID: ${branchId}` || 'N/A'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${status === 'Aktif'
-                                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                                                        : 'bg-gray-100 text-gray-600 border-gray-200'
-                                                        }`}>
-                                                        <span className={`w-1.5 h-1.5 rounded-full ${status === 'Aktif' ? 'bg-emerald-500' : 'bg-gray-400'}`} />
-                                                        {status}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 text-right">
-                                                    <button
-                                                        onClick={() => handleEditUserClick(user)}
-                                                        className="p-2 hover:bg-blue-50 rounded-lg text-gray-400 hover:text-blue-600 transition-colors mr-1"
-                                                        title="Edit Pengguna"
-                                                    >
-                                                        <Edit className="w-4 h-4" />
-                                                        {/* Using Emoji temporarily if Lucide Pencil is not imported, or just use Lucide if available. 
-                                                            Checking imports... Edit/Pencil not imported. Use Emoji or add import. 
-                                                            Let's stick to existing style, I will just assume Pencil is not imported and use text/emoji for safety or add import.
-                                                            Actually, let's fix imports in a future step if needed, but for now specific "Edit" text style matching Roles table.
-                                                        */}
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleDeleteUser(user.id)}
-                                                        className="p-2 hover:bg-red-50 rounded-lg text-gray-400 hover:text-red-600 transition-colors"
-                                                        title="Hapus Pengguna"
-                                                    >
-                                                        <X className="w-4 h-4" />
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
+                                    {/* Grouped User List Logic */}
+                                    {(() => {
+                                        // 1. Group users by role
+                                        const grouped: Record<string, any[]> = {};
+                                        filteredUsers.forEach(u => {
+                                            const role = u.role || 'Tanpa Peran';
+                                            if (!grouped[role]) grouped[role] = [];
+                                            grouped[role].push(u);
+                                        });
+
+                                        // 2. Sort roles (Admin first)
+                                        const roleOrder = ['Administrator', 'Manajer', 'Kasir', 'Waitress', 'Barista', 'Tanpa Peran'];
+                                        const sortedRoleNames = Object.keys(grouped).sort((a, b) => {
+                                            const indexA = roleOrder.indexOf(a);
+                                            const indexB = roleOrder.indexOf(b);
+                                            if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+                                            if (indexA !== -1) return -1;
+                                            if (indexB !== -1) return 1;
+                                            return a.localeCompare(b);
+                                        });
+
+                                        return sortedRoleNames.map(roleName => (
+                                            <React.Fragment key={roleName}>
+                                                {/* Role Group Header */}
+                                                <tr className="bg-gray-50/80">
+                                                    <td colSpan={6} className="px-6 py-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <Shield className="w-4 h-4 text-primary/70" />
+                                                            <span className="text-xs font-bold uppercase tracking-wider text-primary">
+                                                                {roleName} ({grouped[roleName].length})
+                                                            </span>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+
+                                                {/* Users in this Group */}
+                                                {grouped[roleName].map((user) => {
+                                                    const branchId = user.branchId || user.branch_id;
+                                                    const status = user.status || 'Aktif';
+                                                    return (
+                                                        <tr key={user.id} className="hover:bg-gray-50/50 transition-colors group border-b border-gray-50 last:border-b-0">
+                                                            <td className="px-6 py-4">
+                                                                <div className="flex flex-col">
+                                                                    <span className="font-bold text-gray-800">{user.name || user.full_name || 'Tanpa Nama'}</span>
+                                                                    <span className="text-[10px] text-gray-400 uppercase tracking-tighter">ID: {String(user.id).slice(-6)}</span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-6 py-4 text-gray-500 text-xs">
+                                                                {user.email || user.username || '-'}
+                                                            </td>
+                                                            <td className="px-6 py-4">
+                                                                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                                                                    {user.role || 'Tanpa Peran'}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-6 py-4">
+                                                                <span className="text-gray-600 text-xs font-medium">
+                                                                    {allBranches.find(b => String(b.id) === String(branchId))?.name || `Cabang ${branchId}` || 'Semua Cabang'}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-6 py-4">
+                                                                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${status === 'Aktif'
+                                                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                                                                    : 'bg-gray-100 text-gray-500 border-gray-200'
+                                                                    }`}>
+                                                                    <span className={`w-1 h-1 rounded-full ${status === 'Aktif' ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+                                                                    {status.toUpperCase()}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-6 py-4 text-right">
+                                                                <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                    <button
+                                                                        onClick={() => handleEditUserClick(user)}
+                                                                        className="p-1.5 hover:bg-blue-100 rounded-lg text-blue-600 transition-colors"
+                                                                        title="Edit"
+                                                                    >
+                                                                        <Edit className="w-4 h-4" />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleDeleteUser(user.id)}
+                                                                        className="p-1.5 hover:bg-red-100 rounded-lg text-red-600 transition-colors"
+                                                                        title="Hapus"
+                                                                    >
+                                                                        <X className="w-4 h-4" />
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </React.Fragment>
+                                        ));
+                                    })()}
                                 </tbody>
                             </table>
                         </div>
