@@ -106,8 +106,12 @@ export function InventoryView({
         reason: ''
     });
 
-    const [editMovementForm, setEditMovementForm] = useState({
-        type: 'IN' as 'IN' | 'OUT' | 'ADJUSTMENT',
+    const [editMovementForm, setEditMovementForm] = useState<{
+        type: 'IN' | 'OUT' | 'ADJUSTMENT';
+        quantity: number;
+        reason: string;
+    }>({
+        type: 'IN',
         quantity: 0,
         reason: ''
     });
@@ -221,7 +225,7 @@ export function InventoryView({
     const openEditMovementModal = (mov: StockMovement) => {
         setSelectedMovement(mov);
         setEditMovementForm({
-            type: mov.type,
+            type: mov.type as 'IN' | 'OUT' | 'ADJUSTMENT',
             quantity: mov.quantity,
             reason: mov.reason || ''
         });
