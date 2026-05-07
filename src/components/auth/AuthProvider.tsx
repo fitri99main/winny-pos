@@ -43,7 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // 1. Get Profile (to get role, name, and profile email)
             const { data: profile, error: profileError } = await supabase
                 .from('profiles')
-                .select('role, name, full_name, email')
+                .select('role, name, full_name, email, branch_id')
                 .eq('id', uid)
                 .single();
 
