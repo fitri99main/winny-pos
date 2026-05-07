@@ -294,6 +294,29 @@ function Home() {
           .single();
         if (error) throw error;
 
+        // [NEW] Record stock movement for manual overwrites with delta calculation
+        if (payload.current_stock !== undefined) {
+          const { data: ing } = await supabase.from('ingredients').select('name, unit, current_stock').eq('id', id).single();
+          if (ing) {
+            const oldStock = Number(ing.current_stock || 0);
+            const newStock = Number(payload.current_stock);
+            const delta = newStock - oldStock;
+            
+            if (delta !== 0) {
+              await supabase.from('stock_movements').insert([{
+                ingredient_id: id,
+                ingredient_name: ing.name,
+                branch_id: currentBranchId,
+                type: delta > 0 ? 'IN' : 'OUT',
+                quantity: Math.abs(delta),
+                unit: ing.unit,
+                reason: 'Update Manual (Edit Data)',
+                user: user?.user_metadata?.name || 'Admin'
+              }]);
+            }
+          }
+        }
+
         setInventoryIngredients(prev =>
           prev.map(item => item.id === id ? { ...item, ...(updatedIngredient || payload) } : item)
         );
@@ -348,16 +371,57 @@ function Home() {
           toast.success('Catatan mutasi dihapus & stok berhasil dikembalikan');
         }
       } else if (action === 'update_movement') {
-        const { id, reason, user: movUser } = data;
-        const { error } = await supabase
+        const { id, reason, type: newType, quantity: newQty, user: movUser } = data;
+        
+        // 1. Get old movement to calculate reversal
+        const { data: oldMov, error: fetchOldError } = await supabase.from('stock_movements').select('*').eq('id', id).single();
+        if (fetchOldError) throw fetchOldError;
+
+        const { error: updateMovError } = await supabase
           .from('stock_movements')
-          .update({ reason, user: movUser })
+          .update({ 
+            reason, 
+            type: newType || oldMov.type, 
+            quantity: newQty !== undefined ? Number(newQty) : oldMov.quantity,
+            user: movUser || oldMov.user 
+          })
           .eq('id', id);
         
-        if (error) throw error;
+        if (updateMovError) throw updateMovError;
         
-        setInventoryHistory(prev => prev.map(m => m.id === id ? { ...m, reason, user: movUser } : m));
-        toast.success('Catatan mutasi berhasil diperbarui');
+        // 2. Revert old stock and apply new stock
+        const { data: ing, error: fetchIngError } = await supabase.from('ingredients').select('current_stock').eq('id', oldMov.ingredient_id).single();
+        if (fetchIngError) throw fetchIngError;
+
+        let currentStock = Number(ing.current_stock);
+        
+        // Revert old
+        if (oldMov.type === 'IN') currentStock -= Number(oldMov.quantity);
+        else if (oldMov.type === 'OUT') currentStock += Number(oldMov.quantity);
+
+        // Apply new
+        const finalType = newType || oldMov.type;
+        const finalQty = newQty !== undefined ? Number(newQty) : Number(oldMov.quantity);
+
+        if (finalType === 'IN') currentStock += finalQty;
+        else if (finalType === 'OUT') currentStock -= finalQty;
+
+        const { error: updateIngError } = await supabase.from('ingredients').update({ current_stock: currentStock }).eq('id', oldMov.ingredient_id);
+        if (updateIngError) throw updateIngError;
+
+        // 3. Smart Sync to Products
+        const { data: links } = await supabase.from('product_recipes').select('product_id, amount').eq('ingredient_id', oldMov.ingredient_id);
+        if (links && links.length > 0) {
+          for (const link of links) {
+            if (Number(link.amount) === 1) {
+              await supabase.from('products').update({ stock: currentStock }).eq('id', link.product_id);
+            }
+          }
+        } else {
+          await supabase.from('products').update({ stock: currentStock }).eq('name', oldMov.ingredient_name);
+        }
+
+        toast.success('Mutasi berhasil diperbarui & stok disesuaikan');
       }
       
       if (currentBranchId) fetchBranchData(currentBranchId);
@@ -386,12 +450,42 @@ function Home() {
       if (moveError) throw moveError;
 
       // 2. Update Ingredient Stock
-      const { data: ing } = await supabase.from('ingredients').select('current_stock').eq('id', ingredientId).single();
+      const { data: ing } = await supabase.from('ingredients').select('current_stock, name, unit').eq('id', ingredientId).single();
       if (ing) {
         let newStock = Number(ing.current_stock);
-        if (type === 'IN') newStock += qty;
-        else if (type === 'OUT') newStock -= qty;
-        else if (type === 'ADJUSTMENT') newStock = qty;
+        let finalType = type;
+        let finalQty = qty;
+
+        if (type === 'IN') {
+          newStock += qty;
+        } else if (type === 'OUT') {
+          newStock -= qty;
+        } else if (type === 'ADJUSTMENT' || type === 'VERIFICATION') {
+          const delta = qty - newStock;
+          newStock = qty;
+          finalQty = Math.abs(delta);
+          finalType = delta >= 0 ? 'IN' : 'OUT';
+          
+          // Re-insert with calculated delta for better reporting if it was an adjustment
+          // Delete the absolute record first
+          await supabase.from('stock_movements').delete().match({ 
+            ingredient_id: ingredientId, 
+            type: type, 
+            quantity: qty, 
+            reason: reason 
+          }).limit(1);
+
+          await supabase.from('stock_movements').insert([{
+            ingredient_id: ingredientId,
+            ingredient_name: ing.name,
+            branch_id: currentBranchId,
+            type: finalType,
+            quantity: finalQty,
+            unit: ing.unit,
+            reason: reason || 'Penyesuaian Stok',
+            user: user || 'System'
+          }]);
+        }
 
         const { error: updateError } = await supabase.from('ingredients')
           .update({ current_stock: newStock, last_updated: new Date() })
@@ -634,7 +728,7 @@ function Home() {
       safeFetch(supabase.from('shift_schedules').select('*').order('date'), 'schedules'), 
       safeFetch(supabase.from('tables').select('*').eq('branch_id', Number(branchId)).order('number'), 'tables'),
       safeFetch(supabase.from('ingredients').select('*').eq('branch_id', Number(branchId)).order('name'), 'ingredients'),
-      safeFetch(supabase.from('stock_movements').select('*').eq('branch_id', Number(branchId)).order('created_at', { ascending: false }).limit(2000), 'movements'),
+      safeFetch(supabase.from('stock_movements').select('*').or(`branch_id.eq.${branchId},branch_id.is.null`).order('created_at', { ascending: false }).limit(2000), 'movements'),
     ]);
     const [productsRes, schedulesRes, tablesRes, ingredientsRes, movementsRes] = results;
     if (productsRes.data) setProducts(productsRes.data);
@@ -1221,7 +1315,7 @@ function Home() {
         }
       )
       .subscribe();
-    return () => {
+    return () => {
       supabase.removeChannel(channel);
     };
   }, [currentBranchId, loading, role]);
@@ -3321,6 +3415,7 @@ function Home() {
             paymentMethods={paymentMethods}
             storeSettings={storeSettings}
             branchId={currentBranchId}
+            branches={branches}
           />
         );
       case 'accounting':

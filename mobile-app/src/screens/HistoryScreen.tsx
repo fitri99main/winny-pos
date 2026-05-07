@@ -595,18 +595,23 @@ export default function HistoryScreen() {
             const items = (selectedSale.sale_items || []).map((item: any) => ({
                 name: item.product_name || (item.product?.name || 'Produk'),
                 quantity: item.quantity || 0,
-                target: item.target || (type === 'kitchen' ? 'Kitchen' : 'Bar'), // Fallback if missing
+                target: item.target || '', 
+                category: item.category || item.product?.category || '',
                 notes: item.notes
             }));
 
-            const success = await PrinterManager.printToTarget(items, type, {
+            const result = await PrinterManager.printToTarget(items, type, {
                 orderNo: selectedSale.order_no,
                 customerName: selectedSale.customer_name || 'Guest',
                 tableNo: selectedSale.table_no || '-'
             });
             
-            if (success) {
-                Alert.alert('Sukses', `Pesanan berhasil dikirim ke ${targetName}.`);
+            if (result.success) {
+                if (result.count === 0) {
+                    Alert.alert('Info', `Tidak ada item yang perlu dicetak ke ${targetName} untuk pesanan ini.`);
+                } else {
+                    Alert.alert('Sukses', `Pesanan (${result.count} item) berhasil dikirim ke ${targetName}.`);
+                }
             } else {
                 Alert.alert('Gagal', `Gagal mencetak ke ${targetName}. Pastikan printer terhubung di menu Pengaturan.`);
             }

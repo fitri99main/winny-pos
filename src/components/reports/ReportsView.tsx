@@ -20,6 +20,7 @@ interface ReportsViewProps {
     paymentMethods: any[];
     storeSettings?: any;
     branchId?: string;
+    branches: any[];
 }
 
 const formatDateForInput = (date: Date) => {
@@ -52,7 +53,7 @@ const normalizeDateValue = (value: unknown) => {
     return raw;
 };
 
-export function ReportsView({ sales: initialSales, returns: initialReturns, purchases: initialPurchases = [], purchaseReturns: initialPurchaseReturns = [], paymentMethods, storeSettings, branchId }: ReportsViewProps) {
+export function ReportsView({ sales: initialSales, returns: initialReturns, purchases: initialPurchases = [], purchaseReturns: initialPurchaseReturns = [], paymentMethods, storeSettings, branchId, branches }: ReportsViewProps) {
     const { role } = useAuth();
     const isAdmin = useMemo(() => {
         const r = role?.toLowerCase() || '';
@@ -69,9 +70,11 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
     const [searchQuery, setSearchQuery] = useState('');
     const [startDate, setStartDate] = useState(() => {
         const date = new Date();
-        return formatDateForInput(new Date(date.getFullYear(), date.getMonth(), 1));
+        date.setDate(date.getDate() - 30); // Default last 30 days
+        return formatDateForInput(date);
     });
     const [endDate, setEndDate] = useState(() => formatDateForInput(new Date()));
+    const [selectedBranch, setSelectedBranch] = useState(branchId || 'all');
     const [methodFilter, setMethodFilter] = useState('All');
     const [showFilters, setShowFilters] = useState(false);
     const [showReceiptPreview, setShowReceiptPreview] = useState(false);
@@ -201,24 +204,30 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
     }, [selectedSaleDetail, selectedOrderRecipes]);
 
     const fetchRealData = async () => {
-        if (!branchId || !startDate || !endDate) return;
+        if (!startDate || !endDate) return;
         setIsLoadingRealData(true);
         try {
+            const targetBranch = selectedBranch === 'all' ? null : Number(selectedBranch);
+            const pageSize = 1000;
+            
             // 1. Fetch Sales with Pagination
             let allSales: any[] = [];
             let from = 0;
-            const pageSize = 1000;
             let hasMore = true;
 
             while (hasMore) {
-                const { data, error } = await supabase
+                let query = supabase
                     .from('sales')
-                    .select('*, items:sale_items(*, product:product_id(category))')
-                    .eq('branch_id', branchId)
+                    .select('*, items:sale_items(id, product_name, quantity, price, cost, product:product_id(category))')
                     .gte('date', startDate + 'T00:00:00')
                     .lte('date', endDate + 'T23:59:59')
-                    .order('date', { ascending: false })
-                    .range(from, from + pageSize - 1);
+                    .order('date', { ascending: false });
+
+                if (targetBranch) {
+                    query = query.eq('branch_id', targetBranch);
+                }
+
+                const { data, error } = await query.range(from, from + pageSize - 1);
 
                 if (error) throw error;
                 if (data && data.length > 0) {
@@ -254,12 +263,15 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
             let retHasMore = true;
 
             while (retHasMore) {
-                const { data: retPage, error: retError } = await supabase
+                let query = supabase
                     .from('sales_returns')
                     .select('*')
                     .gte('date', startDate + 'T00:00:00')
-                    .lte('date', endDate + 'T23:59:59')
-                    .range(retFrom, retFrom + pageSize - 1);
+                    .lte('date', endDate + 'T23:59:59');
+
+                // sales_returns might not have branch_id, so we skip it to prevent 400 error
+                
+                const { data: retPage, error: retError } = await query.range(retFrom, retFrom + pageSize - 1);
                 
                 if (retError) throw retError;
 
@@ -282,13 +294,17 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
             let purHasMore = true;
 
             while (purHasMore) {
-                const { data: purPage, error: purError } = await supabase
+                let query = supabase
                     .from('purchases')
                     .select('*')
-                    .eq('branch_id', branchId)
                     .gte('date', startDate + 'T00:00:00')
-                    .lte('date', endDate + 'T23:59:59')
-                    .range(purFrom, purFrom + pageSize - 1);
+                    .lte('date', endDate + 'T23:59:59');
+
+                if (targetBranch) {
+                    query = query.eq('branch_id', targetBranch);
+                }
+                
+                const { data: purPage, error: purError } = await query.range(purFrom, purFrom + pageSize - 1);
                 
                 if (purError) throw purError;
 
@@ -312,7 +328,7 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
 
     useEffect(() => {
         fetchRealData();
-    }, [startDate, endDate, branchId]);
+    }, [startDate, endDate, selectedBranch]);
 
     const filteredSales = useMemo(() => {
         return realSales.filter(s => {
@@ -692,6 +708,19 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
                         <option key={m.id} value={m.name}>{m.name}</option>
                     ))}
                 </select>
+
+                {isAdmin && branches && (
+                    <select
+                        value={selectedBranch}
+                        onChange={(e) => setSelectedBranch(e.target.value)}
+                        className="px-4 py-3 bg-indigo-50 border-none rounded-2xl text-sm focus:ring-2 focus:ring-indigo-200 font-bold text-indigo-700 cursor-pointer outline-none"
+                    >
+                        <option value="all">Semua Cabang</option>
+                        {branches.map(b => (
+                            <option key={b.id} value={b.id}>{b.name}</option>
+                        ))}
+                    </select>
+                )}
             </div>
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

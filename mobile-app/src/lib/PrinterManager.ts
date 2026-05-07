@@ -318,7 +318,17 @@ export class PrinterManager {
         if (orderData.enable_wifi_vouchers && orderData.wifi_voucher) {
             text += CENTER + "Gunakan Kode dibawah, atau ketik\n";
             text += CENTER + "kan WINNY.NET dibrowser Anda\n";
-            text += BOLD_ON + DOUBLE_ON + orderData.wifi_voucher + DOUBLE_OFF + BOLD_OFF + '\n';
+            
+            const voucherStr = String(orderData.wifi_voucher);
+            const voucherList = voucherStr.split(',').map(c => c.trim()).filter(c => c.length > 0);
+            
+            if (voucherList.length > 1) {
+                // If multiple codes, use BOLD instead of DOUBLE to prevent wrapping on 58mm
+                const codes = voucherList.join('   ');
+                text += CENTER + BOLD_ON + codes + BOLD_OFF + '\n';
+            } else if (voucherList.length === 1) {
+                text += CENTER + BOLD_ON + DOUBLE_ON + voucherList[0] + DOUBLE_OFF + BOLD_OFF + '\n';
+            }
             text += LINE;
         }
 
@@ -331,14 +341,14 @@ export class PrinterManager {
         return text;
     }
 
-    static formatKitchenTicket(items: any[], orderData: any, targetName: string): string {
-        const CENTER = COMMANDS.TEXT_FORMAT.TXT_ALIGN_CT;
-        const LEFT = COMMANDS.TEXT_FORMAT.TXT_ALIGN_LT;
-        const BOLD_ON = COMMANDS.TEXT_FORMAT.TXT_BOLD_ON;
-        const BOLD_OFF = COMMANDS.TEXT_FORMAT.TXT_BOLD_OFF;
-        const DOUBLE_ON = COMMANDS.TEXT_FORMAT.TXT_4SQUARE;
-        const DOUBLE_OFF = COMMANDS.TEXT_FORMAT.TXT_NORMAL;
-        const LINE = '--------------------------------\n';
+    static formatKitchenTicket(items: any[], orderData: any, targetName: string, isPreview: boolean = false): string {
+        const CENTER = isPreview ? '[C]' : COMMANDS.TEXT_FORMAT.TXT_ALIGN_CT;
+        const LEFT = isPreview ? '[L]' : COMMANDS.TEXT_FORMAT.TXT_ALIGN_LT;
+        const BOLD_ON = isPreview ? '<b>' : COMMANDS.TEXT_FORMAT.TXT_BOLD_ON;
+        const BOLD_OFF = isPreview ? '</b>' : COMMANDS.TEXT_FORMAT.TXT_BOLD_OFF;
+        const DOUBLE_ON = isPreview ? '[BIG]' : COMMANDS.TEXT_FORMAT.TXT_4SQUARE;
+        const DOUBLE_OFF = isPreview ? '[/BIG]' : COMMANDS.TEXT_FORMAT.TXT_NORMAL;
+        const LINE = isPreview ? '--------------------------------\n' : '--------------------------------\n';
 
         const orderNo = orderData.order_no || orderData.orderNo || '-';
         const tableNo = orderData.table_no || orderData.tableNo || '';
@@ -359,7 +369,9 @@ export class PrinterManager {
         });
 
         text += LINE + CENTER + `Waktu: ${new Date().toLocaleString('id-ID')}\n`;
-        text += '\n';
+        text += '\n\n\n\n\n';
+        // Add cut command just in case the printer supports it
+        text += '\x1d\x56\x42\x00'; 
         return text;
     }
 
@@ -443,41 +455,76 @@ export class PrinterManager {
         }
     }
 
-    static async printToTarget(items: any[], type: PrinterType, orderData: any) {
+    static async printToTarget(items: any[], type: PrinterType, orderData: any): Promise<{success: boolean, count: number}> {
         const targetName = type === 'kitchen' ? 'Dapur' : 'Bar';
         const filtered = items.filter(i => {
             const itarget = (i.target || '').toLowerCase().trim();
-            if (type === 'kitchen') {
-                // Kitchen takes explicitly 'kitchen', 'dapur', 'kds'
-                // It also takes empty/waitress ONLY if it's NOT a bar-related target
-                const isBarTarget = itarget === 'bar' || itarget === 'minuman' || itarget === 'minum' || itarget === 'drink' || itarget === 'coffee';
-                return (itarget === 'kitchen' || itarget === 'dapur' || itarget === 'kds' || !itarget || itarget === 'waitress') && !isBarTarget;
-            }
-            // Bar takes 'bar', 'minuman', 'minum', 'drink', or 'coffee'
+            const icat = (i.category || '').toLowerCase().trim();
+            const iname = (i.name || '').toLowerCase().trim();
+            
+            // Heuristic for Bar items (Broad keywords for Winny Coffee context)
+            const isBarRelated = 
+                itarget === 'bar' || itarget === 'minuman' || itarget === 'minum' || itarget === 'drink' || itarget === 'coffee' ||
+                icat.includes('minum') || icat.includes('drink') || icat.includes('coffee') || icat.includes('kopi') || 
+                icat.includes('juice') || icat.includes('jus') || icat.includes('bar') || icat.includes('teh') ||
+                icat.includes('susu') || icat.includes('ice') || icat.includes('boba') || icat.includes('beverage') ||
+                icat.includes('botol') || icat.includes('kaleng') || icat.includes('fresh') ||
+                iname.includes('kopi') || iname.includes('juice') || iname.includes('teh') || iname.includes('drink') || 
+                iname.includes('ice') || iname.includes('jus') || iname.includes('susu') || iname.includes('tea') || 
+                iname.includes('kopi') || iname.includes('jeruk') || iname.includes('boba') || iname.includes('cola') || 
+                iname.includes('fanta') || iname.includes('sprite') || iname.includes('yakult') || iname.includes('milo') ||
+                iname.includes('lemon') || iname.includes('melon') || iname.includes('lychee') || iname.includes('krating') ||
+                iname.includes('aqua') || iname.includes('le minerale') || iname.includes('leminerale') || iname.includes('teh botol');
+
             if (type === 'bar') {
-                return itarget === 'bar' || itarget === 'minuman' || itarget === 'minum' || itarget === 'drink' || itarget === 'coffee';
+                return itarget === 'bar' || isBarRelated;
             }
-            return itarget === type;
+
+            if (type === 'kitchen') {
+                // Kitchen takes explicitly marked items
+                if (itarget === 'kitchen' || itarget === 'dapur' || itarget === 'kds' || itarget === 'makanan' || itarget === 'food') return true;
+                
+                // If it's bar related, don't print to kitchen unless target is explicitly kitchen
+                if (isBarRelated && itarget !== 'kitchen' && itarget !== 'dapur') return false;
+
+                // FALLBACK: If it's not bar related and not explicitly bar, it goes to kitchen
+                return true;
+            }
+            
+            return itarget === type || !itarget;
         });
+
         if (filtered.length === 0) {
             console.log(`[PrinterManager] No items for ${targetName}`);
-            return true;
+            return { success: true, count: 0 };
         }
 
         let macAddress = await this.getSelectedPrinter(type);
         if (!macAddress) {
             console.warn(`[PrinterManager] ${targetName} printer not configured`);
-            return false;
+            Alert.alert('Printer Belum Diatur', `Alamat printer ${targetName} belum diatur di menu Pengaturan.`);
+            return { success: false, count: 0 };
         }
 
-        const text = this.formatKitchenTicket(filtered, orderData, targetName);
+        // Add robust reset command + the ticket text
+        const text = '\x1b\x40' + this.formatKitchenTicket(filtered, orderData, targetName);
         try {
             await this.initPrinter();
             const mac = macAddress.toUpperCase();
             console.log(`[PrinterManager] Target ${targetName}: ${mac} (Current: ${this.currentActiveMac})`);
 
+            // FORCED RESET for Target Printers ONLY if MAC address changes to avoid lag
+            if (this.currentActiveMac && this.currentActiveMac !== mac) {
+                console.log(`[PrinterManager] Target printer switch detected (${this.currentActiveMac} -> ${mac}). Resetting connection...`);
+                try {
+                    await BLEPrinter.closeConn();
+                    this.currentActiveMac = null;
+                    await new Promise(r => setTimeout(r, 500));
+                } catch (e) {}
+            }
+
             const connected = await this.ensureConnection(mac);
-            if (!connected) return false;
+            if (!connected) return { success: false, count: 0 };
 
             const printData = '\x1b\x40' + text;
             let success = false;
@@ -497,11 +544,11 @@ export class PrinterManager {
                     }
                 }
             }
-            return success;
+            return { success, count: filtered.length };
         } catch (e) {
             console.error(`[PrinterManager] Print to ${targetName} Error:`, e);
             this.currentActiveMac = null;
-            return false;
+            return { success: false, count: 0 };
         }
     }
 
