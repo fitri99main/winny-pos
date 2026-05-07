@@ -107,7 +107,7 @@ export function InventoryView({
     });
 
     const [editMovementForm, setEditMovementForm] = useState({
-        type: 'IN' as 'IN' | 'OUT',
+        type: 'IN' as 'IN' | 'OUT' | 'ADJUSTMENT',
         quantity: 0,
         reason: ''
     });
@@ -265,7 +265,7 @@ export function InventoryView({
                 head: [['No', 'Waktu & Tanggal', 'Tipe', 'Jumlah', 'Keterangan', 'User']],
                 body: tableData,
                 foot: [['', '', 'GRAND TOTAL', `IN: +${totalIn} / OUT: -${totalOut}`, '', '']],
-                headStyles: { fillStyle: 'f', fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
+                headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
                 footStyles: { fillColor: [240, 240, 240], textColor: 0, fontStyle: 'bold' },
                 alternateRowStyles: { fillColor: [245, 245, 245] },
                 styles: { fontSize: 8, cellPadding: 3 },
