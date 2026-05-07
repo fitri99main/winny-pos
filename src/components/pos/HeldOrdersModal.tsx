@@ -1,15 +1,19 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Pause, Play, Trash2, Clock } from 'lucide-react';
+import { Pause, Play, Trash2, Clock, Store } from 'lucide-react';
 import { OrderItem } from '@/types/pos';
 
 interface HeldOrder {
     id: string;
+    orderNo?: string;
     items: OrderItem[];
     discount: number;
     total: number;
     createdAt: Date;
+    tableNo?: string;
+    customerName?: string;
+    isRemote?: boolean;
 }
 
 interface HeldOrdersModalProps {
@@ -62,19 +66,37 @@ export function HeldOrdersModal({
                                     className="bg-gray-50 rounded-2xl p-5 border border-gray-100 group hover:border-pos-coral/30 transition-colors"
                                 >
                                     <div className="flex justify-between items-start mb-4">
-                                        <div>
-                                            <h4 className="font-bold text-pos-charcoal mb-1">
-                                                Pesanan #{order.id.split('-')[1]}
-                                            </h4>
-                                            <p className="text-xs text-gray-500">
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <h4 className="font-bold text-pos-charcoal">
+                                                    #{order.orderNo || order.id.split('-')[1]}
+                                                </h4>
+                                                {order.isRemote ? (
+                                                    <span className="px-2 py-0.5 bg-blue-50 text-blue-600 text-[10px] font-bold rounded-full border border-blue-100 flex items-center gap-1">
+                                                        <Store className="w-3 h-3" />
+                                                        CLOUD
+                                                    </span>
+                                                ) : (
+                                                    <span className="px-2 py-0.5 bg-gray-100 text-gray-500 text-[10px] font-bold rounded-full border border-gray-200">
+                                                        LOKAL
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="text-xs text-gray-500 flex items-center gap-2">
+                                                <Clock className="w-3 h-3" />
                                                 {order.createdAt.toLocaleTimeString('id-ID', {
                                                     hour: '2-digit',
                                                     minute: '2-digit',
-                                                })} - {order.items.length} item
+                                                })} • {order.items.length} item • {order.tableNo || 'Takeaway'}
                                             </p>
+                                            {order.customerName && (
+                                                <p className="text-[10px] text-pos-coral font-bold uppercase mt-1">
+                                                    Cust: {order.customerName}
+                                                </p>
+                                            )}
                                         </div>
                                         <div className="text-right">
-                                            <p className="font-mono font-bold text-pos-charcoal">
+                                            <p className="font-mono font-bold text-pos-charcoal text-lg">
                                                 {formatPrice(order.total)}
                                             </p>
                                         </div>

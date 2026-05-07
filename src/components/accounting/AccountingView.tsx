@@ -2189,10 +2189,7 @@ export function AccountingView({
 
 
     // --- Date Filtering State ---
-    const [startDate, setStartDate] = useState(() => {
-        const date = new Date();
-        return new Date(date.getFullYear(), date.getMonth(), 1).toISOString().split('T')[0];
-    });
+    const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
     const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
 
     // [DIAGNOSTIC] Log current data state

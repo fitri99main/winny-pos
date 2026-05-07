@@ -148,7 +148,9 @@ export function CashierInterface({
   const [customerName, setCustomerName] = useState<string>('');
   const [waiterName, setWaiterName] = useState('');
   const [currentSaleId, setCurrentSaleId] = useState<number | undefined>(undefined); // Track ID of hydrated order
-  const [currentOrderNo, setCurrentOrderNo] = useState<string | undefined>(undefined); // Track Order No
+  const [currentOrderNo, setCurrentOrderNo] = useState<string | undefined>(undefined); 
+  const [initialItems, setInitialItems] = useState<OrderItem[]>([]); // [NEW] For Smart Printing
+  const { branchId, profileName } = useAuth(); // [NEW] Get branch info
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
   const [isCustomerSearchOpen, setIsCustomerSearchOpen] = useState(false);
   const [isAddonModalOpen, setIsAddonModalOpen] = useState(false);
@@ -165,6 +167,40 @@ export function CashierInterface({
   const [promos, setPromos] = useState<Promo[]>([]);
   const [promoProducts, setPromoProducts] = useState<PromoProduct[]>([]);
   const [automaticDiscount, setAutomaticDiscount] = useState<number>(0);
+  
+  // [NEW] Consolidated Unique Orders list for Badge and Modal
+  const uniqueOrders = useMemo(() => {
+    const orderMap = new Map();
+    // Process local drafts first
+    heldOrders.forEach(o => orderMap.set(String(o.id), { ...o, isRemote: false }));
+    // Process remote orders (overwrite if same ID exists, preferring server state)
+    if (activeSales) {
+        activeSales.filter(s => s && (s.status === 'Pending' || s.status === 'Unpaid')).forEach(s => {
+            orderMap.set(String(s.id), {
+                id: String(s.id),
+                orderNo: s.orderNo || s.order_no,
+                items: (s.productDetails || []).map((d: any, i: number) => ({
+                    id: `remote-${s.id}-${i}`,
+                    product: products.find(p => p.name === d.name) || { name: d.name, price: d.price, id: 0 },
+                    quantity: d.quantity,
+                    notes: d.notes
+                })),
+                discount: s.discount || 0,
+                total: s.totalAmount || s.total_amount,
+                createdAt: new Date(s.date || s.created_at),
+                tableNo: s.tableNo || s.table_no,
+                customerName: s.customerName || s.customer_name,
+                isRemote: true
+            });
+        });
+    }
+    
+    return Array.from(orderMap.values()).sort((a, b) => 
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }, [heldOrders, activeSales, products]);
+
+  const heldCount = uniqueOrders.length;
 
   // Helper to check if current user is manager/admin or if action is restricted
   const checkAuth = (action: 'discount' | 'hold' | 'deleteHeld' | 'restoreHeld'): boolean => {
@@ -442,7 +478,7 @@ export function CashierInterface({
           // Find original product to get ID and image if possible, otherwise mock
           const originalProduct = products.find(p => p.name === detail.name);
           return {
-            id: `${originalProduct?.id || 'restored'}-${index}`,
+            id: `restored-${existingSale.id}-${index}`,
             product: originalProduct || {
               id: 0,
               name: detail.name,
@@ -451,28 +487,30 @@ export function CashierInterface({
               stock: 999
             },
             quantity: detail.quantity,
-            selectedAddons: [] // Addons restoration would require more detailed data structure
+            notes: detail.notes,
+            selectedAddons: [] 
           };
         });
 
         setOrderItems(items);
-        setCustomerName(existingSale.customerName || 'Guest');
-        setWaiterName(existingSale.waiterName || '');
-        // If there's a discount, we might need to recalculate or restore it
+        setInitialItems([...items]); // [NEW] Set initial for smart printing
+        setCustomerName(existingSale.customerName || existingSale.customer_name || 'Guest');
+        setWaiterName(existingSale.waiterName || existingSale.waiter_name || '');
         setOrderDiscount(existingSale.discount || 0);
-        setCurrentSaleId(existingSale.id); // [NEW] Track the ID
-        setCurrentOrderNo(existingSale.orderNo || (existingSale as any).order_no); // Track Order No
+        setCurrentSaleId(existingSale.id); 
+        setCurrentOrderNo(existingSale.orderNo || existingSale.order_no); 
       } else {
         // New order for this table
         setOrderItems([]);
+        setInitialItems([]);
         setCustomerName('Guest');
-        setWaiterName('');
+        setWaiterName(profileName || '');
         setOrderDiscount(0);
-        setCurrentSaleId(undefined); // Reset ID
+        setCurrentSaleId(undefined); 
         setCurrentOrderNo(undefined);
       }
     }
-  }, [selectedTable, autoOpenSaleId, activeSales, products]);
+  }, [selectedTable, autoOpenSaleId, activeSales, products, profileName]);
 
   const handleClearTable = (tableNo: string) => {
     const saleToClear = activeSales?.find(
@@ -614,7 +652,62 @@ export function CashierInterface({
   // Remove item
   const handleRemoveItem = (itemId: string) => {
     setOrderItems(orderItems.filter((item) => item.id !== itemId));
+    // Also remove from initial items if it was never printed? 
+    // Actually better to keep initialItems as "what was already on the server"
     toast.info('Item dihapus dari keranjang');
+  };
+
+  // --- SMART PRINTING LOGIC ---
+  const executeSmartPrint = async (saleData: any, currentCart: OrderItem[]) => {
+    try {
+        console.log('[POS] Starting Smart Print check...', { cartSize: currentCart.length, initialSize: initialItems.length });
+        const diffItems = currentCart.map(item => {
+            // Find matching item by Name and Notes (since IDs change on restoration)
+            const initialItem = initialItems.find(ii => 
+                ii.product.name === item.product.name && ii.notes === item.notes
+            );
+
+            if (!initialItem) return item;
+
+            if (item.quantity > initialItem.quantity) {
+                return { ...item, quantity: item.quantity - initialItem.quantity };
+            }
+            return null;
+        }).filter(Boolean) as OrderItem[];
+
+        if (diffItems.length > 0) {
+            console.log('[POS] Smart Printing: Sending items to targets', diffItems);
+            
+            const kitchenItems = diffItems.filter(item => item.product.target === 'Kitchen' || item.product.category?.toLowerCase().includes('makan'));
+            const barItems = diffItems.filter(item => item.product.target === 'Bar' || item.product.category?.toLowerCase().includes('minum'));
+
+            const commonTicketData = {
+                orderNo: saleData.orderNo || saleData.order_no || 'ORD-?',
+                tableNo: saleData.tableNo || saleData.table_no || 'TAKEAWAY',
+                customerName: saleData.customerName || saleData.customer_name || 'Guest',
+                waiterName: saleData.waiterName || saleData.waiter_name || profileName || 'Cashier',
+                time: new Date().toLocaleTimeString(),
+                notes: '',
+            };
+
+            if (kitchenItems.length > 0) {
+                await printerService.printTicket('Kitchen', {
+                    ...commonTicketData,
+                    items: kitchenItems.map(i => ({ name: i.product.name, quantity: i.quantity, notes: i.notes }))
+                });
+            }
+            if (barItems.length > 0) {
+                await printerService.printTicket('Bar', {
+                    ...commonTicketData,
+                    items: barItems.map(i => ({ name: i.product.name, quantity: i.quantity, notes: i.notes }))
+                });
+            }
+        } else {
+            console.log('[POS] Smart Printing: No new items to print');
+        }
+    } catch (err) {
+        console.error('[POS] Smart Printing Error:', err);
+    }
   };
 
   // Apply discount
@@ -645,6 +738,14 @@ export function CashierInterface({
     if (settings?.auto_open_drawer) {
       printerService.openDrawer();
     }
+
+    // [NEW] Smart Printing on Payment
+    executeSmartPrint({ 
+        orderNo: currentOrderNo || 'ORD-?', 
+        tableNo: selectedTable || 'TAKEAWAY',
+        customerName: customerName || 'Guest',
+        waiterName: waiterName || profileName || 'Cashier'
+    }, isSplitPayment ? itemsToSplit : orderItems);
 
     if (isSplitPayment) {
       // Remove split items from main order
@@ -735,79 +836,58 @@ export function CashierInterface({
   };
 
   // Hold order
-  const handleHoldOrder = () => {
+  const handleHoldOrder = async () => {
     if (orderItems.length === 0) return;
 
-    const performHold = () => {
-      const newHeldOrder: HeldOrder = {
-        id: `held-${Date.now()}`,
-        items: [...orderItems],
-        discount: orderDiscount,
-        total,
-        createdAt: new Date(),
+    const performHold = async () => {
+      const saleData = {
+          branch_id: branchId,
+          customer_name: customerName,
+          table_no: selectedTable || 'TAKEAWAY',
+          waiter_name: waiterName || profileName || 'Cashier',
+          total_amount: total,
+          discount: totalDiscount,
+          status: 'Pending',
+          order_no: currentOrderNo || null 
       };
 
-      setHeldOrders([newHeldOrder, ...heldOrders]);
+      try {
+          const { data, error } = await supabase.rpc('upsert_sale_with_items', {
+              p_sale_data: saleData,
+              p_items_data: orderItems.map(i => ({
+                  product_id: String(i.product.id).startsWith('manual-') ? null : i.product.id,
+                  product_name: i.product.name,
+                  price: i.product.price,
+                  quantity: i.quantity,
+                  target: i.product.target,
+                  notes: i.notes
+              })),
+              p_target_sale_id: currentSaleId || null
+          });
 
-      // Send to KDS
-      if (onSendToKDS) {
-        onSendToKDS({
-          orderNo: newHeldOrder.id, // Using held ID as temp ref
-          tableNo: selectedTable,
-          waiterName: waiterName,
-          productDetails: orderItems.map(item => ({
-            name: item.product.name,
-            quantity: item.quantity,
-            price: item.product.price,
-            target: item.product.target, // Pass the target attribute
-            notes: item.notes
-          }))
-        });
+          if (error) throw error;
+
+          toast.success(`Pesanan #${data.order_no} berhasil ditangguhkan & disinkronkan`);
+          
+          // Smart Printing
+          await executeSmartPrint({ ...saleData, order_no: data.order_no }, orderItems);
+
+          setOrderItems([]);
+          setInitialItems([]);
+          setOrderDiscount(0);
+          setCurrentSaleId(undefined);
+          setCurrentOrderNo(undefined);
+          setSelectedTable('');
+          
+          if (onPaymentSuccess) onPaymentSuccess(); // Refresh parent state
+      } catch (err: any) {
+          console.error('Hold Error:', err);
+          toast.error('Gagal Hold: ' + (err.message || 'Database sedang sibuk.'));
       }
-
-      // [NEW] Smart Production Printing on HOLD
-      if (settings?.enable_print_at_hold) {
-          const waiterShort = (waiterName || 'Cashier').split(' ')[0];
-          const kitchenItems = orderItems.filter(item => item.product.target === 'Kitchen' || item.product.category?.toLowerCase().includes('makan'));
-          const barItems = orderItems.filter(item => item.product.target === 'Bar' || item.product.category?.toLowerCase().includes('minum'));
-
-          const commonTicketData = {
-              orderNo: `HOLD-${Date.now().toString().slice(-4)}`,
-              tableNo: selectedTable || 'TAKEAWAY',
-              customerName: customerName || 'Guest',
-              waiterName: waiterShort,
-              time: new Date().toLocaleTimeString(),
-              notes: '',
-          };
-
-          try {
-              if (kitchenItems.length > 0) {
-                  printerService.printTicket('Kitchen', {
-                      ...commonTicketData,
-                      items: kitchenItems.map(i => ({ name: i.product.name, quantity: i.quantity, notes: i.notes }))
-                  });
-              }
-              if (barItems.length > 0) {
-                  printerService.printTicket('Bar', {
-                      ...commonTicketData,
-                      items: barItems.map(i => ({ name: i.product.name, quantity: i.quantity, notes: i.notes }))
-                  });
-              }
-              toast.success(`Berhasil HOLD & Cetak Produksi (${kitchenItems.length} Dapur, ${barItems.length} Bar)`);
-          } catch (e) {
-              console.error("Hold Print Error", e);
-              toast.error('Gagal cetak produksi (Cek Koneksi Printer)');
-          }
-      } else {
-          toast.success('Pesanan berhasil disimpan sementara');
-      }
-
-      setOrderItems([]);
-      setOrderDiscount(0);
     };
 
     if (checkAuth('hold')) {
-      performHold();
+      await performHold();
     } else {
       setPendingAuth({ action: 'hold' });
       setManagerAuthModalOpen(true);
@@ -815,15 +895,25 @@ export function CashierInterface({
   };
 
   // Restore order
-  const handleRestoreOrder = (order: HeldOrder) => {
+  const handleRestoreOrder = (order: any) => {
     if (orderItems.length > 0) {
       toast.error('Clear current cart before restoring a held order');
       return;
     }
 
     setOrderItems(order.items);
-    setOrderDiscount(order.discount);
-    setHeldOrders(heldOrders.filter((h) => h.id !== order.id));
+    setInitialItems([...order.items]); // [NEW] Track for smart printing
+    setOrderDiscount(order.discount || 0);
+    setCustomerName(order.customerName || 'Guest');
+    setSelectedTable(order.tableNo || '');
+    
+    if (order.isRemote) {
+        setCurrentSaleId(Number(order.id));
+        setCurrentOrderNo(order.orderNo);
+    } else {
+        setHeldOrders(heldOrders.filter((h) => h.id !== order.id));
+    }
+
     setHeldOrdersModalOpen(false);
     toast.success('Pesanan dikembalikan');
   };
@@ -1093,7 +1183,7 @@ export function CashierInterface({
               setPaymentModalOpen(true);
             }}
             onHeldOrdersClick={() => setHeldOrdersModalOpen(true)}
-            heldCount={heldOrders.length}
+            heldCount={heldCount}
             onSplitBillClick={() => setSplitBillModalOpen(true)}
           />
 
@@ -1123,7 +1213,7 @@ export function CashierInterface({
       <HeldOrdersModal
         open={heldOrdersModalOpen}
         onOpenChange={setHeldOrdersModalOpen}
-        heldOrders={heldOrders}
+        heldOrders={uniqueOrders}
         onRestore={handleRestoreOrder}
         onDelete={(isAdmin || !settings?.restrict_cashier_delete) ? handleDeleteHeldOrder : undefined}
       />

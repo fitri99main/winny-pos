@@ -12,6 +12,7 @@ interface AuthContextType {
     role: string | null;
     profileEmail: string | null;
     profileName: string | null;
+    branchId: number | null;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -22,6 +23,7 @@ const AuthContext = createContext<AuthContextType>({
     role: null,
     profileEmail: null,
     profileName: null,
+    branchId: null,
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -34,6 +36,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [role, setRole] = useState<string | null>(null);
     const [profileEmail, setProfileEmail] = useState<string | null>(null);
     const [profileName, setProfileName] = useState<string | null>(null);
+    const [branchId, setBranchId] = useState<number | null>(null);
 
     const fetchProfileAndPermissions = async (uid: string) => {
         try {
@@ -52,6 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setRole(profile.role);
             setProfileName(profile.name || profile.full_name || '');
             setProfileEmail(profile.email);
+            setBranchId(profile.branch_id);
 
             // 2. Get Permissions (from roles table)
             // Use ilike for case-insensitive matching to be safer
@@ -127,6 +131,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setPermissions([]);
             setProfileName(null);
             setProfileEmail(null);
+            setBranchId(null);
         }
     }, [user]);
 
@@ -282,7 +287,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, []);
 
     return (
-        <AuthContext.Provider value={{ user, session, loading, permissions, role, profileEmail, profileName }}>
+        <AuthContext.Provider value={{ user, session, loading, permissions, role, profileEmail, profileName, branchId }}>
             {!loading ? children : (
                 <div className="h-screen w-full flex flex-col items-center justify-center bg-gray-50 gap-4">
                     <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />

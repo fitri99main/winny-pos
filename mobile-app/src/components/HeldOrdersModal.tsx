@@ -86,7 +86,7 @@ export default function HeldOrdersModal({ visible, onClose, orders, onRestore, o
                                                 {order.isRemote ? '⚡ Terima & Bayar' : '▶ Kembalikan'}
                                             </Text>
                                         </TouchableOpacity>
-                                        {!order.isRemote && onDelete && (
+                                        {onDelete && (
                                             <TouchableOpacity style={styles.deleteBtn} onPress={() => onDelete(order.id)}>
                                                 <Text style={styles.deleteText}>🗑️</Text>
                                             </TouchableOpacity>

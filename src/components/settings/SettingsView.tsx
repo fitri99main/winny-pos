@@ -1163,6 +1163,62 @@ export function SettingsView({
                         </div>
 
                         <div className="space-y-4 pt-4 border-t border-gray-100">
+                            <h4 className="font-bold text-gray-800">Penomoran Invoice HOLD</h4>
+                            <div className="grid gap-4">
+                                <div className="flex items-center justify-between p-4 bg-purple-50/50 rounded-xl border border-purple-100">
+                                    <div>
+                                        <h4 className="font-bold text-purple-800">Mode Penomoran HOLD</h4>
+                                        <p className="text-xs text-purple-600">Pilih antara penomoran otomatis atau manual untuk pesanan tunda.</p>
+                                    </div>
+                                    <div className="flex bg-gray-100 p-1 rounded-lg">
+                                        <button
+                                            onClick={() => handleLocalChange({ ...localSettings, hold_invoice_mode: 'auto' })}
+                                            className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${localSettings.hold_invoice_mode === 'auto' ? 'bg-white shadow-sm text-purple-600' : 'text-gray-500 hover:text-gray-700'}`}
+                                        >
+                                            Otomatis
+                                        </button>
+                                        <button
+                                            onClick={() => handleLocalChange({ ...localSettings, hold_invoice_mode: 'manual' })}
+                                            className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${localSettings.hold_invoice_mode === 'manual' ? 'bg-white shadow-sm text-purple-600' : 'text-gray-500 hover:text-gray-700'}`}
+                                        >
+                                            Manual
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {localSettings.hold_invoice_mode === 'auto' && (
+                                    <motion.div 
+                                        initial={{ opacity: 0, y: -10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        className="grid grid-cols-2 gap-4 animate-in slide-in-from-top-2"
+                                    >
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-gray-700">Prefix Invoice HOLD</Label>
+                                            <input
+                                                type="text"
+                                                value={localSettings.hold_invoice_prefix || 'HOLD'}
+                                                onChange={e => handleLocalChange({ ...localSettings, hold_invoice_prefix: e.target.value.toUpperCase() })}
+                                                className="w-full px-4 py-2 border border-purple-100 bg-white rounded-xl focus:ring-2 focus:ring-purple-500/20 outline-none text-sm font-bold"
+                                                placeholder="Contoh: HOLD"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-gray-700">Nomor Selanjutnya (HOLD)</Label>
+                                            <input
+                                                type="number"
+                                                value={Number(localSettings.hold_invoice_last_number || 0) + 1}
+                                                onChange={e => handleLocalChange({ ...localSettings, hold_invoice_last_number: Math.max(0, parseInt(e.target.value) - 1) })}
+                                                className="w-full px-4 py-2 border border-purple-100 bg-white rounded-xl focus:ring-2 focus:ring-purple-500/20 outline-none text-sm font-mono"
+                                                min="1"
+                                            />
+                                            <p className="text-[10px] text-gray-400 italic">Angka terakhir HOLD adalah {localSettings.hold_invoice_last_number || 0}.</p>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="space-y-4 pt-4 border-t border-gray-100">
                             <div className="flex items-center gap-2">
                                 <h4 className="font-bold text-gray-800">Penomoran Invoice Offline</h4>
                                 <span className="px-2 py-0.5 bg-orange-100 text-orange-600 text-[10px] font-bold rounded-full uppercase tracking-wider">Web Offline Mode</span>

@@ -178,6 +178,31 @@ export class PrinterManager {
         return this.ensureConnection(macAddress);
     }
 
+    static async reconnectAllConfiguredPrinters(): Promise<{ success: boolean; results: Record<string, boolean> }> {
+        const results: Record<string, boolean> = {};
+        let overallSuccess = true;
+
+        const printers = [
+            { key: '@selected_printer_address', label: 'Kasir' },
+            { key: '@kitchen_printer_address', label: 'Dapur' },
+            { key: '@bar_printer_address', label: 'Bar' }
+        ];
+
+        for (const printer of printers) {
+            const mac = await AsyncStorage.getItem(printer.key);
+            if (mac) {
+                console.log(`[PrinterManager] Reconnecting ${printer.label} (${mac})...`);
+                const success = await this.ensureConnection(mac);
+                results[printer.label] = success;
+                if (!success) overallSuccess = false;
+                // Wait between connections to avoid BLE collision
+                await new Promise(r => setTimeout(r, 1000));
+            }
+        }
+
+        return { success: overallSuccess, results };
+    }
+
     static padColumns(left: string, right: string, width: number = 32, isPreview: boolean = false): string {
         const leftStr = left || '';
         const rightStr = right || '';
@@ -328,9 +353,9 @@ export class PrinterManager {
 
         items.forEach((item: any) => {
             const name = item.product_name || item.name || 'Produk';
-            // Using BOLD instead of DOUBLE_ON (4SQUARE) to prevent overflow
-            text += BOLD_ON + `${item.quantity}x ${name}` + BOLD_OFF + '\n';
-            if (item.notes) text += `  * CATATAN: ${item.notes}\n`;
+            // Using DOUBLE_ON (4SQUARE) for maximal visibility as requested
+            text += BOLD_ON + DOUBLE_ON + `${item.quantity}x ${name}` + DOUBLE_OFF + BOLD_OFF + '\n';
+            if (item.notes) text += BOLD_ON + `  * CATATAN: ${item.notes}` + BOLD_OFF + '\n';
         });
 
         text += LINE + CENTER + `Waktu: ${new Date().toLocaleString('id-ID')}\n`;

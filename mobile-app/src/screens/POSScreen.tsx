@@ -2,61 +2,25 @@ import * as React from 'react';
 import { useState, useMemo, useEffect, useCallback, memo } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, FlatList, Image, Modal, Alert, StyleSheet, useWindowDimensions, ActivityIndicator, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PaymentModal from '../components/PaymentModal';
 import { PrinterManager } from '../lib/PrinterManager';
-import { Bluetooth, Printer as PrinterIcon } from 'lucide-react-native';
 import ManualItemModal from '../components/ManualItemModal';
-import { getLocalISOString } from '../lib/dateUtils';
 import DiscountModal from '../components/DiscountModal';
 import SplitBillModal from '../components/SplitBillModal';
 import HeldOrdersModal from '../components/HeldOrdersModal';
 import { useSession } from '../context/SessionContext';
 import { OfflineService } from '../lib/OfflineService';
 import { WifiVoucherService } from '../lib/WifiVoucherService';
-import { Wifi, WifiOff, Star, ShoppingCart, ChevronLeft } from 'lucide-react-native';
+import { Wifi, WifiOff, Star, ShoppingCart, Printer, ChevronLeft } from 'lucide-react-native';
 import ReceiptPreviewModal from '../components/ReceiptPreviewModal';
 import HoldNoteModal from '../components/HoldNoteModal';
 import ModernToast from '../components/ModernToast';
-import ManagerAuthModal from '../components/ManagerAuthModal';
 
 const getAcronym = (name: string) => {
     return name?.substring(0, 2).toUpperCase() || '??';
-};
-
-const generateNumericId = () => {
-    // Create a 16-digit numeric ID: timestamp (13 digits) + 3 random digits
-    // This fits in JS MAX_SAFE_INTEGER and Postgres BIGINT
-    const timestamp = Date.now();
-    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    return parseInt(`${timestamp}${random}`);
-};
-
-const resolveItemTarget = (product: any) => {
-    let target = (product.target || '').trim();
-    
-    // If target is already Bar or Kitchen, keep it (but normalize)
-    const lowTarget = target.toLowerCase();
-    if (lowTarget === 'bar' || lowTarget === 'kitchen' || lowTarget === 'dapur') {
-        return target;
-    }
-
-    // Heuristic based on category if target is empty or 'Waitress'
-    if (!target || lowTarget === 'waitress') {
-        const categoryLow = (product.category_name || product.category || '').toLowerCase();
-        if (categoryLow.includes('makan') || categoryLow.includes('food')) return 'Kitchen';
-        if (categoryLow.includes('minum') || categoryLow.includes('drink') || categoryLow.includes('bar') || 
-            categoryLow.includes('coffee') || categoryLow.includes('kopi') || categoryLow.includes('teh') ||
-            categoryLow.includes('jus') || categoryLow.includes('juice') || categoryLow.includes('susu') ||
-            categoryLow.includes('milk') || categoryLow.includes('es') || categoryLow.includes('ice') ||
-            categoryLow.includes('latte') || categoryLow.includes('boba') || categoryLow.includes('thai')) {
-            return 'Bar';
-        }
-    }
-
-    return target || 'Kitchen'; // Default to Kitchen
 };
 
 const ProductCard = memo(({ item, isTablet, onAdd, formatCurrency }: any) => {
@@ -64,14 +28,7 @@ const ProductCard = memo(({ item, isTablet, onAdd, formatCurrency }: any) => {
         <TouchableOpacity
             style={[
                 styles.productCard,
-                { 
-                    width: '100%', 
-                    margin: 0, 
-                    borderRadius: isTablet ? 10 : 6, 
-                    overflow: 'hidden', 
-                    backgroundColor: '#f3f4f6', 
-                    height: isTablet ? 130 : 85 
-                }
+                { width: '100%', margin: 0, borderRadius: isTablet ? 12 : 8, overflow: 'hidden', backgroundColor: '#f3f4f6', height: isTablet ? 150 : 90 }
             ]}
             onPress={() => onAdd(item)}
         >
@@ -80,44 +37,40 @@ const ProductCard = memo(({ item, isTablet, onAdd, formatCurrency }: any) => {
                     <Image source={{ uri: item.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
                 ) : (
                     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff7ed' }}>
-                        <Text style={[styles.productAcronym, { fontSize: isTablet ? 20 : 12 }]}>
+                        <Text style={[styles.productAcronym, { fontSize: isTablet ? 24 : 13 }]}>
                             {getAcronym(item.name)}
                         </Text>
                     </View>
                 )}
             </View>
 
-            <View style={{
-                position: 'absolute',
-                bottom: 0,
-                width: '100%',
-                backgroundColor: 'rgba(0, 0, 0, 0.65)',
-                paddingVertical: isTablet ? 4 : 3,
+            <View style={{ 
+                position: 'absolute', 
+                bottom: 0, 
+                width: '100%', 
+                backgroundColor: 'rgba(0, 0, 0, 0.6)', 
+                paddingVertical: isTablet ? 6 : 4,
                 paddingHorizontal: 4,
                 alignItems: 'center'
             }}>
-                <Text style={{
-                    fontSize: isTablet ? 11 : 8,
-                    color: 'white',
-                    textAlign: 'center',
-                    fontWeight: '700'
+                <Text style={{ 
+                    fontSize: isTablet ? 12 : 9, 
+                    color: 'white', 
+                    textAlign: 'center', 
+                    fontWeight: '600' 
                 }} numberOfLines={1}>
                     {item.name}
                 </Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
-                    <Text style={{
-                        fontSize: isTablet ? 10 : 7.5,
-                        color: '#fdba74',
-                        fontWeight: 'bold',
-                        marginTop: 0
-                    }}>
-                        {formatCurrency(item.price)}
-                    </Text>
-                    {item.is_taxed !== false && (
-                        <Text style={{ color: '#fdba74', fontSize: isTablet ? 10 : 8, fontWeight: 'bold' }}>*</Text>
-                    )}
-                </View>
+                <Text style={{ 
+                    fontSize: isTablet ? 11 : 8.5, 
+                    color: '#fdba74', 
+                    fontWeight: 'bold',
+                    marginTop: 1
+                }}>
+                    {formatCurrency(item.price)}
+                </Text>
             </View>
+
         </TouchableOpacity>
     );
 });
@@ -131,9 +84,8 @@ export default function POSScreen() {
     const isLandscape = width > height;
     const isTablet = Math.min(width, height) >= 600;
     const isLargeTablet = Math.min(width, height) >= 800;
-    const isSmallDevice = width < 380;
-    const isRegularPhone = width >= 380 && width < 600;
-    const splitProductColumns = isLargeTablet ? 4 : (width > 900 ? 4 : 3);
+    const isSmallDevice = width < 480;
+    const splitProductColumns = isLargeTablet ? 4 : 3;
 
 
     const [searchQuery, setSearchQuery] = useState('');
@@ -151,17 +103,15 @@ export default function POSScreen() {
     const [showCustomerModal, setShowCustomerModal] = useState(false);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [successModalConfig, setSuccessModalConfig] = useState({ title: 'Pesanan Terkirim!', message: 'Pesanan Anda telah masuk ke sistem kasir.' });
-    const [syncStatus, setSyncStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
-    const [printerStatus, setPrinterStatus] = useState<'connected' | 'disconnected' | 'connecting'>('disconnected');
     const [lastOrderNo, setLastOrderNo] = useState('');
     const [lastSaleId, setLastSaleId] = useState('');
     const [showCartModal, setShowCartModal] = useState(false);
+    // const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [currentSaleId, setCurrentSaleId] = useState<number | null>(null);
     const [isOnline, setIsOnline] = useState(true);
     const [isManualOffline, setIsManualOffline] = useState(false);
     const [showMemberLoginModal, setShowMemberLoginModal] = useState(false);
-    const [countdown, setCountdown] = useState(3);
-    const [deviceId, setDeviceId] = useState<string>('');
+    const [countdown, setCountdown] = useState(5);
 
     const [memberPhone, setMemberPhone] = useState('');
     const [paymentMethods, setPaymentMethods] = useState<any[]>([
@@ -172,9 +122,10 @@ export default function POSScreen() {
 
     // Transaction Data
     const [cart, setCart] = useState<any[]>([]);
-    const [selectedTable, setSelectedTable] = useState(tableNo || tableNumber || '-');
+    const [initialItems, setInitialItems] = useState<any[]>([]); // [NEW] For Smart Printing
+    const [selectedTable, setSelectedTable] = useState('-');
     const [orderType, setOrderType] = useState<'dine_in' | 'take_away'>(
-        (tableNo === 'TAKEAWAY' || tableNumber === 'TAKEAWAY') ? 'take_away' : 'dine_in'
+        (tableNo && tableNo !== '-' && tableNo !== 'TAKEAWAY') ? 'dine_in' : 'take_away'
     );
     const [customerName, setCustomerName] = useState('Guest');
     const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
@@ -182,21 +133,13 @@ export default function POSScreen() {
     const [posFlow, setPosFlow] = useState<'direct'>('direct');
     const [cashierMode, setCashierMode] = useState(true); // Default to true
     const [showPaymentModal, setShowPaymentModal] = useState(false);
-    const [existingSaleId, setExistingSaleId] = useState<number | null>(null);
+    const [existingSaleId, setExistingSaleId] = useState<number | string | null>(null);
 
     // New POS Features State
     const [showManualItemModal, setShowManualItemModal] = useState(false);
     const [showDiscountModal, setShowDiscountModal] = useState(false);
     const [showSplitBillModal, setShowSplitBillModal] = useState(false);
     const [showHeldOrdersModal, setShowHeldOrdersModal] = useState(false);
-    const [showDeleteAuthModal, setShowDeleteAuthModal] = useState(false);
-    const [pendingAuth, setPendingAuth] = useState<{
-        action: 'discount' | 'hold' | 'delete' | 'manual' | 'split';
-        data?: any;
-    } | null>(null);
-    const [orderToDeleteId, setOrderToDeleteId] = useState<string | null>(null);
-    const [isFetchingRemote, setIsFetchingRemote] = useState(false);
-
     const [orderDiscount, setOrderDiscount] = useState(0);
     const [discountReason, setDiscountReason] = useState('');
     const [heldOrders, setHeldOrders] = useState<any[]>([]);
@@ -209,52 +152,35 @@ export default function POSScreen() {
     const [waiterSearchQuery, setWaiterSearchQuery] = useState('');
     const [manualTableInput, setManualTableInput] = useState('');
     const [previewOrderData, setPreviewOrderData] = useState<any>(null);
+    const [isPrinterReady, setIsPrinterReady] = useState(false);
     const [isPrinting, setIsPrinting] = useState(false);
     const [receiptPrintMode, setReceiptPrintMode] = useState<'auto' | 'manual'>('manual');
     const [isPartialSplit, setIsPartialSplit] = useState(false);
     const [remoteOrders, setRemoteOrders] = useState<any[]>([]);
-    const [enableHoldPrinting, setEnableHoldPrinting] = useState<boolean>(false);
-    const [autoPreviewReceipt, setAutoPreviewReceipt] = useState<boolean>(false);
+    const [isFetchingRemote, setIsFetchingRemote] = useState(false);
     const lastFetchTime = React.useRef(0);
     const fetchInProgress = React.useRef(false);
     const fetchTimeoutRef = React.useRef<any>(null);
-    const paymentInProgress = React.useRef(false);
-    const retryTimerRef = React.useRef<any>(null);
-    const channelRef = React.useRef<any>(null);
     const isFirstRender = React.useRef(true);
-    const cartRef = React.useRef<any[]>([]);
-    const existingSaleIdRef = React.useRef<number | null>(null);
-
-    // Printer status tracking
-    useEffect(() => {
-        const checkPrinter = async () => {
-            const mac = await PrinterManager.getSelectedPrinter('receipt');
-            if (mac) {
-                const status = PrinterManager.getConnectionStatus(mac);
-                setPrinterStatus(status);
-            } else {
-                setPrinterStatus('disconnected');
-            }
-        };
-        checkPrinter();
-        const interval = setInterval(checkPrinter, 5000);
-        return () => clearInterval(interval);
-    }, []);
-
-    // Sync refs for use in real-time callbacks without re-subscribing
-    React.useEffect(() => {
-        cartRef.current = cart;
-    }, [cart]);
-
-    React.useEffect(() => {
-        existingSaleIdRef.current = existingSaleId;
-    }, [existingSaleId]);
-
 
     // Toast State
     const [toastVisible, setToastVisible] = useState(false);
     const [toastMessage, setToastMessage] = useState('');
     const [toastType, setToastType] = useState<'success' | 'info' | 'error'>('success');
+
+    const uniqueOrders = useMemo(() => {
+        const orderMap = new Map();
+        // Process local drafts first
+        heldOrders.forEach(o => orderMap.set(String(o.id), o));
+        // Process remote orders (overwrite if same ID exists, preferring server state)
+        remoteOrders.forEach(o => orderMap.set(String(o.id), o));
+        
+        return Array.from(orderMap.values()).sort((a, b) => 
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+    }, [heldOrders, remoteOrders]);
+
+    const pendingCount = uniqueOrders.length;
 
     const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
         setToastMessage(message);
@@ -263,73 +189,51 @@ export default function POSScreen() {
     };
 
     const renderSplitCartActions = () => (
-        <View style={[styles.quickActionsRow, { marginBottom: 10 }]}>
-            <TouchableOpacity
-                style={styles.quickActionBtn}
-                onPress={() => {
-                    if (isAdmin || !storeSettings?.restrict_manual_item) {
-                        setShowManualItemModal(true);
-                    } else {
-                        setPendingAuth({ action: 'manual' });
-                        setShowDeleteAuthModal(true);
-                    }
-                }}
-            >
-                <Text style={styles.quickActionIcon}>+</Text>
-                <Text style={styles.quickActionText}>Manual</Text>
-            </TouchableOpacity>
+        <View style={{ marginBottom: 10 }}>
+            <View style={[styles.quickActionsRow]}>
+                <TouchableOpacity
+                    style={styles.quickActionBtn}
+                    onPress={() => setShowManualItemModal(true)}
+                >
+                    <Text style={styles.quickActionIcon}>+</Text>
+                    <Text style={styles.quickActionText}>Manual</Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity
-                style={styles.quickActionBtn}
-                onPress={() => {
-                    if (isAdmin || !storeSettings?.restrict_discount) {
-                        setShowDiscountModal(true);
-                    } else {
-                        setPendingAuth({ action: 'discount' });
-                        setShowDeleteAuthModal(true);
-                    }
-                }}
-            >
-                <Text style={styles.quickActionIcon}>%</Text>
-                <Text style={styles.quickActionText}>Diskon</Text>
-            </TouchableOpacity>
+                <TouchableOpacity
+                    style={styles.quickActionBtn}
+                    onPress={() => setShowDiscountModal(true)}
+                >
+                    <Text style={styles.quickActionIcon}>%</Text>
+                    <Text style={styles.quickActionText}>Diskon</Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity 
-                style={styles.quickActionBtn} 
-                onPress={() => {
-                    if (isAdmin || !storeSettings?.restrict_split_bill) {
-                        setShowSplitBillModal(true);
-                    } else {
-                        setPendingAuth({ action: 'split' });
-                        setShowDeleteAuthModal(true);
-                    }
-                }}
-            >
-                <Text style={styles.quickActionIcon}>/</Text>
-                <Text style={styles.quickActionText}>Pisah</Text>
-            </TouchableOpacity>
+                <TouchableOpacity style={styles.quickActionBtn} onPress={() => setShowSplitBillModal(true)}>
+                    <Text style={styles.quickActionIcon}>/</Text>
+                    <Text style={styles.quickActionText}>Pisah</Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity
-                style={styles.quickActionBtn}
-                onPress={() => {
-                    if (isAdmin || !storeSettings?.restrict_hold_order) {
-                        setShowHoldNoteModal(true);
-                    } else {
-                        setPendingAuth({ action: 'hold' });
-                        setShowDeleteAuthModal(true);
-                    }
-                }}
-            >
-                <Text style={styles.quickActionIcon}>||</Text>
-                <Text style={styles.quickActionText}>Hold</Text>
-            </TouchableOpacity>
+                <TouchableOpacity
+                    style={styles.quickActionBtn}
+                    onPress={() => setShowHoldNoteModal(true)}
+                >
+                    <Text style={styles.quickActionIcon}>||</Text>
+                    <Text style={styles.quickActionText}>Hold</Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity style={styles.quickActionBtn} onPress={() => setShowHeldOrdersModal(true)}>
-                <Text style={styles.quickActionIcon}>#</Text>
-                <Text style={styles.quickActionText}>Daftar</Text>
-            </TouchableOpacity>
+                <TouchableOpacity style={styles.quickActionBtn} onPress={() => setShowHeldOrdersModal(true)}>
+                    <View>
+                        <Text style={styles.quickActionIcon}>#</Text>
+                        {pendingCount > 0 && (
+                            <View style={[styles.badgeContainer, { top: -6, right: -10, minWidth: 14, height: 14 }]}>
+                                <Text style={[styles.badgeText, { fontSize: 8 }]}>{pendingCount}</Text>
+                            </View>
+                        )}
+                    </View>
+                    <Text style={styles.quickActionText}>Daftar</Text>
+                </TouchableOpacity>
+            </View>
         </View>
-    );
+);
 
     const renderSplitCartMeta = () => (
         <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
@@ -390,45 +294,33 @@ export default function POSScreen() {
 
     // Update cashier mode from storage but default to true if not set
 
-    // Load settings every time the screen is focused (ensures sync with SettingsScreen)
-    useFocusEffect(
-        React.useCallback(() => {
-            const loadPOSFlow = async () => {
-                const [savedFlow, savedCashierMode, savedReceiptPrintMode, savedAutoPrint] = await Promise.all([
-                    AsyncStorage.getItem('pos_flow'),
-                    AsyncStorage.getItem('cashier_mode'),
-                    AsyncStorage.getItem('post_payment_receipt_mode'),
-                    AsyncStorage.getItem('auto_print')
-                ]);
-                if (savedFlow) {
-                    setPosFlow('direct');
-                }
+    // Load POS Flow Setting
+    useEffect(() => {
+        const loadPOSFlow = async () => {
+            const [savedFlow, savedCashierMode, savedReceiptPrintMode, savedAutoPrint] = await Promise.all([
+                AsyncStorage.getItem('pos_flow'),
+                AsyncStorage.getItem('cashier_mode'),
+                AsyncStorage.getItem('post_payment_receipt_mode'),
+                AsyncStorage.getItem('auto_print')
+            ]);
+            if (savedFlow) {
+                setPosFlow('direct');
+            }
 
-                if (savedCashierMode !== null) {
-                    setCashierMode(savedCashierMode === 'true');
-                } else {
-                    setCashierMode(true); // Ensure default true
-                }
+            if (savedCashierMode !== null) {
+                setCashierMode(savedCashierMode === 'true');
+            } else {
+                setCashierMode(true); // Ensure default true
+            }
 
-                if (savedReceiptPrintMode === 'auto' || savedReceiptPrintMode === 'manual') {
-                    setReceiptPrintMode(savedReceiptPrintMode);
-                } else {
-                    setReceiptPrintMode(savedAutoPrint === 'true' ? 'auto' : 'manual');
-                }
-
-                const savedHoldPrint = await AsyncStorage.getItem('enable_hold_printing');
-                if (savedHoldPrint !== null) {
-                    setEnableHoldPrinting(savedHoldPrint === 'true');
-                }
-
-                const savedAutoPreview = await AsyncStorage.getItem('auto_preview_receipt');
-                if (savedAutoPreview !== null) {
-                    setAutoPreviewReceipt(savedAutoPreview === 'true');
-                }
-            };
-            loadPOSFlow();
-        }, [])
-    );
+            if (savedReceiptPrintMode === 'auto' || savedReceiptPrintMode === 'manual') {
+                setReceiptPrintMode(savedReceiptPrintMode);
+            } else {
+                setReceiptPrintMode(savedAutoPrint === 'true' ? 'auto' : 'manual');
+            }
+        };
+        loadPOSFlow();
+    }, []);
 
     const { permissions, isDisplayOnly, loading: sessionLoading, isSessionActive, currentSession, branchName, branchAddress, branchPhone, isAdmin, storeSettings, currentBranchId, userName } = useSession();
     const orderCategoriesEnabled = storeSettings?.enable_order_type_categories !== false;
@@ -474,14 +366,10 @@ export default function POSScreen() {
     const isActuallyDisplay = useMemo(() => {
         return isDisplayOnly; // Session context version is usually sufficient
     }, [isDisplayOnly]);
-
-    // [FIX] Side-by-side mode should only trigger on tablets or in landscape.
-    // This prevents the cramped two-column layout on portrait mobile phones.
-    const isSideBySide = !isActuallyDisplay && (isTablet || isLandscape);
-
+    const isSideBySide = !isActuallyDisplay;
     const productGridColumns = isActuallyDisplay
-        ? (isLargeTablet ? 6 : (isTablet ? 5 : (isRegularPhone ? 4 : 3)))
-        : (isSideBySide ? splitProductColumns : (isRegularPhone ? 4 : 3));
+        ? (isLargeTablet ? 5 : (isTablet ? 4 : (isSmallDevice ? 3 : 4)))
+        : (isSideBySide ? splitProductColumns : (isSmallDevice ? 3 : 4));
 
     useEffect(() => {
         if (!isActuallyDisplay) return;
@@ -496,170 +384,169 @@ export default function POSScreen() {
         setShowCartModal(false);
     }, [isActuallyDisplay]);
 
-    // Centralized Countdown & Auto-Reset Logic
+    // Countdown effect for success screen
     useEffect(() => {
-        let timer: NodeJS.Timeout;
-        if (showSuccessModal && !isPartialSplit) {
-            // [SUPER FAST RESET] 3s for Display, 20s for Cashier
-            const initialTimeout = isActuallyDisplay ? 3 : 20;
-            setCountdown(initialTimeout);
+        let timer: any;
+        if (showSuccessModal) {
+            // [UPDATED] If it's a partial split, we don't auto-navigate
+            // If it's final, we give 20 seconds. 
+            // BUT if it's display mode, we give only 2 seconds for fast reset.
+            const timeout = isActuallyDisplay ? 2 : 20;
+            setCountdown(isPartialSplit ? 999 : timeout); 
             
             timer = setInterval(() => {
-                setCountdown(prev => {
-                    if (prev <= 1) {
-                        clearInterval(timer);
-                        console.log('[POSScreen] Success Modal Auto-Reset triggered.');
-                        
-                        // CLEAR EVERYTHING AGAIN JUST TO BE SAFE
-                        if (isActuallyDisplay) {
-                            clearCart();
-                            showToast("Sesi Pesanan Direset", "info");
-                        }
-                        
-                        setShowSuccessModal(false);
-                        
-                        if (!isActuallyDisplay) {
-                            // @ts-ignore
-                            navigation.navigate('Main');
-                        }
-                        return 0;
-                    }
-                    return prev - 1;
+                setCountdown((prev) => {
+                    // [UPDATED] Pause countdown if printing or if it's a partial split
+                    if (isPrinting || isPartialSplit) return prev;
+                    return prev > 0 ? prev - 1 : 0;
                 });
             }, 1000);
         }
         return () => {
             if (timer) clearInterval(timer);
         };
-    }, [showSuccessModal, isActuallyDisplay, isPartialSplit, clearCart]);
+    }, [showSuccessModal, isPartialSplit, isPrinting]);
 
-
-
-
-
-    const triggerTargetPrints = async (orderNo: string, items: any[]) => {
-        try {
-            console.log('[POSScreen] triggerTargetPrints for Order:', orderNo, 'Items:', items.length);
-
-            const receiptMac = await PrinterManager.getSelectedPrinter('receipt');
-            const kitchenMac = await PrinterManager.getSelectedPrinter('kitchen');
-            const barMac = await PrinterManager.getSelectedPrinter('bar');
-
-            // Filter for diagnostics
-            const kitchenItems = items.filter(i => {
-                const target = (i.target || '').toLowerCase().trim();
-                return target === 'kitchen' || target === 'dapur' || target === 'kds' || (!target || target === 'waitress');
-            });
-            
-            const barItems = items.filter(i => (i.target || '').toLowerCase().trim() === 'bar');
-
-            if (kitchenItems.length > 0 && kitchenMac) {
-                // Skip if same as receipt printer to avoid double cutting the same paper
-                if (kitchenMac.toUpperCase() !== receiptMac?.toUpperCase()) {
-                    console.log('[POSScreen] Printing to Kitchen...');
-                    await PrinterManager.printToTarget(kitchenItems, 'kitchen', {
-                        orderNo,
-                        customerName: customerName || 'Guest',
-                        tableNo: selectedTable || '-'
-                    });
-                } else {
-                    console.log('[POSScreen] Kitchen printer same as receipt, skipping redundant print.');
-                }
+    // Navigate when countdown reaches zero
+    useEffect(() => {
+        if (showSuccessModal && !isPartialSplit && countdown === 0) {
+            setShowSuccessModal(false);
+            if (!isActuallyDisplay) {
+                // @ts-ignore
+                navigation.navigate('Main');
             }
-
-            if (barItems.length > 0 && barMac) {
-                // Skip if same as receipt printer
-                if (barMac.toUpperCase() !== receiptMac?.toUpperCase()) {
-                    console.log('[POSScreen] Printing to Bar...');
-                    await PrinterManager.printToTarget(barItems, 'bar', {
-                        orderNo,
-                        customerName: customerName || 'Guest',
-                        tableNo: selectedTable || '-'
-                    });
-                } else {
-                    console.log('[POSScreen] Bar printer same as receipt, skipping redundant print.');
-                }
-            }
-        } catch (error) {
-            console.error('[POSScreen] triggerTargetPrints Error:', error);
         }
-    };
+    }, [countdown, showSuccessModal, isPartialSplit, navigation]);
 
-    const [lastTransactionData, setLastTransactionData] = React.useState<any>(null);
 
-    const handlePrintReceipt = async (saleIdOverride?: string | number | null, orderNoOverride?: string | null, paymentOverride?: any) => {
+
+
+    const handlePrintReceipt = async (saleIdOverride?: string | number | null, orderNoOverride?: string | null) => {
+        const identifier = saleIdOverride
+            ? String(saleIdOverride)
+            : orderNoOverride || lastSaleId || lastOrderNo;
+
+        if (!identifier) return;
+        
+        setIsPrinting(true);
         try {
-            const identifier = String(saleIdOverride || orderNoOverride || lastSaleId || lastOrderNo);
-            if (!identifier || identifier === 'undefined') return;
-            
-            console.log('[POSScreen] handlePrintReceipt:', identifier);
-            const data = await fetchOrderDataForReceipt(identifier);
-            if (!data) return;
-
-            console.log('[POSScreen] Data Struk Terdeteksi:', {
-                subtotal: data.total + (data.discount || 0) - (data.tax || 0) - (data.service_charge || 0),
-                tax: data.tax,
-                discount: data.discount,
-                total: data.total
-            });
-
-            // Priority 1: Direct paymentOverride (from handlePaymentConfirm)
-            // Priority 2: local lastTransactionData (if identifier matches recent sale)
-            // Priority 3: Database data (fallback)
-            const override = paymentOverride || ((identifier === lastSaleId || identifier === lastOrderNo) ? lastTransactionData : null);
-
-            if (override) {
-                console.log('[POSScreen] Applying data injection to receipt:', override);
-                data.paid_amount = override.paid_amount ?? data.paid_amount;
-                data.change = override.change ?? data.change;
-                data.payment_method = override.payment_method ?? data.payment_method;
-                data.discount = override.discount ?? data.discount;
-                data.tax = override.tax ?? data.tax;
-                data.service_charge = override.service_charge ?? data.service_charge;
-            }
-
-            await PrinterManager.printOrderReceipt(data);
-        } catch (e) {
-            console.error('[POSScreen] Print Error:', e);
-            Alert.alert('Error', 'Gagal mencetak struk');
-        }
-    };
-
-    const handlePreviewReceipt = async (saleIdOverride?: string | number | null, orderNoOverride?: string | null, paymentOverride?: any) => {
-        try {
-            const identifier = String(saleIdOverride || orderNoOverride || lastSaleId || lastOrderNo);
-            if (!identifier || identifier === 'undefined') return;
-
             const orderData = await fetchOrderDataForReceipt(identifier);
+            if (!orderData) throw new Error('Order not found');
+
+            const success = await PrinterManager.printOrderReceipt(orderData);
+
+            if (success) {
+                showToast('Struk sedang dicetak', 'success');
+            } else {
+                Alert.alert('Gagal', 'Gagal mencetak struk kasir. Pastikan printer terhubung.');
+            }
+        } catch (e) {
+            console.error('Print Error:', e);
+            Alert.alert('Error', 'Terjadi kesalahan saat mencetak');
+        } finally {
+            setIsPrinting(false);
+        }
+    };
+
+    const maybeAutoPrintReceipt = (saleId?: string | number | null, orderNo?: string | null) => {
+        if (receiptPrintMode !== 'auto' || isDisplayOnly) return;
+
+        handlePrintReceipt(saleId, orderNo).catch((err) => {
+            console.error('[POSScreen] Auto print receipt error:', err);
+        });
+    };
+
+    const handleReconnectPrinters = async () => {
+        setToastMessage('Menghubungkan ke semua printer...');
+        setToastType('info');
+        setToastVisible(true);
+        
+        try {
+            const { results, success } = await PrinterManager.reconnectAllConfiguredPrinters();
+            const details = Object.entries(results)
+                .map(([label, ok]) => `${label}: ${ok ? '✅' : '❌'}`)
+                .join(', ');
+            
+            setToastMessage(success ? 'Semua printer terhubung!' : `Beberapa printer gagal: ${details}`);
+            setToastType(success ? 'success' : 'error');
+            setToastVisible(true);
+            
+            // Re-check status
+            const [receiptMac, kitchenMac, barMac] = await Promise.all([
+                AsyncStorage.getItem('@selected_printer_address'),
+                AsyncStorage.getItem('@kitchen_printer_address'),
+                AsyncStorage.getItem('@bar_printer_address')
+            ]);
+            setIsPrinterReady(!!receiptMac || !!kitchenMac || !!barMac);
+        } catch (error) {
+            setToastMessage('Gagal menghubungi printer');
+            setToastType('error');
+            setToastVisible(true);
+        }
+    };
+
+    const handleRefreshConnectivity = async () => {
+        const forced = await OfflineService.getForcedOfflineMode();
+        
+        if (forced) {
+            Alert.alert(
+                'Mode Manual Offline',
+                'Anda sedang dalam mode Manual Offline. Ingin kembali ke mode Online?',
+                [
+                    { text: 'Batal', style: 'cancel' },
+                    { 
+                        text: 'Ya, Kembali Online', 
+                        onPress: async () => {
+                            await OfflineService.setForcedOfflineMode(false);
+                            setIsManualOffline(false);
+                            const online = await OfflineService.checkConnectivity();
+                            setIsOnline(online);
+                            setToastMessage(online ? 'Kembali Online' : 'Offline (Cek Koneksi)');
+                            setToastType(online ? 'success' : 'error');
+                            setToastVisible(true);
+                        }
+                    }
+                ]
+            );
+        } else {
+            Alert.alert(
+                'Masuk Mode Offline?',
+                'Gunakan mode ini jika koneksi internet tidak stabil. Data akan disimpan di memori lokal.',
+                [
+                    { text: 'Batal', style: 'cancel' },
+                    { 
+                        text: 'Ya, Masuk Offline', 
+                        onPress: async () => {
+                            await OfflineService.setForcedOfflineMode(true);
+                            setIsManualOffline(true);
+                            setIsOnline(false);
+                            setToastMessage('Mode Manual Offline Aktif');
+                            setToastType('warning');
+                            setToastVisible(true);
+                        }
+                    }
+                ]
+            );
+        }
+    };
+    const handlePreviewReceipt = async () => {
+        if (!lastSaleId && !lastOrderNo) return;
+        
+        try {
+            const orderData = await fetchOrderDataForReceipt(lastSaleId || lastOrderNo);
             if (orderData) {
-                const override = paymentOverride || ((identifier === lastSaleId || identifier === lastOrderNo) ? lastTransactionData : null);
-                
-                if (override) {
-                    orderData.paid_amount = override.paid_amount ?? orderData.paid_amount;
-                    orderData.change = override.change ?? orderData.change;
-                    orderData.payment_method = override.payment_method ?? orderData.payment_method;
-                    orderData.discount = override.discount ?? orderData.discount;
-                    orderData.tax = override.tax ?? orderData.tax;
-                    orderData.service_charge = override.service_charge ?? orderData.service_charge;
-                }
                 setPreviewOrderData(orderData);
                 setShowReceiptPreview(true);
             }
         } catch (e) {
-            console.error('[POSScreen] Preview Error:', e);
             Alert.alert('Error', 'Gagal memuat pratinjau struk');
         }
-    };
-
-    const maybeAutoPreviewReceipt = (saleId?: any, orderNo?: any, paymentOverride?: any) => {
-        if (!autoPreviewReceipt || isDisplayOnly) return;
-        handlePreviewReceipt(String(saleId || orderNo || lastSaleId || lastOrderNo), orderNo, paymentOverride);
     };
 
     const fetchOrderDataForReceipt = async (identifier: string) => {
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
         const isNumeric = /^\d+$/.test(identifier);
-
+        
         const query = supabase
             .from('sales')
             .select(`
@@ -714,26 +601,17 @@ export default function POSScreen() {
         if (storeSettings?.enable_wifi_vouchers) {
             const minAmount = Number(storeSettings?.wifi_voucher_min_amount) || 0;
             const multiplier = Number(storeSettings?.wifi_voucher_multiplier) || 0;
-            const totalAmount = Number(sale.total_amount || sale.total || 0);
-
-            if (totalAmount >= minAmount && totalAmount > 0) {
+            const totalAmount = Number(sale.total_amount) || 0;
+            
+            if (totalAmount >= minAmount) {
                 try {
-                    // Calculate count based on multiples
-                    // Use multiplier if set (>0), otherwise use minAmount as the step.
-                    // If both are 0, default to 1 voucher.
-                    const step = multiplier > 0 ? multiplier : (minAmount > 0 ? minAmount : 0);
-                    
                     let count = 1;
-                    if (step > 0) {
-                        count = Math.floor(totalAmount / step);
-                    }
-                    
-                    // Final safety: ensure at least 1 if they met the minimum spend
-                    if (count < 1) {
-                        count = 1;
+
+                    if (multiplier > 0) {
+                        count = Math.floor(totalAmount / multiplier);
                     }
 
-                    console.log(`[POSScreen] WiFi Voucher Logic: total=${totalAmount}, min=${minAmount}, mult=${multiplier}, step=${step}, count=${count}`);
+                    console.log(`[POSScreen] WiFi Voucher Logic: total=${totalAmount}, min=${minAmount}, mult=${multiplier}, count=${count}`);
 
                     if (count > 0) {
                         wifiVoucher = await WifiVoucherService.getVoucherForSale(sale.id, currentBranchId || '1', count);
@@ -757,23 +635,20 @@ export default function POSScreen() {
             enable_order_type_categories: storeSettings?.enable_order_type_categories,
             order_type_dine_in_label: storeSettings?.order_type_dine_in_label,
             order_type_take_away_label: storeSettings?.order_type_take_away_label,
-            cashier_name: (!isDisplayOnly && (userName && userName !== 'User' && userName !== 'Kasir')) 
-                ? userName 
-                : (sale.waiter_name || '-'),
+            cashier_name: (!isDisplayOnly && userName && userName !== 'User') ? userName : '-',
             waiter_name: sale.waiter_name || '-',
-            total: sale.total_amount || sale.total || 0,
-            discount: sale.discount || sale.discount_amount || 0,
-            tax: sale.tax || sale.tax_amount || 0,
-            service_charge: sale.service_charge || sale.service_amount || 0,
-            tax_rate: sale.tax_rate || storeSettings?.tax_rate || 0,
-            service_rate: sale.service_rate || storeSettings?.service_rate || 0,
-            receipt_header: storeSettings?.receipt_header || branchName || 'WINNY POS',
+            total: sale.total_amount,
+            discount: sale.discount || 0,
+            tax: sale.tax || 0,
+            service_charge: sale.service_charge || 0,
+            tax_rate: storeSettings?.tax_rate || 0,
+            service_rate: storeSettings?.service_rate || 0,
+            receipt_header: storeSettings?.receipt_header,
             receipt_footer: storeSettings?.receipt_footer,
-            receipt_paper_width: storeSettings?.receipt_paper_width || '58mm',
+            receipt_paper_width: storeSettings?.receipt_paper_width,
             receipt_logo_url: storeSettings?.receipt_logo_url,
-            shop_address: branchAddress || storeSettings?.address,
-            shop_phone: branchPhone || storeSettings?.phone,
-            show_logo: storeSettings?.show_logo ?? (!!storeSettings?.receipt_logo_url),
+            shop_address: storeSettings?.address,
+            show_logo: storeSettings?.show_logo,
             show_date: storeSettings?.show_date,
             show_cashier_name: storeSettings?.show_cashier_name ?? true,
             show_waiter: storeSettings?.show_waiter,
@@ -784,20 +659,20 @@ export default function POSScreen() {
             wifi_voucher_multiplier: storeSettings?.wifi_voucher_multiplier,
             wifi_voucher: wifiVoucher,
             wifi_voucher_notice: storeSettings?.wifi_voucher_notice,
-            payment_method: sale.payment_method || 'Tunai',
-            paid_amount: sale.paid_amount ?? sale.total_amount,
-            change: sale.change ?? 0,
+            payment_method: sale.payment_method,
+            paid_amount: sale.paid_amount,
+            change: sale.change,
             created_at: sale.date,
             shop_name: branchName,
             shop_phone: branchPhone,
-            items: (sale.sale_items || []).map((si: any) => ({
+            items: sale.sale_items.map((si: any) => ({
                 name: si.product ? si.product.name : si.product_name,
-                price: Number(si.price || 0),
-                quantity: Number(si.quantity || 0),
-                target: resolveItemTarget(si.product ? { ...si.product, target: si.target } : { category: '', target: si.target }),
+                price: si.price,
+                quantity: si.quantity,
+                target: si.target || 'Kitchen',
                 category: si.product?.category || '',
-                is_taxed: si.is_taxed === true || si.product?.is_taxed === true,
-                notes: si.notes || ''
+                is_taxed: si.is_taxed || false,
+                notes: si.notes
             }))
         };
     };
@@ -814,7 +689,7 @@ export default function POSScreen() {
                     AsyncStorage.getItem(`cached_categories_${currentBranchId}`),
                     AsyncStorage.getItem('cached_payment_methods')
                 ]);
-
+                
                 if (isMounted) {
                     if (cachedProducts) {
                         console.log('[POSScreen] Using cached products for instant display');
@@ -825,8 +700,8 @@ export default function POSScreen() {
                         const parsed = JSON.parse(cachedCategories);
                         // Merge with hardcoded ones to ensure they are always present
                         const merged = [
-                            'Semua',
-                            ...parsed.filter((c: string) => !['Semua'].includes(c))
+                            'Semua', 
+                            ...parsed.filter((c: string) => ![ 'Semua'].includes(c))
                         ];
                         setCategories(merged);
                     }
@@ -835,7 +710,7 @@ export default function POSScreen() {
                     }
                 }
 
-                // 2. Fetch Fresh Data from Supabase
+                // 2. Fresh Data from Supabase
                 await Promise.all([
                     fetchProducts(),
                     fetchTopSellingProducts(),
@@ -843,7 +718,7 @@ export default function POSScreen() {
                     fetchMasterData()
                 ]);
 
-                // 4. Load Drafts and Held Orders in Parallel
+                // 4. Load Drafts and Held Orders
                 const [savedHeldStr, savedCart, savedCustName, savedCustId, savedTable, savedDiscount, savedWaiter, savedExistingId, savedCustomers] = await Promise.all([
                     AsyncStorage.getItem('pos_held_orders'),
                     AsyncStorage.getItem('pos_cart_draft'),
@@ -857,27 +732,23 @@ export default function POSScreen() {
                 ]);
 
                 if (isMounted) {
-                    // Process Held Orders
                     if (savedHeldStr) {
                         try {
                             const parsedHeld = JSON.parse(savedHeldStr);
-                            setHeldOrders(parsedHeld.map((h: any) => ({
-                                ...h,
-                                createdAt: h.createdAt ? new Date(h.createdAt) : new Date()
+                            setHeldOrders(parsedHeld.map((h: any) => ({ 
+                                ...h, 
+                                createdAt: h.createdAt ? new Date(h.createdAt) : new Date() 
                             })));
                         } catch (e) { console.error('Error parsing held orders:', e); }
                     }
 
-                    // Process Customers Fallback
                     if (savedCustomers && customers.length === 0) {
                         setCustomers(JSON.parse(savedCustomers));
                     }
 
-                    // Process Order-specific Loading
                     if (route.params?.orderId) {
                         await loadOrderById(route.params.orderId);
                     } else {
-                        // Apply Drafts
                         if (savedCart) setCart(JSON.parse(savedCart));
                         if (savedCustName) setCustomerName(savedCustName);
                         if (savedCustId) setSelectedCustomerId(savedCustId === 'null' ? null : parseInt(savedCustId));
@@ -900,26 +771,25 @@ export default function POSScreen() {
         const checkConn = async () => {
             const forced = await OfflineService.getForcedOfflineMode();
             setIsManualOffline(forced);
-
-            // Initialize Device ID for multi-device support
-            let dId = await AsyncStorage.getItem('pos_unique_device_id');
-            if (!dId) {
-                dId = `dev-${Math.random().toString(36).substring(2, 11)}`;
-                await AsyncStorage.setItem('pos_unique_device_id', dId);
-            }
-            setDeviceId(dId);
-
+            
             if (forced) {
                 setIsOnline(false);
             } else {
                 const online = await OfflineService.checkConnectivity();
                 setIsOnline(online);
             }
+
+            // Check Printer Status (Receipt, Kitchen, Bar)
+            const [receiptMac, kitchenMac, barMac] = await Promise.all([
+                AsyncStorage.getItem('@selected_printer_address'),
+                AsyncStorage.getItem('@kitchen_printer_address'),
+                AsyncStorage.getItem('@bar_printer_address')
+            ]);
+            setIsPrinterReady(!!receiptMac || !!kitchenMac || !!barMac);
         };
         checkConn();
         const connInterval = setInterval(checkConn, 15000);
 
-        // Safety timeout (reduced to 5s for faster fallback)
         const timer = setTimeout(() => {
             if (isMounted) setLoadingProducts(false);
         }, 5000);
@@ -932,38 +802,38 @@ export default function POSScreen() {
     }, [currentBranchId, route.params?.orderId]);
 
     const fetchRemotePendingOrders = async (force: boolean = false) => {
-        if (!currentBranchId || isDisplayOnly || fetchInProgress.current) return;
-
-        // Remove restrictive throttle to ensure orders are never missed.
-        // We still use fetchInProgress ref to prevent parallel overlapping calls.
-
+        if (!currentBranchId || isDisplayOnly || (fetchInProgress.current && !force)) return;
+        
         try {
             fetchInProgress.current = true;
             setIsFetchingRemote(true);
-            console.log('[POSScreen] Fetching remote pending orders...');
+            const branchIdToUse = typeof currentBranchId === 'string' ? parseInt(currentBranchId) : currentBranchId;
+            console.log(`[POSScreen] Fetching pending orders for Branch ID: ${branchIdToUse}`);
+            
             const { data, error } = await supabase
                 .from('sales')
                 .select('*')
-                .eq('branch_id', currentBranchId)
+                .eq('branch_id', branchIdToUse)
                 .in('status', ['Pending', 'Unpaid'])
                 .order('date', { ascending: false })
                 .limit(50);
 
             if (error) throw error;
-
-            // Map Supabase sales to HeldOrder format for the modal
+            
+            console.log(`[POSScreen] Found ${data?.length || 0} remote pending orders`);
+            
             const mappedOrders = (data || []).map((sale: any) => ({
                 id: String(sale.id),
                 orderNo: sale.order_no,
-                items: [], // Items will be fetched on-demand when 'Restore' is clicked
+                items: [], 
                 discount: sale.discount || 0,
                 total: sale.total_amount || 0,
-                createdAt: new Date(sale.date),
+                createdAt: new Date(sale.date || sale.created_at),
                 tableNo: sale.table_no || '-',
                 note: sale.notes || '',
                 isRemote: true
             }));
-
+            
             setRemoteOrders(mappedOrders);
             lastFetchTime.current = Date.now();
         } catch (err) {
@@ -974,123 +844,41 @@ export default function POSScreen() {
         }
     };
 
-    // ─── Real-time Order Listener ──────────────────────────────────────────
-
-    // ─── Real-time Order Listener ──────────────────────────────────────────
-    const reconnectSync = useCallback(() => {
-        console.log('[POSScreen] Manual re-sync triggered');
-        setSyncStatus('connecting');
-        if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
-        if (channelRef.current) {
-            supabase.removeChannel(channelRef.current);
-            channelRef.current = null;
-        }
-        // Force a re-render of the effect by touching a state if needed? 
-        // No, we'll just manually call the subscription logic if we extract it.
-        // But the effect depends on currentBranchId, so we can just trigger it.
-        triggerSync();
-    }, [currentBranchId]);
-
-    const triggerSync = useCallback(() => {
-        if (!currentBranchId) return;
-
-        if (channelRef.current) {
-            supabase.removeChannel(channelRef.current);
-            channelRef.current = null;
-        }
-
-        const branchIdStr = String(currentBranchId);
-        let retryCount = 0;
-        const maxRetries = 5;
-
-        const subscribeToOrders = () => {
-            if (channelRef.current) {
-                supabase.removeChannel(channelRef.current);
-            }
-
-            channelRef.current = supabase
-                .channel(`pos_branch_${branchIdStr || 'global'}_${deviceId || 'shared'}`)
-                .on(
-                    'postgres_changes',
-                    { event: '*', schema: 'public', table: 'sales' },
-                    (payload) => {
-                        const newOrder = payload.new as any;
-                        const eventType = payload.eventType;
-                        
-                        console.log('[POSScreen] Real-time Sales Event:', eventType, newOrder?.id);
-
-                        const orderBranchId = String(newOrder?.branch_id || (payload.old as any)?.branch_id || '');
-                        const myBranchId = String(currentBranchId || '');
-
-                        if (orderBranchId.trim() !== myBranchId.trim()) return;
-
-                        if (eventType === 'INSERT' || eventType === 'UPDATE') {
-                            const orderStatus = (newOrder.status || '').toLowerCase();
-                            
-                            if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current);
-                            fetchTimeoutRef.current = setTimeout(() => fetchRemotePendingOrders(true), 500);
-
-                            if (eventType === 'INSERT' && (orderStatus === 'pending' || orderStatus === 'unpaid')) {
-                                showToast(`Pesanan Baru: ${newOrder.order_no || newOrder.id}`, 'info');
-                                
-                                setTimeout(() => {
-                                    if (cartRef.current.length === 0 && !showPaymentModal) {
-                                        loadOrderById(newOrder.id);
-                                    }
-                                }, 500);
-                            }
-                            
-                            if (eventType === 'UPDATE' && existingSaleIdRef.current && Number(newOrder.id) === Number(existingSaleIdRef.current)) {
-                                setTimeout(() => loadOrderById(newOrder.id), 800);
-                            }
-                        }
-                    }
-                )
-                .subscribe((status) => {
-                    console.log(`[POSScreen] Sync Status: ${status}`);
-                    if (status === 'SUBSCRIBED') {
-                        retryCount = 0;
-                        setSyncStatus('connected');
-                        if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
-                    } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-                        setSyncStatus('error');
-                        if (status === 'CHANNEL_ERROR') {
-                            console.error('[POSScreen] CHANNEL_ERROR: Check replication publication on Supabase dashboard.');
-                        }
-                        
-                        if (retryCount < maxRetries && status !== 'CLOSED') {
-                            retryCount++;
-                            console.log(`[POSScreen] Retrying sync... (${retryCount}/${maxRetries})`);
-                            retryTimerRef.current = setTimeout(subscribeToOrders, 5000 * retryCount); // Exponential backoff
-                        }
-                    }
-                });
-        };
-
-        subscribeToOrders();
-    }, [currentBranchId]);
-
     useEffect(() => {
-        if (!currentBranchId) return;
-        
+        if (!currentBranchId || isDisplayOnly) return;
+        const branchIdInt = currentBranchId;
         fetchRemotePendingOrders();
-        triggerSync();
+
+        const salesChannel = supabase
+            .channel(`pos_realtime_${currentBranchId}`)
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'sales', filter: `branch_id=eq.${branchIdInt}` },
+                (payload) => {
+                    if (payload.eventType === 'INSERT') {
+                        const newOrder = payload.new as any;
+                        if (newOrder.status === 'Pending' || newOrder.status === 'Unpaid') {
+                            showToast(`Pesanan Baru: ${newOrder.order_no || newOrder.id} (Meja: ${newOrder.table_no || '-'})`, 'info');
+                        }
+                    }
+                    if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current);
+                    fetchTimeoutRef.current = setTimeout(() => {
+                        fetchRemotePendingOrders(true);
+                    }, 500);
+                }
+            )
+            .subscribe();
 
         return () => {
-            console.log('[POSScreen] Cleanup real-time sync');
             if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current);
-            if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
-            if (channelRef.current) {
-                supabase.removeChannel(channelRef.current);
-                channelRef.current = null;
-            }
+            supabase.removeChannel(salesChannel);
         };
-    }, [currentBranchId, isDisplayOnly, triggerSync]);
+    }, [currentBranchId, isDisplayOnly]);
+ 
 
-    const loadOrderById = async (saleId: number, retryCount: number = 0) => {
+    const loadOrderById = async (saleId: number) => {
         try {
-            console.log(`POSScreen: Loading order by ID: ${saleId} (Retry: ${retryCount})`);
-
+            console.log('POSScreen: Loading order by ID:', saleId);
             const { data: sale, error } = await supabase
                 .from('sales')
                 .select(`
@@ -1104,47 +892,25 @@ export default function POSScreen() {
                 .single();
 
             if (sale) {
-                // RACE CONDITION CHECK: If sale exists but items are empty, wait and retry
-                if (sale.sale_items.length === 0 && retryCount < 3) {
-                    console.log(`[POSScreen] Sale found but items are empty (Retry ${retryCount}). Waiting...`);
-                    showToast("Sedang mengambil detail pesanan...", "info");
-                    setTimeout(() => {
-                        loadOrderById(saleId, retryCount + 1);
-                    }, 1500);
-                    return;
-                }
-
-                if (sale.sale_items.length === 0) {
-                    console.warn('[POSScreen] Sale items still empty after retries.');
-                    showToast("Gagal memuat detail pesanan (Kosong)", "error");
-                    return;
-                }
-
-                // Map items to cart format
-                const items = (sale.sale_items || []).map((si: any) => ({
-                    ...si.product,
-                    id: si.product_id,
-                    name: si.product_name || si.product?.name,
-                    price: si.price,
-                    quantity: si.quantity,
-                    target: resolveItemTarget(si.product ? { ...si.product, target: si.target } : { category: '', target: si.target }),
-                    notes: si.notes || ''
-                }));
-
-                // Set all states in one sequence
                 setExistingSaleId(sale.id);
                 setCustomerName(sale.customer_name || 'Guest');
                 setSelectedCustomerId(sale.customer_id);
                 setSelectedWaiter(sale.waiter_name || '');
                 setSelectedTable(sale.table_no || '-');
+                
+                const items = sale.sale_items.map((si: any) => ({
+                    ...si.product,
+                    id: si.product_id,
+                    name: si.product_name || si.product?.name,
+                    price: si.price,
+                    quantity: si.quantity,
+                    target: si.target,
+                    notes: si.notes || ''
+                }));
                 setCart(items);
-
-                console.log('POSScreen: Order loaded successfully');
-                showToast("Pesanan otomatis dimuat", "success");
-
-                // AUTO-CART: Automatically show cart modal for cashier review
+                setInitialItems(items); // [NEW] Set initial for smart printing
+                
                 if (cashierMode && !isDisplayOnly) {
-                    console.log('POSScreen: Auto-triggering cart modal');
                     setTimeout(() => {
                         setShowCartModal(true);
                     }, 500);
@@ -1152,13 +918,12 @@ export default function POSScreen() {
             }
         } catch (error) {
             console.error('Error loading order by ID:', error);
-            showToast("Gagal memuat pesanan otomatis", "error");
         }
     };
+
     const fetchMasterData = async () => {
         try {
             const authorizedRoles = ['Manager', 'Manajer', 'Owner', 'Administrator', 'Admin', 'Supervisor'];
-
             const [custRes, pmRes, managerRes, allEmpRes] = await Promise.all([
                 supabase.from('customers').select('id, name, phone').limit(50),
                 supabase.from('payment_methods').select('*').eq('is_active', true),
@@ -1171,39 +936,23 @@ export default function POSScreen() {
                     .eq('branch_id', currentBranchId)
                     .order('name', { ascending: true })
             ]);
-
-            // Handle All Employees for Waiter Selection
-            if (!allEmpRes.error && allEmpRes.data) {
-                setWaiters(allEmpRes.data);
-            }
-            // Handle Customers
+            
+            if (!allEmpRes.error && allEmpRes.data) setWaiters(allEmpRes.data);
             if (!custRes.error && custRes.data) {
                 setCustomers(custRes.data);
                 AsyncStorage.setItem('cached_customers', JSON.stringify(custRes.data));
-            } else if (customers.length === 0) {
-                setCustomers([
-                    { id: '1', name: 'Guest', phone: '-' },
-                    { id: '2', name: 'Member A', phone: '08123' },
-                ]);
             }
-
-
-            // Handle Payment Methods
             if (!pmRes.error && pmRes.data) {
                 setPaymentMethods(pmRes.data);
                 AsyncStorage.setItem('cached_payment_methods', JSON.stringify(pmRes.data));
             }
-
-            // Handle Manager PINs
             if (!managerRes.error && managerRes.data) {
                 AsyncStorage.setItem('cached_manager_pins', JSON.stringify(managerRes.data));
             }
-
         } catch (error) {
             console.error('Error fetching master data:', error);
         }
     };
-
 
     // Persistence: Active Cart Draft
     useEffect(() => {
@@ -1217,8 +966,7 @@ export default function POSScreen() {
                         AsyncStorage.setItem('pos_table_draft', selectedTable),
                         AsyncStorage.setItem('pos_discount_draft', String(orderDiscount)),
                         AsyncStorage.setItem('pos_waiter_draft', selectedWaiter),
-                        AsyncStorage.setItem('pos_existing_sale_id_draft', String(existingSaleId)),
-                        AsyncStorage.setItem('pos_draft_timestamp', String(Date.now()))
+                        AsyncStorage.setItem('pos_existing_sale_id_draft', String(existingSaleId))
                     ]);
                 } catch (e) {
                     console.error('Failed to save POS draft:', e);
@@ -1247,27 +995,20 @@ export default function POSScreen() {
         if (!currentBranchId) return;
         try {
             const thirtyDaysAgo = new Date();
-            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
-            thirtyDaysAgo.setHours(0, 0, 0, 0);
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-            // [FIX] Added limit(500) and explicit ordering by id to aggregate only the most recent items.
-            // Using id instead of created_at because sale_items table does not have a created_at column.
             const { data, error } = await supabase
                 .from('sale_items')
                 .select('product_name, quantity, sale:sales!inner(date, branch_id)')
                 .eq('sale.branch_id', currentBranchId)
-                .gte('sale.date', thirtyDaysAgo.toISOString())
-                .order('id', { ascending: false })
-                .limit(500);
+                .gte('sale.date', thirtyDaysAgo.toISOString());
 
             if (error) throw error;
 
             const counts: Record<string, number> = {};
             (data || []).forEach(item => {
                 const name = item.product_name;
-                if (name) {
-                    counts[name] = (counts[name] || 0) + (Number(item.quantity) || 1);
-                }
+                if (name) counts[name] = (counts[name] || 0) + (Number(item.quantity) || 1);
             });
 
             const sorted = Object.entries(counts)
@@ -1284,30 +1025,18 @@ export default function POSScreen() {
     const fetchCategories = async () => {
         if (!currentBranchId || isNaN(Number(currentBranchId))) return;
         try {
-            const { data, error } = await supabase
-                .from('categories')
-                .select('name')
-                .order('sort_order');
-
+            const { data, error } = await supabase.from('categories').select('name').order('sort_order');
             if (error) throw error;
-
             if (data) {
                 const uniqueSet = new Set<string>();
                 data.forEach(c => {
                     if (c && c.name) {
                         const cleanName = c.name.toString().trim();
-                        if (cleanName.length > 0 && cleanName.toLowerCase() !== 'semua') {
-                            uniqueSet.add(cleanName);
-                        }
+                        if (cleanName.length > 0 && cleanName.toLowerCase() !== 'semua') uniqueSet.add(cleanName);
                     }
                 });
-
-                const uniqueCategories = [
-                    'Semua',
-                    ...Array.from(uniqueSet)
-                ];
+                const uniqueCategories = ['Semua', ...Array.from(uniqueSet)];
                 setCategories(uniqueCategories);
-                // Save to Cache
                 AsyncStorage.setItem(`cached_categories_${currentBranchId}`, JSON.stringify(uniqueCategories));
             }
         } catch (error) {
@@ -1315,21 +1044,16 @@ export default function POSScreen() {
         }
     };
 
-
-
     const fetchProducts = async () => {
         if (!currentBranchId || isNaN(Number(currentBranchId))) return;
         setLoadingProducts(true);
         try {
-            // Speed optimization: Select only required columns
             const { data, error } = await supabase
                 .from('products')
                 .select('id, name, price, image_url, category, target, stock, is_taxed, branch_id, sort_order, is_sellable, is_stock_ready')
                 .or(`branch_id.eq.${currentBranchId},branch_id.is.null`)
                 .order('sort_order', { ascending: true });
-
             if (error) throw error;
-
             if (data) {
                 setProducts(data);
                 AsyncStorage.setItem(`cached_products_${currentBranchId}`, JSON.stringify(data));
@@ -1341,80 +1065,40 @@ export default function POSScreen() {
         }
     };
 
-
-    // Filter Logic
     const filteredProducts = useMemo(() => {
-        let result = products;
-
-        // 1. Filter out products that are NOT sellable or NOT ready (Kosong)
-        result = result.filter(p => p.is_sellable !== false && p.is_stock_ready !== false);
-
-        // 2. Filter by Category
+        let result = products.filter(p => p.is_sellable !== false && p.is_stock_ready !== false);
         if (selectedCategory !== 'Semua') {
             const lowerSelected = selectedCategory.toLowerCase();
-            result = result.filter(p => {
-                const pCat = (p.category || '').toLowerCase();
-                return pCat === lowerSelected;
-            });
+            result = result.filter(p => (p.category || '').toLowerCase() === lowerSelected);
         }
-
-        // 3. Filter by Search Query
         if (searchQuery) {
             const lowerQuery = searchQuery.toLowerCase();
             result = result.filter(p => p.name.toLowerCase().includes(lowerQuery));
         }
-
-        // 4. Map Best Seller status and Sort
-        return result
-            .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-    }, [products, searchQuery, selectedCategory, topSellingProducts]);
-
-
-
-    // Cart Total used in Apply Discount
-
+        return result.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+    }, [products, searchQuery, selectedCategory]);
 
     const formatCurrency = useCallback((value: number) => {
         return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(value);
     }, []);
 
     const checkMember = async () => {
-        if (!memberPhone.trim()) {
-            Alert.alert('Info', 'Masukkan nomor HP');
-            return;
-        }
-
+        if (!memberPhone.trim()) { Alert.alert('Info', 'Masukkan nomor HP'); return; }
         try {
-            const { data, error } = await supabase
-                .from('customers')
-                .select('*')
-                .ilike('phone', `%${memberPhone}%`) // Allow partial match or exact? Using ilike for flexibility or eq for strict. strict for now.
-                .maybeSingle();
-
-            // Re-query with eq if strictly needed, but let's try strict first
-            const { data: exactData, error: exactError } = await supabase
-                .from('customers')
-                .select('*')
-                .eq('phone', memberPhone)
-                .maybeSingle();
-
-            const member = exactData || data;
-
-            if (!member) {
+            const { data: exactData } = await supabase.from('customers').select('*').eq('phone', memberPhone).maybeSingle();
+            if (!exactData) {
                 Alert.alert('Gagal', 'Member tidak ditemukan. Lanjut sebagai tamu?', [
                     { text: 'Batal', style: 'cancel' },
                     { text: 'Ya, Tamu', onPress: skipMemberLogin }
                 ]);
             } else {
-                setCustomerName(member.name);
-                setSelectedCustomerId(member.id);
+                setCustomerName(exactData.name);
+                setSelectedCustomerId(exactData.id);
                 setShowMemberLoginModal(false);
                 setMemberPhone('');
-                Alert.alert('Sukses', `Selamat datang, ${member.name}!`);
+                Alert.alert('Sukses', `Selamat datang, ${exactData.name}!`);
             }
-        } catch (e) {
-            Alert.alert('Error', 'Terjadi kesalahan saat mengecek member');
-        }
+        } catch (e) { Alert.alert('Error', 'Terjadi kesalahan saat mengecek member'); }
     };
 
     const skipMemberLogin = () => {
@@ -1425,14 +1109,16 @@ export default function POSScreen() {
     };
 
     const addToCart = useCallback((product: any) => {
-        const target = resolveItemTarget(product);
-
+        let target = product.target || 'Kitchen';
+        if (target === 'Waitress' || !product.target) {
+            const categoryLow = (product.category_name || product.category || '').toLowerCase();
+            if (categoryLow.includes('makan') || categoryLow.includes('food')) target = 'Kitchen';
+            else if (categoryLow.includes('minum') || categoryLow.includes('drink') || categoryLow.includes('bar') || categoryLow.includes('coffee')) target = 'Bar';
+        }
         setCart(prevCart => {
             const existingItem = prevCart.find(item => item.id === product.id);
             if (existingItem) {
-                return prevCart.map(item =>
-                    item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
-                );
+                return prevCart.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
             }
             return [...prevCart, { ...product, quantity: 1, target, notes: '' }];
         });
@@ -1442,132 +1128,47 @@ export default function POSScreen() {
         setCart(prevCart => {
             const existingItem = prevCart.find(item => item.id === productId);
             if (existingItem && existingItem.quantity > 1) {
-                return prevCart.map(item =>
-                    item.id === productId ? { ...item, quantity: item.quantity - 1 } : item
-                );
+                return prevCart.map(item => item.id === productId ? { ...item, quantity: item.quantity - 1 } : item);
             }
             return prevCart.filter(item => item.id !== productId);
         });
     }, []);
 
-    const clearCart = useCallback(async () => {
-        // 1. Clear Memory State
+    const clearCart = useCallback(() => {
         setCart([]);
+        setInitialItems([]);
         setCustomerName('Guest');
         setSelectedCustomerId(null);
         setSelectedTable('-');
         setOrderDiscount(0);
         setExistingSaleId(null);
-        setSearchQuery('');
-        setSelectedCategory('Semua');
-        setMemberPhone('');
-        setShowMemberLoginModal(false);
+    }, []);
 
-        // 2. Clear Persistence Storage Explicitly
-        try {
-            await Promise.all([
-                AsyncStorage.removeItem('pos_cart_draft'),
-                AsyncStorage.removeItem('pos_customer_draft_name'),
-                AsyncStorage.removeItem('pos_customer_draft_id'),
-                AsyncStorage.removeItem('pos_table_draft'),
-                AsyncStorage.removeItem('pos_discount_draft'),
-                AsyncStorage.removeItem('pos_waiter_draft'),
-                AsyncStorage.removeItem('pos_existing_sale_id_draft'),
-                AsyncStorage.removeItem('pos_draft_timestamp')
-            ]);
-            console.log('[POSScreen] Cart and drafts cleared successfully.');
-        } catch (e) {
-            console.warn('[POSScreen] Failed to clear storage drafts:', e);
-        }
-    }, [setSelectedTable, setSelectedCategory]); // Added stable dependencies
-
-    const calculateSubtotal = () => {
-        return cart.reduce((total, item) => total + (item.price * item.quantity), 0);
-    };
-
-    const calculateTaxableSubtotal = () => {
-        return cart.reduce((sum, item) => {
-            if (item.is_taxed === false) return sum;
-            return sum + (item.price * item.quantity);
-        }, 0);
-    };
-
-    const calculateTaxAmount = () => {
-        const taxableSubtotal = calculateTaxableSubtotal();
-        const subtotal = calculateSubtotal();
-        const taxRate = Number(storeSettings?.tax_rate || 0);
-
-        // Apply discount ratio to taxable amount to match web logic
-        const discountRatio = subtotal > 0 ? (subtotal - orderDiscount) / subtotal : 0;
-        const taxableAmount = taxableSubtotal * discountRatio;
-
-        return (taxableAmount * taxRate) / 100;
-    };
-
-    const calculateServiceAmount = () => {
-        const taxableSubtotal = calculateTaxableSubtotal();
-        const subtotal = calculateSubtotal();
-        const serviceRate = Number(storeSettings?.service_rate || 0);
-
-        // Apply discount ratio to taxable amount to match web logic
-        const discountRatio = subtotal > 0 ? (subtotal - orderDiscount) / subtotal : 0;
-        const taxableAmount = taxableSubtotal * discountRatio;
-
-        return (taxableAmount * serviceRate) / 100;
-    };
-
-    const calculateTotal = () => {
-        const subtotal = calculateSubtotal();
-        const tax = calculateTaxAmount();
-        const service = calculateServiceAmount();
-        return Math.max(0, (subtotal - orderDiscount) + tax + service);
-    };
-
-    const calculateActiveTotal = () => {
-        const { total } = calculateActiveBreakdown();
-        return total;
-    };
+    const calculateSubtotal = () => cart.reduce((total, item) => total + (item.price * item.quantity), 0);
+    const calculateTaxableSubtotal = () => cart.reduce((sum, item) => item.is_taxed === false ? sum : sum + (item.price * item.quantity), 0);
+    const calculateTaxAmount = () => (calculateTaxableSubtotal() * (storeSettings?.tax_rate || 0)) / 100;
+    const calculateServiceAmount = () => (calculateTaxableSubtotal() * (storeSettings?.service_rate || 0)) / 100;
+    const calculateTotal = () => Math.max(0, (calculateSubtotal() - orderDiscount) + calculateTaxAmount() + calculateServiceAmount());
 
     const calculateActiveBreakdown = () => {
         if (!isSplitPayment) {
             const subtotal = calculateSubtotal();
             const tax = calculateTaxAmount();
             const service = calculateServiceAmount();
-            const discount = orderDiscount;
-            const total = Math.max(0, (subtotal - discount) + tax + service);
-            return { subtotal, tax, serviceCharge: service, discount, total };
+            const total = calculateTotal();
+            return { subtotal, tax, serviceCharge: service, discount: orderDiscount, total };
         }
-
         const totalSubtotal = calculateSubtotal();
         if (totalSubtotal <= 0) return { subtotal: 0, tax: 0, serviceCharge: 0, discount: 0, total: 0 };
-
         const splitSubtotal = splitItemsToPay.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-
-        // Split Tax/Service based ONLY on split taxable items (independent of discount)
-        const splitTaxableSubtotal = splitItemsToPay.reduce((sum, item) => {
-            if (item.is_taxed === false) return sum;
-            return sum + (item.price * item.quantity);
-        }, 0);
-
-        const taxRate = storeSettings?.tax_rate || 0;
-        const serviceRate = storeSettings?.service_rate || 0;
-
-        const splitTax = (splitTaxableSubtotal * taxRate) / 100;
-        const splitService = (splitTaxableSubtotal * serviceRate) / 100;
-
+        const splitTaxableSubtotal = splitItemsToPay.reduce((sum, item) => item.is_taxed === false ? sum : sum + (item.price * item.quantity), 0);
+        const splitTax = (splitTaxableSubtotal * (storeSettings?.tax_rate || 0)) / 100;
+        const splitService = (splitTaxableSubtotal * (storeSettings?.service_rate || 0)) / 100;
         const splitDiscount = orderDiscount * (splitSubtotal / totalSubtotal);
         const splitTotal = Math.max(0, splitSubtotal - splitDiscount + splitTax + splitService);
-
-        return {
-            subtotal: splitSubtotal,
-            tax: splitTax,
-            serviceCharge: splitService,
-            discount: splitDiscount,
-            total: splitTotal
-        };
+        return { subtotal: splitSubtotal, tax: splitTax, serviceCharge: splitService, discount: splitDiscount, total: splitTotal };
     };
 
-    // New POS Action Handlers
     const handleAddManualItem = (item: { name: string; price: number; notes?: string }) => {
         const manualItem = {
             id: `manual-${Date.now()}`,
@@ -1583,1887 +1184,862 @@ export default function POSScreen() {
     };
 
     const handleApplyDiscount = (discount: { type: 'percentage' | 'fixed'; value: number; reason?: string }) => {
-        let amount = 0;
-        if (discount.type === 'percentage') {
-            amount = (calculateSubtotal() * discount.value) / 100;
-        } else {
-            amount = discount.value;
-        }
+        let amount = discount.type === 'percentage' ? (calculateSubtotal() * discount.value) / 100 : discount.value;
         setOrderDiscount(amount);
         setDiscountReason(discount.reason || '');
+        setShowDiscountModal(false);
+    };
+
+    const onSplitCommit = (selectedItems: any[]) => {
+        if (selectedItems.length === 0) {
+            setIsSplitPayment(false);
+            setSplitItemsToPay([]);
+        } else {
+            setIsSplitPayment(true);
+            setSplitItemsToPay(selectedItems);
+            setShowPaymentModal(true);
+        }
+        setShowSplitBillModal(false);
+    };
+
+    // ─── SMART PRINTING LOGIC ──────────────────────────────────────────
+    const executeSmartPrint = async (saleData: any, currentCart: any[]) => {
+        try {
+            console.log('[POSScreen] Starting Smart Print check...', { cartSize: currentCart.length, initialSize: initialItems.length });
+            const diffItems = currentCart.map(item => {
+                // Find matching item by ID (if exists) or Name/Notes (for manual items)
+                const initialItem = initialItems.find(ii => {
+                    const idMatch = (ii.id && item.id && ii.id === item.id);
+                    const nameMatch = (!ii.id && !item.id && ii.name === item.name);
+                    const notesMatch = (ii.notes === item.notes);
+                    return (idMatch || nameMatch) && notesMatch;
+                });
+
+                if (!initialItem) return item;
+
+                if (item.quantity > initialItem.quantity) {
+                    return { ...item, quantity: item.quantity - initialItem.quantity };
+                }
+                return null;
+            }).filter(Boolean);
+
+            if (diffItems.length > 0) {
+                console.log('[POSScreen] Smart Printing: Sending items to targets', diffItems);
+                // First target (Kitchen)
+                await PrinterManager.printToTarget(diffItems, 'kitchen', saleData);
+                
+                // Small gap between targets to prevent BLE issues
+                await new Promise(r => setTimeout(r, 1200));
+                
+                // Second target (Bar)
+                await PrinterManager.printToTarget(diffItems, 'bar', saleData);
+            } else {
+                console.log('[POSScreen] Smart Printing: No new items to print');
+            }
+        } catch (err) {
+            console.error('[POSScreen] Smart Printing Error:', err);
+        }
     };
 
     const handleHoldOrder = async (note: string = '') => {
         if (cart.length === 0) return;
-
-        const tempOrderNo = `HOLD-${Date.now().toString().slice(-6)}`;
-
-        // Trigger prints if enabled
-        if (enableHoldPrinting) {
-            triggerTargetPrints(tempOrderNo, cart);
-        }
-
-        const newHeldOrder = {
-            id: tempOrderNo,
-            items: [...cart],
+        const saleData = {
+            branch_id: (currentBranchId && currentBranchId !== '') ? parseInt(String(currentBranchId)) : 1,
+            customer_name: customerName,
+            customer_id: selectedCustomerId,
+            table_no: selectedTable,
+            waiter_name: selectedWaiter || userName,
+            total_amount: calculateTotal(),
             discount: orderDiscount,
-            discountReason: discountReason,
-            total: calculateTotal(),
-            createdAt: new Date(),
-            tableNo: selectedTable,
-            existingSaleId: existingSaleId,
-            customerName: customerName,
-            selectedCustomerId: selectedCustomerId,
-            selectedWaiter: selectedWaiter,
-            note: note
+            status: 'Pending',
+            order_no: null 
         };
+        try {
+            // Offline Fallback Check
+            if (isManualOffline || !isOnline) {
+                const offlinePayload = {
+                    ...saleData,
+                    branch_id: (currentBranchId && currentBranchId !== '') ? parseInt(String(currentBranchId)) : 1,
+                    items: cart.map(i => ({ ...i, product_id: typeof i.id === 'string' && i.id.startsWith('manual') ? null : i.id }))
+                };
+                const offlineResult = await OfflineService.saveSale(offlinePayload);
+                const branchIdNum = typeof currentBranchId === 'string' ? parseInt(currentBranchId) : (currentBranchId || 1);
+                const finalizedSaleData = { ...saleData, branch_id: branchIdNum, order_no: offlineResult.order_no };
+                await executeSmartPrint(finalizedSaleData, cart);
+                
+                const newHeldOrder = {
+                    id: offlineResult.id,
+                    orderNo: offlineResult.order_no,
+                    items: [...cart],
+                    discount: saleData.discount,
+                    total: saleData.total_amount,
+                    createdAt: new Date(),
+                    tableNo: saleData.table_no,
+                    isRemote: false
+                };
+                setHeldOrders(prev => [newHeldOrder, ...prev]);
+                showToast('Draft disimpan secara lokal (Offline)', 'info');
+                
+                // [FORCE CLEAR] Clear cart immediately
+                setCart([]);
+                setInitialItems([]);
+                setOrderDiscount(0);
+                setExistingSaleId(null);
+                setCustomerName('Guest');
+                setSelectedTable('-');
 
-        setHeldOrders(prev => [newHeldOrder, ...prev]);
+                setShowHoldNoteModal(false);
+                setShowCartModal(false);
+                return;
+            }
 
-        showToast('Pesanan ditangguhkan', 'success');
+            const { data, error } = await supabase.rpc('upsert_sale_with_items', {
+                p_sale_data: saleData,
+                p_items_data: cart.map(i => ({
+                    product_id: typeof i.id === 'string' && i.id.startsWith('manual') ? null : i.id,
+                    product_name: i.name,
+                    price: i.price,
+                    quantity: i.quantity,
+                    target: i.target,
+                    notes: i.notes
+                })),
+                p_target_sale_id: existingSaleId || null
+            });
+            if (error) throw error;
+            const branchIdNum = (currentBranchId && currentBranchId !== '') ? parseInt(String(currentBranchId)) : 1;
+            const finalizedSaleData = { ...saleData, branch_id: branchIdNum, order_no: data.order_no };
+            
+            showToast('Pesanan di-hold & dicetak', 'success');
 
-        clearCart();
-        setOrderDiscount(0);
-        setDiscountReason('');
-        setShowCartModal(false);
+            // [FORCE CLEAR] Clear cart immediately BEFORE printing to ensure UI feels responsive
+            setCart([]);
+            setInitialItems([]);
+            setOrderDiscount(0);
+            setExistingSaleId(null);
+            setCustomerName('Guest');
+            setSelectedTable('-');
+            setShowHoldNoteModal(false);
+            setShowCartModal(false);
+
+            console.log('[POSScreen] Hold success, triggering auto-print and state update');
+            await executeSmartPrint(finalizedSaleData, cart);
+            
+            // Refresh from server to be sure
+            setTimeout(() => {
+                fetchRemotePendingOrders(true);
+            }, 2000);
+        } catch (err: any) {
+            console.error('[POSScreen] Hold Error:', err);
+            Alert.alert('Gagal Hold', err.message || 'Database sedang sibuk. Silakan coba lagi.');
+        }
     };
 
     const handleRestoreHeldOrder = async (order: any) => {
-        if (cart.length > 0) {
-            Alert.alert('Info', 'Kosongkan keranjang sebelum mengembalikan pesanan');
-            return;
-        }
-
+        if (cart.length > 0) { Alert.alert('Info', 'Kosongkan keranjang sebelum memuat pesanan'); return; }
         if (order.isRemote) {
             setShowHeldOrdersModal(false);
             await loadOrderById(parseInt(order.id));
             return;
         }
-
         setCart(order.items);
+        setInitialItems(order.items);
         setOrderDiscount(order.discount || 0);
         setSelectedTable(order.tableNo || '-');
         setCustomerName(order.customerName || 'Guest');
         setSelectedCustomerId(order.selectedCustomerId || null);
         setSelectedWaiter(order.selectedWaiter || '');
         setExistingSaleId(order.existingSaleId || null);
-
         setHeldOrders(prev => prev.filter(h => h.id !== order.id));
         setShowHeldOrdersModal(false);
-        setShowCartModal(true);
+        if (!isSideBySide) setShowCartModal(true);
+    };
+
+    const handleCheckout = async () => {
+        if (!isSessionActive && cashierMode && !isActuallyDisplay && !isAdmin) {
+            Alert.alert('Shift Belum Dibuka', 'Anda wajib membuka shift kasir terlebih dahulu.');
+            return;
+        }
+        if (cart.length === 0) return;
+        if (cashierMode && !isActuallyDisplay) { setShowPaymentModal(true); return; }
+        try {
+            const saleData = {
+                branch_id: currentBranchId ? parseInt(String(currentBranchId)) : null,
+                customer_name: customerName,
+                customer_id: selectedCustomerId,
+                table_no: selectedTable,
+                waiter_name: selectedWaiter || userName,
+                total_amount: calculateTotal(),
+                status: 'Pending',
+                discount: orderDiscount,
+                tax: calculateTaxAmount(),
+                service_charge: calculateServiceAmount()
+            };
+            const { data, error } = await supabase.rpc('upsert_sale_with_items', {
+                p_sale_data: saleData,
+                p_items_data: cart.map(i => ({
+                    product_id: typeof i.id === 'string' && i.id.startsWith('manual') ? null : i.id,
+                    product_name: i.name,
+                    price: i.price,
+                    quantity: i.quantity,
+                    target: i.target,
+                    notes: i.notes
+                })),
+                p_target_sale_id: (typeof existingSaleId === 'number') ? existingSaleId : null
+            });
+            if (error) throw error;
+            executeSmartPrint({ ...saleData, order_no: data.order_no }, cart);
+            setLastOrderNo(data.order_no);
+            setLastSaleId(data.id);
+            setSuccessModalConfig({ title: 'Pesanan Terkirim!', message: 'Pesanan berhasil dikirim ke dapur/bar.' });
+            setShowSuccessModal(true);
+            // [FORCE CLEAR]
+            setCart([]);
+            setInitialItems([]);
+            setOrderDiscount(0);
+            setExistingSaleId(null);
+            setCustomerName('Guest');
+            setSelectedTable('-');
+            setShowCartModal(false);
+        } catch (err: any) {
+            Alert.alert('Gagal', 'Server tidak merespon (Database sibuk). Silakan coba lagi.');
+        }
+    };
+
+    const handlePaymentConfirm = async (paymentData: { method: string; amount: number; change: number }) => {
+        try {
+            const breakdown = calculateActiveBreakdown();
+            const itemsToProc = isSplitPayment ? splitItemsToPay : cart;
+            const saleData = {
+                branch_id: currentBranchId ? parseInt(String(currentBranchId)) : null,
+                customer_name: customerName,
+                customer_id: selectedCustomerId,
+                table_no: selectedTable || '-',
+                waiter_name: selectedWaiter || userName,
+                total_amount: breakdown.total,
+                discount: breakdown.discount,
+                tax: breakdown.tax,
+                service_charge: breakdown.serviceCharge,
+                status: 'Paid',
+                payment_method: paymentData.method,
+                paid_amount: paymentData.amount,
+                change: paymentData.change
+            };
+            // Offline Fallback Check
+            if (isManualOffline || !isOnline) {
+                const offlinePayload = {
+                    ...saleData,
+                    branch_id: saleData.branch_id || 1,
+                    items: itemsToProc.map(i => ({ ...i, product_id: typeof i.id === 'string' && i.id.startsWith('manual') ? null : i.id }))
+                };
+                const offlineResult = await OfflineService.saveSale(offlinePayload);
+                if (isSplitPayment) {
+                    const newCart = [...cart];
+                    splitItemsToPay.forEach(sp => {
+                        const idx = newCart.findIndex(c => c.id === sp.id);
+                        if (idx !== -1) {
+                            if (newCart[idx].quantity === sp.quantity) newCart.splice(idx, 1);
+                            else newCart[idx].quantity -= sp.quantity;
+                        }
+                    });
+                    setCart(newCart);
+                    setInitialItems(newCart);
+                    setIsSplitPayment(false);
+                    setSplitItemsToPay([]);
+                    setIsPartialSplit(true);
+                } else {
+                    clearCart();
+                    setIsPartialSplit(false);
+                }
+                setLastOrderNo(offlineResult.order_no);
+                setLastSaleId(offlineResult.id);
+                setSuccessModalConfig({ title: 'Pembayaran Offline Berhasil!', message: 'Transaksi disimpan secara lokal.' });
+                setShowSuccessModal(true);
+                setShowPaymentModal(false);
+                setShowCartModal(false);
+                maybeAutoPrintReceipt(offlineResult.id, offlineResult.order_no);
+                return;
+            }
+
+            const { data, error } = await supabase.rpc('upsert_sale_with_items', {
+                p_sale_data: saleData,
+                p_items_data: itemsToProc.map(i => ({
+                    product_id: typeof i.id === 'string' && i.id.startsWith('manual') ? null : i.id,
+                    product_name: i.name,
+                    price: i.price,
+                    quantity: i.quantity,
+                    target: i.target,
+                    notes: i.notes
+                })),
+                p_target_sale_id: (!isSplitPayment && typeof existingSaleId === 'number') ? existingSaleId : null
+            });
+            if (error) throw error;
+            if (isSplitPayment) {
+                const newCart = [...cart];
+                splitItemsToPay.forEach(sp => {
+                    const idx = newCart.findIndex(c => c.id === sp.id);
+                    if (idx !== -1) {
+                        if (newCart[idx].quantity === sp.quantity) newCart.splice(idx, 1);
+                        else newCart[idx].quantity -= sp.quantity;
+                    }
+                });
+                setCart(newCart);
+                setInitialItems(newCart);
+                setIsSplitPayment(false);
+                setSplitItemsToPay([]);
+                setIsPartialSplit(true);
+            } else {
+                clearCart();
+                setIsPartialSplit(false);
+            }
+            setLastOrderNo(data.order_no);
+            setLastSaleId(data.id);
+            setSuccessModalConfig({ title: 'Pembayaran Berhasil!', message: 'Transaksi telah selesai dicatat.' });
+            setShowSuccessModal(true);
+            setShowPaymentModal(false);
+            setShowCartModal(false);
+            maybeAutoPrintReceipt(data.id, data.order_no);
+        } catch (err) {
+            Alert.alert('Gagal Pembayaran', 'Database sibuk. Pastikan internet stabil dan coba lagi.');
+        }
     };
 
     const handleTablePress = () => {
-        // [RESTRICTED] Only allow manual table entry for cashiers
-        if (isDisplayOnly || !cashierMode) {
-            console.log('[POSScreen] Manual table entry is restricted for non-cashier users.');
-            return;
-        }
+        if (isDisplayOnly || !cashierMode) return;
         setManualTableInput(selectedTable === '-' ? '' : selectedTable);
         setShowTableManualModal(true);
     };
 
     const updateNote = (productId: string | number, note: string) => {
-        setCart(prev => prev.map(item =>
-            item.id === productId ? { ...item, notes: note } : item
-        ));
+        setCart(prev => prev.map(item => item.id === productId ? { ...item, notes: note } : item));
     };
 
-    const handleDeleteHeldOrder = (id: string) => {
-        setOrderToDeleteId(id);
-        if (isAdmin || !storeSettings?.restrict_cashier_delete) {
-            confirmDeleteOrder(id);
-        } else {
-            setPendingAuth({ action: 'delete', data: id });
-            setShowDeleteAuthModal(true);
-        }
-    };
-
-    const handleAuthSuccess = () => {
-        if (!pendingAuth) return;
-        
-        switch (pendingAuth.action) {
-            case 'discount':
-                setShowDiscountModal(true);
-                break;
-            case 'hold':
-                setShowHoldNoteModal(true);
-                break;
-            case 'manual':
-                setShowManualItemModal(true);
-                break;
-            case 'split':
-                setShowSplitBillModal(true);
-                break;
-            case 'delete':
-                confirmDeleteOrder(pendingAuth.data);
-                break;
-        }
-        setPendingAuth(null);
-    };
-
-    const confirmDeleteOrder = async (directId?: string) => {
-        const targetId = directId || orderToDeleteId;
-        if (!targetId) return;
-
-        try {
-            // Check if it's local or remote
-            const isRemote = remoteOrders.some(r => r.id === targetId);
-
-            if (isRemote) {
-                console.log('[POSScreen] Deleting remote order:', targetId);
-                const { error } = await supabase
-                    .from('sales')
-                    .delete()
-                    .eq('id', targetId);
-
-                if (error) throw error;
-                showToast("Pesanan remote berhasil dihapus", "success");
-            } else {
-                // Local held orders
-                setHeldOrders(prev => prev.filter(h => h.id !== targetId));
-                showToast("Pesanan lokal dihapus", "success");
-            }
-
-            // Refresh list
-            fetchRemotePendingOrders(true);
-        } catch (err) {
-            console.error('[POSScreen] Delete Order Error:', err);
-            showToast("Gagal menghapus pesanan", "error");
-        } finally {
-            setOrderToDeleteId(null);
-        }
-    };
-
-
-    // Helper for invoice numbering
-    const generateOrderNo = (online: boolean) => {
-        const mode = online ? storeSettings?.invoice_mode : (storeSettings?.offline_invoice_mode || 'auto');
-        const prefix = online ? (storeSettings?.invoice_prefix || 'ORD') : (storeSettings?.offline_invoice_prefix || 'OFF');
-        const lastNumber = online ? (Number(storeSettings?.invoice_last_number) || 0) : (Number(storeSettings?.offline_invoice_last_number) || 0);
-
-        if (mode === 'auto') {
-            const nextNumber = lastNumber + 1;
-            const newNo = `${prefix}-${nextNumber.toString().padStart(4, '0')}`;
-
-            if (online) {
-                // Background increment (best effort)
-                supabase.from('store_settings').update({ invoice_last_number: nextNumber }).eq('id', 1).then(() => {
-                    console.log('[POSScreen] Online Counter Incremented');
-                });
-            } else {
-                supabase.from('store_settings').update({ offline_invoice_last_number: nextNumber }).eq('id', 1).then(() => {
-                    console.log('[POSScreen] Offline Counter Incremented');
-                });
-            }
-            return newNo;
-        } else {
-            const timestamp = Date.now().toString().slice(-6);
-            return `${prefix}-${new Date().getFullYear()}-${timestamp}`;
-        }
-    };
-
-
-    const onSplitCommit = (selectedItems: any[]) => {
-        setSplitItemsToPay(selectedItems);
-        setIsSplitPayment(true);
-        setShowSplitBillModal(false);
-        setShowPaymentModal(true);
-    };
-
-    const handleCheckout = async () => {
-        if (paymentInProgress.current) return;
-        paymentInProgress.current = true;
-
-        // [FIXED] Close Cart Modal immediately to remove the "floating" screen 
-        // as soon as the user confirms their order.
-        setShowCartModal(false);
-
-        console.log('[POSScreen] Checkout Attempt:', {
-            isSessionActive,
-            cashierMode,
-            isDisplayOnly,
-            sessionLoading
-        });
-
-        // Bypass session check if user is in display-only mode
-        console.log('[POSScreen] Checkout Check:', { isSessionActive, cashierMode, isActuallyDisplay });
-
-        if (!isSessionActive && cashierMode && !isActuallyDisplay && !isAdmin) {
-            Alert.alert('Shift Belum Dibuka', 'Anda wajib membuka shift kasir terlebih dahulu sebelum bertransaksi.');
-            paymentInProgress.current = false;
-            return;
-        }
-
-        if (sessionLoading) {
-            Alert.alert('Satu Momen', 'Sedang mensinkronisasi data pengguna...');
-            paymentInProgress.current = false;
-            return;
-        }
-
-        if (cart.length === 0) {
-            Alert.alert('Info', 'Keranjang masih kosong');
-            paymentInProgress.current = false;
-            return;
-        }
-
-
-        if (cashierMode && !isActuallyDisplay) {
-            setShowPaymentModal(true);
-            paymentInProgress.current = false;
-            return;
-        }
-
-        try {
-            if (!currentBranchId) {
-                Alert.alert('Error', 'Data cabang belum dimuat. Silakan tunggu atau login ulang.');
-                paymentInProgress.current = false;
-                return;
-            }
-            const totalAmount = calculateTotal();
-            let orderNoText = '';
-            let sale: any = null;
-
-            // 1. Prepare Data for Atomic Upsert
-            const saleData: any = {
-                // [DEPRECATED] Suffix removal was risky in multi-terminal setup.
-                // Switching to SERVER-SIDE numbering. Pass null for order_no on NEW orders.
-                order_no: existingSaleId ? undefined : null, 
-                branch_id: (currentBranchId && currentBranchId !== 'null') ? currentBranchId : (storeSettings?.branch_id || '1'),
-                customer_name: customerName || 'Guest',
-                customer_id: selectedCustomerId,
-                table_no: selectedTable || '-',
-                waiter_name: selectedWaiter || userName || 'Kasir',
-                total_amount: totalAmount,
-                status: 'Pending',
-                payment_method: 'Tunai',
-                discount: orderDiscount,
-                tax: calculateTaxAmount(),
-                service_charge: calculateServiceAmount(),
-                date: getLocalISOString()
-            };
-
-            console.log('[POSScreen] Sending Order to Branch:', saleData.branch_id);
-
-            const itemsToInsert = cart.map(item => ({
-                product_id: typeof item.id === 'string' && item.id.startsWith('manual') ? null : item.id,
-                product_name: item.name,
-                name: item.name, // [FIXED] For PrinterManager compatibility
-                quantity: item.quantity,
-                price: item.price,
-                cost: 0,
-                target: resolveItemTarget(item),
-                status: 'Pending',
-                is_taxed: item.is_taxed !== false,
-                notes: item.notes || ''
-            }));
-
-            // [ULTIMATE ATOMIC FIX] Use the enhanced Upsert RPC
-            // Handles both NEW orders and UPDATES to held orders in one transaction.
-            const { data: rpcData, error: rpcError } = await supabase.rpc('upsert_sale_with_items', {
-                p_sale_data: saleData,
-                p_items_data: itemsToInsert,
-                p_target_sale_id: existingSaleId // If null, it creates new. If set, it updates.
-            });
-
-            if (rpcError) {
-                console.error('[POSScreen] RPC Error:', rpcError);
-                
-                // [AUTO-REPAIR] Session conflict handling (Multi-device login)
-                if (rpcError.message?.includes('JWT') || rpcError.message?.includes('Unauthorized') || rpcError.code === 'PGRST301') {
-                   console.log('[POSScreen] Session expired/conflict. Attempting anonymous fallback...');
-                   // Retry once without auth header (supabase handles this if we sign out or just retry)
-                   const { data: retryData, error: retryError } = await supabase.rpc('upsert_sale_with_items', {
-                       p_sale_data: saleData,
-                       p_items_data: itemsToInsert,
-                       p_target_sale_id: existingSaleId
-                   });
-                   
-                   if (!retryError) {
-                       sale = retryData;
-                   } else {
-                       Alert.alert('Gagal Mengirim Pesanan', 'Terjadi kesalahan di server. Detail: ' + rpcError.message);
-                       return;
-                   }
-                } else {
-                    Alert.alert('Gagal Mengirim Pesanan', 'Terjadi kesalahan di server. Detail: ' + rpcError.message);
-                    return;
-                }
-            }
-            
-            sale = rpcData;
-            orderNoText = sale.order_no;
-            const finalSaleId = sale.id;
-
-            setLastOrderNo(orderNoText);
-            setLastSaleId(finalSaleId);
-            setCurrentSaleId(finalSaleId);
-
-            // [FIXED] Sequential background printing to avoid Bluetooth race conditions
-            // We group these and don't await the main block, but we await each print INSIDE the block.
-            const runCheckoutPrints = async () => {
-                try {
-                    if (finalSaleId) {
-                        const paymentOverride = {
-                            discount: orderDiscount,
-                            tax: calculateTaxAmount(),
-                            service_charge: calculateServiceAmount()
-                        };
-                        maybeAutoPreviewReceipt(finalSaleId, orderNoText, paymentOverride);
-                    }
-                    await triggerTargetPrints(orderNoText, itemsToInsert);
-                } catch (pErr) {
-                    console.error('[POSScreen] Background print error:', pErr);
-                }
-            };
-            runCheckoutPrints();
-
-            // [PRIORITY UI] Show success modal and reset state
-            setSuccessModalConfig({
-                title: 'Pesanan Terkirim!',
-                message: isActuallyDisplay 
-                    ? 'Pesanan Anda telah masuk ke sistem kasir. Silakan tunggu.'
-                    : (existingSaleId ? 'Pesanan berhasil diperbarui' : 'Pesanan baru berhasil dibuat')
-            });
-            setShowSuccessModal(true);
-
-            // [INSTANT CLEAN]
-            await clearCart();
-            setExistingSaleId(null);
-            setSelectedCustomerId(null);
-            setCustomerName('');
-            setSelectedTable('');
-
-        } catch (error: any) {
-            console.error('Checkout Error Details:', error);
-            const errorMessage = error?.message || error?.details || 'Koneksi bermasalah atau database sibuk';
-            
-            // Log specifically for debugging multi-device session issues
-            if (errorMessage.includes('JWT') || errorMessage.includes('Unauthorized')) {
-                console.warn('[POSScreen] Session conflict detected (Multi-device login). Attempting repair...');
-            }
-
-            const totalAmount = calculateTotal();
-            
-            const alertButtons: any[] = [
+    const handleDeleteHeldOrder = async (id: string) => {
+        Alert.alert(
+            'Hapus Pesanan',
+            'Apakah Anda yakin ingin menghapus pesanan ini?',
+            [
                 { text: 'Batal', style: 'cancel' },
-                { text: 'Coba Lagi', onPress: () => handleCheckout() }
-            ];
-
-            // Only offer Offline if explicitly enabled in settings
-            if (storeSettings?.offline_invoice_mode === 'auto' || isManualOffline) {
-                alertButtons.push({
-                    text: 'Simpan Offline (OFF)',
+                { 
+                    text: 'Hapus', 
                     style: 'destructive',
                     onPress: async () => {
-                        const localOrderNo = (storeSettings?.offline_invoice_mode === 'auto')
-                            ? `${storeSettings?.offline_invoice_prefix || 'OFF'}-${(Number(storeSettings?.offline_invoice_last_number || 0) + 1).toString().padStart(5, '0')}`
-                            : `OFF-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
-
-                        const saleData = {
-                            order_no: localOrderNo,
-                            branch_id: currentBranchId || storeSettings?.branch_id || '1',
-                            customer_name: customerName,
-                            customer_id: selectedCustomerId,
-                            table_no: selectedTable,
-                            waiter_name: selectedWaiter,
-                            total_amount: totalAmount,
-                            status: 'Pending',
-                            payment_method: 'Tunai',
-                            discount: orderDiscount,
-                            tax: calculateTaxAmount(),
-                            service_charge: calculateServiceAmount()
-                        };
-
-                        const success = await OfflineService.queueOfflineSale(saleData, cart);
-                        if (success) {
-                            if (storeSettings?.offline_invoice_mode === 'auto') {
-                                const nextNum = Number(storeSettings?.offline_invoice_last_number) + 1;
-                                supabase.from('store_settings').update({ offline_invoice_last_number: nextNum }).eq('id', 1).then(() => { });
+                        const isRemote = remoteOrders.some(o => o.id === id);
+                        if (isRemote) {
+                            try {
+                                const { error } = await supabase.from('sales').delete().eq('id', id);
+                                if (error) throw error;
+                                setRemoteOrders(prev => prev.filter(o => o.id !== id));
+                                showToast('Pesanan dihapus dari server', 'success');
+                            } catch (err) {
+                                Alert.alert('Gagal', 'Gagal menghapus pesanan di server. Coba lagi.');
                             }
-                            setShowCartModal(false);
-                            setTimeout(() => {
-                                setSuccessModalConfig({
-                                    title: 'Tersimpan Offline!',
-                                    message: 'Pesanan disimpan di HP karena gangguan koneksi. Segera cek sinkronisasi di Pengaturan.'
-                                });
-                                setShowSuccessModal(true);
-                                clearCart();
-                            }, 150);
-                        }
-                    }
-                });
-            }
-
-            Alert.alert('Gagal Mengirim Pesanan', errorMessage, alertButtons);
-        } finally {
-            paymentInProgress.current = false;
-        }
-    };
-
-    const handlePaymentConfirm = async (paymentData: { method: string; amount: number; change: number }) => {
-        if (paymentInProgress.current) return;
-        paymentInProgress.current = true;
-
-        if (!currentBranchId) {
-            Alert.alert('Error', 'Data cabang belum dimuat.');
-            paymentInProgress.current = false;
-            return;
-        }
-        try {
-            // [FIXED] Proportional Calculation for Split Bill
-            let finalTotal = calculateTotal();
-            let currentDiscount = orderDiscount;
-            let currentTax = calculateTaxAmount();
-            let currentService = calculateServiceAmount();
-
-            if (isSplitPayment) {
-                const totalSubtotal = calculateSubtotal();
-
-                if (totalSubtotal > 0) {
-                    const splitSubtotal = splitItemsToPay.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-                    const splitTaxableSubtotal = splitItemsToPay.reduce((sum, item) => {
-                        if (item.is_taxed === false) return sum;
-                        return sum + (item.price * item.quantity);
-                    }, 0);
-
-                    currentDiscount = orderDiscount * (splitSubtotal / totalSubtotal);
-
-                    const taxRate = storeSettings?.tax_rate || 0;
-                    const serviceRate = storeSettings?.service_rate || 0;
-
-                    currentTax = (splitTaxableSubtotal * taxRate) / 100;
-                    currentService = (splitTaxableSubtotal * serviceRate) / 100;
-
-                    finalTotal = splitSubtotal - currentDiscount + currentTax + currentService;
-                } else {
-                    finalTotal = 0;
-                    currentDiscount = 0;
-                    currentTax = 0;
-                    currentService = 0;
-                }
-            }
-
-            const itemsToProc = isSplitPayment ? splitItemsToPay : cart;
-
-            // 1. Prepare Primary Sale Data with Robust Branch ID
-            const activeBranchId = currentBranchId || storeSettings?.branch_id || '1'; // Default to 1 as global fallback
-            
-            const saleData = {
-                // Pass NULL to let the server handle sequential numbering atomically
-                order_no: (existingSaleId && !isSplitPayment) ? undefined : null, 
-                branch_id: activeBranchId,
-                customer_name: customerName || 'Guest',
-                customer_id: selectedCustomerId,
-                table_no: selectedTable || '-',
-                waiter_name: selectedWaiter || userName || 'Kasir',
-                total_amount: finalTotal,
-                discount: currentDiscount,
-                tax: currentTax,
-                service_charge: currentService,
-                status: 'Paid',
-                payment_method: paymentData.method,
-                paid_amount: paymentData.amount,
-                change: paymentData.change,
-                date: getLocalISOString()
-            };
-
-            const itemsToInsert = itemsToProc.map(item => ({
-                product_id: typeof item.id === 'string' && item.id.startsWith('manual') ? null : item.id,
-                product_name: item.name,
-                name: item.name, // [FIXED] For PrinterManager compatibility
-                quantity: item.quantity,
-                price: item.price,
-                cost: 0,
-                target: resolveItemTarget(item),
-                status: 'Pending',
-                is_taxed: item.is_taxed || false,
-                notes: item.notes || ''
-            }));
-
-            // [ATOMIC FIX] Use Upsert RPC with Safety Timeout (12s)
-            const rpcPromise = supabase.rpc('upsert_sale_with_items', {
-                p_sale_data: saleData,
-                p_items_data: itemsToInsert,
-                p_target_sale_id: (existingSaleId && !isSplitPayment) ? existingSaleId : null
-            });
-
-            // Race RPC against a 12-second timeout
-            const timeoutPromise = new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('TIMEOUT_DB')), 12000)
-            );
-
-            console.log('[POSScreen] Executing payment RPC...');
-            const { data: rpcData, error: rpcError } = await Promise.race([rpcPromise, timeoutPromise]) as any;
-
-            if (rpcError) {
-                console.error('[POSScreen] RPC Error:', rpcError);
-                throw rpcError;
-            }
-            
-            const sale = rpcData;
-            const orderNoText = sale.order_no;
-
-            // 2. [FIXED] Sequence background printing with robust delays to prevent printer collisions
-            const runPaymentPrints = async () => {
-                try {
-                    const paymentOverride = {
-                        paid_amount: paymentData.amount,
-                        change: paymentData.change,
-                        payment_method: paymentData.method,
-                        discount: currentDiscount,
-                        tax: currentTax,
-                        service_charge: currentService
-                    };
-
-                    // Store for re-print reliability before DB sync
-                    setLastTransactionData(paymentOverride);
-
-                    if (receiptPrintMode === 'auto' && !isDisplayOnly && !autoPreviewReceipt) {
-                        console.log('[POSScreen] Starting Auto-Print Receipt...');
-                        await handlePrintReceipt(sale.id, orderNoText, paymentOverride);
-                        // Add significant delay after receipt to allow physical printing/cutting to finish
-                        await new Promise(r => setTimeout(r, 2500));
-                    }
-
-                    // [FIX] Ensure kitchen/bar tickets are printed when paying directly in cashier mode
-                    console.log('[POSScreen] Starting Target Prints (Kitchen/Bar)...');
-                    await triggerTargetPrints(orderNoText, itemsToInsert);
-
-                    maybeAutoPreviewReceipt(sale.id, orderNoText, paymentOverride);
-                } catch (pErr) {
-                    console.error('[POSScreen] Background payment print error:', pErr);
-                }
-            };
-            
-            // Execute background prints without blocking UI completion, but internally sequential
-            runPaymentPrints();
-
-            // 3. Update UI
-            if (isSplitPayment) {
-                // Remove paid items from cart
-                const newCart = [...cart];
-                splitItemsToPay.forEach(splitItem => {
-                    const index = newCart.findIndex(item => item.id === splitItem.id);
-                    if (index !== -1) {
-                        if (newCart[index].quantity === splitItem.quantity) {
-                            newCart.splice(index, 1);
                         } else {
-                            newCart[index] = { ...newCart[index], quantity: newCart[index].quantity - splitItem.quantity };
+                            setHeldOrders(prev => prev.filter(h => h.id !== id));
+                            showToast('Draft lokal dihapus', 'info');
                         }
-                    }
-                });
-                setCart(newCart);
-                setIsSplitPayment(false);
-                setSplitItemsToPay([]);
-
-                // [FIXED] Use Atomic Upsert to update the original held order after split.
-                if (existingSaleId) {
-                    try {
-                        const remSubtotal = newCart.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
-                        const totalSubtotal = calculateSubtotal();
-                        const remRatio = totalSubtotal > 0 ? remSubtotal / totalSubtotal : 0;
-
-                        const remDiscount = orderDiscount * remRatio;
-                        const remTax = calculateTaxAmount() * remRatio;
-                        const remService = calculateServiceAmount() * remRatio;
-                        const remTotal = Math.max(0, remSubtotal - remDiscount + remTax + remService);
-
-                        const remSaleData = {
-                            total_amount: remTotal,
-                            discount: remDiscount,
-                            tax: remTax,
-                            service_charge: remService,
-                            date: getLocalISOString()
-                        };
-
-                        const remItemsData = newCart.map((item: any) => ({
-                            product_id: typeof item.id === 'string' && item.id.startsWith('manual') ? null : item.id,
-                            product_name: item.name,
-                            quantity: item.quantity,
-                            price: item.price,
-                            cost: 0,
-                            target: item.target || 'Waitress',
-                            status: 'Pending',
-                            is_taxed: item.is_taxed || false
-                        }));
-
-                        // [ATOMIC FIX] Update original held order after split with safety timeout
-                        const remRpcPromise = supabase.rpc('upsert_sale_with_items', {
-                            p_sale_data: remSaleData,
-                            p_items_data: remItemsData,
-                            p_target_sale_id: existingSaleId
-                        });
-
-                        await Promise.race([
-                            remRpcPromise,
-                            new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT_DB')), 10000))
-                        ]);
-
-                        console.log('[POSScreen] Original held order updated atomically after split.');
-                    } catch (err) {
-                        console.error('[POSScreen] Failed to update original held order after split:', err);
                     }
                 }
-
-                // [UPDATED] Show Success Modal for Partial Split
-                setLastOrderNo(orderNoText);
-                setLastSaleId(sale.id);
-                setCurrentSaleId(sale.id);
-                setIsPartialSplit(true);
-                setSuccessModalConfig({
-                    title: 'Pembayaran Sebagian Berhasil!',
-                    message: 'Silakan cetak struk untuk bagian ini jika diperlukan.'
-                });
-                setShowSuccessModal(true);
-            } else {
-                // Final Payment: Clear everything
-                setOrderDiscount(0);
-                setExistingSaleId(null);
-                setIsPartialSplit(false); 
-
-                setLastOrderNo(orderNoText);
-                setLastSaleId(sale.id);
-                setCurrentSaleId(sale.id);
-                
-                setSuccessModalConfig({
-                    title: 'Pembayaran Berhasil!',
-                    message: isActuallyDisplay 
-                        ? 'Terima kasih! Pembayaran Anda telah diterima dan pesanan diproses.'
-                        : 'Transaksi telah selesai dan pembayaran diterima.'
-                });
-                setShowSuccessModal(true);
-            }
-            
-            // [IMPROVED] Close modals immediately for instant UI feedback
-            setShowPaymentModal(false);
-            setShowCartModal(false);
-
-            // [IMPROVED] Storage operations done in background to avoid blocking SuccessModal display
-            if (!isSplitPayment) {
-                clearCart();
-            }
-            setCurrentSaleId(sale.id);
-        } catch (error: any) {
-            console.error('Payment Confirm Error:', error);
-            
-            let errorMessage = error.message || 'Koneksi terganggu saat memproses pembayaran';
-            if (error.message === 'TIMEOUT_DB') {
-                errorMessage = 'Server tidak merespon dalam waktu lama (Database Sibuk). Cek daftar pesanan untuk memastikan transaksi sudah masuk.';
-            }
-            
-            const alertButtons: any[] = [
-                { text: 'Tutup', style: 'cancel' },
-                { text: 'Coba Lagi', onPress: () => handlePaymentConfirm(paymentData) }
-            ];
-
-            if ((storeSettings?.offline_invoice_mode === 'auto' || isManualOffline) && !isSplitPayment) {
-                alertButtons.push({
-                    text: 'Simpan Offline (OFF)',
-                    style: 'destructive',
-                    onPress: async () => {
-                        const finalTotal = calculateTotal();
-                        const localOrderNo = (storeSettings?.offline_invoice_mode === 'auto')
-                            ? `${storeSettings?.offline_invoice_prefix || 'OFF'}-${(Number(storeSettings?.offline_invoice_last_number || 0) + 1).toString().padStart(5, '0')}`
-                            : `OFF-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
-
-                        const saleData = {
-                            order_no: localOrderNo,
-                            branch_id: currentBranchId || storeSettings?.branch_id || '1',
-                            customer_name: customerName,
-                            customer_id: selectedCustomerId,
-                            table_no: selectedTable || '-',
-                            waiter_name: userName || selectedWaiter,
-                            total_amount: finalTotal,
-                            discount: orderDiscount,
-                            tax: calculateTaxAmount(), // using calculated values
-                            service_charge: calculateServiceAmount(),
-                            status: 'Paid',
-                            payment_method: paymentData.method,
-                            paid_amount: paymentData.amount,
-                            change: paymentData.change,
-                            date: getLocalISOString(),
-                            enable_wifi_vouchers: storeSettings?.enable_wifi_vouchers,
-                            wifi_voucher_notice: storeSettings?.wifi_voucher_notice,
-                            wifi_voucher: ''
-                        };
-
-                        const success = await OfflineService.queueOfflineSale(saleData, cart);
-                        if (success) {
-                            if (storeSettings?.offline_invoice_mode === 'auto') {
-                                const nextNum = Number(storeSettings?.offline_invoice_last_number) + 1;
-                                supabase.from('store_settings').update({ offline_invoice_last_number: nextNum }).eq('id', 1).then(() => { });
-                            }
-                            clearCart();
-                            setOrderDiscount(0);
-                            setExistingSaleId(null);
-                            setLastOrderNo(localOrderNo);
-                            setLastSaleId('');
-                            setSuccessModalConfig({
-                                title: 'Pembayaran Offline!',
-                                message: 'Pembayaran disimpan lokal. Hubungkan ke internet untuk sinkronisasi otomatis.'
-                            });
-                            setShowSuccessModal(true);
-                            setShowPaymentModal(false);
-                            setShowCartModal(false);
-                        }
-                    }
-                });
-            }
-
-            Alert.alert('Gagal Memproses Pembayaran', errorMessage, alertButtons);
-            throw error; // Re-throw to inform PaymentModal
-        } finally {
-            paymentInProgress.current = false;
-        }
+            ]
+        );
     };
 
     return (
-        <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={styles.container}>
-            <View style={styles.flex1}>
-                {/* [SLIM HEADER] Row 1: Back | Search | Folder */}
-                <View style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    backgroundColor: 'white',
-                    paddingHorizontal: 10,
-                    paddingVertical: 6,
-                    gap: 8,
-                    borderBottomWidth: 0.5,
-                    borderBottomColor: '#f1f5f9',
-                    zIndex: 100
-                }}>
-                    <TouchableOpacity
-                        style={{
-                            width: 32,
-                            height: 32,
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            position: 'relative'
-                        }}
+        <SafeAreaView edges={['top', 'left', 'right']} style={styles.container}>
+            <View style={styles.header}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    {/* Back Button Circle */}
+                    <TouchableOpacity 
+                        style={styles.headerCircleButton} 
                         onPress={() => navigation.goBack()}
                     >
-                        <ChevronLeft size={22} color="#1e293b" strokeWidth={2.5} />
-                        {/* Sync Status Dot */}
-                        <View style={{
-                            position: 'absolute',
-                            bottom: 2,
-                            right: 2,
-                            width: 10,
-                            height: 10,
-                            borderRadius: 5,
-                            backgroundColor: syncStatus === 'connected' ? '#22c55e' : (syncStatus === 'connecting' ? '#f59e0b' : '#ef4444'),
-                            borderWidth: 1.5,
-                            borderColor: 'white'
-                        }} />
+                        <ChevronLeft size={20} color="#374151" strokeWidth={2.5} />
                     </TouchableOpacity>
 
-                    {/* Printer Status Indicator */}
+                    {/* Online Status Circle */}
                     <TouchableOpacity 
-                        style={{ width: 32, height: 32, justifyContent: 'center', alignItems: 'center', position: 'relative', marginRight: 4 }}
-                        onPress={async () => {
-                            const mac = await PrinterManager.getSelectedPrinter('receipt');
-                            if (mac) {
-                                showToast('Menghubungkan printer...', 'info');
-                                await PrinterManager.checkConnection(mac);
-                            } else {
-                                showToast('Printer belum disetel', 'error');
-                            }
-                        }}
+                        style={[styles.headerCircleButton, { backgroundColor: isManualOffline ? '#fef2f2' : (isOnline ? '#f0fdf4' : '#fff1f2') }]}
+                        onPress={handleRefreshConnectivity}
                     >
-                        <PrinterIcon size={18} color={printerStatus === 'connected' ? '#22c55e' : '#64748b'} />
-                        <View style={{
-                            position: 'absolute',
-                            bottom: 2,
-                            right: 2,
-                            width: 10,
-                            height: 10,
-                            borderRadius: 5,
-                            backgroundColor: printerStatus === 'connected' ? '#22c55e' : (printerStatus === 'connecting' ? '#f59e0b' : '#ef4444'),
-                            borderWidth: 1.5,
-                            borderColor: 'white'
-                        }} />
+                        {isOnline ? (
+                            <Wifi size={18} color="#16a34a" />
+                        ) : (
+                            <WifiOff size={18} color="#ef4444" />
+                        )}
+                        <View style={[styles.statusDotSmall, { backgroundColor: isOnline ? '#22c55e' : '#ef4444' }]} />
                     </TouchableOpacity>
 
-                    <View style={{ flex: 1 }}>
-                        <View style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            backgroundColor: '#f1f5f9',
-                            borderRadius: 10,
-                            paddingHorizontal: 10,
-                            borderWidth: 1,
-                            borderColor: '#e2e8f0',
-                            height: 38
-                        }}>
-                            <Text style={{ fontSize: 14, marginRight: 6, opacity: 0.5 }}>🔍</Text>
-                            <TextInput
-                                style={{ flex: 1, fontSize: 13, color: '#1e293b', fontWeight: '500' }}
-                                placeholder="Cari produk..."
-                                value={searchQuery}
-                                onChangeText={setSearchQuery}
-                            />
-                            {searchQuery.length > 0 && (
-                                <TouchableOpacity onPress={() => setSearchQuery('')}>
-                                    <Text style={{ fontSize: 18, color: '#94a3b8', marginLeft: 8 }}>&times;</Text>
-                                </TouchableOpacity>
-                            )}
-                        </View>
-                    </View>
-
-                    {!isActuallyDisplay && (
-                        <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-                            {syncStatus === 'error' && (
-                                <TouchableOpacity 
-                                    onPress={reconnectSync}
-                                    style={{
-                                        backgroundColor: '#fee2e2',
-                                        paddingHorizontal: 10,
-                                        paddingVertical: 8,
-                                        borderRadius: 8,
-                                        flexDirection: 'row',
-                                        alignItems: 'center',
-                                        borderWidth: 1,
-                                        borderColor: '#fecaca'
-                                    }}
-                                >
-                                    <Text style={{ fontSize: 13, fontWeight: 'bold', color: '#dc2626' }}>Hubungkan Ulang</Text>
-                                </TouchableOpacity>
-                            )}
-                            <TouchableOpacity
-                                style={{
-                                    width: 38,
-                                    height: 38,
-                                    backgroundColor: (heldOrders.length + remoteOrders.length) > 0 ? '#fff7ed' : '#ffffff',
-                                    borderRadius: 10,
-                                    justifyContent: 'center',
-                                    alignItems: 'center',
-                                    borderWidth: 1,
-                                    borderColor: (heldOrders.length + remoteOrders.length) > 0 ? '#fdba74' : '#e2e8f0',
-                                    position: 'relative'
-                                }}
-                                onPress={() => setShowHeldOrdersModal(true)}
-                            >
-                                <Text style={{ fontSize: 16 }}>📂</Text>
-                                {(heldOrders.length + remoteOrders.length) > 0 && (
-                                    <View style={{
-                                        position: 'absolute',
-                                        top: -2,
-                                        right: -2,
-                                        backgroundColor: '#ea580c',
-                                        paddingHorizontal: 4,
-                                        minWidth: 14,
-                                        height: 14,
-                                        borderRadius: 7,
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        borderWidth: 1.5,
-                                        borderColor: 'white'
-                                    }}>
-                                        <Text style={{ color: 'white', fontSize: 7, fontWeight: 'bold' }}>{heldOrders.length + remoteOrders.length}</Text>
-                                    </View>
-                                )}
-                            </TouchableOpacity>
-                        </View>
+                    {/* Printer Status Circle */}
+                    {isPrinterReady && (
+                        <TouchableOpacity 
+                            style={[styles.headerCircleButton, { backgroundColor: '#f0fdf4' }]}
+                            onPress={handleReconnectPrinters}
+                        >
+                            <Printer size={18} color="#16a34a" />
+                        </TouchableOpacity>
                     )}
                 </View>
 
-                {/* [SLIM HEADER] Row 2: Scrollable Chips for Status & Info */}
-                {!isActuallyDisplay && (
-                    <View style={{ backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#f3f4f6' }}>
-                        <ScrollView
-                            horizontal
-                            showsHorizontalScrollIndicator={false}
-                            contentContainerStyle={{ paddingHorizontal: 10, paddingVertical: 6, gap: 8 }}
-                        >
-                            {/* Branch Chip */}
-                            <View style={{ backgroundColor: '#f8fafc', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#e2e8f0' }}>
-                                <Text style={{ fontSize: 10, fontWeight: '700', color: '#64748b' }}>🏪 {branchName}</Text>
-                            </View>
+                <View style={styles.headerTitleContainer}>
+                    <Text style={styles.headerTitleText} numberOfLines={1}>{branchName || 'Point of Sale'}</Text>
+                </View>
 
-                            {/* Online/Offline Status Chip */}
-                            <TouchableOpacity
-                                onPress={() => setIsManualOffline(!isManualOffline)}
-                                style={{
-                                    flexDirection: 'row',
-                                    alignItems: 'center',
-                                    backgroundColor: (isOnline && !isManualOffline) ? '#22c55e10' : '#ef444410',
-                                    paddingHorizontal: 8,
-                                    paddingVertical: 4,
-                                    borderRadius: 6,
-                                    borderWidth: 1,
-                                    borderColor: (isOnline && !isManualOffline) ? '#22c55e30' : '#ef444430'
-                                }}
+                <TouchableOpacity style={styles.headerCircleButton} onPress={() => setShowHeldOrdersModal(true)}>
+                    <Text style={{ fontSize: 18 }}>📂</Text>
+                    {pendingCount > 0 && (
+                        <View style={styles.badgeContainer}>
+                            <Text style={styles.badgeText}>{pendingCount}</Text>
+                        </View>
+                    )}
+                </TouchableOpacity>
+            </View>
+
+            {/* Info Bar (Table & Waiter) */}
+            <View style={styles.headerInfoBar}>
+                <TouchableOpacity 
+                    style={styles.infoBarItem}
+                    onPress={handleTablePress}
+                    disabled={isDisplayOnly}
+                >
+                    <Text style={styles.infoBarLabel}>{orderType === 'take_away' ? 'ORDER' : 'MEJA'}</Text>
+                    <Text style={styles.infoBarValue}>{orderType === 'take_away' ? takeAwayLabel : selectedTable}</Text>
+                </TouchableOpacity>
+                <View style={styles.infoBarDivider} />
+                <TouchableOpacity 
+                    style={styles.infoBarItem}
+                    onPress={() => !isDisplayOnly && setShowWaiterModal(true)}
+                    disabled={isDisplayOnly}
+                >
+                    <Text style={styles.infoBarLabel}>KASIR</Text>
+                    <Text style={styles.infoBarValue} numberOfLines={1}>{selectedWaiter || '-'}</Text>
+                </TouchableOpacity>
+            </View>
+
+            <View style={styles.tabletMainRow}>
+                {/* Left Side: Product Selection */}
+                <View style={[styles.flex1, { backgroundColor: '#f9fafb' }]}>
+                    {/* Search & Order Type */}
+                    <View style={styles.searchContainer}>
+                        <TextInput
+                            style={styles.searchInput}
+                            placeholder="Cari produk..."
+                            placeholderTextColor="#9ca3af"
+                            value={searchQuery}
+                            onChangeText={setSearchQuery}
+                        />
+                    </View>
+
+                    {/* Order Type Chips */}
+                    {orderCategoriesEnabled && (
+                        <View style={styles.orderTypeRow}>
+                            <TouchableOpacity 
+                                style={[styles.orderTypeChip, orderType === 'dine_in' && styles.orderTypeChipActive]}
+                                onPress={() => setOrderType('dine_in')}
                             >
-                                {(isOnline && !isManualOffline) ? <Wifi size={10} color="#16a34a" style={{ marginRight: 4 }} /> : <WifiOff size={10} color="#dc2626" style={{ marginRight: 4 }} />}
-                                <Text style={{ fontSize: 9, fontWeight: '800', color: (isOnline && !isManualOffline) ? '#16a34a' : '#dc2626' }}>
-                                    {isManualOffline ? 'OFFLINE (M)' : (isOnline ? 'ONLINE' : 'OFFLINE')}
-                                </Text>
+                                <Text style={[styles.orderTypeText, orderType === 'dine_in' && styles.orderTypeTextActive]}>🍽️ {dineInLabel}</Text>
                             </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={[styles.orderTypeChip, orderType === 'take_away' && styles.orderTypeChipActive]}
+                                onPress={() => setOrderType('take_away')}
+                            >
+                                <Text style={[styles.orderTypeText, orderType === 'take_away' && styles.orderTypeTextActive]}>🥡 {takeAwayLabel}</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={[styles.orderTypeChip, { backgroundColor: '#fff7ed', borderColor: '#fdba74' }]}
+                                onPress={handleTablePress}
+                            >
+                                <Text style={[styles.orderTypeText, { color: '#ea580c' }]}>🪑 Meja: {selectedTable}</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
 
-                            {/* Order Type Toggle Chip */}
-                            <View style={{ flexDirection: 'row', backgroundColor: '#f1f5f9', borderRadius: 6, padding: 2, borderWidth: 1, borderColor: '#e2e8f0' }}>
+                    {/* Categories */}
+                    <View style={styles.categoryContainer}>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryScroll}>
+                            {categories.map(cat => (
                                 <TouchableOpacity
-                                    onPress={() => setOrderType('dine_in')}
-                                    style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, backgroundColor: orderType === 'dine_in' ? 'white' : 'transparent' }}
+                                    key={cat}
+                                    style={[styles.categoryTab, selectedCategory === cat && styles.activeCategoryTab]}
+                                    onPress={() => setSelectedCategory(cat)}
                                 >
-                                    <Text style={{ fontSize: 9, fontWeight: '700', color: orderType === 'dine_in' ? '#ea580c' : '#64748b' }}>{dineInLabel}</Text>
+                                    <Text style={[styles.categoryText, selectedCategory === cat && styles.activeCategoryText]}>{cat}</Text>
                                 </TouchableOpacity>
-                                <TouchableOpacity
-                                    onPress={() => setOrderType('take_away')}
-                                    style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, backgroundColor: orderType === 'take_away' ? 'white' : 'transparent' }}
-                                >
-                                    <Text style={{ fontSize: 9, fontWeight: '700', color: orderType === 'take_away' ? '#ea580c' : '#64748b' }}>{takeAwayLabel}</Text>
-                                </TouchableOpacity>
-                            </View>
-
-                            {/* Table Info Chip */}
-                            <TouchableOpacity
-                                style={{ backgroundColor: '#f8fafc', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#e2e8f0' }}
-                                onPress={() => !isSideBySide && setShowCartModal(true)}
-                            >
-                                <Text style={{ fontSize: 10, fontWeight: '700', color: '#1e293b' }}>
-                                    🪑 {orderType === 'take_away' ? takeAwayLabel : (selectedTable || '-')}
-                                </Text>
-                            </TouchableOpacity>
-
-                            {/* Customer Info Chip */}
-                            <TouchableOpacity
-                                style={{ backgroundColor: '#f8fafc', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#e2e8f0' }}
-                                onPress={() => setShowMemberLoginModal(true)}
-                            >
-                                <Text style={{ fontSize: 10, fontWeight: '700', color: '#1e293b' }}>
-                                    👤 {customerName || 'Guest'}
-                                </Text>
-                            </TouchableOpacity>
+                            ))}
                         </ScrollView>
                     </View>
-                )}
 
-                {/* Main POS Row (Split View in WideScreen/Landscape) */}
-                <View style={[styles.flex1, isSideBySide && { flexDirection: 'row' }]}>
-                    <View style={[styles.flex1, isSideBySide && { flex: isLargeTablet ? 0.68 : 0.64 }]}>
-                        {/* Categories Top Bar */}
-                        <View style={[
-                            styles.categoryContainer,
-                            { borderBottomWidth: 1, borderBottomColor: '#f1f5f9', backgroundColor: 'white', minHeight: isTablet ? 55 : 38, justifyContent: 'center' }
-                        ]}>
-                            <ScrollView
-                                horizontal={true}
-                                showsHorizontalScrollIndicator={false}
-                                contentContainerStyle={[
-                                    styles.categoryScroll,
-                                    { paddingHorizontal: 12, gap: 8, alignItems: 'center', height: '100%' },
-                                    isActuallyDisplay && { paddingLeft: 50 }
-                                ]}
-                            >
-                                {categories.map((cat) => (
-                                    <TouchableOpacity
-                                        key={cat}
-                                        style={[
-                                            styles.categoryTab,
-                                            selectedCategory === cat && styles.activeCategoryTab,
-                                            isTablet && { paddingHorizontal: 20, paddingVertical: 8, borderRadius: 12 }
-                                        ]}
-                                        onPress={() => setSelectedCategory(cat)}
-                                    >
-                                        <Text style={[
-                                            styles.categoryText,
-                                            selectedCategory === cat && styles.activeCategoryText,
-                                            isTablet && { fontSize: 13 }
-                                        ]}>{cat}</Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </ScrollView>
+                    {loadingProducts ? (
+                        <View style={styles.loadingContainer}>
+                            <ActivityIndicator size="large" color="#ea580c" />
+                            <Text style={styles.loadingText}>Memuat menu...</Text>
                         </View>
-
-                        {/* Main Content Area */}
-                        <View style={styles.flex1}>
-                            {/* Product Grid */}
-                            {loadingProducts ? (
-                                <View style={styles.loadingContainer}>
-                                    <ActivityIndicator size="large" color="#ea580c" />
-                                    <Text style={styles.loadingText}>Memuat produk...</Text>
+                    ) : filteredProducts.length === 0 ? (
+                        <View style={styles.emptyContainer}>
+                            <Text style={styles.emptyIcon}>🍽️</Text>
+                            <Text style={styles.emptyTitle}>Produk tidak ditemukan</Text>
+                            <Text style={styles.emptySubtitle}>Coba cari dengan kata kunci lain atau pilih kategori berbeda.</Text>
+                        </View>
+                    ) : (
+                        <FlatList
+                            data={filteredProducts}
+                            keyExtractor={(item) => item.id.toString()}
+                            numColumns={productGridColumns}
+                            key={`grid-${productGridColumns}`} // Force re-render when columns change
+                            renderItem={({ item }) => (
+                                <View style={{ width: `${100 / productGridColumns}%`, padding: isSmallDevice ? 4 : 6 }}>
+                                    <ProductCard 
+                                        item={item} 
+                                        isTablet={isTablet} 
+                                        onAdd={addToCart} 
+                                        formatCurrency={formatCurrency} 
+                                    />
                                 </View>
-                            ) : filteredProducts.length === 0 ? (
-                                <View style={styles.emptyContainer}>
-                                    <Text style={styles.emptyIcon}>📦</Text>
-                                    <Text style={styles.emptyTitle}>Produk Kosong</Text>
-                                    <Text style={styles.emptySubtitle}>Tidak ada produk dalam kategori ini atau coba kata kunci lain.</Text>
-                                </View>
-                            ) : (
-                                <FlatList
-                                    data={filteredProducts}
-                                    key={`grid-${productGridColumns}`}
-                                    numColumns={productGridColumns}
-                                    keyExtractor={(item) => item.id.toString()}
-                                    showsVerticalScrollIndicator={true}
-                                    windowSize={5}
-                                    initialNumToRender={15}
-                                    maxToRenderPerBatch={10}
-                                    removeClippedSubviews={true}
-                                    columnWrapperStyle={{
-                                        gap: isTablet ? 10 : 8,
-                                        paddingHorizontal: isTablet ? 12 : 8,
-                                        marginBottom: isTablet ? 10 : 8
-                                    }}
-                                    contentContainerStyle={[
-                                        styles.productListContent,
-                                        { paddingBottom: isSideBySide ? 32 : 150 }
-                                    ]}
-                                    renderItem={({ item }) => {
-                                        const numCols = productGridColumns;
-                                        return (
-                                            <View style={{ flex: 1, maxWidth: `${100 / numCols}%` }}>
-                                                <ProductCard
-                                                    item={item}
-                                                    isTablet={isTablet}
-                                                    onAdd={addToCart}
-                                                    formatCurrency={formatCurrency}
-                                                />
-                                            </View>
-                                        );
-                                    }}
-                                />
                             )}
-                        </View>
-                    </View>
+                            contentContainerStyle={styles.productListContent}
+                        />
+                    )}
+                </View>
 
-                    {/* Right Column: Split Cart Panel */}
-                    {isSideBySide && !isDisplayOnly && (
-                        <View style={{ flex: isLargeTablet ? 0.32 : 0.36, backgroundColor: '#fcfcfd', borderLeftWidth: 1, borderLeftColor: '#e5e7eb', height: '100%' }}>
-                            <View style={{ paddingHorizontal: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eceff3', backgroundColor: '#fffaf5', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#1f2937' }}>🛒 Pesanan</Text>
-                                <View style={{ position: 'absolute', left: 12, top: 8, zIndex: 2, backgroundColor: '#fffaf5', paddingRight: 10, paddingVertical: 4, flexDirection: 'row', alignItems: 'center' }}>
-                                    <View style={{ width: 28, height: 28, borderRadius: 10, backgroundColor: '#fff7ed', alignItems: 'center', justifyContent: 'center', marginRight: 8 }}>
-                                        <ShoppingCart size={14} color="#ea580c" strokeWidth={2.4} />
-                                    </View>
-                                    <View>
-                                        <Text style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
-                                            {cart.reduce((sum, item) => sum + item.quantity, 0)} item aktif
-                                        </Text>
-                                    </View>
-                                </View>
-                                <TouchableOpacity onPress={clearCart} style={{ backgroundColor: '#fff1f2', paddingHorizontal: 8, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: '#ffe4e6' }}>
-                                    <Text style={{ fontSize: 10, color: '#e11d48', fontWeight: '800', letterSpacing: 0.2 }}>Reset</Text>
+                {/* Right Side: Cart Summary (Tablet Only) */}
+                {isSideBySide && (
+                    <View style={{ width: isLargeTablet ? 380 : 320, backgroundColor: 'white', borderLeftWidth: 1, borderLeftColor: '#f3f4f6', elevation: 5 }}>
+                        <View style={{ flex: 1, padding: 16 }}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#111827' }}>Pesanan</Text>
+                                <TouchableOpacity onPress={clearCart}>
+                                    <Text style={{ fontSize: 12, color: '#ef4444', fontWeight: '600' }}>Bersihkan</Text>
                                 </TouchableOpacity>
                             </View>
-                            <View style={{ paddingHorizontal: 8, paddingTop: 8 }}>
-                                {renderSplitCartActions()}
-                                {renderSplitCartMeta()}
-                            </View>
-                            <ScrollView style={{ flex: 1, paddingHorizontal: 8 }} contentContainerStyle={{ paddingBottom: 8 }}>
-                                {cart.map((item, index) => (
-                                    <View key={`cart-${item.id || index}-${index}`} style={{ marginBottom: 8, backgroundColor: 'white', borderRadius: 14, borderWidth: 1, borderColor: '#eef2f7', padding: 10, shadowColor: '#0f172a', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 6, elevation: 1 }}>
-                                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                            <View style={{ flex: 1 }}>
-                                                <Text style={{ fontSize: 12, fontWeight: '700', color: '#111827' }} numberOfLines={1}>{item.name}</Text>
-                                                <Text style={{ fontSize: 11, color: '#ea580c', fontWeight: '800', marginTop: 2 }}>{formatCurrency(item.price)}</Text>
-                                                <TextInput
-                                                    style={styles.cartSplitNoteInput}
-                                                    placeholder="Catatan item..."
-                                                    placeholderTextColor="#fdba74"
-                                                    value={item.notes}
-                                                    onChangeText={(text) => updateNote(item.id, text)}
-                                                />
-                                            </View>
-                                            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc', borderRadius: 10, padding: 2, borderWidth: 1, borderColor: '#e2e8f0', marginLeft: 8 }}>
-                                                <TouchableOpacity onPress={() => removeFromCart(item.id)} style={{ paddingHorizontal: 6, paddingVertical: 3 }}><Text style={{ fontSize: 15, fontWeight: 'bold', color: '#64748b' }}>-</Text></TouchableOpacity>
-                                                <Text style={{ fontWeight: 'bold', marginHorizontal: 3, minWidth: 18, textAlign: 'center', fontSize: 12 }}>{item.quantity}</Text>
-                                                <TouchableOpacity onPress={() => addToCart(item)} style={{ paddingHorizontal: 6, paddingVertical: 3 }}><Text style={{ fontSize: 15, fontWeight: 'bold', color: '#ea580c' }}>+</Text></TouchableOpacity>
-                                            </View>
+
+                            {renderSplitCartActions()}
+                            {renderSplitCartMeta()}
+
+                            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+                                {cart.map((item) => (
+                                    <View key={item.id} style={[styles.cartItem, { paddingVertical: 10 }]}>
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={[styles.cartItemName, { fontSize: 13 }]} numberOfLines={2}>{item.name}</Text>
+                                            <Text style={styles.cartItemPrice}>{formatCurrency(item.price)}</Text>
+                                            <TextInput
+                                                style={styles.cartSplitNoteInput}
+                                                placeholder="Catatan..."
+                                                placeholderTextColor="#fdba74"
+                                                value={item.notes}
+                                                onChangeText={(text) => updateNote(item.id, text)}
+                                            />
+                                        </View>
+                                        <View style={[styles.quantityControls, { marginLeft: 10, padding: 2 }]}>
+                                            <TouchableOpacity style={[styles.qtyButton, { width: 24, height: 24 }]} onPress={() => removeFromCart(item.id)}>
+                                                <Text style={[styles.qtyButtonText, { fontSize: 14 }]}>-</Text>
+                                            </TouchableOpacity>
+                                            <Text style={[styles.qtyText, { fontSize: 13, paddingHorizontal: 6 }]}>{item.quantity}</Text>
+                                            <TouchableOpacity style={[styles.qtyButton, { width: 24, height: 24 }]} onPress={() => addToCart(item)}>
+                                                <Text style={[styles.qtyButtonText, { fontSize: 14 }]}>+</Text>
+                                            </TouchableOpacity>
                                         </View>
                                     </View>
                                 ))}
+                                {cart.length === 0 && (
+                                    <View style={styles.cartSplitEmpty}>
+                                        <Text style={{ fontSize: 40, marginBottom: 10 }}>🛒</Text>
+                                        <Text style={{ color: '#94a3b8', fontWeight: '600', textAlign: 'center' }}>Keranjang Kosong</Text>
+                                        <Text style={{ color: '#cbd5e1', fontSize: 11, textAlign: 'center', marginTop: 4 }}>Pilih menu di samping untuk mulai memesan</Text>
+                                    </View>
+                                )}
                             </ScrollView>
 
-                            <View style={{ paddingHorizontal: 8, paddingTop: 10, paddingBottom: 22, borderTopWidth: 1, borderTopColor: '#eceff3', backgroundColor: 'white', gap: 4 }}>
-                                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                                    <Text style={{ color: '#64748b', fontSize: 11 }}>Subtotal</Text>
-                                    <Text style={{ fontWeight: '600', fontSize: 11 }}>{formatCurrency(calculateSubtotal())}</Text>
+                            <View style={{ borderTopWidth: 1, borderTopColor: '#f3f4f6', paddingTop: 16, marginTop: 10 }}>
+                                <View style={styles.cartTotalRow}>
+                                    <Text style={styles.cartTotalLabelLarge}>Subtotal</Text>
+                                    <Text style={styles.cartTotalValueLarge}>{formatCurrency(calculateSubtotal())}</Text>
                                 </View>
                                 {orderDiscount > 0 && (
-                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                                        <Text style={{ color: '#ef4444', fontSize: 11 }}>Diskon</Text>
-                                        <Text style={{ color: '#ef4444', fontWeight: 'bold', fontSize: 11 }}>-{formatCurrency(orderDiscount)}</Text>
+                                    <View style={[styles.cartTotalRow, { marginTop: 4 }]}>
+                                        <Text style={[styles.cartTotalLabelLarge, { color: '#ef4444' }]}>Diskon</Text>
+                                        <Text style={[styles.cartTotalValueLarge, { color: '#ef4444' }]}>-{formatCurrency(orderDiscount)}</Text>
                                     </View>
                                 )}
-                                {calculateServiceAmount() > 0 && (
-                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                                        <Text style={{ color: '#64748b', fontSize: 11 }}>Layanan</Text>
-                                        <Text style={{ fontWeight: '600', fontSize: 11 }}>{formatCurrency(calculateServiceAmount())}</Text>
+                                {(calculateTaxAmount() > 0 || calculateServiceAmount() > 0) && (
+                                    <View style={[styles.cartTotalRow, { marginTop: 4 }]}>
+                                        <Text style={styles.cartTotalLabelLarge}>Pajak & Layanan</Text>
+                                        <Text style={styles.cartTotalValueLarge}>{formatCurrency(calculateTaxAmount() + calculateServiceAmount())}</Text>
                                     </View>
                                 )}
-                                {calculateTaxAmount() > 0 && (
-                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                                        <Text style={{ color: '#64748b', fontSize: 11 }}>Pajak</Text>
-                                        <Text style={{ fontWeight: '600', fontSize: 11 }}>{formatCurrency(calculateTaxAmount())}</Text>
-                                    </View>
-                                )}
-                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#e2e8f0', paddingTop: 6, marginTop: 2 }}>
-                                    <Text style={{ fontSize: 13, fontWeight: '800', color: '#1e293b' }}>Total</Text>
-                                    <Text style={{ fontSize: 15, fontWeight: '800', color: '#ea580c' }}>{formatCurrency(calculateTotal())}</Text>
+                                <View style={[styles.cartTotalRow, { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#f3f4f6' }]}>
+                                    <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#111827' }}>Total</Text>
+                                    <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#ea580c' }}>{formatCurrency(calculateTotal())}</Text>
                                 </View>
-                                <TouchableOpacity
-                                    style={{
-                                        backgroundColor: '#ea580c',
-                                        paddingVertical: 10,
-                                        borderRadius: 12,
-                                        alignItems: 'center',
-                                        marginTop: 6,
-                                        shadowColor: '#ea580c',
-                                        shadowOffset: { width: 0, height: 5 },
-                                        shadowOpacity: 0.18,
-                                        shadowRadius: 8,
-                                        elevation: 4,
-                                        opacity: cart.length === 0 ? 0.5 : 1
-                                    }}
+
+                                <TouchableOpacity 
+                                    style={[
+                                        styles.confirmButton, 
+                                        { marginTop: 16, paddingVertical: 16, borderRadius: 16, backgroundColor: cart.length > 0 ? '#ea580c' : '#cbd5e1' }
+                                    ]} 
                                     onPress={handleCheckout}
                                     disabled={cart.length === 0}
                                 >
-                                    <Text style={{ color: 'white', fontWeight: '800', fontSize: 12, letterSpacing: 0.1 }}>Bayar</Text>
+                                    <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16, textAlign: 'center' }}>
+                                        {cashierMode ? 'BAYAR SEKARANG' : (existingSaleId ? 'UPDATE PESANAN' : 'KIRIM PESANAN')}
+                                    </Text>
                                 </TouchableOpacity>
                             </View>
                         </View>
-                    )}
+                    </View>
+                )}
+            </View>
+
+            {/* Compact Cart Bar (Mobile Only) */}
+            {cart.length > 0 && !isSideBySide && (
+                <View style={[styles.cartSummaryBar, isSmallDevice && { bottom: 12, left: 12, right: 12 }]}>
+                    <View style={styles.cartSummaryInfo}>
+                        <View style={styles.cartCountBadge}>
+                            <Text style={styles.cartCountText}>{cart.reduce((a, b) => a + b.quantity, 0)}</Text>
+                        </View>
+                        <View style={{ marginLeft: 12 }}>
+                            <Text style={styles.cartTotalLabel}>Total Pesanan</Text>
+                            <Text style={styles.cartTotalValue}>{formatCurrency(calculateTotal())}</Text>
+                        </View>
+                    </View>
+                    <TouchableOpacity style={styles.checkoutButton} onPress={() => setShowCartModal(true)}>
+                        <Text style={styles.checkoutButtonText}>Lanjut &rsaquo;</Text>
+                    </TouchableOpacity>
                 </View>
+            )}
 
+            {/* Modals & Screens */}
+            <PaymentModal
+                visible={showPaymentModal}
+                onClose={() => setShowPaymentModal(false)}
+                total={calculateActiveBreakdown().total}
+                subtotal={calculateActiveBreakdown().subtotal}
+                tax={calculateActiveBreakdown().tax}
+                serviceCharge={calculateActiveBreakdown().serviceCharge}
+                discount={calculateActiveBreakdown().discount}
+                onConfirm={handlePaymentConfirm}
+                paymentMethods={paymentMethods}
+                onManualItem={() => { setShowPaymentModal(false); setShowManualItemModal(true); }}
+                onDiscount={() => { setShowPaymentModal(false); setShowDiscountModal(true); }}
+                onSplitBill={() => { setShowPaymentModal(false); setShowSplitBillModal(true); }}
+                onHold={() => { setShowPaymentModal(false); setShowHoldNoteModal(true); }}
+            />
 
+            {/* Success Modal */}
+            <Modal visible={showSuccessModal} transparent animationType="fade">
+                <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.8)' }]}>
+                    <SafeAreaView style={{ flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center' }}>
+                        <View style={[styles.modalContent, { width: '90%', maxWidth: 450, alignItems: 'center', padding: 32 }]}>
+                            <View style={styles.successIconCircle}>
+                                <Text style={styles.successIconText}>✓</Text>
+                            </View>
+                            <Text style={styles.successTitleText}>{successModalConfig.title}</Text>
+                            <Text style={styles.successSubtitleText}>{successModalConfig.message}</Text>
 
-
-
-
-
-                <PaymentModal
-                    visible={showPaymentModal && !isDisplayOnly}
-                    {...calculateActiveBreakdown()}
-                    paymentMethods={paymentMethods}
-                    onClose={() => setShowPaymentModal(false)}
-                    onConfirm={handlePaymentConfirm}
-                    onManualItem={() => {
-                        setShowPaymentModal(false);
-                        setShowManualItemModal(true);
-                    }}
-                    onDiscount={() => {
-                        setShowPaymentModal(false);
-                        setShowDiscountModal(true);
-                    }}
-                    onSplitBill={() => { setShowPaymentModal(false); setShowSplitBillModal(true); }}
-                    onHold={() => {
-                        setShowPaymentModal(false);
-                        setShowHoldNoteModal(true);
-                    }}
-                />
-
-                <HoldNoteModal
-                    visible={showHoldNoteModal}
-                    onClose={() => setShowHoldNoteModal(false)}
-                    onConfirm={(note) => handleHoldOrder(note)}
-                />
-
-                <ModernToast
-                    visible={toastVisible}
-                    message={toastMessage}
-                    type={toastType}
-                    onHide={() => setToastVisible(false)}
-                />
-
-                {/* Modern Success Modal (Full Screen Overlay) */}
-                <Modal visible={showSuccessModal} transparent={false} animationType="fade" onRequestClose={() => setShowSuccessModal(false)}>
-                    <SafeAreaView style={{ flex: 1, backgroundColor: '#22c55e', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-                        <View style={{ alignItems: 'center', gap: 20 }}>
-                            <View style={{
-                                width: isTablet ? 120 : 80,
-                                height: isTablet ? 120 : 80,
-                                borderRadius: isTablet ? 60 : 40,
-                                backgroundColor: 'rgba(255,255,255,0.2)',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                borderWidth: 4,
-                                borderColor: 'white'
-                            }}>
-                                <Text style={{ fontSize: isTablet ? 60 : 40, color: 'white' }}>✓</Text>
+                            <View style={styles.orderNumberBadge}>
+                                <Text style={styles.orderNumberLabel}>NOMOR PESANAN</Text>
+                                <Text style={styles.orderNumberValue}>{lastOrderNo || '-'}</Text>
                             </View>
 
-                            <Text style={{
-                                fontSize: isTablet ? 32 : 24,
-                                fontWeight: 'bold',
-                                color: 'white',
-                                textAlign: 'center'
-                            }}>{successModalConfig.title}</Text>
-
-                            <Text style={{
-                                fontSize: isTablet ? 18 : 14,
-                                color: 'rgba(255,255,255,0.9)',
-                                textAlign: 'center',
-                                maxWidth: 400
-                            }}>
-                                {successModalConfig.message}
-                            </Text>
-
-                            {!isDisplayOnly && (
-                                <View style={{
-                                    backgroundColor: 'rgba(255,255,255,0.15)',
-                                    borderRadius: 999,
-                                    paddingHorizontal: 14,
-                                    paddingVertical: 8,
-                                    borderWidth: 1,
-                                    borderColor: 'rgba(255,255,255,0.2)'
-                                }}>
-                                    <Text style={{
-                                        color: 'white',
-                                        fontSize: isTablet ? 14 : 12,
-                                        fontWeight: '700',
-                                        textAlign: 'center'
-                                    }}>
-                                        Mode cetak: {receiptPrintMode === 'auto' ? 'Otomatis' : 'Manual'}
-                                    </Text>
-                                </View>
-                            )}
-
-                            {/* Preparation Time Info — shown to User Display only */}
-                            {isDisplayOnly && storeSettings?.preparation_duration_minutes && (
-                                <View style={{
-                                    backgroundColor: 'rgba(255,255,255,0.2)',
-                                    borderRadius: 16,
-                                    paddingVertical: 16,
-                                    paddingHorizontal: 24,
-                                    alignItems: 'center',
-                                    borderWidth: 1,
-                                    borderColor: 'rgba(255,255,255,0.35)',
-                                    width: '100%',
-                                    maxWidth: 320,
-                                }}>
-                                    <Text style={{ fontSize: 28, marginBottom: 4 }}>⏱️</Text>
-                                    <Text style={{ color: 'white', fontSize: isTablet ? 16 : 13, textAlign: 'center', opacity: 0.9 }}>
-                                        Estimasi waktu penyiapan
-                                    </Text>
-                                    <Text style={{ color: 'white', fontSize: isTablet ? 36 : 28, fontWeight: 'bold', marginTop: 4 }}>
-                                        {storeSettings.preparation_duration_minutes} menit
-                                    </Text>
-                                </View>
-                            )}
-
-                            <View style={{ width: '100%', maxWidth: 300, marginTop: 40, gap: 12 }}>
-                                <TouchableOpacity
-                                    style={{
-                                        backgroundColor: 'white',
-                                        paddingVertical: 16,
-                                        borderRadius: 12,
-                                        alignItems: 'center',
-                                        shadowColor: "#000",
-                                        shadowOffset: { width: 0, height: 4 },
-                                        shadowOpacity: 0.1,
-                                        shadowRadius: 10,
-                                        elevation: 5
-                                    }}
-                                    onPress={async () => {
-                                        if (isActuallyDisplay) {
-                                            await clearCart();
-                                        }
-                                        setShowSuccessModal(false);
-                                        if (!isPartialSplit) {
-                                            if (!isActuallyDisplay) {
-                                                // @ts-ignore
-                                                navigation.navigate('Main');
-                                            }
-                                        } else {
-                                            setIsPartialSplit(false);
-                                        }
-                                    }}
+                            <View style={{ width: '100%', gap: 12 }}>
+                                <TouchableOpacity 
+                                    style={[styles.modalButton, { backgroundColor: '#ea580c', paddingVertical: 16 }]} 
+                                    onPress={handlePreviewReceipt}
                                 >
-                                    <Text style={{ color: '#22c55e', fontWeight: 'bold', fontSize: 16 }}>
-                                        {isPartialSplit ? 'Lanjut Sisa Pembayaran' : (isActuallyDisplay ? 'Pesan Baru Sekarang' : 'Kembali ke Utama')}
-                                    </Text>
+                                    <Text style={styles.confirmButtonText}>Preview & Cetak Struk</Text>
                                 </TouchableOpacity>
-                            </View>
-                            <View style={{
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                marginTop: 12,
-                                backgroundColor: isOnline ? '#22c55e15' : '#ef444415',
-                                paddingHorizontal: 6,
-                                paddingVertical: 1,
-                                borderRadius: 6,
-                                borderWidth: 0.5,
-                                borderColor: isOnline ? '#22c55e40' : '#ef444440'
-                            }}>
-                                <View style={{
-                                    width: 4,
-                                    height: 4,
-                                    borderRadius: 2,
-                                    backgroundColor: isOnline ? '#22c55e' : '#ef4444',
-                                    marginRight: 4
-                                }} />
-                                <Text style={{
-                                    fontSize: 8,
-                                    fontWeight: '700',
-                                    color: isOnline ? '#16a34a' : '#dc2626',
-                                    letterSpacing: 0.5
-                                }}>
-                                    {isManualOffline ? 'MANUAL OFFLINE' : (isOnline ? 'ONLINE' : 'OFFLINE')}
-                                </Text>
+
+                                <TouchableOpacity 
+                                    style={[styles.modalButton, styles.cancelButton, { paddingVertical: 16 }]} 
+                                    onPress={() => { setShowSuccessModal(false); if (!isActuallyDisplay) navigation.navigate('Main' as never); }}
+                                >
+                                    <Text style={styles.cancelButtonText}>Selesai</Text>
+                                </TouchableOpacity>
+
+                                {isPartialSplit && (
+                                    <TouchableOpacity 
+                                        style={[styles.modalButton, { backgroundColor: '#1f2937', paddingVertical: 16 }]} 
+                                        onPress={() => setShowSuccessModal(false)}
+                                    >
+                                        <Text style={styles.confirmButtonText}>Lanjut Sisa Pembayaran</Text>
+                                    </TouchableOpacity>
+                                )}
                             </View>
 
                             {!isPartialSplit && (
-                                <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 24 }}>
+                                <Text style={{ fontSize: 12, color: '#9ca3af', marginTop: 24 }}>
                                     Otomatis kembali dalam {countdown} detik.
                                 </Text>
                             )}
                         </View>
                     </SafeAreaView>
-                </Modal>
-                {/* Member Login Modal */}
-                <Modal visible={showMemberLoginModal} transparent animationType="fade" onRequestClose={skipMemberLogin}>
-                    <TouchableOpacity
-                        style={styles.modalOverlay}
-                        activeOpacity={1}
-                        onPress={skipMemberLogin}
-                    >
-                        <TouchableOpacity
-                            activeOpacity={1}
-                            style={[styles.modalContent, { maxWidth: 500, width: '90%' }]}
-                            onPress={(e) => e.stopPropagation()}
-                        >
-                            <View style={{ alignItems: 'center', marginBottom: 20 }}>
-                                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff7ed', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
-                                    <Text style={{ fontSize: 20 }}>👤</Text>
-                                </View>
-                                <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#1f2937' }}>Member Login</Text>
-                                <Text style={{ color: '#6b7280', textAlign: 'center', marginTop: 4 }}>Dapatkan poin & diskon khusus member!</Text>
-                            </View>
+                </View>
+            </Modal>
 
-                            <View style={{ flexDirection: isTablet ? 'row' : 'column', gap: 20 }}>
-                                {/* Left: QR Scan Placeholder */}
-                                <TouchableOpacity
-                                    style={{
-                                        flex: 1,
-                                        aspectRatio: 1,
-                                        backgroundColor: '#1f2937',
-                                        borderRadius: 16,
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        minHeight: 150
-                                    }}
-                                    onPress={() => Alert.alert('Info', 'Fitur Scan QR akan segera hadir!')}
-                                >
-                                    <View style={{ width: 40, height: 40, borderBlockColor: 'white', borderWidth: 2, borderRadius: 8, alignItems: 'center', justifyContent: 'center', borderStyle: 'dashed' }}>
-                                        <Text style={{ color: 'white', fontSize: 20 }}>📷</Text>
-                                    </View>
-                                    <Text style={{ color: 'white', fontWeight: 'bold', marginTop: 10 }}>Scan QR Member</Text>
-                                </TouchableOpacity>
-
-                                {/* Right: Phone Input */}
-                                <View style={{ flex: 1, justifyContent: 'center' }}>
-                                    <View style={{ marginBottom: 16 }}>
-                                        <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#4b5563', marginBottom: 6 }}>Input Nomor HP</Text>
-                                        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#f9fafb', borderRadius: 12, borderWidth: 1, borderColor: '#e5e7eb', paddingHorizontal: 12 }}>
-                                            <Text style={{ color: '#9ca3af', marginRight: 8 }}>📞</Text>
-                                            <TextInput
-                                                style={{ flex: 1, paddingVertical: 12, fontSize: 16, color: '#111827' }}
-                                                placeholder="08xxx"
-                                                keyboardType="phone-pad"
-                                                value={memberPhone}
-                                                onChangeText={setMemberPhone}
-                                                onSubmitEditing={checkMember}
-                                            />
-                                        </View>
-                                    </View>
-
-                                    <TouchableOpacity
-                                        style={[styles.modalButton, { backgroundColor: '#ea580c' }]}
-                                        onPress={checkMember}
-                                    >
-                                        <Text style={styles.confirmButtonText}>Cek Member</Text>
-                                    </TouchableOpacity>
-
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 12 }}>
-                                        <View style={{ flex: 1, height: 1, backgroundColor: '#e5e7eb' }} />
-                                        <Text style={{ fontSize: 10, color: '#9ca3af' }}>ATAU</Text>
-                                        <View style={{ flex: 1, height: 1, backgroundColor: '#e5e7eb' }} />
-                                    </View>
-
-                                    <TouchableOpacity onPress={skipMemberLogin} style={{ alignSelf: 'center' }}>
-                                        <Text style={{ color: '#6b7280', fontSize: 12 }}>Lewati, Lanjut sebagai Tamu &rsaquo;</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            </View>
-                        </TouchableOpacity>
-                    </TouchableOpacity>
-                </Modal>
-
-
-
-
-                {/* Customer Selection Modal */}
-                <Modal visible={showCustomerModal} transparent animationType="fade" onRequestClose={() => setShowCustomerModal(false)}>
-                    <TouchableOpacity
-                        style={styles.modalOverlay}
-                        activeOpacity={1}
-                        onPress={() => setShowCustomerModal(false)}
-                    >
-                        <TouchableOpacity
-                            activeOpacity={1}
-                            style={styles.modalContent}
-                            onPress={(e) => e.stopPropagation()}
-                        >
-                            <Text style={styles.modalTitle}>Pilih Pelanggan</Text>
-                            {/* Simple Search for Customer could be added here later */}
-                            <ScrollView style={{ maxHeight: 300 }}>
-                                {customers.map((cust) => (
-                                    <TouchableOpacity
-                                        key={cust.id}
-                                        style={styles.modalOptionItem}
-                                        onPress={() => {
-                                            setCustomerName(cust.name);
-                                            setSelectedCustomerId(cust.id);
-                                            setShowCustomerModal(false);
-                                        }}
-                                    >
-                                        <Text style={styles.modalOptionText}>{cust.name} ({cust.phone || '-'})</Text>
-                                    </TouchableOpacity>
-                                ))}
-                                {customers.length === 0 && <Text style={{ textAlign: 'center', color: '#6b7280' }}>Tidak ada data pelanggan</Text>}
-                            </ScrollView>
-                            <TouchableOpacity style={[styles.modalButton, styles.cancelButton, { marginTop: 16 }]} onPress={() => setShowCustomerModal(false)}>
-                                <Text style={styles.cancelButtonText}>Tutup</Text>
+            {/* Additional Modals from Part 1 */}
+            <Modal visible={showCartModal} transparent animationType="slide" onRequestClose={() => setShowCartModal(false)}>
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, styles.cartModalContent]}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Detail Pesanan</Text>
+                            <TouchableOpacity onPress={() => setShowCartModal(false)}>
+                                <Text style={{ fontSize: 28, color: '#9ca3af' }}>&times;</Text>
                             </TouchableOpacity>
-                        </TouchableOpacity>
-                    </TouchableOpacity>
-                </Modal>
-
-
-                {/* Cart Summary Bar (Automatic Appearance) - Only show in Compact mode or Display Mode */}
-                {cart.length > 0 && !isSideBySide && !showSuccessModal && (
-                    <View style={[
-                        styles.cartSummaryBar,
-                        isSmallDevice && { bottom: 80, left: 12, right: 12, padding: 8, paddingHorizontal: 14, borderRadius: 16 }
-                    ]}>
-                        <View style={styles.cartSummaryInfo}>
-                            <View style={[
-                                styles.cartCountBadge,
-                                isSmallDevice && { width: 20, height: 20 }
-                            ]}>
-                                <Text style={[
-                                    styles.cartCountText,
-                                    isSmallDevice && { fontSize: 10 }
-                                ]}>{cart.reduce((a, b) => a + b.quantity, 0)}</Text>
-                            </View>
-                            <View style={{ marginLeft: isSmallDevice ? 8 : 12 }}>
-                                <Text style={[
-                                    styles.cartTotalLabel,
-                                    isSmallDevice && { fontSize: 8 }
-                                ]}>Total Pesanan</Text>
-                                <Text style={[
-                                    styles.cartTotalValue,
-                                    isSmallDevice && { fontSize: 14 }
-                                ]}>{formatCurrency(calculateTotal())}</Text>
-                                {orderDiscount > 0 && <Text style={{ fontSize: 9, color: '#fca5a5' }}>Diskon: -{formatCurrency(orderDiscount)}</Text>}
-                            </View>
                         </View>
-                        <TouchableOpacity
-                            style={[
-                                styles.checkoutButton,
-                                isSmallDevice && { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 }
-                            ]}
-                            onPress={() => setShowCartModal(true)}
-                        >
-                            <Text style={[
-                                styles.checkoutButtonText,
-                                isSmallDevice && { fontSize: 11 }
-                            ]}>Keranjang &rsaquo;</Text>
-                        </TouchableOpacity>
-                    </View>
-                )}
-
-                {/* Cart Modal */}
-                <Modal visible={showCartModal} transparent animationType="slide" onRequestClose={() => setShowCartModal(false)}>
-                    <View style={styles.modalOverlay}>
-                        <View style={[styles.modalContent, styles.cartModalContent]}>
-                            <View style={styles.modalHeader}>
-                                <Text style={styles.modalTitle}>Keranjang Pesanan</Text>
-                                <TouchableOpacity onPress={() => setShowCartModal(false)}>
-                                    <Text style={{ fontSize: 24, color: '#6b7280' }}>&times;</Text>
-                                </TouchableOpacity>
-                            </View>
-
-                            {/* Quick Actions Row */}
-                            <View style={styles.quickActionsRow}>
-                                {!isDisplayOnly && (
-                                    <TouchableOpacity
-                                        style={styles.quickActionBtn}
-                                        onPress={() => {
-                                            if (isAdmin || !storeSettings?.restrict_manual_item) {
-                                                setShowManualItemModal(true);
-                                            } else {
-                                                setPendingAuth({ action: 'manual' });
-                                                setShowDeleteAuthModal(true);
-                                            }
-                                        }}
-                                    >
-                                        <Text style={styles.quickActionIcon}>➕</Text>
-                                        <Text style={styles.quickActionText}>Manual</Text>
-                                    </TouchableOpacity>
-                                )}
-                                {!isDisplayOnly && (
-                                    <>
-                                        <TouchableOpacity
-                                            style={styles.quickActionBtn}
-                                            onPress={() => {
-                                                if (isAdmin || !storeSettings?.restrict_discount) {
-                                                    setShowDiscountModal(true);
-                                                } else {
-                                                    setPendingAuth({ action: 'discount' });
-                                                    setShowDeleteAuthModal(true);
-                                                }
-                                            }}
-                                        >
-                                            <Text style={styles.quickActionIcon}>🏷️</Text>
-                                            <Text style={styles.quickActionText}>Diskon</Text>
-                                        </TouchableOpacity>
-
-                                        <TouchableOpacity 
-                                            style={styles.quickActionBtn} 
-                                            onPress={() => {
-                                                if (isAdmin || !storeSettings?.restrict_split_bill) {
-                                                    setShowSplitBillModal(true);
-                                                } else {
-                                                    setPendingAuth({ action: 'split' });
-                                                    setShowDeleteAuthModal(true);
-                                                }
-                                            }}
-                                        >
-                                            <Text style={styles.quickActionIcon}>✂️</Text>
-                                            <Text style={styles.quickActionText}>Pisah</Text>
-                                        </TouchableOpacity>
-                                    </>
-                                )}
-                                {!isDisplayOnly && (
-                                    <TouchableOpacity
-                                        style={styles.quickActionBtn}
-                                        onPress={() => {
-                                            if (isAdmin || !storeSettings?.restrict_hold_order) {
-                                                setShowHoldNoteModal(true);
-                                            } else {
-                                                setPendingAuth({ action: 'hold' });
-                                                setShowDeleteAuthModal(true);
-                                            }
-                                        }}
-                                    >
-                                        <Text style={styles.quickActionIcon}>⏸️</Text>
-                                        <Text style={styles.quickActionText}>Hold</Text>
-                                    </TouchableOpacity>
-                                )}
-                                {!isDisplayOnly && (
-                                    <TouchableOpacity style={styles.quickActionBtn} onPress={() => setShowHeldOrdersModal(true)}>
-                                        <Text style={styles.quickActionIcon}>📂</Text>
-                                        <Text style={styles.quickActionText}>Daftar</Text>
-                                    </TouchableOpacity>
-                                )}
-                                {isDisplayOnly && (
-                                    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                                        <Text style={{ fontSize: 12, color: '#6b7280', fontWeight: 'bold' }}>MENU PESANAN</Text>
-                                    </View>
-                                )}
-                            </View>
-
-                            {/* NEW: Table & Cashier Row inside Cart Modal for Cashiers */}
-                            {!isDisplayOnly && (
-                                <View style={{ flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 12, gap: 12, borderBottomWidth: 1, borderBottomColor: '#f3f4f6', backgroundColor: '#fafafa' }}>
+                        <ScrollView style={{ flex: 1 }}>
+                            {renderSplitCartActions()}
+                            {renderSplitCartMeta()}
+                            {cart.map((item) => (
+                                <View key={item.id} style={styles.cartItem}>
                                     <View style={{ flex: 1 }}>
-                                        <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#6b7280', marginBottom: 4 }}>NOMOR MEJA</Text>
-                                        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0', paddingHorizontal: 8 }}>
-                                            <Text style={{ fontSize: 12 }}>📝</Text>
-                                            <TextInput
-                                                style={{ flex: 1, paddingVertical: 8, paddingHorizontal: 4, fontSize: 14, fontWeight: 'bold', color: '#111827' }}
-                                                value={selectedTable === '-' ? '' : selectedTable}
-                                                onChangeText={(text) => setSelectedTable(text || '-')}
-                                                autoCapitalize="characters"
-                                            />
-                                        </View>
+                                        <Text style={styles.cartItemName}>{item.name}</Text>
+                                        <Text style={styles.cartItemPrice}>{formatCurrency(item.price)}</Text>
+                                        <TextInput
+                                            style={styles.cartSplitNoteInput}
+                                            placeholder="Tambah catatan..."
+                                            placeholderTextColor="#fdba74"
+                                            value={item.notes}
+                                            onChangeText={(text) => updateNote(item.id, text)}
+                                        />
                                     </View>
-                                    <TouchableOpacity
-                                        style={{ flex: 1.5 }}
-                                        onPress={() => setShowWaiterModal(true)}
-                                    >
-                                        <Text style={{ fontSize: 9, fontWeight: 'bold', color: '#6b7280', marginBottom: 4 }}>KASIR</Text>
-                                        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0', paddingHorizontal: 8, height: 42 }}>
-                                            <Text style={{ fontSize: 12 }}>👨‍🍳</Text>
-                                            <Text style={{ flex: 1, paddingHorizontal: 4, fontSize: 14, color: selectedWaiter ? '#111827' : '#94a3b8' }}>
-                                                {selectedWaiter || 'Pilih Kasir'}
-                                            </Text>
-                                        </View>
-                                    </TouchableOpacity>
+                                    <View style={styles.quantityControls}>
+                                        <TouchableOpacity style={styles.qtyButton} onPress={() => removeFromCart(item.id)}>
+                                            <Text style={styles.qtyButtonText}>-</Text>
+                                        </TouchableOpacity>
+                                        <Text style={styles.qtyText}>{item.quantity}</Text>
+                                        <TouchableOpacity style={styles.qtyButton} onPress={() => addToCart(item)}>
+                                            <Text style={styles.qtyButtonText}>+</Text>
+                                        </TouchableOpacity>
+                                    </View>
                                 </View>
-                            )}
-
-                            <ScrollView style={{ flex: 1, paddingHorizontal: 12, marginTop: 12 }}>
-                                {cart.map((item) => (
-                                    <View key={item.id} style={{ marginBottom: 12, backgroundColor: 'white', borderRadius: 14, borderWidth: 1, borderColor: '#eef2f7', padding: 12 }}>
-                                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                            <View style={{ flex: 1 }}>
-                                                <Text style={{ fontSize: 14, fontWeight: '700', color: '#111827' }}>{item.name}{item.is_taxed !== false ? '*' : ''}</Text>
-                                                <Text style={{ fontSize: 13, color: '#ea580c', fontWeight: '800', marginTop: 4 }}>{formatCurrency(item.price)}</Text>
-                                                <TextInput
-                                                    style={{ backgroundColor: '#fff7ed', borderRadius: 8, padding: 8, marginTop: 8, fontSize: 12 }}
-                                                    placeholder="Catatan..."
-                                                    value={item.notes}
-                                                    onChangeText={(text) => updateNote(item.id, text)}
-                                                />
-                                            </View>
-                                            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc', borderRadius: 10, padding: 4, borderWidth: 1, borderColor: '#e2e8f0', marginLeft: 12 }}>
-                                                <TouchableOpacity onPress={() => removeFromCart(item.id)} style={{ paddingHorizontal: 10, paddingVertical: 6 }}><Text style={{ fontSize: 18, fontWeight: 'bold' }}>-</Text></TouchableOpacity>
-                                                <Text style={{ fontWeight: 'bold', marginHorizontal: 8, fontSize: 14 }}>{item.quantity}</Text>
-                                                <TouchableOpacity onPress={() => addToCart(item)} style={{ paddingHorizontal: 10, paddingVertical: 6 }}><Text style={{ fontSize: 18, fontWeight: 'bold', color: '#ea580c' }}>+</Text></TouchableOpacity>
-                                            </View>
-                                        </View>
-                                    </View>
-                                ))}
-                            </ScrollView>
-
-                            <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 24, borderTopWidth: 1, borderTopColor: '#eceff3', backgroundColor: 'white', gap: 6 }}>
-                                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                                    <Text style={{ color: '#64748b' }}>Subtotal</Text>
-                                    <Text style={{ fontWeight: '600' }}>{formatCurrency(calculateSubtotal())}</Text>
-                                </View>
-                                {orderDiscount > 0 && (
-                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                                        <Text style={{ color: '#ef4444' }}>Diskon</Text>
-                                        <Text style={{ color: '#ef4444', fontWeight: 'bold' }}>-{formatCurrency(orderDiscount)}</Text>
-                                    </View>
-                                )}
-                                {calculateServiceAmount() > 0 && (
-                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                                        <Text style={{ color: '#64748b' }}>Layanan</Text>
-                                        <Text style={{ fontWeight: '600' }}>{formatCurrency(calculateServiceAmount())}</Text>
-                                    </View>
-                                )}
-                                {calculateTaxAmount() > 0 && (
-                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                                        <Text style={{ color: '#64748b' }}>Pajak</Text>
-                                        <Text style={{ fontWeight: '600' }}>{formatCurrency(calculateTaxAmount())}</Text>
-                                    </View>
-                                )}
-                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#e2e8f0', paddingTop: 12, marginTop: 6 }}>
-                                    <Text style={{ fontSize: 16, fontWeight: '800' }}>Total</Text>
-                                    <Text style={{ fontSize: 18, fontWeight: '800', color: '#ea580c' }}>{formatCurrency(calculateTotal())}</Text>
-                                </View>
-                                <TouchableOpacity
-                                    style={{ backgroundColor: '#ea580c', paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginTop: 12, opacity: cart.length === 0 ? 0.5 : 1 }}
-                                    onPress={handleCheckout}
-                                    disabled={cart.length === 0}
-                                >
-                                    <Text style={{ color: 'white', fontWeight: '800', fontSize: 16 }}>
-                                        {isActuallyDisplay ? 'Kirim Pesanan Sekarang' : (existingSaleId ? 'Perbarui Pesanan' : 'Lanjut Pembayaran')}
-                                    </Text>
-                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                        <View style={styles.cartFooter}>
+                            <View style={styles.cartTotalRow}>
+                                <Text style={styles.cartTotalLabelLarge}>Total Pembayaran</Text>
+                                <Text style={[styles.cartTotalValueLarge, { color: '#ea580c' }]}>{formatCurrency(calculateTotal())}</Text>
                             </View>
+                            <TouchableOpacity 
+                                style={[styles.modalButton, { backgroundColor: '#ea580c', marginTop: 16, paddingVertical: 16 }]} 
+                                onPress={handleCheckout}
+                            >
+                                <Text style={styles.confirmButtonText}>
+                                    {cashierMode ? 'PILIH PEMBAYARAN' : (existingSaleId ? 'SIMPAN UPDATE' : 'KONFIRMASI PESANAN')}
+                                </Text>
+                            </TouchableOpacity>
                         </View>
                     </View>
-                </Modal>
+                </View>
+            </Modal>
 
-                {/* Cashier Selection Modal */}
-                <Modal
-                    visible={showWaiterModal}
-                    transparent
-                    animationType="slide"
-                    onRequestClose={() => setShowWaiterModal(false)}
-                >
-                    <View style={styles.modalOverlay}>
-                        <View style={[styles.modalContent, { maxHeight: '80%' }]}>
-                            <View style={styles.modalHeader}>
-                                <Text style={styles.modalTitle}>Pilih Kasir</Text>
-                                <TouchableOpacity onPress={() => setShowWaiterModal(false)}>
-                                    <Text style={{ fontSize: 24, color: '#6b7280' }}>&times;</Text>
-                                </TouchableOpacity>
-                            </View>
+            <HeldOrdersModal
+                visible={showHeldOrdersModal}
+                onClose={() => setShowHeldOrdersModal(false)}
+                orders={uniqueOrders}
+                onRestore={handleRestoreHeldOrder}
+                onDelete={handleDeleteHeldOrder}
+                onRefresh={() => fetchRemotePendingOrders(true)}
+                isRefreshing={isFetchingRemote}
+            />
 
-                            <View style={{ paddingHorizontal: 16, marginBottom: 8 }}>
-                                <TextInput
-                                    style={{
-                                        backgroundColor: '#f3f4f6',
-                                        borderRadius: 8,
-                                        paddingHorizontal: 12,
-                                        paddingVertical: 10,
-                                        fontSize: 14,
-                                        borderWidth: 1,
-                                        borderColor: '#e5e7eb'
-                                    }}
-                                    placeholder="Cari nama kasir..."
-                                    value={waiterSearchQuery}
-                                    onChangeText={setWaiterSearchQuery}
-                                />
-                            </View>
+            <ManualItemModal
+                visible={showManualItemModal}
+                onClose={() => setShowManualItemModal(false)}
+                onAdd={handleAddManualItem}
+            />
 
-                            <ScrollView style={{ paddingHorizontal: 16 }}>
-                                <TouchableOpacity
-                                    style={{
-                                        paddingVertical: 12,
-                                        borderBottomWidth: 1,
-                                        borderBottomColor: '#f3f4f6',
-                                        backgroundColor: selectedWaiter === '' ? '#fff7ed' : 'transparent'
-                                    }}
-                                    onPress={() => { setSelectedWaiter(''); setShowWaiterModal(false); }}
+            <DiscountModal
+                visible={showDiscountModal}
+                onClose={() => setShowDiscountModal(false)}
+                currentTotal={calculateSubtotal()}
+                onApply={handleApplyDiscount}
+            />
+
+            <SplitBillModal
+                visible={showSplitBillModal}
+                onClose={() => setShowSplitBillModal(false)}
+                items={cart}
+                onSplit={onSplitCommit}
+            />
+
+            <ReceiptPreviewModal
+                visible={showReceiptPreview}
+                onClose={() => setShowReceiptPreview(false)}
+                orderData={previewOrderData}
+                onPrint={() => handlePrintReceipt()}
+            />
+
+            <HoldNoteModal
+                visible={showHoldNoteModal}
+                onClose={() => setShowHoldNoteModal(false)}
+                onConfirm={handleHoldOrder}
+            />
+
+            <Modal visible={showWaiterModal} transparent animationType="slide">
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, { maxHeight: '80%' }]}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Pilih Kasir</Text>
+                            <TouchableOpacity onPress={() => setShowWaiterModal(false)}>
+                                <Text style={{ fontSize: 24, color: '#9ca3af' }}>&times;</Text>
+                            </TouchableOpacity>
+                        </View>
+                        <TextInput
+                            style={[styles.searchInput, { marginBottom: 12 }]}
+                            placeholder="Cari kasir..."
+                            value={waiterSearchQuery}
+                            onChangeText={setWaiterSearchQuery}
+                        />
+                        <ScrollView>
+                            {waiters.filter(w => w.name.toLowerCase().includes(waiterSearchQuery.toLowerCase())).map(w => (
+                                <TouchableOpacity 
+                                    key={w.id} 
+                                    style={styles.modalOptionItem} 
+                                    onPress={() => { setSelectedWaiter(w.name); setShowWaiterModal(false); }}
                                 >
-                                    <Text style={{ fontSize: 15, color: '#6b7280' }}>-- Tanpa Kasir --</Text>
+                                    <Text style={styles.modalOptionText}>{w.name}</Text>
+                                    <Text style={{ fontSize: 12, color: '#6b7280' }}>{w.position || '-'}</Text>
                                 </TouchableOpacity>
-                                {waiters
-                                    .filter(w => (w.name || '').toLowerCase().includes(waiterSearchQuery.toLowerCase()))
-                                    .map((w) => (
-                                        <TouchableOpacity
-                                            key={w.id}
-                                            style={{
-                                                paddingVertical: 14,
-                                                borderBottomWidth: 1,
-                                                borderBottomColor: '#f3f4f6',
-                                                backgroundColor: selectedWaiter === w.name ? '#fff7ed' : 'transparent'
-                                            }}
-                                            onPress={() => {
-                                                setSelectedWaiter(w.name);
-                                                setShowWaiterModal(false);
-                                                setWaiterSearchQuery('');
-                                            }}
-                                        >
-                                            <Text style={{ fontSize: 16, color: '#111827', fontWeight: selectedWaiter === w.name ? 'bold' : 'normal' }}>{w.name}</Text>
-                                            {w.position && <Text style={{ fontSize: 12, color: '#6b7280' }}>{w.position}</Text>}
-                                        </TouchableOpacity>
-                                    ))}
-                                {waiters.length === 0 && (
-                                    <View style={{ paddingVertical: 20, alignItems: 'center' }}>
-                                        <Text style={{ color: '#94a3b8' }}>Daftar karyawan tidak ditemukan</Text>
-                                    </View>
-                                )}
-                            </ScrollView>
+                            ))}
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
 
-                            <TouchableOpacity
-                                style={[styles.modalButton, styles.cancelButton, { margin: 16 }]}
-                                onPress={() => setShowWaiterModal(false)}
-                            >
+            <Modal visible={showTableManualModal} transparent animationType="fade">
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>Input Nomor Meja</Text>
+                        <Text style={{ fontSize: 13, color: '#6b7280', marginBottom: 12 }}>Masukkan nomor atau label meja secara manual:</Text>
+                        <TextInput
+                            style={[styles.modalInput, { fontSize: 24, fontWeight: 'bold', textAlign: 'center', height: 70, backgroundColor: '#fff7ed', borderColor: '#ea580c', borderWidth: 1 }]}
+                            placeholder="Contoh: A1"
+                            value={manualTableInput}
+                            onChangeText={setManualTableInput}
+                            autoFocus
+                            autoCapitalize="characters"
+                            placeholderTextColor="#fdba74"
+                        />
+                        <View style={{ flexDirection: 'row', gap: 12, marginTop: 12 }}>
+                            <TouchableOpacity style={[styles.modalButton, styles.cancelButton, { flex: 1 }]} onPress={() => setShowTableManualModal(false)}>
                                 <Text style={styles.cancelButtonText}>Batal</Text>
                             </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={[styles.modalButton, { flex: 1, backgroundColor: '#ea580c' }]} 
+                                onPress={() => { setSelectedTable(manualTableInput.toUpperCase() || '-'); setShowTableManualModal(false); }}
+                            >
+                                <Text style={styles.confirmButtonText}>Simpan</Text>
+                            </TouchableOpacity>
                         </View>
                     </View>
-                </Modal>
+                </View>
+            </Modal>
 
-                <ManualItemModal
-                    visible={showManualItemModal}
-                    onClose={() => setShowManualItemModal(false)}
-                    onAdd={handleAddManualItem}
-                />
+            <ModernToast 
+                visible={toastVisible} 
+                message={toastMessage} 
+                type={toastType} 
+                onHide={() => setToastVisible(false)} 
+            />
 
-                <DiscountModal
-                    visible={showDiscountModal}
-                    currentTotal={calculateSubtotal()}
-                    onClose={() => setShowDiscountModal(false)}
-                    onApply={handleApplyDiscount}
-                />
-
-                <SplitBillModal
-                    visible={showSplitBillModal}
-                    items={cart}
-                    orderDiscount={orderDiscount}
-                    totalSubtotal={calculateSubtotal()}
-                    onClose={() => setShowSplitBillModal(false)}
-                    onSplit={(splitItems) => {
-                        setSplitItemsToPay(splitItems);
-                        setIsSplitPayment(true);
-                        setShowSplitBillModal(false);
-                        setShowPaymentModal(true);
-                    }}
-                />
-
-                <HeldOrdersModal
-                    visible={showHeldOrdersModal}
-                    orders={[...heldOrders, ...remoteOrders]}
-                    onClose={() => setShowHeldOrdersModal(false)}
-                    onRestore={handleRestoreHeldOrder}
-                    onDelete={(isAdmin || !storeSettings?.restrict_cashier_delete) ? handleDeleteHeldOrder : undefined}
-                    onRefresh={() => fetchRemotePendingOrders(true)}
-                    isRefreshing={isFetchingRemote}
-                />
-
-                <ReceiptPreviewModal
-                    visible={showReceiptPreview}
-                    orderData={previewOrderData}
-                    onClose={() => setShowReceiptPreview(false)}
-                    onPrint={() => {
-                        if (previewOrderData) {
-                            handlePrintReceipt(previewOrderData.id, previewOrderData.order_no);
-                        }
-                    }}
-                />
-
-                <ManagerAuthModal
-                    visible={showDeleteAuthModal}
-                    onClose={() => {
-                        setShowDeleteAuthModal(false);
-                        setPendingAuth(null);
-                    }}
-                    onSuccess={handleAuthSuccess}
-                    title={
-                        pendingAuth?.action === 'discount' ? "Otorisasi Diskon" :
-                        pendingAuth?.action === 'hold' ? "Otorisasi Tahan Pesanan" :
-                        pendingAuth?.action === 'manual' ? "Otorisasi Item Manual" :
-                        pendingAuth?.action === 'split' ? "Otorisasi Split Bill" :
-                        "Otorisasi Manager"
-                    }
-                />
-
-                {/* Manual Table Modal */}
-                <Modal
-                    visible={showTableManualModal}
-                    transparent
-                    animationType="fade"
-                    onRequestClose={() => setShowTableManualModal(false)}
-                >
-                    <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}>
-                        <View style={{ backgroundColor: 'white', width: '85%', borderRadius: 20, padding: 24, elevation: 5 }}>
-                            <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 8, color: '#111827' }}>Nomor Meja</Text>
-                            <Text style={{ fontSize: 14, color: '#6b7280', marginBottom: 16 }}>Masukkan nomor meja secara manual:</Text>
-
-                            <TextInput
-                                style={{
-                                    backgroundColor: '#f3f4f6',
-                                    borderRadius: 12,
-                                    padding: 16,
-                                    fontSize: 18,
-                                    fontWeight: 'bold',
-                                    color: '#111827',
-                                    textAlign: 'center',
-                                    borderWidth: 1,
-                                    borderColor: '#e5e7eb'
-                                }}
-                                placeholder="Contoh: A1"
-                                autoFocus
-                                value={manualTableInput}
-                                onChangeText={setManualTableInput}
-                                autoCapitalize="characters"
-                            />
-
-                            <View style={{ flexDirection: 'row', gap: 12, marginTop: 24 }}>
-                                <TouchableOpacity
-                                    style={{ flex: 1, padding: 16, borderRadius: 12, backgroundColor: '#f3f4f6', alignItems: 'center' }}
-                                    onPress={() => setShowTableManualModal(false)}
-                                >
-                                    <Text style={{ fontWeight: 'bold', color: '#4b5563' }}>Batal</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={{ flex: 1, padding: 16, borderRadius: 12, backgroundColor: '#ea580c', alignItems: 'center' }}
-                                    onPress={() => {
-                                        setSelectedTable(manualTableInput.trim().toUpperCase() || '-');
-                                        setShowTableManualModal(false);
-                                    }}
-                                >
-                                    <Text style={{ fontWeight: 'bold', color: 'white' }}>Simpan</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    </View>
-                </Modal>
-
-            </View>
         </SafeAreaView>
-
     );
 }
 
@@ -3561,11 +2137,30 @@ const styles = StyleSheet.create({
         shadowRadius: 2,
         zIndex: 10,
     },
-    headerBackButton: {
-        width: 36,
-        height: 36,
+    headerCircleButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#f3f4f6',
         alignItems: 'center',
         justifyContent: 'center',
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+    },
+    statusDotSmall: {
+        position: 'absolute',
+        top: 2,
+        right: 2,
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        borderWidth: 1.5,
+        borderColor: 'white',
+    },
+    backButtonText: {
+        fontSize: 32,
+        fontWeight: 'bold',
+        color: '#374151',
     },
     headerTitleContainer: {
         flex: 1,
@@ -3579,8 +2174,8 @@ const styles = StyleSheet.create({
     headerInfoBar: {
         flexDirection: 'row',
         backgroundColor: 'white',
-        paddingVertical: 2,
-        paddingHorizontal: 12,
+        paddingVertical: 4,
+        paddingHorizontal: 16,
         borderBottomWidth: 1,
         borderBottomColor: '#f3f4f6',
         alignItems: 'center',
@@ -3600,7 +2195,7 @@ const styles = StyleSheet.create({
         letterSpacing: 0.4,
     },
     infoBarValue: {
-        fontSize: 11,
+        fontSize: 12,
         fontWeight: '600',
         color: '#111827',
     },
@@ -3609,26 +2204,23 @@ const styles = StyleSheet.create({
         height: 16,
         backgroundColor: '#f3f4f6',
     },
-    backButtonText: {
-        fontSize: 22,
-    },
     searchContainer: {
-        paddingHorizontal: 8,
-        paddingVertical: 3,
+        paddingHorizontal: 12,
+        paddingVertical: 4,
         backgroundColor: 'white',
     },
     orderTypeRow: {
         flexDirection: 'row',
-        gap: 6,
-        paddingHorizontal: 8,
-        paddingBottom: 4,
-        paddingTop: 1,
+        gap: 8,
+        paddingHorizontal: 12,
+        paddingBottom: 6,
+        paddingTop: 2,
         backgroundColor: 'white',
     },
     orderTypeChip: {
-        paddingHorizontal: 10,
-        paddingVertical: 5,
-        borderRadius: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 7,
+        borderRadius: 999,
         backgroundColor: '#f8fafc',
         borderWidth: 1,
         borderColor: '#e2e8f0',
@@ -3647,29 +2239,29 @@ const styles = StyleSheet.create({
     },
     searchInput: {
         backgroundColor: '#f3f4f6',
-        paddingHorizontal: 12,
-        paddingVertical: 5,
-        borderRadius: 8,
+        paddingHorizontal: 16,
+        paddingVertical: 6,
+        borderRadius: 10,
         color: '#111827',
-        fontSize: 12,
+        fontSize: 13,
         borderWidth: 1,
         borderColor: '#e5e7eb',
     },
     categoryContainer: {
         backgroundColor: 'white',
-        paddingVertical: 3,
+        paddingVertical: 4,
         borderBottomWidth: 1,
         borderBottomColor: '#f3f4f6',
     },
     categoryScroll: {
-        paddingHorizontal: 8,
-        gap: 6,
+        paddingHorizontal: 12,
+        gap: 8,
     },
     categoryTab: {
-        paddingHorizontal: 12,
-        paddingVertical: 4,
-        borderRadius: 8,
-        backgroundColor: '#f1f5f9',
+        paddingHorizontal: 20,
+        paddingVertical: 8,
+        borderRadius: 20,
+        backgroundColor: '#f3f4f6',
         borderWidth: 1,
         borderColor: '#e5e7eb',
     },
@@ -3678,19 +2270,17 @@ const styles = StyleSheet.create({
         borderColor: '#ea580c',
     },
     categoryText: {
-        fontSize: 11,
-        fontWeight: '700',
+        fontSize: 14,
+        fontWeight: '600',
         color: '#4b5563',
-        textTransform: 'uppercase', // More premium look
-        letterSpacing: 0.3
     },
     activeCategoryText: {
         color: 'white',
     },
     productListContent: {
-        paddingHorizontal: 4,
-        paddingVertical: 4,
-        paddingBottom: 200, // Extra space for cart bar
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        paddingBottom: 200, 
     },
     productCard: {
         backgroundColor: 'white',
@@ -3706,12 +2296,9 @@ const styles = StyleSheet.create({
     },
     productImageContainer: {
         width: '100%',
-        aspectRatio: 1, // Robust square look
+        aspectRatio: 1, 
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#f8fafc',
-        borderBottomWidth: 1,
-        borderBottomColor: '#f1f5f9',
     },
     productAcronym: {
         fontSize: 28,
@@ -3777,7 +2364,6 @@ const styles = StyleSheet.create({
         lineHeight: 20,
         marginTop: 8,
     },
-    // Modals & Options
     modalOverlay: {
         flex: 1,
         backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -3874,19 +2460,18 @@ const styles = StyleSheet.create({
     confirmButton: {
         backgroundColor: '#2563eb',
     },
-    // New Cart Styles
     cartSummaryBar: {
         position: 'absolute',
-        bottom: 20,
-        left: 12,
-        right: 12,
+        bottom: 24,
+        left: 16,
+        right: 16,
         backgroundColor: '#111827',
-        borderRadius: 16,
+        borderRadius: 20,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: 10,
-        paddingHorizontal: 16,
+        padding: 12,
+        paddingHorizontal: 20,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 8 },
         shadowOpacity: 0.3,
@@ -3899,16 +2484,16 @@ const styles = StyleSheet.create({
     },
     cartCountBadge: {
         backgroundColor: '#ea580c',
-        width: 32,
-        height: 32,
-        borderRadius: 16,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         alignItems: 'center',
         justifyContent: 'center',
     },
     cartCountText: {
         color: 'white',
         fontWeight: 'bold',
-        fontSize: 14,
+        fontSize: 16,
     },
     cartTotalLabel: {
         color: '#9ca3af',
@@ -3917,21 +2502,20 @@ const styles = StyleSheet.create({
     },
     cartTotalValue: {
         color: 'white',
-        fontSize: 16,
+        fontSize: 18,
         fontWeight: 'bold',
     },
     checkoutButton: {
         backgroundColor: '#ea580c',
-        paddingVertical: 10,
-        paddingHorizontal: 16,
-        borderRadius: 12,
+        paddingVertical: 12,
+        paddingHorizontal: 20,
+        borderRadius: 14,
     },
     checkoutButtonText: {
         color: 'white',
         fontWeight: 'bold',
         fontSize: 14,
     },
-    // Detailed Cart Modal Styles
     modalButtonText: {
         color: 'white',
         fontSize: 16,
@@ -4015,7 +2599,6 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: '#111827',
     },
-    // Modern Success Modal Styles
     successIconCircle: {
         width: 60,
         height: 60,
@@ -4064,4 +2647,24 @@ const styles = StyleSheet.create({
         color: '#111827',
         marginTop: 4,
     },
+    badgeContainer: {
+        position: 'absolute',
+        top: -4,
+        right: -4,
+        backgroundColor: '#ef4444',
+        borderRadius: 10,
+        minWidth: 18,
+        height: 18,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1.5,
+        borderColor: 'white',
+        zIndex: 50,
+    },
+    badgeText: {
+        color: 'white',
+        fontSize: 10,
+        fontWeight: 'bold',
+    },
 });
+

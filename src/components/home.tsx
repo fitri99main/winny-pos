@@ -2178,7 +2178,7 @@ function Home() {
         if (!finalOrderNo) {
           if (isOnline) {
             const mode = storeSettings?.invoice_mode || 'auto';
-            const prefix = storeSettings?.invoice_prefix || 'ORD';
+            const prefix = storeSettings?.invoice_prefix || 'WIN-26';
             const lastNumber = Number(storeSettings?.invoice_last_number) || 0;
 
             if (mode === 'auto') {

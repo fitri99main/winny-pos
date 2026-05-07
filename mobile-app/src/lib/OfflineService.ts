@@ -77,6 +77,42 @@ export const OfflineService = {
     },
 
     /**
+     * Save a sale with auto-generated offline invoice number
+     */
+    saveSale: async (saleData: any): Promise<{ id: string; order_no: string }> => {
+        try {
+            const queue = await OfflineService.getOfflineQueue();
+            
+            // Fetch settings for prefix (fallback to OFF-WIN-26)
+            const { data: settings } = await supabase.from('store_settings').select('offline_invoice_prefix, offline_invoice_last_number').eq('id', 1).single();
+            const prefix = settings?.offline_invoice_prefix || 'OFF-WIN-26';
+            const lastNo = settings?.offline_invoice_last_number || 0;
+            const nextNo = lastNo + (queue.length + 1); // Simple local counter increment
+            
+            const order_no = `${prefix}-${nextNo.toString().padStart(5, '0')}`;
+            const id = `off-${Date.now()}`;
+
+            const newOfflineSale: OfflineSale = {
+                ...saleData,
+                id,
+                order_no,
+                orderNo: order_no,
+                is_offline: true,
+                date: new Date().toISOString()
+            };
+            
+            queue.push(newOfflineSale);
+            await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+            console.log('[OfflineService] Sale saved locally:', order_no);
+            return { id, order_no };
+        } catch (e) {
+            console.error('[OfflineService] Error saving sale:', e);
+            const fallbackNo = `OFF-WIN-26-FALLBACK-${Date.now()}`;
+            return { id: `off-err-${Date.now()}`, order_no: fallbackNo };
+        }
+    },
+
+    /**
      * Remove a sale from the queue by its temporary local ID
      */
     removeSaleFromQueue: async (offlineId: string): Promise<void> => {

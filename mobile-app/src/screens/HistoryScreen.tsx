@@ -103,7 +103,10 @@ export default function HistoryScreen() {
                 .eq('branch_id', bId);
             
             if (Array.isArray(data)) {
-                const uniqueNames = Array.from(new Set(data.map(s => s.waiter_name || 'Kasir'))).filter(Boolean).sort();
+                const systemNames = ['display', 'display2', 'kasir', 'admin', 'system', 'user'];
+                const uniqueNames = Array.from(new Set(data.map(s => s.waiter_name || 'Kasir')))
+                    .filter(name => name && !systemNames.includes(name.toLowerCase().trim()))
+                    .sort();
                 setAvailableCashiers(['all', ...uniqueNames]);
             }
         } catch (e) {
