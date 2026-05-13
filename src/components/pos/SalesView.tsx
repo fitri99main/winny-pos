@@ -808,7 +808,7 @@ export const SalesView = memo(function SalesView({
             const { error } = await supabase
                 .from('sales')
                 .update({ 
-                    status: 'Selesai',
+                    status: 'Completed',
                     completed_at: new Date().toISOString()
                 })
                 .eq('id', saleId);
@@ -1022,7 +1022,7 @@ export const SalesView = memo(function SalesView({
                                     </td>
                                     <td className="px-3 py-2 text-center">
                                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                            sale.status === 'Completed' || sale.status === 'Selesai' || sale.status === 'Paid' ? 'bg-green-100 text-green-700' :
+                                            sale.status === 'Completed' || sale.status === 'Paid' ? 'bg-green-100 text-green-700' :
                                             sale.status === 'Returned' ? 'bg-red-100 text-red-700' :
                                             'bg-yellow-100 text-yellow-700'
                                         }`}>
@@ -1421,7 +1421,7 @@ export const SalesView = memo(function SalesView({
                                 <div className="flex justify-between items-center mb-6">
                             <h3 className="text-xl font-bold text-gray-900">Detail Transaksi</h3>
                             <div className="flex gap-2">
-                                {(selectedOrderDetails.status !== 'Completed' && selectedOrderDetails.status !== 'Selesai') && (
+                                {(selectedOrderDetails.status !== 'Completed' && selectedOrderDetails.status !== 'Paid') && (
                                     <Button 
                                         onClick={() => handleMarkSelesai(selectedOrderDetails.id)}
                                         className="bg-green-600 hover:bg-green-700 text-white"

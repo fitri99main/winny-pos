@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../auth/AuthProvider';
-import { Calculator, TrendingUp, TrendingDown, DollarSign, Wallet, FileText, Plus, BookOpen, LayoutDashboard, Settings, Edit, Trash2, Download, CalendarCheck, History, Lock, Unlock, Loader2, ShoppingCart, Search, Eye, X, RefreshCw, Printer, ChevronUp, ChevronDown } from 'lucide-react';
+import { Calculator, TrendingUp, TrendingDown, DollarSign, Wallet, FileText, Plus, BookOpen, LayoutDashboard, Settings, Edit, Trash2, Download, CalendarCheck, History, Lock, Unlock, Loader2, ShoppingCart, Search, Eye, X, RefreshCw, Printer, ChevronUp, ChevronDown, AlertTriangle } from 'lucide-react';
 import { PettyCashService, PettyCashSession, PettyCashTransaction } from '../../lib/PettyCashService';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -2367,6 +2367,8 @@ export function AccountingView({
     }, [transactions, startDate, endDate, journalSearch, accounts]);
 
     // --- CRUD Actions (Wrappers) ---
+    const [viewingPurchase, setViewingPurchase] = useState<any>(null);
+
     const addAccount = (acc: Account) => onAddAccount(acc);
     const updateAccount = (updatedAcc: Account) => onUpdateAccount(updatedAcc);
     const deleteAccount = (code: string) => {
@@ -3966,6 +3968,98 @@ export function AccountingView({
                                 setActiveTab('ledger');
                             }}
                         />
+                    </div>
+                {/* Modal Rincian Pembelian */}
+                {viewingPurchase && (
+                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[1000] flex items-center justify-center p-4">
+                        <div className="bg-white rounded-[2rem] w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200">
+                            <div className="p-8 border-b bg-gradient-to-br from-gray-50 to-white flex justify-between items-start">
+                                <div>
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-[10px] font-black tracking-widest uppercase">Detail Pembelian</span>
+                                        <span className="px-3 py-1 bg-gray-100 text-gray-600 rounded-full text-[10px] font-black tracking-widest uppercase">{viewingPurchase.purchase_no}</span>
+                                    </div>
+                                    <h3 className="text-2xl font-black text-gray-800 leading-tight">
+                                        {viewingPurchase.supplier_name || 'Supplier Umum'}
+                                    </h3>
+                                    <p className="text-sm text-gray-500 mt-1 font-medium">{new Date(viewingPurchase.date).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                                </div>
+                                <button 
+                                    onClick={() => setViewingPurchase(null)}
+                                    className="p-3 bg-gray-100 hover:bg-gray-200 text-gray-500 rounded-2xl transition-all hover:rotate-90"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                                <div className="space-y-6">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Status Pembelian</p>
+                                            <span className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase ${
+                                                viewingPurchase.status === 'Completed' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
+                                            }`}>
+                                                {viewingPurchase.status}
+                                            </span>
+                                        </div>
+                                        <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Metode Bayar</p>
+                                            <p className="font-bold text-gray-700">{viewingPurchase.payment_method || 'Tunai'}</p>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 px-1">Daftar Item Barang</h4>
+                                        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                                            <table className="w-full text-sm">
+                                                <thead className="bg-gray-50 text-gray-500 font-bold">
+                                                    <tr>
+                                                        <th className="px-4 py-3 text-left">Item</th>
+                                                        <th className="px-4 py-3 text-center">Qty</th>
+                                                        <th className="px-4 py-3 text-right">Harga</th>
+                                                        <th className="px-4 py-3 text-right">Total</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-50">
+                                                    {(viewingPurchase.items || []).map((item: any, idx: number) => (
+                                                        <tr key={idx} className="hover:bg-gray-50/50">
+                                                            <td className="px-4 py-3">
+                                                                <div className="font-bold text-gray-700">{item.name}</div>
+                                                                <div className="text-[10px] text-gray-400">{item.unit || 'Satuan'}</div>
+                                                            </td>
+                                                            <td className="px-4 py-3 text-center font-bold text-gray-600">{item.quantity}</td>
+                                                            <td className="px-4 py-3 text-right">Rp {Number(item.price).toLocaleString()}</td>
+                                                            <td className="px-4 py-3 text-right font-bold text-gray-800">Rp {(Number(item.price) * Number(item.quantity)).toLocaleString()}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+
+                                    {viewingPurchase.notes && (
+                                        <div className="p-4 bg-orange-50/50 rounded-2xl border border-orange-100">
+                                            <p className="text-[10px] font-bold text-orange-400 uppercase tracking-widest mb-1">Catatan Tambahan</p>
+                                            <p className="text-sm text-gray-600 italic">"{viewingPurchase.notes}"</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="p-8 bg-gray-50 border-t flex justify-between items-center">
+                                <div>
+                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Total Pembelian</p>
+                                    <p className="text-3xl font-black text-blue-700">Rp {Number(viewingPurchase.total_amount).toLocaleString()}</p>
+                                </div>
+                                <Button 
+                                    onClick={() => setViewingPurchase(null)}
+                                    className="px-8 py-6 rounded-2xl font-black bg-gray-800 hover:bg-black text-white shadow-xl shadow-gray-200"
+                                >
+                                    TUTUP DETAIL
+                                </Button>
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>

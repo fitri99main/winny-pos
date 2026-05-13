@@ -533,10 +533,10 @@ export function SettingsView({
                                         {tab.icon}
                                     </span>
                                 ) : (
-                                    <Icon className={`
+                                    {(Icon as any) && <Icon className={`
                                         w-4.5 h-4.5 relative z-10 transition-all duration-500
                                         ${isActive ? 'text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)]' : `${tab.color} group-hover:scale-110`}
-                                    `} />
+                                    `} />}
                                 )}
                             </div>
                             <span className="truncate">{tab.label}</span>

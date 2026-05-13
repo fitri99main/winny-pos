@@ -3870,10 +3870,10 @@ function Home() {
                               {module.icon}
                             </span>
                           ) : (
-                            <Icon className={`
+                            {(Icon as any) && <Icon className={`
                               w-5 h-5 relative z-10 transition-all duration-500
                               ${isActive ? 'text-white drop-shadow-[0_4px_6px_rgba(0,0,0,0.4)] scale-110' : `${module.color} group-hover:scale-125 group-hover:drop-shadow-[0_4px_8px_rgba(0,0,0,0.1)]`}
-                            `} />
+                            `} />}
                           )}
                           
                           {/* Bottom Shadow for 3D feel */}

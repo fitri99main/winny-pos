@@ -2,6 +2,7 @@
  * PrinterService handles Bluetooth connection and ESC/POS command generation
  * for thermal printers.
  */
+import { toast } from 'sonner';
 
 // Define interfaces for Web Bluetooth to fix TS errors if types are missing
 interface BluetoothDevice {
@@ -13,6 +14,7 @@ interface BluetoothRemoteGATTServer {
     connect(): Promise<BluetoothRemoteGATTServer>;
     disconnect(): void;
     getPrimaryService(service: string): Promise<BluetoothRemoteGATTService>;
+    connected?: boolean;
 }
 
 interface BluetoothRemoteGATTService {
