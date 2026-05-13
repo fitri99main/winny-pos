@@ -3832,49 +3832,49 @@ function Home() {
                   <div className="w-full h-px bg-gray-200 dark:bg-gray-700 my-2 mx-auto w-1/2" />
                 )}
                 <div className="space-y-1">
-                  {visibleModules.map((module) => {
-                    const Icon = module.icon;
-                    const isActive = activeModule === module.id;
-                    const colorClass = isActive ? 'text-white' : module.color;
-                    const bgClass = isActive ? 'bg-primary' : `${module.bgColor} bg-opacity-30 group-hover:bg-opacity-100`;
+                    {visibleModules.map((module) => {
+                      const IconComponent = module.icon as any;
+                      const isActive = activeModule === module.id;
+                      const colorClass = isActive ? 'text-white' : module.color;
+                      const bgClass = isActive ? 'bg-primary' : `${module.bgColor} bg-opacity-30 group-hover:bg-opacity-100`;
 
-                    return (
-                      <button
-                        key={module.id}
-                        onClick={() => {
-                          setActiveModule(module.id as ModuleType);
-                        }}
-                        className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start px-2.5'} gap-2.5 py-1.5 rounded-lg transition-all duration-200 group relative ${isActive
-                          ? 'bg-blue-50/80 text-blue-700 shadow-sm ring-1 ring-blue-100/50'
-                          : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
-                          }`}
-                        title={isSidebarCollapsed ? module.label : ''}
-                      >
-                        <div className={`
-                          relative flex items-center justify-center w-10 h-10 rounded-2xl transition-all duration-500
-                          ${isActive 
-                            ? 'bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-700 shadow-[0_8px_20px_-4px_rgba(59,130,246,0.5)] scale-110 -rotate-2 ring-2 ring-white/20' 
-                            : `bg-white dark:bg-gray-800 shadow-[0_4px_12px_-2px_rgba(0,0,0,0.08)] border border-gray-100 dark:border-gray-700 group-hover:scale-110 group-hover:shadow-[0_12px_24px_-8px_rgba(0,0,0,0.15)] group-hover:-translate-y-1 group-hover:rotate-1`
-                          }
-                        `}>
-                          {/* 3D Depth Base for Non-Active */}
-                          {!isActive && (
-                            <div className={`absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity bg-gradient-to-br ${module.bgColor.replace('bg-', 'from-').replace('50', '400')} to-transparent opacity-20`} />
-                          )}
-                          
-                          {/* Inner Glow/Highlight */}
-                          <div className={`absolute inset-[1px] rounded-[14px] bg-gradient-to-br from-white/30 to-transparent pointer-events-none z-20`} />
-                          
-                          {typeof module.icon === 'string' ? (
-                            <span className={`text-xl relative z-10 transition-all duration-500 ${isActive ? 'drop-shadow-[0_4px_6px_rgba(0,0,0,0.4)] scale-110' : 'group-hover:scale-125 group-hover:drop-shadow-[0_4px_8px_rgba(0,0,0,0.1)]'}`}>
-                              {module.icon}
-                            </span>
-                          ) : (
-                            (Icon as any) && <Icon className={`
-                              w-5 h-5 relative z-10 transition-all duration-500
-                              ${isActive ? 'text-white drop-shadow-[0_4px_6px_rgba(0,0,0,0.4)] scale-110' : `${module.color} group-hover:scale-125 group-hover:drop-shadow-[0_4px_8px_rgba(0,0,0,0.1)]`}
-                            `} />
-                          )}
+                      return (
+                        <button
+                          key={module.id}
+                          onClick={() => {
+                            setActiveModule(module.id as ModuleType);
+                          }}
+                          className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start px-2.5'} gap-2.5 py-1.5 rounded-lg transition-all duration-200 group relative ${isActive
+                            ? 'bg-blue-50/80 text-blue-700 shadow-sm ring-1 ring-blue-100/50'
+                            : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
+                            }`}
+                          title={isSidebarCollapsed ? module.label : ''}
+                        >
+                          <div className={`
+                            relative flex items-center justify-center w-10 h-10 rounded-2xl transition-all duration-500
+                            ${isActive 
+                              ? 'bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-700 shadow-[0_8px_20px_-4px_rgba(59,130,246,0.5)] scale-110 -rotate-2 ring-2 ring-white/20' 
+                              : `bg-white dark:bg-gray-800 shadow-[0_4px_12px_-2px_rgba(0,0,0,0.08)] border border-gray-100 dark:border-gray-700 group-hover:scale-110 group-hover:shadow-[0_12px_24px_-8px_rgba(0,0,0,0.15)] group-hover:-translate-y-1 group-hover:rotate-1`
+                            }
+                          `}>
+                            {/* 3D Depth Base for Non-Active */}
+                            {!isActive && (
+                              <div className={`absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity bg-gradient-to-br ${module.bgColor.replace('bg-', 'from-').replace('50', '400')} to-transparent opacity-20`} />
+                            )}
+                            
+                            {/* Inner Glow/Highlight */}
+                            <div className={`absolute inset-[1px] rounded-[14px] bg-gradient-to-br from-white/30 to-transparent pointer-events-none z-20`} />
+                            
+                            {typeof module.icon === 'string' ? (
+                              <span className={`text-xl relative z-10 transition-all duration-500 ${isActive ? 'drop-shadow-[0_4px_6px_rgba(0,0,0,0.4)] scale-110' : 'group-hover:scale-125 group-hover:drop-shadow-[0_4px_8px_rgba(0,0,0,0.1)]'}`}>
+                                {module.icon}
+                              </span>
+                            ) : (
+                              IconComponent && <IconComponent className={`
+                                w-5 h-5 relative z-10 transition-all duration-500
+                                ${isActive ? 'text-white drop-shadow-[0_4px_6px_rgba(0,0,0,0.4)] scale-110' : `${module.color} group-hover:scale-125 group-hover:drop-shadow-[0_4px_8px_rgba(0,0,0,0.1)]`}
+                              `} />
+                            )}
                           
                           {/* Bottom Shadow for 3D feel */}
                           <div className={`absolute -bottom-1 left-1/2 -translate-x-1/2 w-1/2 h-1 bg-black/10 blur-sm rounded-full transition-all duration-500 ${isActive ? 'opacity-40 scale-125' : 'opacity-0 group-hover:opacity-20 group-hover:scale-110'}`} />

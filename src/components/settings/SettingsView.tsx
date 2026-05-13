@@ -508,7 +508,7 @@ export function SettingsView({
 
                 {tabs.map((tab) => {
                     const isActive = activeTab === tab.id;
-                    const Icon = tab.icon;
+                    const IconComponent = tab.icon as any;
                     return (
                         <button
                             key={tab.id}
@@ -533,7 +533,7 @@ export function SettingsView({
                                         {tab.icon}
                                     </span>
                                 ) : (
-                                    (Icon as any) && <Icon className={`
+                                    IconComponent && <IconComponent className={`
                                         w-4.5 h-4.5 relative z-10 transition-all duration-500
                                         ${isActive ? 'text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)]' : `${tab.color} group-hover:scale-110`}
                                     `} />
