@@ -179,14 +179,14 @@ interface SalesViewProps {
     onExit?: () => void;
     sales: SalesOrder[];
     returns: SalesReturn[];
-    onAddSale: (sale: Omit<SalesOrder, 'id' | 'orderNo' | 'date' | 'status'>) => void;
-    onAddReturn: (ret: Omit<SalesReturn, 'id' | 'returnNo' | 'date' | 'status'>) => void;
+    onAddSale: (sale: any) => Promise<any> | void;
+    onAddReturn: (ret: any) => Promise<any> | void;
     onUpdateSale?: (sale: SalesOrder) => void;
     onDeleteSale?: (saleId: number) => void;
     onDeleteSales?: (saleIds: number[]) => void;
     contacts: ContactData[];
     employees: any[];
-    onOpenCashier?: () => void;
+    onOpenCashier?: (table?: string) => void;
     paymentMethods?: any[];
     tables?: any[];
     onClearTableStatus?: (tableNo: string) => void;

@@ -2046,7 +2046,7 @@ function AccountManagementTab({ accounts, getBalance, onAddAccount, onUpdateAcco
 
 export interface AccountingViewProps {
     accounts?: Account[];
-    transactions?: JournalEntry[];
+    transactions?: any[];
     sales?: any[]; // [NEW] Added for direct sync
     onAddAccount?: (acc: Account) => Promise<void>;
     onUpdateAccount?: (acc: Account) => Promise<void>;
@@ -2058,7 +2058,7 @@ export interface AccountingViewProps {
     onBack?: () => void;
     currentBranchId?: string;
     purchases?: any[];
-    onPurchaseCRUD?: (table: string, action: 'create' | 'update' | 'delete', data: any) => Promise<void>;
+    onPurchaseCRUD?: (table: string, action: 'create' | 'update' | 'delete', data: any) => Promise<any> | void;
 }
 
 export function AccountingView({
