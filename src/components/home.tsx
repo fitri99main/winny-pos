@@ -2742,7 +2742,7 @@ function Home() {
         order.id === orderId
           ? {
             ...order,
-            items: (order.items || []).map((i: any) => i.name === items.itemName ? { ...i, status: items.newStatus } : i)
+            productDetails: (order.productDetails || []).map((i: any) => i.name === items.itemName ? { ...i, status: items.newStatus } : i)
           }
           : order
       ));
@@ -2764,7 +2764,7 @@ function Home() {
           if (o.id === orderId) {
             return {
               ...o,
-              items: (o.items || []).map((i: any) => 
+              productDetails: (o.productDetails || []).map((i: any) => 
                 (stationFilter === 'All' || i.target === stationFilter)
                   ? { ...i, status: 'Served' } 
                   : i
@@ -2780,7 +2780,7 @@ function Home() {
           await supabase.from('sale_items').update({ status: 'Served' }).eq('sale_id', orderId).eq('target', stationFilter);
         }
 
-        const updatedItems = (order.items || []).map((i: any) => 
+        const updatedItems = (order.productDetails || []).map((i: any) => 
           (stationFilter === 'All' || i.target === stationFilter)
             ? { ...i, status: 'Served' } 
             : i
@@ -2813,7 +2813,7 @@ function Home() {
         ? {
           ...order,
           status: status === 'Served' ? 'Served' : order.status,
-          items: status === 'ItemUpdate' ? (order.items || []).map((i: any) => i.name === items.itemName ? { ...i, status: items.newStatus } : i) : order.items
+          productDetails: status === 'ItemUpdate' ? (order.productDetails || []).map((i: any) => i.name === items.itemName ? { ...i, status: items.newStatus } : i) : order.productDetails
         }
         : order
     ).filter(order => status !== 'Served')); // Remove if served (optional, or keep for history)

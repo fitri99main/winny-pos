@@ -31,23 +31,9 @@ import { useIsMobile } from '@/hooks/use-mobile';
 
 interface CashierInterfaceProps {
   onBack?: () => void;
-  onAddSale?: (sale: {
-    id?: number; // Optional ID for updating existing sales
-    order_no?: string; // Optional order_no for safety checks
-    items: number;
-    totalAmount: number;
-    paymentMethod: string;
-    productDetails: { name: string; quantity: number; price: number; isManual?: boolean }[];
-    tableNo?: string;
-    customerName?: string;
-    waiterName?: string;
-    subtotal?: number;
-    discount?: number;
-    paidAmount?: number;
-    change?: number;
     tax?: number;
     service?: number;
-  }) => void;
+  }) => Promise<{ wifiVoucher?: string; wifiNotice?: string } | null> | void;
   orderItems: OrderItem[];
   orderDiscount: number;
   setOrderItems: React.Dispatch<React.SetStateAction<OrderItem[]>>;
@@ -836,7 +822,7 @@ export function CashierInterface({
       setLastSaleData(salePayload);
       
       // Process sale (this will fetch WiFi vouchers in home.tsx)
-      const voucherInfo = await onAddSale(salePayload);
+      const voucherInfo: any = await onAddSale(salePayload);
       
       if (voucherInfo && voucherInfo.wifiVoucher) {
         console.log('[CashierInterface] Received WiFi Voucher info:', voucherInfo);
