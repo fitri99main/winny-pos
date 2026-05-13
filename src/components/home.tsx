@@ -2706,9 +2706,9 @@ function Home() {
                 customerName: orderData.customerName,
                 time: kdsOrder.time,
                 items: kitchenItems.map(i => ({
-                    name: i.name || i.product_name,
+                    name: i.name,
                     quantity: i.quantity,
-                    note: i.note || i.notes
+                    note: i.notes
                 })),
                 notes: orderData.notes || orderData.note
             });
@@ -2729,9 +2729,9 @@ function Home() {
                 customerName: orderData.customerName,
                 time: kdsOrder.time,
                 items: barItems.map(i => ({
-                    name: i.name || i.product_name,
+                    name: i.name,
                     quantity: i.quantity,
-                    note: i.note || i.notes
+                    note: i.notes
                 })),
                 notes: orderData.notes || orderData.note
             });
@@ -2958,8 +2958,13 @@ function Home() {
     }
   };
 
-  const handleDeleteSale = async (saleId: number) => {
+  const handleDeleteSale = async (saleId: number | string) => {
     try {
+      if (typeof saleId === 'string' && saleId.startsWith('HOLD-')) {
+        setPendingOrders(prev => prev.filter(o => o.id !== saleId));
+        toast.success('Pesanan ditahan telah dihapus');
+        return;
+      }
       // [FIX] Get sale details first to know which table to clear and for Accounting ID
       const { data: sale } = await supabase.from('sales').select('table_no, order_no').eq('id', saleId).single();
 
@@ -3003,21 +3008,33 @@ function Home() {
     }
   };
 
-  const handleDeleteSales = async (saleIds: number[]) => {
+  const handleDeleteSales = async (saleIds: (number | string)[]) => {
     if (saleIds.length === 0) return;
 
     try {
-      const toastId = toast.loading(`Menghapus ${saleIds.length} transaksi...`);
+      const numericIds = saleIds.filter(id => typeof id === 'number') as number[];
+      const holdIds = saleIds.filter(id => typeof id === 'string' && (id as string).startsWith('HOLD-'));
+
+      if (holdIds.length > 0) {
+        setPendingOrders(prev => prev.filter(o => !holdIds.includes(String(o.id))));
+      }
+
+      if (numericIds.length === 0) {
+        if (holdIds.length > 0) toast.success('Pesanan ditahan berhasil dihapus');
+        return;
+      }
+
+      const toastId = toast.loading(`Menghapus ${numericIds.length} transaksi...`);
 
       // 1. Get all sale details for table clearing and journal matching
       const { data: salesList } = await supabase
         .from('sales')
         .select('id, table_no, order_no')
-        .in('id', saleIds);
+        .in('id', numericIds);
 
       // 2. Cascade Deletes
-      await supabase.from('sale_items').delete().in('sale_id', saleIds);
-      await supabase.from('sales_returns').delete().in('sale_id', saleIds);
+      await supabase.from('sale_items').delete().in('sale_id', numericIds);
+      await supabase.from('sales_returns').delete().in('sale_id', numericIds);
       
       // Journal entries matching by order_no patterns
       if (salesList && salesList.length > 0) {

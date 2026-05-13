@@ -182,8 +182,8 @@ interface SalesViewProps {
     onAddSale: (sale: any) => Promise<any> | void;
     onAddReturn: (ret: any) => Promise<any> | void;
     onUpdateSale?: (sale: SalesOrder) => void;
-    onDeleteSale?: (saleId: number) => void;
-    onDeleteSales?: (saleIds: number[]) => void;
+    onDeleteSale?: (saleId: number | string) => void;
+    onDeleteSales?: (saleIds: (number | string)[]) => void;
     contacts: ContactData[];
     employees: any[];
     onOpenCashier?: (table?: string) => void;
@@ -801,7 +801,7 @@ export const SalesView = memo(function SalesView({
         setEditForm({ ...editForm, productDetails: newItems, totalAmount: newTotal });
     };
 
-    const handleMarkSelesai = async (saleId: number) => {
+    const handleMarkSelesai = async (saleId: number | string) => {
         if (!confirm('Tandai transaksi ini sebagai Selesai? Tindakan ini akan memicu pengurangan stok bahan baku (jika belum).')) return;
         
         try {
@@ -823,7 +823,7 @@ export const SalesView = memo(function SalesView({
         }
     };
 
-    const handleDeleteClick = (saleId: number) => {
+    const handleDeleteClick = (saleId: number | string) => {
         const processDelete = () => {
              if (onDeleteSale) {
                 onDeleteSale(saleId);
