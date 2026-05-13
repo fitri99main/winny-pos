@@ -15,7 +15,7 @@ import { DateRangePicker } from '../shared/DateRangePicker';
 
 
 export interface SalesOrder {
-    id: number;
+    id: number | string;
     orderNo: string;
     order_no?: string;
     date: string;
@@ -1342,7 +1342,7 @@ export const SalesView = memo(function SalesView({
 
                     {onOpenCashier && (
                         <Button
-                            onClick={onOpenCashier}
+                            onClick={() => onOpenCashier()}
                             className="bg-primary hover:bg-primary/90 text-white font-bold h-11 px-6 rounded-xl flex items-center gap-2 shadow-lg shadow-blue-100"
                         >
                             <ShoppingCart className="w-5 h-5" />

@@ -1075,11 +1075,15 @@ function Home() {
               status: i.status || 'Pending',
               notes: i.notes
             };
-          })
+          }),
+          items: (s.items || []).reduce((sum: number, i: any) => sum + (Number(i.quantity) || 0), 0),
+          totalAmount: Number(s.total_amount || 0),
+          paymentMethod: s.payment_method || 'Cash',
+          status: s.status || 'Pending'
         }));
 
       setPendingOrders(prev => {
-        const localOnlyOrders = prev.filter(p => typeof p.id === 'string' && p.id.startsWith('HOLD-'));
+        const localOnlyOrders = prev.filter(p => typeof p.id === 'string' && (p.id as string).startsWith('HOLD-'));
         return [...localOnlyOrders, ...pendingFromDB];
       });
     }
@@ -2662,29 +2666,34 @@ function Home() {
     }
   };
   const handleSendToKDS = (orderData: any) => {
-    const kdsOrder = {
-      id: Date.now(),
+    const kdsOrder: SalesOrder = {
+      id: `HOLD-${Date.now()}`,
       orderNo: orderData.orderNo || `HLD-${Date.now().toString().slice(-4)}`,
+      date: new Date().toISOString(),
       tableNo: orderData.tableNo || '-',
       waiterName: orderData.waiterName || '-',
       time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
-      items: (orderData.productDetails || []).map((item: any) => {
+      items: (orderData.productDetails || []).reduce((sum: number, i: any) => sum + (Number(i.quantity) || 0), 0),
+      productDetails: (orderData.productDetails || []).map((item: any) => {
         const product = products.find(p => p.name === item.name);
         return {
           ...item,
           target: item.target || product?.target || 'Waitress', // Use incoming target or fallback
           status: 'Pending'
         };
-      })
+      }),
+      totalAmount: orderData.totalAmount || 0,
+      paymentMethod: orderData.paymentMethod || 'Cash',
+      status: 'Pending'
     };
     setPendingOrders(prev => [kdsOrder, ...prev]);
 
     // --- Automatic Bluetooth Printing ---
-    const kitchenItems = kdsOrder.items.filter(i => {
+    const kitchenItems = kdsOrder.productDetails.filter(i => {
       const target = (i.target || '').toLowerCase().trim();
       return target === 'kitchen' || target === 'dapur' || target === 'kds' || target === 'waitress' || target === '' || target === 'null';
     });
-    const barItems = kdsOrder.items.filter(i => (i.target || '').toLowerCase().trim() === 'bar');
+    const barItems = kdsOrder.productDetails.filter(i => (i.target || '').toLowerCase().trim() === 'bar');
 
     const runPrinting = async () => {
         if (kitchenItems.length > 0 && storeSettings?.auto_print_kitchen) {
