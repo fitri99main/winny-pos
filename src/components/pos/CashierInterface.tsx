@@ -31,6 +31,18 @@ import { useIsMobile } from '@/hooks/use-mobile';
 
 interface CashierInterfaceProps {
   onBack?: () => void;
+  onAddSale?: (sale: {
+    id?: number;
+    order_no?: string;
+    items: number;
+    totalAmount: number;
+    paymentMethod: string;
+    productDetails: any[];
+    tableNo?: string;
+    customerName?: string;
+    waiterName?: string;
+    subtotal?: number;
+    discount?: number;
     tax?: number;
     service?: number;
   }) => Promise<{ wifiVoucher?: string; wifiNotice?: string } | null> | void;
