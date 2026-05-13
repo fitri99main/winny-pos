@@ -747,7 +747,7 @@ export function CashierInterface({
   };
 
   // Handle payment completion
-  const handlePaymentComplete = (payment: any) => {
+  const handlePaymentComplete = async (payment: any) => {
     const transactionTotal = total; // Capture current total before clearing
     setLastPaymentTotal(transactionTotal);
     setLastPaymentChange(payment.change);
@@ -832,8 +832,20 @@ export function CashierInterface({
         time: new Date().toLocaleTimeString()
       };
 
+      // Update last sale data for the success modal
       setLastSaleData(salePayload);
-      onAddSale(salePayload);
+      
+      // Process sale (this will fetch WiFi vouchers in home.tsx)
+      const voucherInfo = await onAddSale(salePayload);
+      
+      if (voucherInfo && voucherInfo.wifiVoucher) {
+        console.log('[CashierInterface] Received WiFi Voucher info:', voucherInfo);
+        setLastSaleData(prev => prev ? { 
+          ...prev, 
+          wifiVoucher: voucherInfo.wifiVoucher,
+          wifiNotice: voucherInfo.wifiNotice
+        } : prev);
+      }
     }
 
     // Always show a small success toast for partial payments if not the full success modal

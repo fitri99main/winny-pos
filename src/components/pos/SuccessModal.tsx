@@ -63,7 +63,9 @@ export function SuccessModal({
         paymentType: lastSaleData.paymentMethod || 'Cash',
         amountPaid: lastSaleData.paidAmount || (lastSaleData.totalAmount + (change || 0)),
         change: lastSaleData.change || change || 0,
-        customerName: lastSaleData.customerName || 'Guest'
+        customerName: lastSaleData.customerName || 'Guest',
+        wifiVoucher: lastSaleData.wifiVoucher,
+        wifiNotice: lastSaleData.wifiNotice
       });
       toast.success('Struk sedang dicetak...');
     } catch (e) {

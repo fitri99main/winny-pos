@@ -441,44 +441,50 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
 
         const list = Object.values(productCounts);
 
-        // Coffee keyword detection (by product name)
-        const coffeeNameKeywords = ['kopi', 'coffee', 'espresso', 'latte', 'cappuccino', 'americano', 'mocha', 'macchiato', 'affogato', 'lungo', 'ristretto', 'flat white', 'cold brew', 'v60', 'vietnam drip', 'frappe'];
-        const isCoffeeByName = (name: string) => coffeeNameKeywords.some(kw => name.toLowerCase().includes(kw));
-
-        // Drink-related category keywords
-        const drinkCategoryKeywords = ['minum', 'teh', 'jus', 'juice', 'susu', 'milk', 'tea', 'soda', 'es ', 'ice', 'minuman', 'drink', 'beverage', 'smoothie', 'yogurt'];
-        const isDrinkCategory = (cat: string) => drinkCategoryKeywords.some(kw => cat.includes(kw));
-
         const sortItems = (items: typeof list) => [...items].sort((a, b) => b.value - a.value);
         const takeTop = (items: typeof list) => sortItems(items).slice(0, 5);
 
-        const kopiItems = sortItems(list.filter(p => {
-            const cat = p.category || '';
-            if (cat.includes('non kopi') || cat.includes('non-kopi')) return false;
-            if (cat.includes('kopi') && !cat.includes('non')) return true;
-            if (isDrinkCategory(cat)) return isCoffeeByName(p.name);
-            return isCoffeeByName(p.name);
-        }));
+        const categoriesMap: Record<string, typeof list> = {};
+        
+        list.forEach(p => {
+            // Normalize category name for grouping (trim and title case for display)
+            const rawCat = (p.category || 'Lainnya').trim();
+            const cat = rawCat.charAt(0).toUpperCase() + rawCat.slice(1).toLowerCase();
+            
+            if (!categoriesMap[cat]) categoriesMap[cat] = [];
+            categoriesMap[cat].push(p);
+        });
 
-        const nonKopiItems = sortItems(list.filter(p => {
-            const cat = p.category || '';
-            if (cat.includes('non kopi') || cat.includes('non-kopi')) return true;
-            if (cat.includes('kopi') && !cat.includes('non')) return false;
-            if (isDrinkCategory(cat)) return !isCoffeeByName(p.name);
-            return false;
-        }));
+        const dynamicCategories = Object.entries(categoriesMap).map(([name, items]) => {
+            const sorted = sortItems(items);
+            return {
+                name,
+                all: sorted,
+                top: takeTop(sorted),
+                color: (() => {
+                    const n = name.toLowerCase();
+                    if (n.includes('makan')) return '#ef4444';
+                    if (n.includes('kopi') && !n.includes('non')) return '#92400e';
+                    if (n.includes('non') && n.includes('kopi')) return '#06b6d4';
+                    if (n.includes('minum')) return '#3b82f6';
+                    if (n.includes('snack')) return '#f97316';
+                    if (n.includes('kemasan') || n.includes('produk')) return '#8b5cf6';
+                    return '#6b7280'; // Default gray
+                })(),
+                icon: (() => {
+                    const n = name.toLowerCase();
+                    if (n.includes('makan')) return '🍽️';
+                    if (n.includes('kopi') && !n.includes('non')) return '☕';
+                    if (n.includes('non') && n.includes('kopi')) return '🥤';
+                    if (n.includes('minum')) return '🍹';
+                    if (n.includes('snack')) return '🍟';
+                    if (n.includes('kemasan') || n.includes('produk')) return '📦';
+                    return '🏷️';
+                })()
+            };
+        }).sort((a, b) => a.name.localeCompare(b.name));
 
-        const makananItems = sortItems(list.filter(p => (p.category || '').includes('makan')));
-        const snackItems = sortItems(list.filter(p => (p.category || '').includes('snack')));
-        const produkItems = sortItems(list.filter(p => p.category.includes('kemasan') || p.category.includes('produk') || p.name.toLowerCase().includes('kemasan')));
-
-        return {
-            makanan: { all: makananItems, top: takeTop(makananItems) },
-            kopi: { all: kopiItems, top: takeTop(kopiItems) },
-            nonKopi: { all: nonKopiItems, top: takeTop(nonKopiItems) },
-            snack: { all: snackItems, top: takeTop(snackItems) },
-            produk: { all: produkItems, top: takeTop(produkItems) }
-        };
+        return dynamicCategories;
     }, [filteredSales]);
 
     const openCategoryPreview = (
@@ -781,119 +787,40 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                        {/* Makanan */}
-                        <button
-                            type="button"
-                            onClick={() => openCategoryPreview('Makanan Terlaris', 'Semua produk dalam kategori makanan', bestSellersByCategory.makanan.all)}
-                            className="bg-gray-50/50 p-5 rounded-2xl border border-gray-100 text-left transition-all hover:shadow-md hover:border-red-200"
-                        >
-                            <h4 className="text-[10px] font-bold text-red-600 uppercase mb-3 tracking-widest pl-1">🍽️ Makanan Terlaris</h4>
-                            <div className="h-48">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart layout="vertical" data={bestSellersByCategory.makanan.top} margin={{ left: -20, right: 30 }}>
-                                        <XAxis type="number" hide />
-                                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={100} tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 'bold' }} />
-                                        <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
-                                        <Bar dataKey="value" fill="#ef4444" radius={[0, 6, 6, 0]} barSize={12} />
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </div>
-                            <p className="mt-3 text-[11px] font-semibold text-red-500">Klik untuk lihat semua produk</p>
-                        </button>
-
-                        {/* Kopi */}
-                        <button
-                            type="button"
-                            onClick={() => openCategoryPreview('Kopi Terlaris', 'Semua produk kopi dalam periode filter', bestSellersByCategory.kopi.all)}
-                            className="bg-amber-50/50 p-5 rounded-2xl border border-amber-100 text-left transition-all hover:shadow-md hover:border-amber-200"
-                        >
-                            <h4 className="text-[10px] font-bold text-amber-800 uppercase mb-3 tracking-widest pl-1">☕ Kopi Terlaris</h4>
-                            <div className="h-48">
-                                {bestSellersByCategory.kopi.top.length > 0 ? (
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <BarChart layout="vertical" data={bestSellersByCategory.kopi.top} margin={{ left: -20, right: 30 }}>
-                                            <XAxis type="number" hide />
-                                            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={100} tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 'bold' }} />
-                                            <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
-                                            <Bar dataKey="value" fill="#92400e" radius={[0, 6, 6, 0]} barSize={12} />
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                ) : (
-                                    <div className="h-full flex flex-col items-center justify-center gap-2 text-amber-400">
-                                        <span className="text-3xl">☕</span>
-                                        <p className="text-xs font-medium">Belum ada data kopi</p>
-                                    </div>
-                                )}
-                            </div>
-                            <p className="mt-3 text-[11px] font-semibold text-amber-700">Klik untuk lihat semua produk</p>
-                        </button>
-
-                        {/* Non-Kopi */}
-                        <button
-                            type="button"
-                            onClick={() => openCategoryPreview('Non-Kopi Terlaris', 'Semua produk non-kopi dalam periode filter', bestSellersByCategory.nonKopi.all)}
-                            className="bg-cyan-50/50 p-5 rounded-2xl border border-cyan-100 text-left transition-all hover:shadow-md hover:border-cyan-200"
-                        >
-                            <h4 className="text-[10px] font-bold text-cyan-700 uppercase mb-3 tracking-widest pl-1">🥤 Non-Kopi Terlaris</h4>
-                            <div className="h-48">
-                                {bestSellersByCategory.nonKopi.top.length > 0 ? (
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <BarChart layout="vertical" data={bestSellersByCategory.nonKopi.top} margin={{ left: -20, right: 30 }}>
-                                            <XAxis type="number" hide />
-                                            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={100} tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 'bold' }} />
-                                            <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
-                                            <Bar dataKey="value" fill="#06b6d4" radius={[0, 6, 6, 0]} barSize={12} />
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                ) : (
-                                    <div className="h-full flex flex-col items-center justify-center gap-2 text-cyan-400">
-                                        <span className="text-3xl">🥤</span>
-                                        <p className="text-xs font-medium">Belum ada data non-kopi</p>
-                                    </div>
-                                )}
-                            </div>
-                            <p className="mt-3 text-[11px] font-semibold text-cyan-700">Klik untuk lihat semua produk</p>
-                        </button>
-
-                        {/* Snack */}
-                        <button
-                            type="button"
-                            onClick={() => openCategoryPreview('Snack Terlaris', 'Semua produk snack dalam periode filter', bestSellersByCategory.snack.all)}
-                            className="bg-gray-50/50 p-5 rounded-2xl border border-gray-100 text-left transition-all hover:shadow-md hover:border-orange-200"
-                        >
-                            <h4 className="text-[10px] font-bold text-orange-600 uppercase mb-3 tracking-widest pl-1">🍟 Snack Terlaris</h4>
-                            <div className="h-48">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart layout="vertical" data={bestSellersByCategory.snack.top} margin={{ left: -20, right: 30 }}>
-                                        <XAxis type="number" hide />
-                                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={100} tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 'bold' }} />
-                                        <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
-                                        <Bar dataKey="value" fill="#f97316" radius={[0, 6, 6, 0]} barSize={12} />
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </div>
-                            <p className="mt-3 text-[11px] font-semibold text-orange-600">Klik untuk lihat semua produk</p>
-                        </button>
-
-                        {/* Produk - spans 2 cols on xl */}
-                        <button
-                            type="button"
-                            onClick={() => openCategoryPreview('Produk Kemasan Terlaris', 'Semua produk kemasan dalam periode filter', bestSellersByCategory.produk.all)}
-                            className="bg-gray-50/50 p-5 rounded-2xl border border-gray-100 xl:col-span-2 text-left transition-all hover:shadow-md hover:border-purple-200"
-                        >
-                            <h4 className="text-[10px] font-bold text-purple-600 uppercase mb-3 tracking-widest pl-1">📦 Produk Kemasan Terlaris</h4>
-                            <div className="h-48">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart layout="vertical" data={bestSellersByCategory.produk.top} margin={{ left: -20, right: 30 }}>
-                                        <XAxis type="number" hide />
-                                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={100} tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 'bold' }} />
-                                        <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
-                                        <Bar dataKey="value" fill="#8b5cf6" radius={[0, 6, 6, 0]} barSize={12} />
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </div>
-                            <p className="mt-3 text-[11px] font-semibold text-purple-600">Klik untuk lihat semua produk</p>
-                        </button>
+                        {bestSellersByCategory.map((cat, idx) => (
+                            <button
+                                key={idx}
+                                type="button"
+                                onClick={() => openCategoryPreview(`${cat.name} Terlaris`, `Semua produk dalam kategori ${cat.name}`, cat.all)}
+                                className="bg-gray-50/50 p-5 rounded-2xl border border-gray-100 text-left transition-all hover:shadow-md group"
+                                style={{ borderColor: `${cat.color}20` }}
+                            >
+                                <h4 className="text-[10px] font-bold uppercase mb-3 tracking-widest pl-1 flex items-center gap-2" style={{ color: cat.color }}>
+                                    <span>{cat.icon}</span>
+                                    {cat.name} Terlaris
+                                </h4>
+                                <div className="h-48">
+                                    {cat.top.length > 0 ? (
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart layout="vertical" data={cat.top} margin={{ left: -20, right: 30 }}>
+                                                <XAxis type="number" hide />
+                                                <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={100} tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 'bold' }} />
+                                                <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
+                                                <Bar dataKey="value" fill={cat.color} radius={[0, 6, 6, 0]} barSize={12} />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    ) : (
+                                        <div className="h-full flex flex-col items-center justify-center gap-2" style={{ color: `${cat.color}80` }}>
+                                            <span className="text-3xl">{cat.icon}</span>
+                                            <p className="text-xs font-medium">Belum ada data {cat.name.toLowerCase()}</p>
+                                        </div>
+                                    )}
+                                </div>
+                                <p className="mt-3 text-[11px] font-semibold opacity-80 group-hover:opacity-100 transition-opacity" style={{ color: cat.color }}>
+                                    Klik untuk lihat semua produk
+                                </p>
+                            </button>
+                        ))}
                     </div>
                 </div>
             )}

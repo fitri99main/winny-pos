@@ -94,6 +94,7 @@ function Home() {
       fetchTransactions();
     }, 1000); // 1s debounce
   };
+
   // Persist Branch Selection
   useEffect(() => {
     if (currentBranchId) {
@@ -106,6 +107,7 @@ function Home() {
   // POS State
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
+  const [pendingOrders, setPendingOrders] = useState<SalesOrder[]>([]);
   const [tables, setTables] = useState<any[]>([]);
   const [topSellingProducts, setTopSellingProducts] = useState<string[]>([]);
 
@@ -120,6 +122,8 @@ function Home() {
   const [attendanceLogs, setAttendanceLogs] = useState<any[]>([]);
   const [performanceIndicators, setPerformanceIndicators] = useState<any[]>([]);
   const [performanceEvaluations, setPerformanceEvaluations] = useState<any[]>([]);
+  const fetchBranchDataDebounceRef = useRef<any>(null);
+  const fetchGlobalDataDebounceRef = useRef<any>(null);
 
   // --- Handlers ---
   const handleTableCRUD = async (action: 'create' | 'update' | 'delete', data: any) => {
@@ -450,11 +454,12 @@ function Home() {
       if (moveError) throw moveError;
 
       // 2. Update Ingredient Stock
-      const { data: ing } = await supabase.from('ingredients').select('current_stock, name, unit').eq('id', ingredientId).single();
+      const { data: ing } = await supabase.from('ingredients').select('current_stock, name, unit, cost_per_unit').eq('id', ingredientId).single();
       if (ing) {
         let newStock = Number(ing.current_stock);
         let finalType = type;
         let finalQty = qty;
+        const costPerUnit = Number(ing.cost_per_unit || 0);
 
         if (type === 'IN') {
           newStock += qty;
@@ -475,7 +480,7 @@ function Home() {
             reason: reason 
           }).limit(1);
 
-          await supabase.from('stock_movements').insert([{
+          const { data: movementData } = await supabase.from('stock_movements').insert([{
             ingredient_id: ingredientId,
             ingredient_name: ing.name,
             branch_id: currentBranchId,
@@ -484,7 +489,24 @@ function Home() {
             unit: ing.unit,
             reason: reason || 'Penyesuaian Stok',
             user: user || 'System'
-          }]);
+          }]).select().single();
+
+          // [NEW] Accounting Integration for Stock Opname
+          if (reason && reason.toLowerCase().includes('stock opname') && costPerUnit > 0) {
+            const amount = finalQty * costPerUnit;
+            const isGain = finalType === 'IN';
+            
+            await supabase.from('journal_entries').insert([{
+              date: formatLocalDateForInput(new Date()),
+              description: `Stock Opname: ${ing.name} (${isGain ? 'Kelebihan' : 'Kekurangan'} ${finalQty} ${ing.unit})`,
+              debit_account: isGain ? '106' : '505', // 106: Inventory Asset, 505: Inventory Loss
+              credit_account: isGain ? '402' : '106', // 402: Other Income, 106: Inventory Asset
+              amount: amount,
+              reference_id: String(movementData?.id || ingredientId),
+              source_type: 'stock_adjustment'
+            }]);
+            console.log(`[Accounting] Stock Opname journalized: ${amount}`);
+          }
         }
 
         const { error: updateError } = await supabase.from('ingredients')
@@ -728,7 +750,7 @@ function Home() {
       safeFetch(supabase.from('shift_schedules').select('*').order('date'), 'schedules'), 
       safeFetch(supabase.from('tables').select('*').eq('branch_id', Number(branchId)).order('number'), 'tables'),
       safeFetch(supabase.from('ingredients').select('*').eq('branch_id', Number(branchId)).order('name'), 'ingredients'),
-      safeFetch(supabase.from('stock_movements').select('*').or(`branch_id.eq.${branchId},branch_id.is.null`).order('created_at', { ascending: false }).limit(2000), 'movements'),
+      safeFetch(supabase.from('stock_movements').select('*').or(`branch_id.eq.${branchId},branch_id.is.null`).order('created_at', { ascending: false }).limit(200), 'movements'),
     ]);
     const [productsRes, schedulesRes, tablesRes, ingredientsRes, movementsRes] = results;
     if (productsRes.data) setProducts(productsRes.data);
@@ -741,6 +763,20 @@ function Home() {
     if (indicatorsData) setPerformanceIndicators(indicatorsData);
     const { data: evaluationsData } = await supabase.from('performance_evaluations').select('*').eq('branch_id', branchId).order('evaluation_date', { ascending: false });
     if (evaluationsData) setPerformanceEvaluations(evaluationsData);
+  };
+
+  const debouncedFetchBranchData = (branchId: string) => {
+    if (fetchBranchDataDebounceRef.current) clearTimeout(fetchBranchDataDebounceRef.current);
+    fetchBranchDataDebounceRef.current = setTimeout(() => {
+      fetchBranchData(branchId);
+    }, 1500); // 1.5s debounce for heavy branch data
+  };
+
+  const debouncedFetchGlobalData = () => {
+    if (fetchGlobalDataDebounceRef.current) clearTimeout(fetchGlobalDataDebounceRef.current);
+    fetchGlobalDataDebounceRef.current = setTimeout(() => {
+      fetchGlobalData();
+    }, 1000);
   };
 
 
@@ -772,14 +808,14 @@ function Home() {
 
     // Subscribe to global changes
     const globalChannels = [
-      supabase.channel('categories_all').on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, fetchGlobalData).subscribe(),
-      supabase.channel('units_all').on('postgres_changes', { event: '*', schema: 'public', table: 'units' }, fetchGlobalData).subscribe(),
-      supabase.channel('brands_all').on('postgres_changes', { event: '*', schema: 'public', table: 'brands' }, fetchGlobalData).subscribe(),
-      supabase.channel('contacts_all').on('postgres_changes', { event: '*', schema: 'public', table: 'contacts' }, fetchGlobalData).subscribe(),
-      supabase.channel('branches_all').on('postgres_changes', { event: '*', schema: 'public', table: 'branches' }, fetchGlobalData).subscribe(),
-      supabase.channel('shifts_all').on('postgres_changes', { event: '*', schema: 'public', table: 'shifts' }, fetchGlobalData).subscribe(),
-      supabase.channel('settings_all').on('postgres_changes', { event: '*', schema: 'public', table: 'store_settings' }, fetchGlobalData).subscribe(),
-      supabase.channel('payments_all').on('postgres_changes', { event: '*', schema: 'public', table: 'payment_methods' }, fetchGlobalData).subscribe(),
+      supabase.channel('categories_all').on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, debouncedFetchGlobalData).subscribe(),
+      supabase.channel('units_all').on('postgres_changes', { event: '*', schema: 'public', table: 'units' }, debouncedFetchGlobalData).subscribe(),
+      supabase.channel('brands_all').on('postgres_changes', { event: '*', schema: 'public', table: 'brands' }, debouncedFetchGlobalData).subscribe(),
+      supabase.channel('contacts_all').on('postgres_changes', { event: '*', schema: 'public', table: 'contacts' }, debouncedFetchGlobalData).subscribe(),
+      supabase.channel('branches_all').on('postgres_changes', { event: '*', schema: 'public', table: 'branches' }, debouncedFetchGlobalData).subscribe(),
+      supabase.channel('shifts_all').on('postgres_changes', { event: '*', schema: 'public', table: 'shifts' }, debouncedFetchGlobalData).subscribe(),
+      supabase.channel('settings_all').on('postgres_changes', { event: '*', schema: 'public', table: 'store_settings' }, debouncedFetchGlobalData).subscribe(),
+      supabase.channel('payments_all').on('postgres_changes', { event: '*', schema: 'public', table: 'payment_methods' }, debouncedFetchGlobalData).subscribe(),
     ];
 
     return () => {
@@ -795,15 +831,15 @@ function Home() {
 
     // Subscribe to branch-specific changes
     const branchChannels = [
-      supabase.channel('products_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
-      supabase.channel('schedules_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'shift_schedules' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
-      supabase.channel('ingredients_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'ingredients' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
-      supabase.channel('movements_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'stock_movements' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
-      supabase.channel('tables_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'tables' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
-      supabase.channel('employee_assessments').on('postgres_changes', { event: '*', schema: 'public', table: 'employee_assessments' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
-      supabase.channel('assessment_criteria').on('postgres_changes', { event: '*', schema: 'public', table: 'assessment_criteria' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
-      supabase.channel('product_recipes_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'product_recipes' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
-      supabase.channel('product_addons_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'product_addons' }, () => currentBranchId && fetchBranchData(currentBranchId)).subscribe(),
+      supabase.channel('products_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => currentBranchId && debouncedFetchBranchData(currentBranchId)).subscribe(),
+      supabase.channel('schedules_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'shift_schedules' }, () => currentBranchId && debouncedFetchBranchData(currentBranchId)).subscribe(),
+      supabase.channel('ingredients_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'ingredients' }, () => currentBranchId && debouncedFetchBranchData(currentBranchId)).subscribe(),
+      supabase.channel('movements_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'stock_movements' }, () => currentBranchId && debouncedFetchBranchData(currentBranchId)).subscribe(),
+      supabase.channel('tables_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'tables' }, () => currentBranchId && debouncedFetchBranchData(currentBranchId)).subscribe(),
+      supabase.channel('employee_assessments').on('postgres_changes', { event: '*', schema: 'public', table: 'employee_assessments' }, () => currentBranchId && debouncedFetchBranchData(currentBranchId)).subscribe(),
+      supabase.channel('assessment_criteria').on('postgres_changes', { event: '*', schema: 'public', table: 'assessment_criteria' }, () => currentBranchId && debouncedFetchBranchData(currentBranchId)).subscribe(),
+      supabase.channel('product_recipes_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'product_recipes' }, () => currentBranchId && debouncedFetchBranchData(currentBranchId)).subscribe(),
+      supabase.channel('product_addons_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'product_addons' }, () => currentBranchId && debouncedFetchBranchData(currentBranchId)).subscribe(),
       supabase.channel('wifi_vouchers_branch').on('postgres_changes', { event: '*', schema: 'public', table: 'wifi_vouchers' }, () => fetchVoucherStats()).subscribe(),
     ];
 
@@ -877,13 +913,16 @@ function Home() {
           
           if (latestOrder.id > (lastProcessedOrderIdRef.current || 0) && itemCount > 0) {
             lastProcessedOrderIdRef.current = latestOrder.id;
-
+            
+            // [REFINED] Robust Kiosk Detection
+            const isDisplayOrder = !latestOrder.waiter_name || 
+                                  latestOrder.waiter_name === 'Kiosk' || 
+                                  latestOrder.waiter_name === 'User Display' ||
+                                  latestOrder.waiter_name === 'Self-Service Kiosk';
             const targetTable = latestOrder.table_no || latestOrder.tableNo || latestOrder.table_number;
 
             // [NEW] Respect disable_web_kiosk_notifications for Web App
             // Suppress auto-open and popups for Display/Kiosk orders
-            const isDisplayOrder = !latestOrder.waiter_name || latestOrder.waiter_name === 'Kiosk' || latestOrder.waiter_name === 'User Display';
-            // [UPDATED] Always suppress for web dashboard as requested
             const shouldSuppress = true;
 
 
@@ -1214,13 +1253,20 @@ function Home() {
       .channel('sales_realtime_sync')
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'sales', filter: `branch_id=eq.${currentBranchId}` },
+        { event: '*', schema: 'public', table: 'sales', filter: `branch_id=eq.${currentBranchId}` },
         async (payload) => {
-          console.log('Realtime: New Sale Detected', payload.new);
-          const newOrder = payload.new;
+          console.log('Realtime: Sale Event Detected', payload.eventType, payload.new);
+          const newOrder = payload.new as any;
+          const oldOrder = payload.old as any;
 
-          // 1. Fetch Items for this sale (Wait a bit for items to be inserted)
-          await new Promise(resolve => setTimeout(resolve, 800));
+          if (payload.eventType === 'DELETE') {
+            setSales(prev => prev.filter(s => s.id !== oldOrder.id));
+            setPendingOrders(prev => prev.filter(o => o.id !== oldOrder.id));
+            return;
+          }
+
+          // [RACE CONDITION FIX] Wait a bit for items to be inserted/updated in DB before fetching
+          await new Promise(resolve => setTimeout(resolve, 1000));
 
           const { data: items, error } = await supabase
             .from('sale_items')
@@ -1235,7 +1281,7 @@ function Home() {
             return;
           }
 
-          // 2. Format to SalesOrder
+          // Format to SalesOrder
           const formattedSale: SalesOrder = {
             id: newOrder.id,
             orderNo: newOrder.order_no,
@@ -1261,36 +1307,48 @@ function Home() {
             waitingTime: 'Baru'
           };
 
-          // 3. Update Sales State
+          // Update Sales State (Handles both INSERT and UPDATE)
           setSales(prev => {
-            if (prev.some(s => s.id === formattedSale.id)) return prev;
+            const index = prev.findIndex(s => s.id === formattedSale.id);
+            if (index !== -1) {
+              const updated = [...prev];
+              updated[index] = formattedSale;
+              return updated;
+            }
             return [formattedSale, ...prev];
           });
 
-          if (['Pending', 'Paid', 'Preparing', 'Ready', 'Unpaid'].includes(formattedSale.status)) {
+          // Update Pending Orders
+          const isPending = ['Pending', 'Paid', 'Preparing', 'Ready', 'Unpaid'].includes(formattedSale.status);
+          if (isPending) {
             setPendingOrders(prev => {
-              if (prev.some(o => o.id === formattedSale.id)) return prev;
+              const index = prev.findIndex(o => o.id === formattedSale.id);
+              if (index !== -1) {
+                const updated = [...prev];
+                updated[index] = formattedSale;
+                return updated;
+              }
               return [formattedSale, ...prev];
             });
+          } else {
+            setPendingOrders(prev => prev.filter(o => o.id !== formattedSale.id));
           }
 
+          if (payload.eventType === 'UPDATE') return; // Skip auto-open for updates to avoid re-triggering
 
-
-
-
-          const isPaidCompleted = (newOrder.status === 'Paid' || newOrder.status === 'Completed'); const isMyOwnOrder = newOrder.id === lastProcessedOrderIdRef.current;
+          const isPaidCompleted = (newOrder.status === 'Paid' || newOrder.status === 'Completed'); 
+          const isMyOwnOrder = newOrder.id === lastProcessedOrderIdRef.current;
           
           // [REFINED] Robust Kiosk Detection
-          const isKioskOrder = (newOrder.status === 'Unpaid' || newOrder.status === 'Pending') && (!newOrder.waiter_name || newOrder.waiter_name === 'Kiosk' || newOrder.waiter_name === 'User Display');
-          // Show notification for all incoming orders (respect suppression setting or specifically ignore Display/Kiosk)
-          // [UPDATED] Always suppress for web version to avoid interruptions as requested
-          const shouldSuppress = true;
-          if (!shouldSuppress) {
-            toast.info(`Pesanan Masuk: ${formattedSale.orderNo}`);
-          }
-
-          // [FIX] Auto-open for External Orders (Waitress/Display/Admin)
-          // Web app should NOT auto-open cashier if the setting is enabled.
+          const isKioskOrder = (newOrder.status === 'Unpaid' || newOrder.status === 'Pending') && 
+                              (!newOrder.waiter_name || 
+                               newOrder.waiter_name === 'Kiosk' || 
+                               newOrder.waiter_name === 'User Display' ||
+                               newOrder.waiter_name === 'Self-Service Kiosk');
+          
+          const shouldSuppress = true; // Always suppress for web version to avoid interruptions as requested
+          
+          // Auto-open for NEW External Orders (Waitress/Display/Admin)
           if (!isPaidCompleted && !isMyOwnOrder && (newOrder.status === 'Pending' || newOrder.status === 'Unpaid')) {
             if (shouldSuppress) {
               console.log('[Auto-Open] Suppression active. Skipping auto-open for web cashier.');
@@ -1891,7 +1949,6 @@ function Home() {
     }
   };
 
-  const [pendingOrders, setPendingOrders] = useState<any[]>([]);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -2355,7 +2412,8 @@ function Home() {
     }
   };
 
-  const handleAddSale = async (saleData: Omit<SalesOrder, 'id' | 'orderNo' | 'date' | 'status'> & { id?: number, order_no?: string }) => {
+  const handleAddSale = async (saleData: Omit<SalesOrder, 'id' | 'orderNo' | 'date' | 'status'> & { id?: number, order_no?: string }): Promise<{ wifiVoucher?: string; wifiNotice?: string } | null> => {
+    console.log('[handleAddSale] Starting...', saleData.order_no);
     try {
       let sale;
       let targetId = saleData.id;
@@ -2593,14 +2651,14 @@ function Home() {
 
       if (isOnline) await fetchTransactions();
       if (isOnline) await recordAccountingEntry(sale, saleItems, saleData.paymentMethod);
-
-      // Redirect to KDS
-      setIsCashierOpen(false);
-      setActiveModule('kds');
+      
+      console.log('[handleAddSale] Completed successfully. Returning voucher info.');
+      return { wifiVoucher, wifiNotice: storeSettings?.wifi_voucher_notice };
 
     } catch (err: any) {
       console.error('Transaction failed:', err);
       toast.error('Gagal menyimpan transaksi: ' + (err.message || 'Unknown error'));
+      return null;
     }
   };
   const handleSendToKDS = (orderData: any) => {

@@ -44,11 +44,19 @@ export class WifiVoucherService {
             console.log(`[WifiVoucherService] Need ${neededCount} more vouchers.`);
 
             // 2. Fetch unused vouchers for specific branch
-            let { data: vouchers, error } = await supabase
+            const branchAsNum = Number(strBranchId);
+            let query = supabase
                 .from('wifi_vouchers')
                 .select('id, code')
-                .eq('is_used', false)
-                .eq('branch_id', strBranchId)
+                .eq('is_used', false);
+            
+            if (!isNaN(branchAsNum) && strBranchId !== 'default') {
+                query = query.or(`branch_id.eq."${strBranchId}",branch_id.eq.${branchAsNum}`);
+            } else {
+                query = query.eq('branch_id', strBranchId);
+            }
+
+            let { data: vouchers, error } = await query
                 .order('created_at', { ascending: true })
                 .limit(neededCount);
 

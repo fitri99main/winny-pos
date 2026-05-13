@@ -13,7 +13,8 @@ import {
     Edit,
     Calendar,
     Printer,
-    FileText
+    FileText,
+    RotateCcw
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -91,7 +92,7 @@ export function InventoryView({
     const [isEditMovementModalOpen, setIsEditMovementModalOpen] = useState(false);
     const [isStockModalOpen, setIsStockModalOpen] = useState(false);
     const [isStockCardOpen, setIsStockCardOpen] = useState(false);
-    const [stockAction, setStockAction] = useState<'IN' | 'OUT'>('IN');
+    const [stockAction, setStockAction] = useState<'IN' | 'OUT' | 'RECONCILE'>('IN');
     const [selectedIngredient, setSelectedIngredient] = useState<Ingredient | null>(null);
     const [selectedMovement, setSelectedMovement] = useState<StockMovement | null>(null);
     const [selectedMovementIds, setSelectedMovementIds] = useState<number[]>([]);
@@ -192,14 +193,31 @@ export function InventoryView({
         if (!selectedIngredient) return;
 
         const qty = Number(stockForm.quantity);
+        let finalType: 'IN' | 'OUT' | 'ADJUSTMENT' = stockAction === 'RECONCILE' ? 'ADJUSTMENT' : stockAction;
+        let finalQty = qty;
+        let finalReason = stockForm.reason;
+
+        if (stockAction === 'RECONCILE') {
+            const diff = qty - (selectedIngredient.current_stock || 0);
+            if (diff === 0) {
+                toast.info('Stok fisik sama dengan stok sistem. Tidak ada perubahan.');
+                setIsStockModalOpen(false);
+                return;
+            }
+            finalQty = Math.abs(diff);
+            finalType = diff > 0 ? 'IN' : 'OUT';
+            finalReason = stockForm.reason || `Stock Opname (Fisik: ${qty}, Sistem: ${selectedIngredient.current_stock})`;
+        } else {
+            finalReason = stockForm.reason || (stockAction === 'IN' ? 'Penyesuaian Masuk' : 'Pemakaian/Terbuang');
+        }
 
         await onStockAdjustment({
             ingredientId: selectedIngredient.id,
             ingredientName: selectedIngredient.name,
-            type: stockAction,
-            quantity: qty,
+            type: finalType,
+            quantity: finalQty,
             unit: selectedIngredient.unit,
-            reason: stockForm.reason || (stockAction === 'IN' ? 'Penyesuaian Masuk' : 'Pemakaian/Terbuang'),
+            reason: finalReason,
             user: 'Staff'
         });
 
@@ -485,6 +503,13 @@ export function InventoryView({
                                                     title="Lihat Kartu Stok"
                                                 >
                                                     <History className="w-5 h-5" />
+                                                </button>
+                                                <button
+                                                    onClick={() => { setSelectedIngredient(ing); setStockAction('RECONCILE'); setIsStockModalOpen(true); }}
+                                                    className="p-2 bg-purple-50 text-purple-600 rounded-xl hover:bg-purple-100 transition-colors"
+                                                    title="Stock Opname (Penyesuaian Fisik)"
+                                                >
+                                                    <RotateCcw className="w-5 h-5" />
                                                 </button>
                                                 <button
                                                     onClick={() => handleDeleteIngredient(ing)}
@@ -832,15 +857,23 @@ export function InventoryView({
             {isStockModalOpen && selectedIngredient && (
                 <div onClick={() => setIsStockModalOpen(false)} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 text-left">
                     <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-[40px] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
-                        <div className={`p-10 space-y-8 ${stockAction === 'IN' ? 'bg-emerald-50/30' : 'bg-red-50/30'}`}>
+                        <div className={`p-10 space-y-8 ${
+                            stockAction === 'IN' ? 'bg-emerald-50/30' : 
+                            (stockAction === 'OUT' ? 'bg-red-50/30' : 'bg-purple-50/30')
+                        }`}>
                             <div className="flex justify-between items-start">
                                 <div>
-                                    <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest mb-2 ${stockAction === 'IN' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                                        {stockAction === 'IN' ? <ArrowUpCircle className="w-3 h-3" /> : <ArrowDownCircle className="w-3 h-3" />}
-                                        Mutasi {stockAction === 'IN' ? 'Masuk' : 'Keluar'}
+                                    <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest mb-2 ${
+                                        stockAction === 'IN' ? 'bg-emerald-100 text-emerald-700' : 
+                                        (stockAction === 'OUT' ? 'bg-red-100 text-red-700' : 'bg-purple-100 text-purple-700')
+                                    }`}>
+                                        {stockAction === 'IN' ? <ArrowUpCircle className="w-3 h-3" /> : (stockAction === 'OUT' ? <ArrowDownCircle className="w-3 h-3" /> : <RotateCcw className="w-3 h-3" />)}
+                                        {stockAction === 'RECONCILE' ? 'Stock Opname' : `Mutasi ${stockAction === 'IN' ? 'Masuk' : 'Keluar'}`}
                                     </div>
                                     <h3 className="text-2xl font-black text-gray-800 leading-tight">{selectedIngredient.name}</h3>
-                                    <p className="text-gray-500 text-sm mt-1">Update stok aktual di gudang.</p>
+                                    <p className="text-gray-500 text-sm mt-1">
+                                        {stockAction === 'RECONCILE' ? 'Sesuaikan jumlah fisik di gudang.' : 'Update stok aktual di gudang.'}
+                                    </p>
                                 </div>
                                 <div className="text-right">
                                     <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Stok Saat Ini</div>
@@ -850,11 +883,15 @@ export function InventoryView({
 
                             <form onSubmit={handleUpdateStock} className="space-y-6">
                                 <div className="space-y-2">
-                                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">Jumlah {stockAction === 'IN' ? 'Ditambah' : 'Dikurangi'} ({selectedIngredient.unit})</label>
+                                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest pl-1">
+                                        {stockAction === 'RECONCILE' ? 'Total Stok Fisik Saat Ini' : `Jumlah ${stockAction === 'IN' ? 'Ditambah' : 'Dikurangi'}`} ({selectedIngredient.unit})
+                                    </label>
                                     <input
                                         type="number"
                                         step="0.01"
-                                        className="w-full text-3xl font-black p-6 bg-white border border-gray-100 rounded-[24px] focus:ring-8 focus:ring-primary/5 outline-none transition-all text-center"
+                                        className={`w-full text-3xl font-black p-6 bg-white border border-gray-100 rounded-[24px] focus:ring-8 outline-none transition-all text-center ${
+                                            stockAction === 'RECONCILE' ? 'focus:ring-purple-100 border-purple-100 text-purple-600' : 'focus:ring-primary/5'
+                                        }`}
                                         placeholder="0.00"
                                         autoFocus
                                         value={stockForm.quantity || ''}
@@ -876,7 +913,10 @@ export function InventoryView({
                                     <Button type="button" variant="outline" className="flex-1 h-14 rounded-[20px]" onClick={() => setIsStockModalOpen(false)}>Batal</Button>
                                     <Button
                                         type="submit"
-                                        className={`flex-1 h-14 rounded-[20px] shadow-xl ${stockAction === 'IN' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200' : 'bg-red-600 hover:bg-red-700 shadow-red-200'}`}
+                                        className={`flex-1 h-14 rounded-[20px] shadow-xl ${
+                                            stockAction === 'IN' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200' : 
+                                            (stockAction === 'OUT' ? 'bg-red-600 hover:bg-red-700 shadow-red-200' : 'bg-purple-600 hover:bg-purple-700 shadow-purple-200')
+                                        }`}
                                     >
                                         Konfirmasi
                                     </Button>
