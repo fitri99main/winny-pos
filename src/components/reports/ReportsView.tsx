@@ -742,19 +742,6 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
                     <p className="text-xs text-gray-400 mt-2 font-medium">{reportType === 'sales' ? 'Transaksi berhasil selesai' : 'Transaksi pembelian barang'}</p>
                 </div>
 
-                <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                        <TrendingUp className="w-16 h-16 text-emerald-600" />
-                    </div>
-                    <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center mb-4 text-emerald-600">
-                        <TrendingUp className="w-6 h-6" />
-                    </div>
-                    <p className="text-sm font-medium text-gray-500">Laba Kotor (Estimasi)</p>
-                    <h3 className="text-2xl font-black text-emerald-600 mt-1">{formatCurrency(grossProfit)}</h3>
-                    <div className="flex items-center gap-1.5 mt-2">
-                        <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-black uppercase">Margin {profitMargin.toFixed(1)}%</span>
-                    </div>
-                </div>
                 <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
                     <div className="w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center mb-4 text-amber-600">
                         <DollarSign className="w-6 h-6" />

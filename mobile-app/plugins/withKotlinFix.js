@@ -1,25 +1,19 @@
-const { withProjectBuildGradle } = require('@expo/config-plugins');
+var configPlugins = require('@expo/config-plugins');
+var withProjectBuildGradle = configPlugins.withProjectBuildGradle;
 
-module.exports = (config) => {
-  return withProjectBuildGradle(config, (config) => {
+module.exports = function(config) {
+  return withProjectBuildGradle(config, function(config) {
     if (config.modResults.language === 'groovy') {
-      let contents = config.modResults.contents;
+      var contents = config.modResults.contents;
 
       // 1. Inject into buildscript (for internal plugins like expo-updates)
-      const bypassSnippet = `
-    ext.kotlinVersion = "1.9.24"
-    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-        kotlinOptions {
-            freeCompilerArgs += ["-Xskip-metadata-version-check"]
-        }
-    }
-`;
+      var bypassSnippet = "\n    ext.kotlinVersion = \"1.9.24\"\n    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {\n        kotlinOptions {\n            freeCompilerArgs += [\"-Xskip-metadata-version-check\"]\n        }\n    }\n";
 
-      if (!contents.includes('-Xskip-metadata-version-check')) {
+      if (contents.indexOf('-Xskip-metadata-version-check') === -1) {
         // Inject into allprojects block (for app and subprojects)
         contents = contents.replace(
           /allprojects\s*{/,
-          `allprojects {${bypassSnippet}`
+          "allprojects {" + bypassSnippet
         );
       }
 

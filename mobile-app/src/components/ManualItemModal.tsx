@@ -1,105 +1,87 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, Modal, TouchableOpacity, TextInput, StyleSheet } from 'react-native';
+import React from 'react';
+import * as RN from 'react-native';
+var View = RN.View;
+var Text = RN.Text;
+var Modal = RN.Modal;
+var TouchableOpacity = RN.TouchableOpacity;
+var TextInput = RN.TextInput;
+var StyleSheet = RN.StyleSheet;
+import * as Lucide from 'lucide-react-native';
+var Plus = Lucide.Plus;
+var X = Lucide.X;
 
-interface ManualItemModalProps {
-    visible: boolean;
-    onClose: () => void;
-    onAdd: (item: { name: string; price: number; notes?: string }) => void;
-}
+export default function ManualItemModal(props) {
+    var visible = props.visible;
+    var onClose = props.onClose;
+    var onAdd = props.onAdd;
 
-export default function ManualItemModal({ visible, onClose, onAdd }: ManualItemModalProps) {
-    const [name, setName] = useState('');
-    const [price, setPrice] = useState('');
-    const [notes, setNotes] = useState('');
+    var stateName = React.useState('');
+    var name = stateName[0];
+    var setName = stateName[1];
 
-    useEffect(() => {
-        if (visible) {
-            setName('');
-            setPrice('');
-            setNotes('');
-        }
-    }, [visible]);
+    var statePrice = React.useState('');
+    var price = statePrice[0];
+    var setPrice = statePrice[1];
 
-    const handleAdd = () => {
-        const numericPrice = parseFloat(price.replace(/[^0-9]/g, '')) || 0;
-        if (!name.trim()) return;
+    var handleAdd = function() {
+        if (!name || !price) return;
         
         onAdd({
-            name: name.trim(),
-            price: numericPrice,
-            notes: notes.trim() || undefined
+            id: 'manual-' + Date.now(),
+            name: name,
+            price: Number(price),
+            category: 'Manual',
+            is_manual: true
         });
+
+        setName('');
+        setPrice('');
         onClose();
     };
 
-    return (
-        <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-            <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
-                <TouchableOpacity style={styles.container} activeOpacity={1} onPress={e => e.stopPropagation()}>
-                    <Text style={styles.title}>Item Manual</Text>
-                    
-                    <View style={styles.inputGroup}>
-                        <Text style={styles.label}>Nama Item</Text>
-                        <TextInput
-                            style={styles.input}
-                            value={name}
-                            onChangeText={setName}
-                            autoFocus
-                        />
-                    </View>
+    return React.createElement(Modal, { visible: visible, transparent: true, animationType: "fade" },
+        React.createElement(View, { style: styles.overlay },
+            React.createElement(View, { style: styles.container },
+                React.createElement(View, { style: styles.header },
+                    React.createElement(View, { style: styles.titleWrapper },
+                        React.createElement(Plus, { size: 20, color: "#ea580c" }),
+                        React.createElement(Text, { style: styles.title }, "Item Manual")
+                    ),
+                    React.createElement(TouchableOpacity, { onPress: onClose },
+                        React.createElement(X, { size: 24, color: "#64748b" })
+                    )
+                ),
 
-                    <View style={styles.inputGroup}>
-                        <Text style={styles.label}>Harga (IDR)</Text>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="0"
-                            value={price}
-                            onChangeText={setPrice}
-                            keyboardType="numeric"
-                        />
-                    </View>
+                React.createElement(TextInput, {
+                    style: styles.input,
+                    placeholder: "Nama Item (contoh: Parkir)",
+                    value: name,
+                    onChangeText: setName
+                }),
 
-                    <View style={styles.inputGroup}>
-                        <Text style={styles.label}>Keterangan (Opsional)</Text>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="Tambahkan catatan..."
-                            value={notes}
-                            onChangeText={setNotes}
-                            multiline
-                        />
-                    </View>
+                React.createElement(TextInput, {
+                    style: styles.input,
+                    placeholder: "Harga (Rp)",
+                    keyboardType: "numeric",
+                    value: price,
+                    onChangeText: setPrice
+                }),
 
-                    <View style={styles.footer}>
-                        <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={onClose}>
-                            <Text style={styles.cancelText}>Batal</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                            style={[styles.button, styles.confirmButton, (!name || !price) && styles.disabledButton]} 
-                            onPress={handleAdd}
-                            disabled={!name || !price}
-                        >
-                            <Text style={styles.confirmText}>Tambah</Text>
-                        </TouchableOpacity>
-                    </View>
-                </TouchableOpacity>
-            </TouchableOpacity>
-        </Modal>
+                React.createElement(TouchableOpacity, { style: styles.addBtn, onPress: handleAdd },
+                    React.createElement(Text, { style: styles.addText }, "Tambah ke Keranjang")
+                )
+            )
+        )
     );
 }
 
-const styles = StyleSheet.create({
-    overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
-    container: { backgroundColor: 'white', borderRadius: 20, padding: 24 },
-    title: { fontSize: 20, fontWeight: 'bold', marginBottom: 20, color: '#111827' },
-    inputGroup: { marginBottom: 16 },
-    label: { fontSize: 14, color: '#6b7280', marginBottom: 8, fontWeight: '600' },
-    input: { backgroundColor: '#f9fafb', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 14, fontSize: 16 },
-    footer: { flexDirection: 'row', gap: 12, marginTop: 12 },
-    button: { flex: 1, padding: 16, borderRadius: 12, alignItems: 'center' },
-    cancelButton: { backgroundColor: '#f3f4f6' },
-    confirmButton: { backgroundColor: '#ea580c' },
-    disabledButton: { opacity: 0.5 },
-    cancelText: { fontWeight: 'bold', color: '#4b5563' },
-    confirmText: { fontWeight: 'bold', color: 'white' }
+var styles = StyleSheet.create({
+    overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+    container: { backgroundColor: '#fff', borderRadius: 24, padding: 24, width: '100%' },
+    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
+    titleWrapper: { flexDirection: 'row', alignItems: 'center' },
+    title: { fontSize: 18, fontWeight: 'bold', color: '#1e293b', marginLeft: 8 },
+    input: { backgroundColor: '#f1f5f9', borderRadius: 12, padding: 16, fontSize: 16, marginBottom: 16 },
+    addBtn: { backgroundColor: '#ea580c', padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 8 },
+    addText: { color: '#fff', fontWeight: 'bold', fontSize: 16 }
 });

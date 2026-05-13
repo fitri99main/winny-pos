@@ -31,6 +31,8 @@ interface JournalEntry {
     debitAccount: string;
     creditAccount: string;
     amount: number;
+    reference_id?: string;
+    source_type?: string;
 }
 
 // --- Sub-Components ---
@@ -1605,6 +1607,24 @@ function PurchaseHistoryTab({ purchases, onCRUD }: {
                         onChange={e => setSearchQuery(e.target.value)}
                     />
                 </div>
+                <Button 
+                    variant="default" 
+                    size="sm" 
+                    className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-black shadow-lg shadow-orange-200 animate-pulse-subtle"
+                    onClick={async () => {
+                        const loadingToast = toast.loading('Mensinkronkan data ke Neraca...');
+                        try {
+                            if (onCRUD) {
+                                await onCRUD('purchases', 'update', { id: 'SYNC_ALL' });
+                            }
+                            toast.success('Sinkronisasi Neraca Berhasil', { id: loadingToast });
+                        } catch (e) {
+                            toast.error('Gagal Sinkronisasi', { id: loadingToast });
+                        }
+                    }}
+                >
+                    <RefreshCw className="w-4 h-4" /> SINKRONKAN KE NERACA
+                </Button>
             </div>
 
             {/* Table */}
@@ -1616,6 +1636,7 @@ function PurchaseHistoryTab({ purchases, onCRUD }: {
                                 <th className="px-6 py-4 text-left">No. Faktur</th>
                                 <th className="px-6 py-4 text-left">Tanggal</th>
                                 <th className="px-6 py-4 text-left">Supplier</th>
+                                <th className="px-6 py-4 text-center">Metode</th>
                                 <th className="px-6 py-4 text-left">Item</th>
                                 <th className="px-6 py-4 text-right">Harga</th>
                                 <th className="px-6 py-4 text-center">Jumlah</th>
@@ -1630,6 +1651,15 @@ function PurchaseHistoryTab({ purchases, onCRUD }: {
                                     <td className="px-6 py-4 font-mono font-medium text-blue-600">{p.purchase_no}</td>
                                     <td className="px-6 py-4 text-gray-600">{p.date}</td>
                                     <td className="px-6 py-4 font-bold text-gray-700">{p.supplier_name}</td>
+                                    <td className="px-6 py-4 text-center">
+                                        <span className={`px-2 py-1 rounded text-[10px] font-black uppercase ${
+                                            p.payment_method === 'Hutang' ? 'bg-red-100 text-red-700' :
+                                            p.payment_method === 'Kas Kecil' ? 'bg-amber-100 text-amber-700' :
+                                            'bg-blue-100 text-blue-700'
+                                        }`}>
+                                            {p.payment_method || 'Tunai'}
+                                        </span>
+                                    </td>
                                     <td className="px-6 py-4 text-gray-700">{p.itemName}</td>
                                     <td className="px-6 py-4 text-right">Rp {(p.itemPrice || 0).toLocaleString()}</td>
                                     <td className="px-6 py-4 text-center font-bold">{p.itemQty}</td>
@@ -1748,10 +1778,23 @@ function PurchaseHistoryTab({ purchases, onCRUD }: {
                                         onChange={e => setEditingPurchase({...editingPurchase, status: e.target.value})}
                                     >
                                         <option value="Pending">Pending</option>
-                                        <option value="Paid">Paid</option>
+                                        <option value="Completed">Completed</option>
                                         <option value="Cancelled">Cancelled</option>
                                     </select>
                                 </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest pl-1 mb-1">Metode Pembayaran</label>
+                                <select 
+                                    className="w-full p-4 bg-gray-50 border rounded-2xl outline-none focus:ring-2 focus:ring-primary/20 font-bold"
+                                    value={editingPurchase.payment_method || 'Tunai'}
+                                    onChange={e => setEditingPurchase({...editingPurchase, payment_method: e.target.value})}
+                                >
+                                    <option value="Tunai">Tunai / Cash</option>
+                                    <option value="Transfer">Transfer Bank</option>
+                                    <option value="Hutang">Hutang (Credit)</option>
+                                    <option value="Kas Kecil">Kas Kecil (Petty Cash)</option>
+                                </select>
                             </div>
                             <div className="flex gap-3 pt-6">
                                 <Button type="button" variant="ghost" className="flex-1" onClick={() => setEditingPurchase(null)}>Batal</Button>
@@ -1765,13 +1808,14 @@ function PurchaseHistoryTab({ purchases, onCRUD }: {
     );
 }
 
-function AccountManagementTab({ accounts, getBalance, onAddAccount, onUpdateAccount, onDeleteAccount, onMoveAccount }: {
+function AccountManagementTab({ accounts, getBalance, onAddAccount, onUpdateAccount, onDeleteAccount, onMoveAccount, onViewLedger }: {
     accounts: Account[],
     getBalance: (code: string) => number,
     onAddAccount: (acc: Account) => void,
     onUpdateAccount: (acc: Account) => void,
     onDeleteAccount: (code: string) => void,
-    onMoveAccount: (acc: Account, dir: 'up' | 'down') => void
+    onMoveAccount: (acc: Account, dir: 'up' | 'down') => void,
+    onViewLedger?: (code: string) => void
 }) {
     const [formData, setFormData] = useState<Account>({ code: '', name: '', type: 'Asset', parent_code: '', description: '' });
     const [isEditing, setIsEditing] = useState(false);
@@ -1925,7 +1969,12 @@ function AccountManagementTab({ accounts, getBalance, onAddAccount, onUpdateAcco
                                     const level = acc.level || 0;
                                     
                                     return (
-                                        <tr key={acc.code} className={`border-b hover:bg-gray-50 font-medium ${hasChildren ? 'bg-blue-50/20' : isSubAccount ? 'bg-gray-50/30' : ''}`}>
+                                        <tr 
+                                            key={acc.code} 
+                                            className={`border-b hover:bg-blue-50 cursor-pointer transition-colors font-medium group/row ${hasChildren ? 'bg-blue-50/20' : isSubAccount ? 'bg-gray-50/30' : ''}`}
+                                            onClick={() => onViewLedger?.(acc.code)}
+                                            title="Klik untuk melihat rincian Buku Besar"
+                                        >
                                             <td className={`px-4 py-3 ${hasChildren ? 'font-bold text-primary' : isSubAccount ? 'text-gray-400 italic' : 'text-blue-600'}`} style={{ paddingLeft: `${level * 2 + 1}rem` }}>
                                                 {isSubAccount && <span className="mr-2">└</span>}
                                                 {acc.code}
@@ -1951,25 +2000,29 @@ function AccountManagementTab({ accounts, getBalance, onAddAccount, onUpdateAcco
                                             </td>
                                             <td className="px-4 py-3 flex justify-center gap-2">
                                                 <button 
-                                                    onClick={() => onMoveAccount(acc, 'up')} 
+                                                    onClick={(e) => { e.stopPropagation(); onMoveAccount(acc, 'up'); }} 
                                                     className="p-1 hover:bg-gray-100 text-gray-400 rounded"
                                                     title="Geser Atas"
                                                 >
                                                     <ChevronUp className="w-4 h-4" />
                                                 </button>
                                                 <button 
-                                                    onClick={() => onMoveAccount(acc, 'down')} 
+                                                    onClick={(e) => { e.stopPropagation(); onMoveAccount(acc, 'down'); }} 
                                                     className="p-1 hover:bg-gray-100 text-gray-400 rounded"
                                                     title="Geser Bawah"
                                                 >
                                                     <ChevronDown className="w-4 h-4" />
                                                 </button>
                                                 <div className="w-px h-4 bg-gray-100 mx-1 self-center" />
-                                                <button onClick={() => handleEdit(acc)} className="p-1 hover:bg-blue-50 text-blue-600 rounded">
+                                                <button 
+                                                    onClick={(e) => { e.stopPropagation(); handleEdit(acc); }} 
+                                                    className="p-1 hover:bg-blue-50 text-blue-600 rounded bg-blue-50/50 border border-blue-100"
+                                                    title="Edit Akun"
+                                                >
                                                     <Edit className="w-4 h-4" />
                                                 </button>
                                                 <button
-                                                    onClick={() => handleDelete(acc.code)}
+                                                    onClick={(e) => { e.stopPropagation(); handleDelete(acc.code); }}
                                                     className={`p-1 rounded ${getBalance(acc.code) !== 0 ? 'text-gray-300 cursor-not-allowed' : 'hover:bg-red-50 text-red-600'}`}
                                                     disabled={getBalance(acc.code) !== 0}
                                                     title={getBalance(acc.code) !== 0 ? "Tidak bisa hapus akun yang memiliki saldo/transaksi" : "Hapus Master Akun"}
@@ -2039,6 +2092,23 @@ export function AccountingView({
     const [editingAccount, setEditingAccount] = useState<Account | null>(null);
     const [initialTypeForNewAccount, setInitialTypeForNewAccount] = useState<AccountType>('Asset');
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
+    // [NEW] Journal CRUD States
+    const [isJournalModalOpen, setIsJournalModalOpen] = useState(false);
+    const [editingJournal, setEditingJournal] = useState<JournalEntry | null>(null);
+    const [linkedPurchase, setLinkedPurchase] = useState<any>(null);
+
+    useEffect(() => {
+        const fetchLinkedData = async () => {
+            if (isJournalModalOpen && editingJournal?.source_type === 'purchase' && editingJournal?.reference_id) {
+                const { data } = await supabase.from('purchases').select('*').eq('id', editingJournal.reference_id).maybeSingle();
+                setLinkedPurchase(data);
+            } else {
+                setLinkedPurchase(null);
+            }
+        };
+        fetchLinkedData();
+    }, [isJournalModalOpen, editingJournal]);
 
     const renderPrintRows = (type: AccountType | undefined, parentCode: string | undefined, level: number = 0): React.ReactNode[] => {
         const children = accounts.filter(a => {
@@ -2351,10 +2421,47 @@ export function AccountingView({
         return balances;
     }, [filteredTransactions, accounts]);
 
-    const getBalance = (code: string) => accountBalances[code] || 0;
+    const handleUpdateJournal = async (tx: JournalEntry) => {
+        try {
+            const { error } = await supabase
+                .from('journal_entries')
+                .update({
+                    date: tx.date,
+                    description: tx.description,
+                    debit_account: tx.debitAccount,
+                    credit_account: tx.creditAccount,
+                    amount: tx.amount
+                })
+                .eq('id', tx.id);
 
-    const getDisplayBalance = (code: string) => {
-        const raw = getBalance(code);
+            if (error) throw error;
+            toast.success('Jurnal berhasil diperbarui');
+            if (onRefresh) onRefresh();
+            setIsJournalModalOpen(false);
+            setEditingJournal(null);
+        } catch (error: any) {
+            toast.error('Gagal memperbarui jurnal: ' + error.message);
+        }
+    };
+
+    // [NEW] Cumulative balances for Chart of Accounts (All-time)
+    const cumulativeBalances = useMemo(() => {
+        const balances: Record<string, number> = {};
+        accounts.forEach(acc => balances[acc.code] = 0);
+
+        transactions.forEach(tx => {
+            balances[tx.debitAccount] = (balances[tx.debitAccount] || 0) + tx.amount;
+            balances[tx.creditAccount] = (balances[tx.creditAccount] || 0) - tx.amount;
+        });
+        return balances;
+    }, [transactions, accounts]);
+
+    const getBalance = (code: string, isCumulative: boolean = false) => {
+        return isCumulative ? (cumulativeBalances[code] || 0) : (accountBalances[code] || 0);
+    };
+
+    const getDisplayBalance = (code: string, isCumulative: boolean = false) => {
+        const raw = getBalance(code, isCumulative);
         const type = accounts.find(a => a.code === code)?.type;
         if (type === 'Asset' || type === 'Expense') return raw;
         return -raw; // Flip for Credit-normal accounts
@@ -2763,13 +2870,20 @@ export function AccountingView({
                 return [
                     <div key={acc.code} className={`${(hasChildren || isLabel) ? 'mt-4 mb-2' : ''} group`}>
                         <div 
-                            className={`flex justify-between items-center py-2 px-3 rounded-lg transition-all ${
+                            className={`flex justify-between items-center py-2 px-3 rounded-lg transition-all cursor-pointer ${
                                 isLabel
-                                    ? 'bg-gray-100/50 font-black text-gray-800 border-l-4 border-gray-400'
+                                    ? 'bg-gray-100/50 font-black text-gray-800 border-l-4 border-gray-400 hover:bg-gray-200/50'
                                     : hasChildren 
-                                        ? 'bg-blue-50/50 font-black text-blue-900 border-l-4 border-blue-600' 
-                                        : 'text-sm text-gray-600 hover:bg-gray-50 border-b border-dashed border-gray-100'
+                                        ? 'bg-blue-50/50 font-black text-blue-900 border-l-4 border-blue-600 hover:bg-blue-100/50' 
+                                        : 'text-sm text-gray-600 hover:bg-blue-50 border-b border-dashed border-gray-100'
                             }`} 
+                            onClick={() => {
+                                if (!isLabel) {
+                                    setSelectedLedgerAccount(acc.code);
+                                    setActiveTab('ledger');
+                                }
+                            }}
+                            title={isLabel ? '' : `Klik untuk melihat rincian Buku Besar ${acc.name}`}
                             style={{ marginLeft: `${level * 1}rem` }}
                         >
                             <span className="flex flex-col">
@@ -2799,17 +2913,19 @@ export function AccountingView({
                                         >
                                             <ChevronDown className="w-3 h-3" />
                                         </button>
-                                        <button 
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setEditingAccount(acc);
-                                                setIsAccountModalOpen(true);
-                                            }}
-                                            className="p-1 hover:bg-blue-100 text-blue-600 rounded transition-colors"
-                                            title="Edit Akun"
-                                        >
-                                            <Edit className="w-3 h-3" />
-                                        </button>
+                                        {!isLabel && (
+                                            <button 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setEditingAccount(acc);
+                                                    setIsAccountModalOpen(true);
+                                                }}
+                                                className="p-1 hover:bg-blue-100 text-blue-600 rounded transition-colors"
+                                                title="Edit Akun"
+                                            >
+                                                <Edit className="w-3 h-3" />
+                                            </button>
+                                        )}
                                         <button 
                                             onClick={(e) => {
                                                 e.stopPropagation();
@@ -3214,60 +3330,242 @@ export function AccountingView({
 
     const tabs = [
         { id: 'overview', label: 'Ringkasan', icon: LayoutDashboard },
-        { id: 'journal', label: 'Jurnal Umum', icon: Plus },
-        { id: 'pettycash', label: 'Kas Kecil', icon: Wallet },
-        { id: 'purchase_history', label: 'Riwayat Pembelian', icon: ShoppingCart },
+        { id: 'accounts', label: 'Daftar Akun', icon: Settings },
         { id: 'ledger', label: 'Buku Besar', icon: BookOpen },
+        { id: 'balance', label: 'Neraca', icon: FileText },
+        { id: 'journal', label: 'Jurnal Umum', icon: Plus },
+        { id: 'purchase_history', label: 'Riwayat Pembelian', icon: ShoppingCart },
+        { id: 'pettycash', label: 'Kas Kecil', icon: Wallet },
         { id: 'hpp', label: 'Laporan HPP', icon: TrendingDown },
         { id: 'income', label: 'Laba Rugi', icon: TrendingUp },
-        { id: 'balance', label: 'Neraca', icon: FileText },
-        { id: 'accounts', label: 'Daftar Akun', icon: Settings },
     ];
 
     return (
         <div className="min-h-screen bg-gray-50 pb-20">
             {renderAccountModal()}
             {renderPrintPreview()}
+            
+            {/* [NEW] Journal Entry / Edit Modal */}
+            {isJournalModalOpen && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4 animate-in fade-in">
+                    <div className="bg-white rounded-[2rem] p-8 w-full max-w-lg shadow-2xl border border-gray-100 overflow-hidden relative">
+                        <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-primary to-blue-600"></div>
+                        <div className="flex justify-between items-center mb-8">
+                            <div>
+                                <h3 className="text-2xl font-black text-gray-800">{editingJournal ? 'Edit Transaksi' : 'Input Jurnal Baru'}</h3>
+                                <p className="text-sm text-gray-400 font-medium">Lengkapi rincian mutasi akun di bawah ini.</p>
+                            </div>
+                            <button 
+                                onClick={() => { setIsJournalModalOpen(false); setEditingJournal(null); }} 
+                                className="text-gray-400 hover:text-gray-600 p-2 bg-gray-100 rounded-full transition-all"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <form 
+                            className="space-y-6"
+                            onSubmit={async (e) => {
+                                e.preventDefault();
+                                const form = e.target as HTMLFormElement;
+                                const formData = new FormData(form);
+                                
+                                const tx: JournalEntry = {
+                                    id: editingJournal ? editingJournal.id : Date.now(),
+                                    date: formData.get('date') as string,
+                                    description: formData.get('description') as string,
+                                    debitAccount: formData.get('debitAccount') as string,
+                                    creditAccount: formData.get('creditAccount') as string,
+                                    amount: parseInt(formData.get('amount') as string)
+                                };
+
+                                if (!tx.date || !tx.debitAccount || !tx.creditAccount || !tx.amount) {
+                                    toast.error('Mohon lengkapi semua field wajib!');
+                                    return;
+                                }
+
+                                if (editingJournal) {
+                                    await handleUpdateJournal(tx);
+                                } else {
+                                    await onAddTransaction(tx);
+                                    toast.success('Jurnal baru berhasil disimpan');
+                                    setIsJournalModalOpen(false);
+                                }
+                            }}
+                        >
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-xs font-black uppercase text-gray-400 tracking-wider">Tanggal</label>
+                                    <input 
+                                        type="date" 
+                                        name="date"
+                                        required
+                                        defaultValue={editingJournal?.date || new Date().toISOString().split('T')[0]}
+                                        className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 outline-none transition-all" 
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-black uppercase text-gray-400 tracking-wider">Nominal (Rp)</label>
+                                    <input 
+                                        type="number" 
+                                        name="amount"
+                                        required
+                                        placeholder="0"
+                                        defaultValue={editingJournal?.amount}
+                                        className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 outline-none font-bold text-primary" 
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                 <div className="space-y-2">
+                                     <label className="text-xs font-black uppercase text-gray-400 tracking-wider">Keterangan</label>
+                                     <input 
+                                         type="text" 
+                                         name="description"
+                                         id="journal_desc"
+                                         required
+                                         placeholder="Contoh: Pembelian Bahan Spanduk - via Tunai"
+                                         defaultValue={editingJournal?.description}
+                                         className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 outline-none" 
+                                         onChange={(e) => {
+                                             const val = e.target.value.toLowerCase();
+                                             const creditSelect = document.getElementById('credit_acc_select') as HTMLSelectElement;
+                                             if (!creditSelect) return;
+                                             
+                                             if (val.includes('tunai') || val.includes('cash')) creditSelect.value = '101';
+                                             else if (val.includes('bank') || val.includes('transfer')) creditSelect.value = '102';
+                                             else if (val.includes('kas kecil') || val.includes('petty cash')) creditSelect.value = '105';
+                                             else if (val.includes('hutang') || val.includes('utang')) creditSelect.value = '201';
+                                         }}
+                                     />
+                                 </div>
+
+                                 {/* Display Linked Purchase Info if available */}
+                                 {linkedPurchase && (
+                                     <div className="p-3 bg-orange-50 border border-orange-100 rounded-xl space-y-1">
+                                         <div className="text-[10px] font-black text-orange-400 uppercase tracking-widest">Informasi Transaksi Asli (Pembelian)</div>
+                                         <div className="flex justify-between items-center text-xs">
+                                             <span className="text-gray-500">Supplier:</span>
+                                             <span className="font-bold text-gray-800">{linkedPurchase.supplier_name}</span>
+                                         </div>
+                                         <div className="flex justify-between items-center text-xs">
+                                             <span className="text-gray-500">Metode Bayar Asli:</span>
+                                             <span className="px-2 py-0.5 bg-orange-200 text-orange-800 rounded font-black">{linkedPurchase.payment_method?.toUpperCase()}</span>
+                                         </div>
+                                     </div>
+                                 )}
+
+                                 <div className="space-y-2">
+                                     <label className="text-xs font-black uppercase text-blue-600 tracking-wider">Pilih Metode Pembayaran (Otomatis Pilih Akun)</label>
+                                     <div className="grid grid-cols-4 gap-2">
+                                         {[
+                                             { label: 'TUNAI', code: '101', icon: <Wallet className="w-3 h-3" /> },
+                                             { label: 'BANK', code: '102', icon: <RefreshCw className="w-3 h-3" /> },
+                                             { label: 'KAS KECIL', code: '105', icon: <DollarSign className="w-3 h-3" /> },
+                                             { label: 'HUTANG', code: '201', icon: <History className="w-3 h-3" /> }
+                                         ].map(m => (
+                                             <button
+                                                 key={m.code}
+                                                 type="button"
+                                                 onClick={() => {
+                                                     const creditSelect = document.getElementById('credit_acc_select') as HTMLSelectElement;
+                                                     if (creditSelect) {
+                                                         creditSelect.value = m.code;
+                                                         // Visual feedback
+                                                         creditSelect.classList.add('ring-2', 'ring-blue-500');
+                                                         setTimeout(() => creditSelect.classList.remove('ring-2', 'ring-blue-500'), 1000);
+                                                     }
+                                                 }}
+                                                 className="flex flex-col items-center justify-center p-2 rounded-xl border border-blue-100 bg-blue-50/50 hover:bg-blue-100 text-blue-700 transition-all shadow-sm active:scale-95"
+                                             >
+                                                 {m.icon}
+                                                 <span className="text-[9px] font-black mt-1">{m.label}</span>
+                                             </button>
+                                         ))}
+                                     </div>
+                                 </div>
+                             </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-xs font-black uppercase text-green-600 tracking-wider">Akun Debit (Masuk)</label>
+                                    <select 
+                                        name="debitAccount"
+                                        required
+                                        defaultValue={editingJournal?.debitAccount || selectedLedgerAccount || ''}
+                                        className="w-full px-4 py-3 bg-green-50/30 border border-green-100 rounded-xl focus:ring-2 focus:ring-green-500/20 outline-none appearance-none"
+                                    >
+                                        <option value="">Pilih Akun...</option>
+                                        {accounts.map(acc => (
+                                            <option key={acc.code} value={acc.code}>{acc.code} - {acc.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-black uppercase text-red-600 tracking-wider">Akun Kredit (Keluar)</label>
+                                    <select 
+                                        name="creditAccount"
+                                        id="credit_acc_select"
+                                        required
+                                        defaultValue={editingJournal?.creditAccount || ''}
+                                        className="w-full px-4 py-3 bg-red-50/30 border border-red-100 rounded-xl focus:ring-2 focus:ring-red-500/20 outline-none appearance-none"
+                                    >
+                                        <option value="">Pilih Akun...</option>
+                                        {accounts.map(acc => (
+                                            <option key={acc.code} value={acc.code}>{acc.code} - {acc.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="pt-6 flex gap-3">
+                                <Button 
+                                    type="button" 
+                                    variant="outline" 
+                                    className="flex-1 rounded-xl py-6"
+                                    onClick={() => { setIsJournalModalOpen(false); setEditingJournal(null); }}
+                                >
+                                    Batal
+                                </Button>
+                                <Button 
+                                    type="submit" 
+                                    className="flex-1 bg-primary hover:bg-primary/90 rounded-xl py-6 shadow-lg shadow-primary/20"
+                                >
+                                    {editingJournal ? 'Simpan Perubahan' : 'Simpan Transaksi'}
+                                </Button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
             {/* Header */}
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center px-4 md:px-8 py-6 bg-white border-b">
                 <div>
-                    <h2 className="text-2xl font-bold text-gray-800">Modul Akuntansi</h2>
+                    <h2 className="text-2xl font-black text-gray-800">Modul Akuntansi</h2>
                     <p className="text-sm text-gray-500">Pencatatan keuangan standar akuntansi Indonesia.</p>
                 </div>
                 {onBack && (
                     <Button
                         onClick={onBack}
                         variant="outline"
-                        className="flex items-center gap-2 bg-gray-100 text-gray-700 hover:bg-gray-200"
+                        className="flex items-center gap-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-2xl"
                     >
                         <LayoutDashboard className="w-4 h-4 rotate-180 text-gray-500" />
-                        Kembali ke Payroll
+                        Kembali ke Dashboard
                     </Button>
                 )}
-                <div className="flex gap-2">
-                    <Button
-                        onClick={() => {
-                            if (onRefresh) onRefresh();
-                            toast.info('Memperbarui data akuntansi...');
-                        }}
-                        variant="outline"
-                        className="flex items-center gap-2 bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100"
-                    >
-                        <Plus className="w-4 h-4 rotate-45" /> 
-                        Refresh
-                    </Button>
-                </div>
             </div>
 
             {/* Navigation Tabs & Date Filters */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex space-x-1 bg-gray-200/50 p-1 rounded-xl w-fit">
+            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 p-4 md:p-8 bg-white border-b sticky top-0 z-30 shadow-sm">
+                <div className="flex space-x-1 bg-gray-100 p-1 rounded-xl overflow-x-auto no-scrollbar max-w-full">
                     {tabs.map((tab) => (
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === tab.id
-                                ? 'bg-white text-primary shadow-sm'
+                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${activeTab === tab.id
+                                ? 'bg-white text-primary shadow-md scale-105'
                                 : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
                                 }`}
                         >
@@ -3277,14 +3575,27 @@ export function AccountingView({
                     ))}
                 </div>
 
-                <DateRangePicker 
-                    startDate={startDate}
-                    endDate={endDate}
-                    onChange={(range) => {
-                        setStartDate(range.startDate);
-                        setEndDate(range.endDate);
-                    }}
-                />
+                <div className="flex items-center gap-3">
+                    <DateRangePicker 
+                        startDate={startDate}
+                        endDate={endDate}
+                        onChange={(range) => {
+                            setStartDate(range.startDate);
+                            setEndDate(range.endDate);
+                        }}
+                    />
+                    <Button
+                        onClick={() => {
+                            if (onRefresh) onRefresh();
+                            toast.info('Memperbarui data akuntansi...');
+                        }}
+                        variant="outline"
+                        className="flex items-center gap-2 bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100 rounded-xl px-4"
+                    >
+                        <RefreshCw className="w-4 h-4" /> 
+                        Refresh
+                    </Button>
+                </div>
             </div>
 
             {/* Content Area */}
@@ -3314,7 +3625,10 @@ export function AccountingView({
                     />
                 )}
                 {activeTab === 'purchase_history' && (
-                    <PurchaseHistoryTab purchases={realPurchases} onCRUD={onPurchaseCRUD} />
+                    <PurchaseHistoryTab 
+                        purchases={realPurchases.length > 0 ? realPurchases : purchases} 
+                        onCRUD={onPurchaseCRUD} 
+                    />
                 )}
 
                 {activeTab === 'ledger' && (
@@ -3429,14 +3743,50 @@ export function AccountingView({
                                                 <div className="flex items-center gap-2 mb-1">
                                                     <span className="px-2 py-0.5 bg-primary/10 text-primary text-[10px] font-black rounded uppercase tracking-widest">{acc.code}</span>
                                                     <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">{acc.type}</span>
+                                                    <button 
+                                                        onClick={() => {
+                                                            setEditingAccount(acc);
+                                                            setIsAccountModalOpen(true);
+                                                        }}
+                                                        className="p-1 hover:bg-primary/10 text-primary rounded transition-all"
+                                                        title="Edit Nama/Detail Akun"
+                                                    >
+                                                        <Edit className="w-3.5 h-3.5" />
+                                                    </button>
                                                 </div>
                                                 <h2 className="text-xl font-black text-gray-800">{acc.name}</h2>
                                             </div>
-                                            <div className="text-right">
-                                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Saldo Berjalan</p>
-                                                <p className="text-2xl font-black text-primary font-mono">Rp {saldoAkhir.toLocaleString()}</p>
+                                                <div className="flex items-center gap-4">
+                                                    <div className="text-right">
+                                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Saldo Berjalan</p>
+                                                        <p className="text-2xl font-black text-primary font-mono">Rp {saldoAkhir.toLocaleString()}</p>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <Button 
+                                                            size="sm"
+                                                            className="bg-green-600 text-white hover:bg-green-700 border-none font-bold flex items-center gap-2 rounded-xl"
+                                                            onClick={() => {
+                                                                setEditingJournal(null);
+                                                                setIsJournalModalOpen(true);
+                                                            }}
+                                                        >
+                                                            <Plus className="w-4 h-4" /> TAMBAH TRANSAKSI
+                                                        </Button>
+                                                        <Button 
+                                                            size="sm"
+                                                            variant="outline"
+                                                            className="bg-blue-600 text-white hover:bg-blue-700 border-none font-bold rounded-xl"
+                                                            onClick={() => {
+                                                                setStartDate('2024-01-01');
+                                                                setEndDate(new Date().toISOString().split('T')[0]);
+                                                                toast.info('Menampilkan seluruh riwayat transaksi...');
+                                                            }}
+                                                        >
+                                                            LIHAT SEMUA RIWAYAT
+                                                        </Button>
+                                                    </div>
+                                                </div>
                                             </div>
-                                        </div>
 
                                         <div className="flex-1 overflow-y-auto">
                                             <table className="w-full text-xs border-collapse">
@@ -3447,6 +3797,7 @@ export function AccountingView({
                                                         <th className="px-6 py-4 text-right">Debit</th>
                                                         <th className="px-6 py-4 text-right">Kredit</th>
                                                         <th className="px-6 py-4 text-right bg-gray-100/30">Saldo</th>
+                                                        <th className="px-6 py-4 text-center">Aksi</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-gray-50">
@@ -3457,21 +3808,78 @@ export function AccountingView({
                                                         <td className="px-6 py-4 text-right">-</td>
                                                         <td className="px-6 py-4 text-right">-</td>
                                                         <td className="px-6 py-4 text-right font-black bg-blue-50/30 text-blue-700">Rp {saldoAwal.toLocaleString()}</td>
+                                                        <td className="px-6 py-4"></td>
                                                     </tr>
 
-                                                    {rows.map((row, idx) => (
-                                                        <tr key={idx} className="hover:bg-gray-50/80 transition-colors group">
-                                                            <td className="px-6 py-4 text-gray-500">{row.date}</td>
-                                                            <td className="px-6 py-4 font-medium text-gray-800">{row.description}</td>
-                                                            <td className="px-6 py-4 text-right text-green-600 font-bold">{row.debit > 0 ? `Rp ${row.debit.toLocaleString()}` : '-'}</td>
-                                                            <td className="px-6 py-4 text-right text-red-600 font-bold">{row.credit > 0 ? `Rp ${row.credit.toLocaleString()}` : '-'}</td>
-                                                            <td className="px-6 py-4 text-right font-black text-gray-900 bg-gray-50/20 group-hover:bg-primary/5 transition-all">Rp {row.balance.toLocaleString()}</td>
-                                                        </tr>
-                                                    ))}
+                                                    {rows.map((row, idx) => {
+                                                        const isPurchase = row.description.includes('Pembelian Bahan:');
+                                                        // Find the original transaction ID for CRUD
+                                                        const originalTx = transactions.find(t => 
+                                                            t.date === row.date && 
+                                                            t.description === row.description && 
+                                                            t.amount === (row.debit || row.credit) &&
+                                                            (t.debitAccount === acc.code || t.creditAccount === acc.code)
+                                                        );
+
+                                                        return (
+                                                            <tr key={idx} className="hover:bg-gray-50/80 transition-colors group">
+                                                                <td className="px-6 py-4 text-gray-500">{row.date}</td>
+                                                                <td className="px-6 py-4 font-medium text-gray-800">
+                                                                    <div className="flex items-center gap-2">
+                                                                        {row.description}
+                                                                        {isPurchase && (
+                                                                            <button 
+                                                                                onClick={() => {
+                                                                                    const poNo = row.description.split(': ')[1]?.split(' ')[0];
+                                                                                    const po = purchases.find(p => p.purchase_no === poNo);
+                                                                                    if (po) setViewingPurchase(po);
+                                                                                    else toast.error('Data PO asli tidak ditemukan');
+                                                                                }}
+                                                                                className="p-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition-colors"
+                                                                                title="Lihat Rincian Barang"
+                                                                            >
+                                                                                <Eye className="w-3 h-3" />
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-6 py-4 text-right text-green-600 font-bold">{row.debit > 0 ? `Rp ${row.debit.toLocaleString()}` : '-'}</td>
+                                                                <td className="px-6 py-4 text-right text-red-600 font-bold">{row.credit > 0 ? `Rp ${row.credit.toLocaleString()}` : '-'}</td>
+                                                                <td className="px-6 py-4 text-right font-black text-gray-900 bg-gray-50/20 group-hover:bg-primary/5 transition-all">Rp {row.balance.toLocaleString()}</td>
+                                                                <td className="px-6 py-4 text-center">
+                                                                    <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                        <button 
+                                                                            onClick={() => {
+                                                                                if (originalTx) {
+                                                                                    setEditingJournal(originalTx);
+                                                                                    setIsJournalModalOpen(true);
+                                                                                }
+                                                                            }}
+                                                                            className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                                                                            title="Edit Transaksi"
+                                                                        >
+                                                                            <Edit className="w-3 h-3" />
+                                                                        </button>
+                                                                        <button 
+                                                                            onClick={() => {
+                                                                                if (originalTx && confirm('Hapus transaksi ini?')) {
+                                                                                    onDeleteTransaction(originalTx.id);
+                                                                                }
+                                                                            }}
+                                                                            className="p-1 text-red-600 hover:bg-red-50 rounded"
+                                                                            title="Hapus Transaksi"
+                                                                        >
+                                                                            <Trash2 className="w-3 h-3" />
+                                                                        </button>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
 
                                                     {rows.length === 0 && (
                                                         <tr>
-                                                            <td colSpan={5} className="px-6 py-12 text-center text-gray-400 italic">Tidak ada mutasi transaksi pada periode ini.</td>
+                                                            <td colSpan={6} className="px-6 py-12 text-center text-gray-400 italic">Tidak ada mutasi transaksi pada periode ini.</td>
                                                         </tr>
                                                     )}
                                                 </tbody>
@@ -3513,14 +3921,52 @@ export function AccountingView({
                 )}
                 {activeTab === 'balance' && renderFinancialPosition()}
                 {activeTab === 'accounts' && (
-                    <AccountManagementTab
-                        accounts={accounts}
-                        getBalance={getDisplayBalance}
-                        onAddAccount={addAccount}
-                        onUpdateAccount={updateAccount}
-                        onDeleteAccount={deleteAccount}
-                        onMoveAccount={moveAccount}
-                    />
+                    <div className="space-y-4 p-4 md:p-8">
+                        {accounts.length === 0 && (
+                            <div className="bg-orange-50 border border-orange-200 p-8 rounded-2xl text-center">
+                                <AlertTriangle className="w-12 h-12 text-orange-500 mx-auto mb-4" />
+                                <h3 className="text-lg font-bold text-orange-800 mb-2">Daftar Akun Kosong</h3>
+                                <p className="text-orange-600 mb-6">Sistem mendeteksi belum ada daftar akun akuntansi. Klik tombol di bawah untuk membuat akun standar (Kas, Bank, Hutang, dsb).</p>
+                                <Button 
+                                    onClick={async () => {
+                                        const loading = toast.loading('Membuat akun standar...');
+                                        try {
+                                            // Call the SQL we prepared via RPC or just multiple inserts
+                                            const defaultAccounts = [
+                                                { code: '101', name: 'Kas', type: 'Asset' },
+                                                { code: '102', name: 'Bank', type: 'Asset' },
+                                                { code: '105', name: 'Kas Kecil', type: 'Asset' },
+                                                { code: '201', name: 'Hutang Usaha', type: 'Liability' },
+                                                { code: '301', name: 'Modal', type: 'Equity' },
+                                                { code: '401', name: 'Pendapatan Penjualan', type: 'Income' },
+                                                { code: '501', name: 'Pembelian Bahan Baku', type: 'Expense' }
+                                            ];
+                                            await supabase.from('accounts').upsert(defaultAccounts);
+                                            if (onRefresh) await onRefresh();
+                                            toast.success('Akun Standar Berhasil Dibuat', { id: loading });
+                                        } catch (e) {
+                                            toast.error('Gagal membuat akun', { id: loading });
+                                        }
+                                    }}
+                                    className="bg-orange-600 hover:bg-orange-700 text-white font-bold px-8 py-4 rounded-xl shadow-lg shadow-orange-200"
+                                >
+                                    Inisialisasi Akun Standar
+                                </Button>
+                            </div>
+                        )}
+                        <AccountManagementTab
+                            accounts={accounts}
+                            getBalance={(code) => getDisplayBalance(code, true)}
+                            onAddAccount={addAccount}
+                            onUpdateAccount={updateAccount}
+                            onDeleteAccount={deleteAccount}
+                            onMoveAccount={moveAccount}
+                            onViewLedger={(code) => {
+                                setSelectedLedgerAccount(code);
+                                setActiveTab('ledger');
+                            }}
+                        />
+                    </div>
                 )}
             </div>
         </div>

@@ -1,127 +1,124 @@
 import React from 'react';
-import { View, Text, Modal, TouchableOpacity, ScrollView, StyleSheet, Dimensions, Animated } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { PrinterManager } from '../lib/PrinterManager';
-import { X, Printer, Eye } from 'lucide-react-native';
+import * as RN from 'react-native';
+var View = RN.View;
+var Text = RN.Text;
+var Modal = RN.Modal;
+var TouchableOpacity = RN.TouchableOpacity;
+var ScrollView = RN.ScrollView;
+var StyleSheet = RN.StyleSheet;
+var Dimensions = RN.Dimensions;
+var Platform = RN.Platform;
+import * as RNSAC from 'react-native-safe-area-context';
+var SafeAreaView = RNSAC.SafeAreaView;
+import * as PrinterLib from '../lib/PrinterManager';
+var PrinterManager = PrinterLib.PrinterManager;
 
-interface ShiftSummaryPreviewModalProps {
-    visible: boolean;
-    onClose: () => void;
-    data: any;
-    onPrint: () => void;
-}
+export default function ShiftSummaryPreviewModal(props) {
+    var visible = props.visible;
+    var onClose = props.onClose;
+    var data = props.data;
+    var onPrint = props.onPrint;
 
-export default function ShiftSummaryPreviewModal({ visible, onClose, data, onPrint }: ShiftSummaryPreviewModalProps) {
     if (!data) return null;
 
-    const paperWidthStr = data.paperWidth === 48 ? '80mm' : '58mm';
-    const paperWidth = data.paperWidth === 48 ? 380 : 280;
+    var paperWidthStr = (data && data.paperWidth === 48) ? '80mm' : '58mm';
+    var paperWidth = (data && data.paperWidth === 48) ? 380 : 280;
 
-    const rawText = PrinterManager.formatSalesReport(data, true);
+    var rawText = PrinterManager.formatSalesReport(data, true);
     
-    const renderLine = (line: string, index: number) => {
-        if (!line.trim() && line === '') return <View key={index} style={{ height: 10 }} />;
+    var renderLine = function(line, index) {
+        if (!line.trim() && line === '') return React.createElement(View, { key: index, style: { height: 10 } });
         
-        let alignment: 'center' | 'left' | 'right' = 'left';
-        let text = line;
-        let isBold = false;
-        let isBig = false;
+        var alignment = 'left';
+        var text = line;
+        var isBold = false;
+        var isBig = false;
 
-        if (text.includes('[BIG]')) {
+        if (text.indexOf('[BIG]') !== -1) {
             isBig = true;
             text = text.replace('[BIG]', '').replace('[/BIG]', '');
         }
 
-        if (text.startsWith('[C]')) {
+        if (text.indexOf('[C]') === 0) {
             alignment = 'center';
             text = text.substring(3);
-        } else if (text.startsWith('[L]')) {
+        } else if (text.indexOf('[L]') === 0) {
             alignment = 'left';
             text = text.substring(3);
-        } else if (text.startsWith('[R]')) {
+        } else if (text.indexOf('[R]') === 0) {
             alignment = 'right';
             text = text.substring(3);
         }
 
-        if (text.includes('<b>')) {
+        if (text.indexOf('<b>') !== -1) {
             isBold = true;
             text = text.replace('<b>', '').replace('</b>', '');
         }
 
-        const parts = text.split('[R]');
+        var parts = text.split('[R]');
         
-        return (
-            <View key={index} style={[styles.lineWrapper, { justifyContent: alignment === 'center' ? 'center' : 'space-between' }]}>
-                {parts.length > 1 ? (
-                    <>
-                        <Text style={[styles.receiptText, isBold && styles.boldText, isBig && styles.bigText]}>{parts[0]}</Text>
-                        <Text style={[styles.receiptText, isBold && styles.boldText, isBig && styles.bigText]}>{parts[1]}</Text>
-                    </>
-                ) : (
-                    <Text style={[
-                        styles.receiptText, 
-                        isBold && styles.boldText,
-                        isBig && styles.bigText,
-                        { textAlign: alignment, width: '100%' }
-                    ]}>
-                        {text}
-                    </Text>
-                )}
-            </View>
+        return React.createElement(View, { key: index, style: [styles.lineWrapper, { justifyContent: alignment === 'center' ? 'center' : 'space-between' }] },
+            parts.length > 1 ? React.createElement(View, { style: { flexDirection: 'row', justifyContent: 'space-between', width: '100%' } },
+                React.createElement(Text, { style: [styles.receiptText, isBold ? styles.boldText : null, isBig ? styles.bigText : null] }, parts[0]),
+                React.createElement(Text, { style: [styles.receiptText, isBold ? styles.boldText : null, isBig ? styles.bigText : null] }, parts[1])
+            ) : React.createElement(Text, {
+                style: [
+                    styles.receiptText, 
+                    isBold ? styles.boldText : null,
+                    isBig ? styles.bigText : null,
+                    { textAlign: alignment, width: '100%' }
+                ]
+            }, text)
         );
     };
 
-    const lines = rawText.split('\n');
+    var lines = (rawText || "").split('\n');
+    var renderedLines = [];
+    for (var i = 0; i < lines.length; i++) {
+        renderedLines.push(renderLine(lines[i], i));
+    }
 
-    return (
-        <Modal
-            visible={visible}
-            transparent
-            animationType="fade"
-            onRequestClose={onClose}
-        >
-            <View style={styles.overlay}>
-                <SafeAreaView style={styles.safeArea}>
-                    <View style={styles.card}>
-                        <View style={styles.header}>
-                            <View style={styles.titleWrapper}>
-                                <Eye size={20} color="#1e293b" />
-                                <Text style={styles.headerTitle}>Pratinjau Struk ({paperWidthStr}) v2</Text>
-                            </View>
-                            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-                                <X size={24} color="#94a3b8" />
-                            </TouchableOpacity>
-                        </View>
-
-                        <View style={styles.paperWrapper}>
-                            <ScrollView 
-                                style={styles.previewScroll}
-                                showsVerticalScrollIndicator={false}
-                                contentContainerStyle={styles.receiptContainer}
-                            >
-                                <View style={[styles.receiptPaper, { width: paperWidth }]}>
-                                    {lines.map((line, idx) => renderLine(line, idx))}
-                                </View>
-                            </ScrollView>
-                        </View>
-
-                        <View style={styles.footer}>
-                            <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
-                                <Text style={styles.cancelBtnText}>Kembali</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.printBtn} onPress={onPrint}>
-                                <Printer size={18} color="white" style={{ marginRight: 8 }} />
-                                <Text style={styles.printBtnText}>Cetak Struk</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </SafeAreaView>
-            </View>
-        </Modal>
+    return React.createElement(Modal, {
+        visible: visible,
+        transparent: true,
+        animationType: "fade",
+        onRequestClose: onClose
+    },
+        React.createElement(View, { style: styles.overlay },
+            React.createElement(SafeAreaView, { style: styles.safeArea },
+                React.createElement(View, { style: styles.card },
+                    React.createElement(View, { style: styles.header },
+                        React.createElement(View, { style: styles.titleWrapper },
+                            React.createElement(Text, { style: styles.headerTitle }, "Pratinjau Struk (" + String(paperWidthStr) + ")")
+                        ),
+                        React.createElement(TouchableOpacity, { onPress: onClose, style: styles.closeBtn },
+                            React.createElement(Text, { style: { fontSize: 24, color: '#94a3b8' } }, "\u2715")
+                        )
+                    ),
+                    React.createElement(View, { style: styles.paperWrapper },
+                        React.createElement(ScrollView, {
+                            style: styles.previewScroll,
+                            showsVerticalScrollIndicator: false,
+                            contentContainerStyle: styles.receiptContainer
+                        },
+                            React.createElement(View, { style: [styles.receiptPaper, { width: paperWidth }] }, renderedLines)
+                        )
+                    ),
+                    React.createElement(View, { style: styles.footer },
+                        React.createElement(TouchableOpacity, { style: styles.cancelBtn, onPress: onClose },
+                            React.createElement(Text, { style: styles.cancelBtnText }, "Kembali")
+                        ),
+                        React.createElement(TouchableOpacity, { style: [styles.printBtn, { marginLeft: 12 }], onPress: onPrint },
+                            React.createElement(Text, { style: styles.printBtnText }, "Cetak Struk")
+                        )
+                    )
+                )
+            )
+        )
     );
 }
 
-const styles = StyleSheet.create({
+var styles = StyleSheet.create({
     overlay: {
         flex: 1,
         backgroundColor: 'rgba(15, 23, 42, 0.7)',
@@ -156,12 +153,12 @@ const styles = StyleSheet.create({
     titleWrapper: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 10,
     },
     headerTitle: {
         fontSize: 16,
         fontWeight: '800',
         color: '#1e293b',
+        marginLeft: 10
     },
     closeBtn: {
         padding: 4,
@@ -215,7 +212,6 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         padding: 20,
         backgroundColor: 'white',
-        gap: 12,
         borderTopWidth: 1,
         borderTopColor: '#f1f5f9',
     },

@@ -48,6 +48,7 @@ export function UsersView({ branches: propsBranches = [] }: { branches?: any[] }
         { id: 'branches', label: 'Cabang', description: 'Manajemen outlet' },
         { id: 'users', label: 'Pengguna Sistem', description: 'Kelola akun & hak akses' },
         { id: 'settings', label: 'Pengaturan', description: 'Konfigurasi sistem' },
+        { id: 'session_history', label: 'Riwayat Kasir', description: 'Melihat histori buka/tutup kasir (Log Shift)' },
     ];
 
     const [activeTab, setActiveTab] = useState<'users' | 'roles'>('users');
@@ -230,7 +231,7 @@ export function UsersView({ branches: propsBranches = [] }: { branches?: any[] }
     const applyPreset = (type: 'admin' | 'manager' | 'cashier') => {
         let perms: string[] = [];
         if (type === 'admin') perms = AVAILABLE_PERMISSIONS.map(p => p.id); // All
-        if (type === 'manager') perms = ['dashboard', 'products', 'inventory', 'reports', 'employees', 'purchases', 'attendance', 'performance', 'mandatory_session'];
+        if (type === 'manager') perms = ['dashboard', 'products', 'inventory', 'reports', 'employees', 'purchases', 'attendance', 'performance', 'mandatory_session', 'session_history'];
         if (type === 'cashier') perms = ['pos', 'products', 'attendance', 'mandatory_session'];
         if (type === 'display' as any) perms = ['pos', 'pos_order_only', 'products'];
 
@@ -250,7 +251,7 @@ export function UsersView({ branches: propsBranches = [] }: { branches?: any[] }
             {
                 name: 'Manajer',
                 description: 'Manajemen operasional & laporan',
-                permissions: ['dashboard', 'products', 'inventory', 'reports', 'employees', 'purchases', 'attendance', 'performance', 'shifts', 'mandatory_session']
+                permissions: ['dashboard', 'products', 'inventory', 'reports', 'employees', 'purchases', 'attendance', 'performance', 'shifts', 'mandatory_session', 'session_history']
             },
             {
                 name: 'Kasir',

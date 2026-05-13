@@ -261,11 +261,39 @@ export function DashboardView({
     const revenueToday = salesToday.reduce((sum, s) => sum + (s && s.totalAmount ? s.totalAmount : 0), 0);
     const transactionsToday = salesToday.length;
 
-    // New Customers (mock data assumption: created at matches today? Or just count total for now)
-    // Since contacts don't store "createdAt", we'll just show total active customers for now or diff
-    // A better approach for "New Customers" would require a date field in ContactData.
-    // For now, let's show Total Customers.
+    // Yesterday's revenue for trend calculation
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toLocaleDateString('en-CA');
+    const salesYesterday = (sales || []).filter(s => s && s.date && s.date.startsWith(yesterdayStr) && s.status !== 'Returned');
+    const revenueYesterday = salesYesterday.reduce((sum, s) => sum + (s && s.totalAmount ? s.totalAmount : 0), 0);
 
+    const revenueTrend = useMemo(() => {
+        if (revenueYesterday === 0) return revenueToday > 0 ? '+100%' : '0%';
+        const diff = ((revenueToday - revenueYesterday) / revenueYesterday) * 100;
+        return `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}%`;
+    }, [revenueToday, revenueYesterday]);
+
+    const transYesterday = salesYesterday.length;
+    const transTrend = useMemo(() => {
+        if (transYesterday === 0) return transactionsToday > 0 ? '+100%' : '0%';
+        const diff = ((transactionsToday - transYesterday) / transYesterday) * 100;
+        return `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}%`;
+    }, [transactionsToday, transYesterday]);
+
+    const avgOrderToday = useMemo(() => {
+        return transactionsToday > 0 ? Math.round(revenueToday / transactionsToday) : 0;
+    }, [revenueToday, transactionsToday]);
+
+    const avgOrderYesterday = useMemo(() => {
+        return transYesterday > 0 ? Math.round(revenueYesterday / transYesterday) : 0;
+    }, [revenueYesterday, transYesterday]);
+
+    const avgTrend = useMemo(() => {
+        if (avgOrderYesterday === 0) return avgOrderToday > 0 ? '+100%' : '0%';
+        const diff = ((avgOrderToday - avgOrderYesterday) / avgOrderYesterday) * 100;
+        return `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}%`;
+    }, [avgOrderToday, avgOrderYesterday]);
 
     // --- Chart Data (Last 7 Days) ---
     const chartData = Array.from({ length: 7 }, (_, i) => {
@@ -514,8 +542,8 @@ export function DashboardView({
             label: 'Total Penjualan Hari Ini',
             value: `Rp ${revenueToday.toLocaleString()}`,
             icon: DollarSign,
-            trend: '+12.5%', // Needs historical data for real trend
-            trendUp: true,
+            trend: revenueTrend,
+            trendUp: revenueToday >= revenueYesterday,
             gradient: 'from-green-500 to-emerald-600',
             shadow: 'shadow-green-500/20',
             module: 'pos',
@@ -525,8 +553,8 @@ export function DashboardView({
             label: 'Total Transaksi',
             value: transactionsToday.toString(),
             icon: ShoppingBag,
-            trend: '+8.2%',
-            trendUp: true,
+            trend: transTrend,
+            trendUp: transactionsToday >= transYesterday,
             gradient: 'from-blue-500 to-indigo-600',
             shadow: 'shadow-blue-500/20',
             module: 'pos',
@@ -534,6 +562,16 @@ export function DashboardView({
         },
 
 
+        {
+            label: 'Rata-rata Per Order',
+            value: `Rp ${avgOrderToday.toLocaleString()}`,
+            icon: Activity,
+            trend: avgTrend,
+            trendUp: avgOrderToday >= avgOrderYesterday,
+            gradient: 'from-orange-500 to-amber-600',
+            shadow: 'shadow-orange-500/20',
+            module: 'reports'
+        },
         {
             label: 'Voucher WiFi (Tersedia)',
             value: (voucherStats?.available || 0).toString(),
@@ -581,7 +619,7 @@ export function DashboardView({
 
 
             {/* 2. Stats Grid - Compact & Precise */}
-            <div className="grid grid-cols-3 gap-3 shrink-0">
+            <div className="grid grid-cols-4 gap-3 shrink-0">
                 {stats.map((stat, index) => (
                     <div 
                         key={index} 
@@ -594,7 +632,9 @@ export function DashboardView({
                         <div className="min-w-0">
                             <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider truncate">{stat.label}</p>
                             <h3 className="text-base font-bold text-gray-800 leading-tight">{stat.value}</h3>
-                            <span className="text-[9px] font-bold text-green-600 bg-green-50 px-1 py-0.5 rounded inline-block mt-0.5">{stat.trend}</span>
+                            <span className={`text-[9px] font-bold ${stat.trendUp ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'} px-1 py-0.5 rounded inline-block mt-0.5`}>
+                                {stat.trend}
+                            </span>
                         </div>
                     </div>
                 ))}

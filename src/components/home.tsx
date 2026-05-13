@@ -1578,16 +1578,31 @@ function Home() {
   // Generic CRUD Handler
   const syncPurchaseWithAccounting = async (po: any) => {
     // 1. Journal Entry
-    const creditAcc = po.payment_method === 'Transfer' ? '102' : '101'; // Bank vs Kas
-    await supabase.from('journal_entries').insert([{
-      date: po.date || formatLocalDateForInput(new Date()),
-      description: `Pembelian Bahan: ${po.purchase_no || ''} (${po.supplier_name || ''})`,
-      debit_account: '501', // Beban Pembelian
-      credit_account: creditAcc,
-      amount: po.total_amount,
-      reference_id: String(po.id),
-      source_type: 'purchase'
-    }]);
+    let creditAcc = '101'; // Default Kas
+    const method = (po.payment_method || '').toLowerCase();
+    
+    if (method.includes('transfer') || method.includes('bank')) creditAcc = '102';
+    else if (method.includes('hutang') || method.includes('credit') || method.includes('utang')) creditAcc = '201';
+    else if (method.includes('kecil') || method.includes('petty')) creditAcc = '105';
+    else creditAcc = '101';
+
+    // Avoid duplicates
+    const { data: existing } = await supabase.from('journal_entries')
+      .select('id')
+      .ilike('description', `Pembelian%${po.purchase_no}%`)
+      .maybeSingle();
+
+    if (!existing) {
+      await supabase.from('journal_entries').insert([{
+        date: po.date || formatLocalDateForInput(new Date()),
+        description: `Pembelian Bahan: ${po.purchase_no || ''} (${po.supplier_name || ''}) - ${po.payment_method || 'Tunai'}`,
+        debit_account: '501', // Pembelian Bahan Baku
+        credit_account: creditAcc,
+        amount: po.total_amount,
+        reference_id: String(po.id),
+        source_type: 'purchase'
+      }]);
+    }
 
     // 2. Petty Cash Integration
     if (po.payment_method === 'Kas Kecil') {
@@ -1748,7 +1763,67 @@ function Home() {
         }
         return insertedData;
       } else if (action === 'update') {
-        const { error } = await supabase.from(table).update(data).eq('id', data.id);
+        const { id, ...payload } = data;
+
+        // [CLEANUP] Remove any UI-only fields that might have leaked from the frontend
+        const uiFields = ['isFirst', 'rowSpan', 'itemName', 'itemQty', 'itemPrice', 'itemUnit'];
+        uiFields.forEach(f => delete (payload as any)[f]);
+
+        // [NEW] Bulk Sync Logic for Accounting
+        if (table === 'purchases' && id === 'SYNC_ALL') {
+          console.log('[MasterCRUD] Aggressive Global Sync Initiated...');
+          const { data: allPurchases, error: fetchErr } = await supabase
+            .from('purchases')
+            .select('*'); // Take everything for analysis
+          
+          if (fetchErr) {
+            toast.error('Koneksi Gagal: ' + fetchErr.message);
+            return;
+          }
+
+          if (allPurchases && allPurchases.length > 0) {
+            let syncCount = 0;
+            let skippedCount = 0;
+            
+            for (const po of allPurchases) {
+              const status = (po.status || '').toLowerCase();
+              const isFinal = ['completed', 'selesai', 'paid', 'paid', 'success', 'settlement'].includes(status);
+              
+              if (!isFinal || (Number(po.total_amount) <= 0)) {
+                skippedCount++;
+                continue;
+              }
+
+              // Check if already in journal (Double check by PO No)
+              const { data: existing } = await supabase.from('journal_entries')
+                .select('id')
+                .ilike('description', `%${po.purchase_no}%`)
+                .maybeSingle();
+
+              if (!existing) {
+                try {
+                  await syncPurchaseWithAccounting(po);
+                  syncCount++;
+                } catch (syncErr) {
+                  console.error('Sync error for PO:', po.purchase_no, syncErr);
+                }
+              }
+            }
+            
+            if (syncCount > 0) {
+              toast.success(`${syncCount} Data Pembelian Baru BERHASIL dibukukan ke Neraca!`);
+            } else {
+              toast.info(`Semua data sudah sinkron. (${skippedCount} data diabaikan karena status bukan 'Selesai')`);
+            }
+          } else {
+            toast.warning('Database Pembelian Bapak masih kosong.');
+          }
+          
+          if (currentBranchId) fetchAccounting(); 
+          return;
+        }
+
+        const { error } = await supabase.from(table).update(payload).eq('id', id);
         if (error) throw error;
 
         // [NEW] Accounting & Stock Integration for Updated Purchases
@@ -1810,7 +1885,8 @@ function Home() {
       }
     } catch (err: any) {
       console.error(`Error ${action} ${table}:`, err);
-      toast.error(`Gagal memproses data: ${err.message || ''}`);
+      const detail = err.details || err.hint || '';
+      toast.error(`Gagal memproses data: ${err.message} ${detail ? '(' + detail + ')' : ''}`);
       throw err;
     }
   };
@@ -2186,7 +2262,7 @@ function Home() {
           const { error: hppError } = await supabase.from('journal_entries').insert([{
             date: formatLocalDateForInput(new Date()),
             description: `HPP Penjualan ${orderNo}`,
-            debit_account: '501', // Beban Pembelian / HPP
+            debit_account: '501', // Pembelian Bahan Baku (HPP)
             credit_account: '104', // Persediaan
             amount: totalCost,
             reference_id: String(sale.id),
@@ -2202,6 +2278,80 @@ function Home() {
     } catch (err) {
       console.error('Accounting Error:', err);
       return false;
+    }
+  };
+
+  // --- Printer Helper for Kitchen/Bar Tickets ---
+  const handlePayment = async (sale: any, saleData: any, skipTickets = false) => {
+    // 1. Filter items for Kitchen vs Bar
+    const kitchenItems = (saleData.productDetails || []).filter((item: any) => {
+        const target = (item.target || '').toLowerCase().trim();
+        const nameLow = (item.name || '').toLowerCase();
+        const categoryLow = (item.category || '').toLowerCase();
+        const isDrink = ['minum', 'drink', 'beverage', 'juice', 'jus', 'tea', 'teh', 'coffee', 'kopi'].some(k => categoryLow.includes(k) || nameLow.includes(k));
+        
+        if (target === 'bar') return false; 
+        if (target === 'kitchen' || target === 'dapur' || target === 'kds') return true;
+        return !isDrink;
+    });
+
+    const barItems = (saleData.productDetails || []).filter((item: any) => {
+        const target = (item.target || '').toLowerCase().trim();
+        const nameLow = (item.name || '').toLowerCase();
+        const categoryLow = (item.category || '').toLowerCase();
+        const isDrink = ['minum', 'drink', 'beverage', 'juice', 'jus', 'tea', 'teh', 'coffee', 'kopi'].some(k => categoryLow.includes(k) || nameLow.includes(k));
+        
+        if (target === 'bar') return true;
+        if (target === 'kitchen' || target === 'dapur' || target === 'kds') return false;
+        return isDrink;
+    });
+
+    // 2. Execute printing with delays and awaits
+    if (kitchenItems.length > 0 && storeSettings?.auto_print_kitchen && !skipTickets) {
+        try {
+          console.log('[Printer] Printing to Kitchen...');
+          await printerService.printTicket('Kitchen', {
+            orderNo: sale.order_no || sale.orderNo,
+            tableNo: sale.table_no || '-',
+            customerName: sale.customer_name || 'Guest',
+            waiterName: sale.waiter_name || '-',
+            cashierName: user?.user_metadata?.name || 'Admin',
+            time: new Date().toLocaleTimeString(),
+            items: kitchenItems.map((item: any) => ({ 
+                name: item.name || item.product_name, 
+                quantity: item.quantity, 
+                note: item.note || item.notes 
+            })),
+            notes: (saleData as any).note || (saleData as any).notes
+          });
+        } catch (e) {
+          console.error('Kitchen printing failed:', e);
+        }
+    }
+
+    if (barItems.length > 0 && storeSettings?.auto_print_bar && !skipTickets) {
+        try {
+          // Delay to avoid Bluetooth collision if kitchen was just printed
+          if (kitchenItems.length > 0) await new Promise(r => setTimeout(r, 800));
+          
+          console.log('[Printer] Printing to Bar...');
+          await printerService.printTicket('Bar', {
+            orderNo: sale.order_no || sale.orderNo,
+            tableNo: sale.table_no || '-',
+            customerName: sale.customer_name || 'Guest',
+            waiterName: sale.waiter_name || '-',
+            cashierName: user?.user_metadata?.name || 'Admin',
+            time: new Date().toLocaleTimeString(),
+            items: barItems.map((item: any) => ({ 
+                name: item.name || item.product_name, 
+                quantity: item.quantity, 
+                note: item.note || item.notes 
+            })),
+            notes: (saleData as any).note || (saleData as any).notes
+          });
+        } catch (e) {
+          console.error('Bar printing failed:', e);
+        }
     }
   };
 
@@ -2404,7 +2554,6 @@ function Home() {
           const step = multiplier > 0 ? multiplier : minSpend;
           
           if (step > 0) {
-            // Ensure at least 1 voucher if min amount is met, otherwise calculate multiples
             count = Math.max(1, Math.floor(saleTotal / step));
           }
 
@@ -2414,7 +2563,8 @@ function Home() {
         } catch (e) { console.error('WiFi Voucher failed:', e); }
       }
 
-      printerService.printReceipt({
+      // 1. Receipt (Cashier)
+      await printerService.printReceipt({
         orderNo: orderNo,
         tableNo: saleData.tableNo,
         waiterName: saleData.waiterName || '',
@@ -2437,57 +2587,12 @@ function Home() {
         wifiNotice: storeSettings?.wifi_voucher_notice
       });
 
-      // Ticket Printing logic (Kitchen/Bar)
-      const kitchenItems = saleItems.filter(item => {
-        const target = (item.target || '').toLowerCase().trim();
-        const nameLow = (item.product_name || '').toLowerCase();
-        const categoryLow = (item.category || '').toLowerCase();
-        const isDrink = ['minum', 'drink', 'beverage', 'juice', 'jus', 'tea', 'teh', 'coffee', 'kopi'].some(k => categoryLow.includes(k) || nameLow.includes(k));
-        if (target === 'bar') return false; 
-        if (target === 'kitchen' || target === 'dapur' || target === 'kds') return true;
-        return !isDrink;
-      });
-
-      const barItems = saleItems.filter(item => {
-        const target = (item.target || '').toLowerCase().trim();
-        const nameLow = (item.product_name || '').toLowerCase();
-        const categoryLow = (item.category || '').toLowerCase();
-        const isDrink = ['minum', 'drink', 'beverage', 'juice', 'jus', 'tea', 'teh', 'coffee', 'kopi'].some(k => categoryLow.includes(k) || nameLow.includes(k));
-        if (target === 'bar') return true;
-        if (target === 'kitchen' || target === 'dapur' || target === 'kds') return false;
-        return isDrink;
-      });
-
-      const cashierDisplayName = user?.user_metadata?.name || user?.email || role || 'Admin';
-
-      if (kitchenItems.length > 0 && storeSettings?.auto_print_kitchen) {
-        printerService.printTicket('Kitchen', {
-            orderNo: orderNo,
-            tableNo: saleData.tableNo || '-',
-            waiterName: saleData.waiterName || '-',
-            cashierName: cashierDisplayName,
-            customerName: saleData.customerName,
-            time: new Date().toLocaleTimeString(),
-            items: kitchenItems.map(item => ({ name: item.product_name, quantity: item.quantity, note: (item as any).note })),
-            notes: (saleData as any).note
-        });
-      }
-
-      if (barItems.length > 0 && storeSettings?.auto_print_bar) {
-        printerService.printTicket('Bar', {
-            orderNo: orderNo,
-            tableNo: saleData.tableNo || '-',
-            waiterName: saleData.waiterName || '-',
-            cashierName: cashierDisplayName,
-            customerName: saleData.customerName,
-            time: new Date().toLocaleTimeString(),
-            items: barItems.map(item => ({ name: item.product_name, quantity: item.quantity, note: (item as any).note })),
-            notes: (saleData as any).note
-        });
-      }
+      // 2. Kitchen & Bar Tickets
+      // Pass true for skipTickets because POS (CashierInterface) handles its own printing via executeSmartPrint
+      await handlePayment(sale, saleData, true);
 
       if (isOnline) await fetchTransactions();
-      if (isOnline) await recordAccountingEntry(sale, saleItems, saleData.paymentType);
+      if (isOnline) await recordAccountingEntry(sale, saleItems, saleData.paymentMethod);
 
       // Redirect to KDS
       setIsCashierOpen(false);
@@ -2523,39 +2628,53 @@ function Home() {
     });
     const barItems = kdsOrder.items.filter(i => (i.target || '').toLowerCase().trim() === 'bar');
 
-    if (kitchenItems.length > 0 && storeSettings?.auto_print_kitchen && printerService.getConnectedPrinter('Kitchen')) {
-      printerService.printTicket('Kitchen', {
-        orderNo: kdsOrder.orderNo,
-        tableNo: kdsOrder.tableNo,
-        waiterName: kdsOrder.waiterName,
-        cashierName: user?.user_metadata?.name || user?.email || role || 'Admin',
-        customerName: orderData.customerName,
-        time: kdsOrder.time,
-        items: kitchenItems.map(i => ({
-            name: i.name || i.product_name,
-            quantity: i.quantity,
-            note: i.note || i.notes
-        })),
-        notes: orderData.notes || orderData.note
-      });
-    }
+    const runPrinting = async () => {
+        if (kitchenItems.length > 0 && storeSettings?.auto_print_kitchen) {
+          try {
+            await printerService.printTicket('Kitchen', {
+                orderNo: kdsOrder.orderNo,
+                tableNo: kdsOrder.tableNo,
+                waiterName: kdsOrder.waiterName,
+                cashierName: user?.user_metadata?.name || user?.email || role || 'Admin',
+                customerName: orderData.customerName,
+                time: kdsOrder.time,
+                items: kitchenItems.map(i => ({
+                    name: i.name || i.product_name,
+                    quantity: i.quantity,
+                    note: i.note || i.notes
+                })),
+                notes: orderData.notes || orderData.note
+            });
+          } catch (e) {
+            console.error('KDS Kitchen Print Error:', e);
+          }
+        }
 
-    if (barItems.length > 0 && storeSettings?.auto_print_bar && printerService.getConnectedPrinter('Bar')) {
-      printerService.printTicket('Bar', {
-        orderNo: kdsOrder.orderNo,
-        tableNo: kdsOrder.tableNo,
-        waiterName: kdsOrder.waiterName,
-        cashierName: user?.user_metadata?.name || user?.email || role || 'Admin',
-        customerName: orderData.customerName,
-        time: kdsOrder.time,
-        items: barItems.map(i => ({
-            name: i.name || i.product_name,
-            quantity: i.quantity,
-            note: i.note || i.notes
-        })),
-        notes: orderData.notes || orderData.note
-      });
-    }
+        if (barItems.length > 0 && storeSettings?.auto_print_bar) {
+          try {
+            if (kitchenItems.length > 0) await new Promise(r => setTimeout(r, 800));
+            
+            await printerService.printTicket('Bar', {
+                orderNo: kdsOrder.orderNo,
+                tableNo: kdsOrder.tableNo,
+                waiterName: kdsOrder.waiterName,
+                cashierName: user?.user_metadata?.name || user?.email || role || 'Admin',
+                customerName: orderData.customerName,
+                time: kdsOrder.time,
+                items: barItems.map(i => ({
+                    name: i.name || i.product_name,
+                    quantity: i.quantity,
+                    note: i.note || i.notes
+                })),
+                notes: orderData.notes || orderData.note
+            });
+          } catch (e) {
+            console.error('KDS Bar Print Error:', e);
+          }
+        }
+    };
+
+    runPrinting();
   };
 
   const handleKDSUpdate = async (orderId: number, status: string, items?: any) => {
@@ -2696,15 +2815,39 @@ function Home() {
 
   const handleUpdateSale = async (updatedSale: SalesOrder) => {
     try {
-      // Only allow updating specific fields for now to prevent integrity issues
+      // 1. Update Sales Table
       const { error } = await supabase.from('sales').update({
         payment_method: updatedSale.paymentMethod,
         branch_id: updatedSale.branchId,
         waiter_name: updatedSale.waiterName,
-        status: updatedSale.status, // Allow status update for Pay First workflow
+        status: updatedSale.status,
+        total_amount: updatedSale.totalAmount,
+        customer_name: updatedSale.customerName,
+        table_no: updatedSale.tableNo,
       }).eq('id', updatedSale.id);
 
       if (error) throw error;
+
+      // 2. Update Sale Items (if provided)
+      if (updatedSale.productDetails && updatedSale.productDetails.length > 0) {
+        // Delete existing items
+        const { error: delError } = await supabase.from('sale_items').delete().eq('sale_id', updatedSale.id);
+        if (delError) throw delError;
+
+        // Insert updated items
+        const itemsPayload = updatedSale.productDetails.map(it => ({
+          sale_id: updatedSale.id,
+          product_id: (it as any).product_id || null,
+          product_name: it.name,
+          price: it.price,
+          quantity: it.quantity,
+          target: (it as any).target || null,
+          category: (it as any).category || null
+        }));
+
+        const { error: insError } = await supabase.from('sale_items').insert(itemsPayload);
+        if (insError) throw insError;
+      }
 
       // 5. [NEW] Accounting Integration: Auto-Journal Entry
       if (updatedSale.status === 'Paid') {
@@ -2871,45 +3014,45 @@ function Home() {
     {
       title: 'Utama',
       modules: [
-        { id: 'dashboard', label: 'Winny Pangeran Natakusuma', icon: LayoutDashboard, color: 'text-blue-600', bgColor: 'bg-blue-50' },
-        { id: 'pos', label: 'Penjualan', icon: MonitorCheck, color: 'text-pink-600', bgColor: 'bg-pink-50' },
-        { id: 'kds', label: 'Dapur & Bar', icon: ChefHat, color: 'text-orange-500', bgColor: 'bg-orange-50' },
+        { id: 'dashboard', label: 'Winny Pangeran Natakusuma', icon: '📊', color: 'text-blue-500', bgColor: 'bg-blue-50' },
+        { id: 'pos', label: 'Penjualan', icon: '📱', color: 'text-pink-500', bgColor: 'bg-pink-50' },
+        { id: 'kds', label: 'Dapur & Bar', icon: '👨‍🍳', color: 'text-orange-500', bgColor: 'bg-orange-50' },
       ]
     },
     {
       title: 'Inventori & Produk',
       modules: [
-        { id: 'products', label: 'Produk', icon: Coffee, color: 'text-green-600', bgColor: 'bg-green-50' },
-        { id: 'inventory', label: 'Stok Bahan', icon: Archive, color: 'text-blue-700', bgColor: 'bg-blue-50' },
-        { id: 'purchases', label: 'Pembelian', icon: ShoppingCart, color: 'text-orange-600', bgColor: 'bg-orange-50' },
-        { id: 'contacts', label: 'Kontak', icon: Contact, color: 'text-purple-600', bgColor: 'bg-purple-50' },
-        { id: 'promos', label: 'Promotion', icon: Percent, color: 'text-orange-500', bgColor: 'bg-orange-50' },
+        { id: 'products', label: 'Produk Master', icon: '☕', color: 'text-emerald-500', bgColor: 'bg-emerald-50' },
+        { id: 'inventory', label: 'Stok Bahan', icon: '📦', color: 'text-blue-600', bgColor: 'bg-blue-50' },
+        { id: 'purchases', label: 'Pembelian', icon: '🛒', color: 'text-amber-500', bgColor: 'bg-amber-50' },
+        { id: 'contacts', label: 'Kontak/Supplier', icon: '📇', color: 'text-indigo-500', bgColor: 'bg-indigo-50' },
+        { id: 'promos', label: 'Promo & Diskon', icon: '🏷️', color: 'text-rose-500', bgColor: 'bg-rose-50' },
       ]
     },
     {
       title: 'HRD & Karyawan',
       modules: [
-        { id: 'employees', label: 'Karyawan', icon: Users, color: 'text-rose-600', bgColor: 'bg-rose-50' },
-        { id: 'attendance', label: 'Absensi', icon: CalendarCheck, color: 'text-violet-600', bgColor: 'bg-violet-50' },
-        { id: 'shifts', label: 'Jadwal Shift', icon: ClockHistory, color: 'text-indigo-700', bgColor: 'bg-indigo-50' },
-        { id: 'payroll', label: 'Payroll', icon: Wallet, color: 'text-emerald-600', bgColor: 'bg-emerald-50' },
+        { id: 'employees', label: 'Master Karyawan', icon: '👥', color: 'text-rose-500', bgColor: 'bg-rose-50' },
+        { id: 'attendance', label: 'Absensi Presensi', icon: '📅', color: 'text-violet-500', bgColor: 'bg-violet-50' },
+        { id: 'shifts', label: 'Jadwal Kerja', icon: '🕒', color: 'text-cyan-600', bgColor: 'bg-cyan-50' },
+        { id: 'payroll', label: 'Sistem Payroll', icon: '💸', color: 'text-emerald-600', bgColor: 'bg-emerald-50' },
       ]
     },
     {
       title: 'Keuangan',
       modules: [
-        { id: 'reports', label: 'Laporan', icon: FileText, color: 'text-teal-600', bgColor: 'bg-teal-50' },
-        { id: 'accounting', label: 'Akuntansi', icon: Calculator, color: 'text-cyan-600', bgColor: 'bg-cyan-50' },
-        { id: 'session_history', label: 'Riwayat Sesi', icon: ClockHistory, color: 'text-gray-600', bgColor: 'bg-gray-50' },
-        { id: 'performance_indicators', label: 'Indikator Kinerja', icon: Target, color: 'text-indigo-600', bgColor: 'bg-indigo-50' },
+        { id: 'reports', label: 'Laporan Bisnis', icon: '📈', color: 'text-sky-600', bgColor: 'bg-sky-50' },
+        { id: 'accounting', label: 'Buku Akuntansi', icon: '💰', color: 'text-blue-600', bgColor: 'bg-blue-50' },
+        { id: 'session_history', label: 'Sesi Kasir', icon: '⌛', color: 'text-slate-500', bgColor: 'bg-slate-50' },
+        { id: 'performance_indicators', label: 'Bobot Kinerja', icon: '🎯', color: 'text-purple-600', bgColor: 'bg-purple-50' },
       ]
     },
     {
       title: 'Administrasi',
       modules: [
-        { id: 'branches', label: 'Cabang', icon: MapPin, color: 'text-amber-600', bgColor: 'bg-amber-50' },
-        { id: 'users', label: 'Pengguna', icon: Users, color: 'text-indigo-600', bgColor: 'bg-indigo-50' },
-        { id: 'settings', label: 'Pengaturan', icon: Settings, color: 'text-gray-600', bgColor: 'bg-gray-50' },
+        { id: 'branches', label: 'Manajemen Cabang', icon: '🏢', color: 'text-orange-600', bgColor: 'bg-orange-50' },
+        { id: 'users', label: 'Hak Akses', icon: '🔑', color: 'text-blue-700', bgColor: 'bg-blue-50' },
+        { id: 'settings', label: 'Pengaturan', icon: '⚙️', color: 'text-gray-500', bgColor: 'bg-gray-50' },
       ]
     }
   ];
@@ -3645,8 +3788,20 @@ function Home() {
         </button>
 
         <div className={`mb-10 px-6 relative flex items-center gap-3 ${isSidebarCollapsed ? 'justify-center' : ''}`}>
-          <div className="bg-gradient-to-br from-primary to-orange-600 w-10 h-10 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/30 transform hover:scale-110 transition-transform duration-300 flex-shrink-0">
-            <span className="font-extrabold text-[10px] text-white leading-none tracking-tight">POS</span>
+          <div className="relative w-11 h-11 rounded-2xl bg-white dark:bg-gray-800 flex items-center justify-center shadow-[0_8px_16px_-4px_rgba(0,0,0,0.1)] border border-gray-100 dark:border-gray-700 transform hover:scale-110 transition-all duration-500 overflow-hidden group/logo">
+            {storeSettings?.receipt_logo_url ? (
+              <img 
+                src={storeSettings.receipt_logo_url} 
+                alt="Logo" 
+                className="w-full h-full object-contain p-1.5 relative z-10"
+              />
+            ) : (
+              <div className="bg-gradient-to-br from-blue-500 to-indigo-600 w-full h-full flex items-center justify-center">
+                <span className="font-black text-[10px] text-white tracking-tighter">POS</span>
+              </div>
+            )}
+            {/* 3D Glass Highlight for Logo */}
+            <div className="absolute inset-0 bg-gradient-to-tr from-white/10 to-transparent z-20 pointer-events-none" />
           </div>
           {!isSidebarCollapsed && (
             <div className="flex flex-col animate-in fade-in duration-200">
@@ -3666,9 +3821,12 @@ function Home() {
             return (
               <div key={groupIdx}>
                 {!isSidebarCollapsed && (
-                  <h3 className="px-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2 animate-in fade-in slide-in-from-left-2 duration-300">
-                    {group.title}
-                  </h3>
+                  <div className="px-3 mb-2 flex items-center gap-2">
+                    <div className="w-1 h-3 bg-blue-500 rounded-full" />
+                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] animate-in fade-in slide-in-from-left-2 duration-500">
+                      {group.title}
+                    </h3>
+                  </div>
                 )}
                 {isSidebarCollapsed && (
                   <div className="w-full h-px bg-gray-200 dark:bg-gray-700 my-2 mx-auto w-1/2" />
@@ -3692,16 +3850,49 @@ function Home() {
                           }`}
                         title={isSidebarCollapsed ? module.label : ''}
                       >
-                        <div className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${isActive ? 'bg-white text-blue-600 shadow-sm' : `${module.bgColor} bg-opacity-30 group-hover:bg-opacity-100 ${module.color} group-hover:text-white`}`}>
-                          <Icon className="w-4.5 h-4.5 text-current" />
+                        <div className={`
+                          relative flex items-center justify-center w-10 h-10 rounded-2xl transition-all duration-500
+                          ${isActive 
+                            ? 'bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-700 shadow-[0_8px_20px_-4px_rgba(59,130,246,0.5)] scale-110 -rotate-2 ring-2 ring-white/20' 
+                            : `bg-white dark:bg-gray-800 shadow-[0_4px_12px_-2px_rgba(0,0,0,0.08)] border border-gray-100 dark:border-gray-700 group-hover:scale-110 group-hover:shadow-[0_12px_24px_-8px_rgba(0,0,0,0.15)] group-hover:-translate-y-1 group-hover:rotate-1`
+                          }
+                        `}>
+                          {/* 3D Depth Base for Non-Active */}
+                          {!isActive && (
+                            <div className={`absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity bg-gradient-to-br ${module.bgColor.replace('bg-', 'from-').replace('50', '400')} to-transparent opacity-20`} />
+                          )}
+                          
+                          {/* Inner Glow/Highlight */}
+                          <div className={`absolute inset-[1px] rounded-[14px] bg-gradient-to-br from-white/30 to-transparent pointer-events-none z-20`} />
+                          
+                          {typeof module.icon === 'string' ? (
+                            <span className={`text-xl relative z-10 transition-all duration-500 ${isActive ? 'drop-shadow-[0_4px_6px_rgba(0,0,0,0.4)] scale-110' : 'group-hover:scale-125 group-hover:drop-shadow-[0_4px_8px_rgba(0,0,0,0.1)]'}`}>
+                              {module.icon}
+                            </span>
+                          ) : (
+                            <Icon className={`
+                              w-5 h-5 relative z-10 transition-all duration-500
+                              ${isActive ? 'text-white drop-shadow-[0_4px_6px_rgba(0,0,0,0.4)] scale-110' : `${module.color} group-hover:scale-125 group-hover:drop-shadow-[0_4px_8px_rgba(0,0,0,0.1)]`}
+                            `} />
+                          )}
+                          
+                          {/* Bottom Shadow for 3D feel */}
+                          <div className={`absolute -bottom-1 left-1/2 -translate-x-1/2 w-1/2 h-1 bg-black/10 blur-sm rounded-full transition-all duration-500 ${isActive ? 'opacity-40 scale-125' : 'opacity-0 group-hover:opacity-20 group-hover:scale-110'}`} />
                         </div>
+
                         {!isSidebarCollapsed && (
-                          <span className={`font-semibold text-xs truncate animate-in fade-in duration-200 ${isActive ? 'text-blue-700' : 'text-gray-600'}`}>
-                            {module.label}
-                          </span>
+                          <div className="flex flex-col gap-0.5 overflow-hidden">
+                            <span className={`font-black text-[11px] uppercase tracking-tighter transition-colors duration-200 ${isActive ? 'text-blue-700' : 'text-gray-500 group-hover:text-gray-900'}`}>
+                              {module.label}
+                            </span>
+                            <span className={`text-[8px] font-medium opacity-60 truncate ${isActive ? 'text-blue-600' : 'text-gray-400'}`}>
+                              {group.title}
+                            </span>
+                          </div>
                         )}
+                        
                         {!isSidebarCollapsed && isActive && (
-                          <div className="ml-auto w-1 h-1 rounded-full bg-blue-600 animate-pulse" />
+                          <div className="ml-auto w-1 h-6 rounded-full bg-blue-500 shadow-[0_0_12px_rgba(59,130,246,0.6)] animate-in slide-in-from-right duration-500" />
                         )}
                       </button>
                     );
@@ -3846,13 +4037,17 @@ function Home() {
 
             <button
               onClick={() => setIsCashierOpen(true)}
-              className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-all group"
+              className="flex items-center gap-2 p-1.5 rounded-2xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-all group"
               title="Buka Kasir"
             >
-              <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-pink-500 to-rose-500 flex items-center justify-center text-white shadow-md shadow-pink-500/20 group-hover:scale-105 transition-transform relative">
-                <ShoppingCart className="w-4 h-4" />
+              <div className="relative w-11 h-11 rounded-2xl bg-gradient-to-br from-rose-400 via-pink-500 to-rose-600 flex items-center justify-center text-white shadow-[0_8px_16px_-4px_rgba(244,63,94,0.4)] group-hover:scale-110 group-hover:rotate-3 transition-all duration-500">
+                {/* 3D Glossy Effect */}
+                <div className="absolute inset-[1px] rounded-[14px] bg-gradient-to-br from-white/30 to-transparent pointer-events-none z-20" />
+                
+                <span className="text-xl relative z-10 drop-shadow-[0_4px_6px_rgba(0,0,0,0.3)]">🛒</span>
+                
                 {pendingCount > 0 && (
-                  <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-600 rounded-full flex items-center justify-center text-[10px] font-bold border-2 border-white">
+                  <div className="absolute -top-2 -right-2 min-w-[22px] h-[22px] bg-red-600 rounded-full flex items-center justify-center text-[10px] font-black border-2 border-white shadow-lg animate-bounce z-30 px-1">
                     {pendingCount}
                   </div>
                 )}

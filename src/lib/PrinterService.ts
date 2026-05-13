@@ -82,26 +82,69 @@ class PrinterService {
     private readonly LF = 0x0A;
 
     // UUIDs for common Bluetooth Thermal Printers
-    private readonly SERVICE_UUID = '000018f0-0000-1000-8000-00805f9b34fb'; // Generic SPP
-    private readonly CHAR_UUID = '00002af1-0000-1000-8000-00805f9b34fb';
+    private readonly SERVICE_UUIDS = [
+        '00001101-0000-1000-8000-00805f9b34fb', // Standard SPP
+        '000018f0-0000-1000-8000-00805f9b34fb', // Generic
+        '49535343-fe7d-4ae5-8fa9-9fafd205e455', // Microchip
+        'e7810a71-73ae-499d-8c15-faa9aef0c3f2', // Some Chinese Printers
+    ];
+    private readonly CHAR_UUIDS = [
+        '00002af1-0000-1000-8000-00805f9b34fb',
+        '00001101-0000-1000-8000-00805f9b34fb',
+        '49535343-1e4d-4bd9-ba61-23c647249616',
+        'bef8d6c9-9c21-4c9e-b632-bd58c1009f9f',
+    ];
 
     async connect(type: 'Kitchen' | 'Bar' | 'Cashier'): Promise<string> {
+        if (!(navigator as any).bluetooth) {
+            throw new Error('Browser Anda tidak mendukung Bluetooth. Gunakan Chrome/Edge dan pastikan HTTPS aktif.');
+        }
+
         try {
+            console.log(`[PrinterService] Requesting Bluetooth device for ${type}...`);
             const device = await (navigator as any).bluetooth.requestDevice({
                 filters: [
-                    { services: [this.SERVICE_UUID] },
                     { namePrefix: 'TP' },
                     { namePrefix: 'Printer' },
-                    { namePrefix: 'BT' }
+                    { namePrefix: 'BT' },
+                    { namePrefix: 'MPT' },
+                    { namePrefix: 'RPP' },
+                    { namePrefix: 'P58' },
+                    { namePrefix: 'Inner' }
                 ],
-                optionalServices: [this.SERVICE_UUID]
+                optionalServices: this.SERVICE_UUIDS
             });
 
-            if (!device.gatt) throw new Error('GATT not supported');
+            console.log(`[PrinterService] Device selected: ${device.name}. Connecting to GATT...`);
+            if (!device.gatt) throw new Error('GATT not supported on this device');
 
             const server = await device.gatt.connect();
-            const service = await server.getPrimaryService(this.SERVICE_UUID);
-            const characteristic = await service.getCharacteristic(this.CHAR_UUID);
+            console.log('[PrinterService] GATT connected. Searching for services...');
+            
+            let service = null;
+            let characteristic = null;
+
+            // Try common service UUIDs
+            for (const uuid of this.SERVICE_UUIDS) {
+                try {
+                    service = await server.getPrimaryService(uuid);
+                    console.log(`[PrinterService] Found service: ${uuid}`);
+                    
+                    // Try common characteristic UUIDs
+                    for (const charUuid of this.CHAR_UUIDS) {
+                        try {
+                            characteristic = await service.getCharacteristic(charUuid);
+                            console.log(`[PrinterService] Found characteristic: ${charUuid}`);
+                            break;
+                        } catch (e) { continue; }
+                    }
+                    if (characteristic) break;
+                } catch (e) { continue; }
+            }
+
+            if (!characteristic) {
+                throw new Error('Tidak dapat menemukan karakteristik printer yang cocok. Pastikan printer mendukung SPP.');
+            }
 
             const printer: PrinterDevice = {
                 name: device.name || `${type} Printer`,
@@ -115,8 +158,10 @@ class PrinterService {
             else this.cashierPrinter = printer;
 
             return printer.name;
-        } catch (error) {
+        } catch (error: any) {
             console.error('Bluetooth Connection Error:', error);
+            if (error.name === 'NotFoundError') throw new Error('Pencarian dibatalkan atau printer tidak ditemukan.');
+            if (error.name === 'SecurityError') throw new Error('Akses Bluetooth ditolak oleh browser.');
             throw error;
         }
     }
@@ -134,9 +179,45 @@ class PrinterService {
     }
 
     async printTicket(type: 'Kitchen' | 'Bar', data: TicketData) {
-        const printer = type === 'Kitchen' ? this.kitchenPrinter : this.barPrinter;
+        let printer = type === 'Kitchen' ? this.kitchenPrinter : this.barPrinter;
+        
+        // [AUTO RECONNECT] If device exists but server/characteristic is gone
+        if (printer && printer.device && (!printer.server?.connected || !printer.characteristic)) {
+            console.log(`[PrinterService] Attempting auto-reconnect for ${type}...`);
+            try {
+                const server = await printer.device.gatt?.connect();
+                if (server) {
+                    let service = null;
+                    let characteristic = null;
+
+                    for (const uuid of this.SERVICE_UUIDS) {
+                        try {
+                            service = await server.getPrimaryService(uuid);
+                            for (const charUuid of this.CHAR_UUIDS) {
+                                try {
+                                    characteristic = await service.getCharacteristic(charUuid);
+                                    break;
+                                } catch (e) { }
+                            }
+                            if (characteristic) break;
+                        } catch (e) { }
+                    }
+
+                    printer.server = server;
+                    printer.characteristic = characteristic as any;
+                    console.log(`[PrinterService] Auto-reconnect successful for ${type}`);
+                }
+            } catch (e) {
+                console.error(`[PrinterService] Auto-reconnect failed for ${type}:`, e);
+            }
+        }
+
         if (!printer || !printer.characteristic) {
             console.warn(`${type} Printer not connected. Skipping print.`);
+            toast.warning(`Printer ${type} belum terhubung!`, {
+                description: 'Silakan hubungkan printer di menu Pengaturan.',
+                duration: 4000
+            });
             return;
         }
 
@@ -256,9 +337,43 @@ class PrinterService {
         wifiNotice?: string;
         wifi_notice?: string;
     }) {
-        const printer = this.cashierPrinter;
+        let printer = this.cashierPrinter;
+        
+        // [AUTO RECONNECT]
+        if (printer && printer.device && (!printer.server?.connected || !printer.characteristic)) {
+            console.log('[PrinterService] Attempting auto-reconnect for Cashier...');
+            try {
+                const server = await printer.device.gatt?.connect();
+                if (server) {
+                    let service = null;
+                    let characteristic = null;
+                    for (const uuid of this.SERVICE_UUIDS) {
+                        try {
+                            service = await server.getPrimaryService(uuid);
+                            for (const charUuid of this.CHAR_UUIDS) {
+                                try {
+                                    characteristic = await service.getCharacteristic(charUuid);
+                                    break;
+                                } catch (e) { }
+                            }
+                            if (characteristic) break;
+                        } catch (e) { }
+                    }
+                    printer.server = server;
+                    printer.characteristic = characteristic as any;
+                    console.log('[PrinterService] Auto-reconnect successful for Cashier');
+                }
+            } catch (e) {
+                console.error('[PrinterService] Auto-reconnect failed for Cashier:', e);
+            }
+        }
+
         if (!printer || !printer.characteristic) {
-            console.warn(`Cashier Printer not connected. Skipping print.`);
+            console.warn('Cashier Printer not connected. Skipping print.');
+            toast.warning('Printer Kasir belum terhubung!', {
+                description: 'Silakan hubungkan printer di menu Pengaturan.',
+                duration: 4000
+            });
             return;
         }
 

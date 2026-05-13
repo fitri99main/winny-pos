@@ -1,6 +1,8 @@
 import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import * as NativeNav from '@react-navigation/native';
+var NavigationContainer = NativeNav.NavigationContainer;
+import * as NativeStack from '@react-navigation/native-stack';
+var createNativeStackNavigator = NativeStack.createNativeStackNavigator;
 import LoginScreen from '../screens/LoginScreen';
 import HomeScreen from '../screens/HomeScreen';
 import POSScreen from '../screens/POSScreen';
@@ -15,44 +17,46 @@ import CashierSessionHistoryScreen from '../screens/CashierSessionHistoryScreen'
 import PurchasesScreen from '../screens/PurchasesScreen';
 import PettyCashScreen from '../screens/PettyCashScreen';
 import KDSScreen from '../screens/KDSScreen';
-import { useSession } from '../context/SessionContext';
-import { View, ActivityIndicator } from 'react-native';
+import * as SessionLib from '../context/SessionContext';
+var useSession = SessionLib.useSession;
+import * as RN from 'react-native';
+var View = RN.View;
+var ActivityIndicator = RN.ActivityIndicator;
 
-const Stack = createNativeStackNavigator();
+var Stack = createNativeStackNavigator();
 
 export default function AppNavigator() {
-    const { authSession, loading } = useSession();
+    var session = useSession();
+    var authSession = session.authSession;
+    var loading = session.loading;
 
     if (loading) {
-        return (
-            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'white' }}>
-                <ActivityIndicator size="large" color="#ea580c" />
-            </View>
+        return React.createElement(View, { style: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'white' } },
+            React.createElement(ActivityIndicator, { size: "large", color: "#ea580c" })
         );
     }
 
-    return (
-        <NavigationContainer>
-            <Stack.Navigator screenOptions={{ headerShown: false }}>
-                {!authSession ? (
-                    <Stack.Screen name="Login" component={LoginScreen} />
-                ) : (
-                    <>
-                        <Stack.Screen name="Main" component={HomeScreen} />
-                        <Stack.Screen name="POS" component={POSScreen} />
-                        <Stack.Screen name="History" component={HistoryScreen} />
-                        <Stack.Screen name="CashierSessionHistory" component={CashierSessionHistoryScreen} />
-                        <Stack.Screen name="Products" component={ProductScreen} />
-                        <Stack.Screen name="Settings" component={SettingsScreen} />
-                        <Stack.Screen name="Accounting" component={AccountingScreen} />
-                        <Stack.Screen name="StoreSettings" component={StoreSettingsScreen} />
-                        <Stack.Screen name="EmployeeSettings" component={EmployeeSettingsScreen} />
-                        <Stack.Screen name="Purchases" component={PurchasesScreen} />
-                        <Stack.Screen name="PettyCash" component={PettyCashScreen} />
-                        <Stack.Screen name="KDS" component={KDSScreen} />
-                    </>
-                )}
-            </Stack.Navigator>
-        </NavigationContainer>
+    var screens = [];
+    if (!authSession) {
+        screens.push(React.createElement(Stack.Screen, { key: "Login", name: "Login", component: LoginScreen }));
+    } else {
+        screens.push(React.createElement(Stack.Screen, { key: "Main", name: "Main", component: HomeScreen }));
+        screens.push(React.createElement(Stack.Screen, { key: "POS", name: "POS", component: POSScreen }));
+        screens.push(React.createElement(Stack.Screen, { key: "History", name: "History", component: HistoryScreen }));
+        screens.push(React.createElement(Stack.Screen, { key: "CashierSessionHistory", name: "CashierSessionHistory", component: CashierSessionHistoryScreen }));
+        screens.push(React.createElement(Stack.Screen, { key: "Products", name: "Products", component: ProductScreen }));
+        screens.push(React.createElement(Stack.Screen, { key: "Settings", name: "Settings", component: SettingsScreen }));
+        screens.push(React.createElement(Stack.Screen, { key: "Accounting", name: "Accounting", component: AccountingScreen }));
+        screens.push(React.createElement(Stack.Screen, { key: "StoreSettings", name: "StoreSettings", component: StoreSettingsScreen }));
+        screens.push(React.createElement(Stack.Screen, { key: "EmployeeSettings", name: "EmployeeSettings", component: EmployeeSettingsScreen }));
+        screens.push(React.createElement(Stack.Screen, { key: "Purchases", name: "Purchases", component: PurchasesScreen }));
+        screens.push(React.createElement(Stack.Screen, { key: "PettyCash", name: "PettyCash", component: PettyCashScreen }));
+        screens.push(React.createElement(Stack.Screen, { key: "KDS", name: "KDS", component: KDSScreen }));
+    }
+
+    return React.createElement(NavigationContainer, null,
+        React.createElement(Stack.Navigator, { screenOptions: { headerShown: false } },
+            screens
+        )
     );
 }

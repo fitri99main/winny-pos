@@ -94,6 +94,7 @@ export function InventoryView({
     const [stockAction, setStockAction] = useState<'IN' | 'OUT'>('IN');
     const [selectedIngredient, setSelectedIngredient] = useState<Ingredient | null>(null);
     const [selectedMovement, setSelectedMovement] = useState<StockMovement | null>(null);
+    const [selectedMovementIds, setSelectedMovementIds] = useState<number[]>([]);
 
     // Form states
     const [newIngredient, setNewIngredient] = useState<Partial<Ingredient>>({
@@ -300,6 +301,40 @@ export function InventoryView({
         }
     };
 
+    const handleBulkDeleteMovements = async () => {
+        if (selectedMovementIds.length === 0) return;
+        
+        const isConfirmed = window.confirm(`Hapus ${selectedMovementIds.length} catatan mutasi yang dipilih? Stok akan dikembalikan otomatis.`);
+        if (!isConfirmed) return;
+
+        try {
+            // Process in sequence or use a bulk endpoint if available
+            // For now, we call the existing action for each ID
+            for (const id of selectedMovementIds) {
+                await onIngredientAction('delete_movement', { id });
+            }
+            setSelectedMovementIds([]);
+            toast.success(`${selectedMovementIds.length} mutasi berhasil dihapus`);
+        } catch (err) {
+            console.error('Bulk Delete Error:', err);
+            toast.error('Beberapa mutasi gagal dihapus');
+        }
+    };
+
+    const toggleSelectMovement = (id: number) => {
+        setSelectedMovementIds(prev => 
+            prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+        );
+    };
+
+    const toggleSelectAllVisible = (visibleIds: number[]) => {
+        if (selectedMovementIds.length === visibleIds.length) {
+            setSelectedMovementIds([]);
+        } else {
+            setSelectedMovementIds(visibleIds);
+        }
+    };
+
     const filteredIngredients = ingredients.filter(ing => {
         const matchesBranch = !currentBranchId || String(ing.branch_id) === String(currentBranchId) || !ing.branch_id;
         const query = searchQuery.toLowerCase();
@@ -311,7 +346,7 @@ export function InventoryView({
         return matchesBranch && matchesQuery;
     });
 
-    const filteredMovements = movements.filter(mov => {
+    const filteredMovements = (movements || []).filter(mov => {
         const query = searchQuery.toLowerCase();
         const ingName = (mov as any).ingredient_name || mov.ingredientName || '';
         const reason = mov.reason || '';
@@ -361,6 +396,15 @@ export function InventoryView({
                         />
                     </div>
                     <div className="flex items-center gap-4">
+                        {activeTab === 'history' && selectedMovementIds.length > 0 && (
+                            <button 
+                                onClick={handleBulkDeleteMovements}
+                                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-all shadow-lg shadow-red-200 animate-in fade-in zoom-in"
+                            >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                Hapus {selectedMovementIds.length} Terpilih
+                            </button>
+                        )}
                         <div className="flex items-center gap-2 px-4 py-2 bg-yellow-50 text-yellow-700 rounded-xl border border-yellow-100/50 text-xs font-bold">
                             <AlertTriangle className="w-3.5 h-3.5" />
                             {ingredients.filter(i => i.current_stock <= i.min_stock).length} Bahan Stok Rendah
@@ -459,6 +503,17 @@ export function InventoryView({
                         <table className="w-full text-sm text-left border-collapse">
                             <thead className="sticky top-0 bg-white/80 backdrop-blur-md z-10 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-50">
                                 <tr>
+                                    <th className="px-6 py-5 text-center w-12">
+                                        <input 
+                                            type="checkbox"
+                                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                            checked={selectedMovementIds.length > 0 && selectedMovementIds.length === filteredMovements.length}
+                                            onChange={() => {
+                                                const visibleIds = filteredMovements.map(m => m.id);
+                                                toggleSelectAllVisible(visibleIds);
+                                            }}
+                                        />
+                                    </th>
                                     <th className="px-6 py-5 text-center w-12">No</th>
                                     <th className="px-8 py-5">Waktu & Tanggal</th>
                                     <th className="px-8 py-5">Nama Bahan</th>
@@ -473,7 +528,7 @@ export function InventoryView({
                                         if (filteredMovements.length === 0) {
                                             return (
                                                 <tr>
-                                                    <td colSpan={7} className="px-6 py-10 text-center text-gray-400 italic">Belum ada riwayat mutasi.</td>
+                                                    <td colSpan={8} className="px-6 py-10 text-center text-gray-400 italic">Belum ada riwayat mutasi.</td>
                                                 </tr>
                                             );
                                         }
@@ -488,20 +543,20 @@ export function InventoryView({
 
                                         return Object.entries(groups).map(([date, dateMovements]) => {
                                             const totalIn = dateMovements.reduce((sum, m) => {
-                                                const type = m.type || 'ADJUSTMENT';
+                                                const type = (m.type || 'ADJUSTMENT').toUpperCase();
                                                 const isActuallyIn = type === 'IN' || (type === 'ADJUSTMENT' && (m.reason || '').toLowerCase().includes('mutasi'));
                                                 return isActuallyIn ? sum + Number(m.quantity) : sum;
                                             }, 0);
                                             const totalOut = dateMovements.reduce((sum, m) => {
-                                                const type = m.type || 'ADJUSTMENT';
-                                                const isActuallyOut = type === 'OUT';
+                                                const type = (m.type || 'ADJUSTMENT').toUpperCase();
+                                                const isActuallyOut = type === 'OUT' || type.includes('KELUAR');
                                                 return isActuallyOut ? sum + Number(m.quantity) : sum;
                                             }, 0);
 
                                             return (
                                                 <Fragment key={date}>
                                                     <tr className="bg-gray-50/80 border-y border-gray-100">
-                                                        <td colSpan={7} className="px-8 py-2">
+                                                        <td colSpan={8} className="px-8 py-2">
                                                             <div className="flex justify-between items-center text-[10px]">
                                                                 <span className="font-black text-gray-400 uppercase tracking-widest">{date}</span>
                                                                 <div className="flex gap-4">
@@ -512,12 +567,20 @@ export function InventoryView({
                                                         </td>
                                                     </tr>
                                                     {dateMovements.map(mov => {
-                                                        const type = mov.type || 'ADJUSTMENT';
+                                                        const type = (mov.type || 'ADJUSTMENT').toUpperCase();
                                                         const isPositive = type === 'IN' || (type === 'ADJUSTMENT' && Number(mov.quantity) > 0);
-                                                        const isNegative = type === 'OUT';
+                                                        const isNegative = type === 'OUT' || type.includes('KELUAR');
 
                                                         return (
-                                                            <tr key={mov.id} className="hover:bg-gray-50/50 transition-colors text-xs group">
+                                                            <tr key={mov.id} className={`hover:bg-gray-50/50 transition-colors text-xs group ${selectedMovementIds.includes(mov.id) ? 'bg-blue-50/50' : ''}`}>
+                                                                <td className="px-6 py-4 text-center w-12">
+                                                                    <input 
+                                                                        type="checkbox"
+                                                                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                                        checked={selectedMovementIds.includes(mov.id)}
+                                                                        onChange={() => toggleSelectMovement(mov.id)}
+                                                                    />
+                                                                </td>
                                                                 <td className="px-6 py-4 text-center text-gray-400 font-medium">
                                                                     {filteredMovements.indexOf(mov) + 1}
                                                                 </td>
@@ -528,9 +591,9 @@ export function InventoryView({
                                                                 <td className="px-8 py-4 text-center">
                                                                     <span className={`px-2.5 py-1 rounded-lg font-black uppercase text-[9px] ${
                                                                         type === 'IN' ? 'bg-emerald-50 text-emerald-600' : 
-                                                                        (type === 'OUT' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600')
+                                                                        ((type === 'OUT' || type.includes('KELUAR')) ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600')
                                                                     }`}>
-                                                                        {type === 'IN' ? 'Barang Masuk' : (type === 'OUT' ? 'Barang Keluar' : 'Penyesuaian')}
+                                                                        {type === 'IN' ? 'Barang Masuk' : ((type === 'OUT' || type.includes('KELUAR')) ? 'Barang Keluar' : 'Penyesuaian')}
                                                                     </span>
                                                                 </td>
                                                                 <td className={`px-8 py-4 text-right font-bold ${
@@ -878,6 +941,19 @@ export function InventoryView({
                             <table className="w-full text-sm text-left border-collapse">
                                 <thead className="sticky top-0 bg-white z-10 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-50">
                                     <tr>
+                                        <th className="px-6 py-4 text-center w-12">
+                                            <input 
+                                                type="checkbox"
+                                                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                checked={selectedMovementIds.length > 0 && selectedMovementIds.length === (movements || []).filter(m => String(m.ingredient_id || m.ingredientId) === String(selectedIngredient.id)).length}
+                                                onChange={() => {
+                                                    const visibleIds = (movements || [])
+                                                        .filter(m => String(m.ingredient_id || m.ingredientId) === String(selectedIngredient.id))
+                                                        .map(m => m.id);
+                                                    toggleSelectAllVisible(visibleIds);
+                                                }}
+                                            />
+                                        </th>
                                         <th className="px-6 py-4 text-center w-12">No</th>
                                         <th className="px-8 py-4">Waktu</th>
                                         <th className="px-8 py-4 text-center">Tipe</th>
@@ -936,13 +1012,21 @@ export function InventoryView({
                                             });
 
                                             return Object.entries(groups).map(([key, group]) => {
-                                                const totalIn = group.items.reduce((sum, m) => m.type === 'IN' ? sum + Number(m.quantity) : sum, 0);
-                                                const totalOut = group.items.reduce((sum, m) => m.type === 'OUT' ? sum + Number(m.quantity) : sum, 0);
+                                                const totalIn = group.items.reduce((sum, m) => {
+                                                    const type = (m.type || 'ADJUSTMENT').toUpperCase();
+                                                    const isIn = type === 'IN' || (type === 'ADJUSTMENT' && (m.reason || '').toLowerCase().includes('mutasi'));
+                                                    return isIn ? sum + Number(m.quantity) : sum;
+                                                }, 0);
+                                                const totalOut = group.items.reduce((sum, m) => {
+                                                    const type = (m.type || 'ADJUSTMENT').toUpperCase();
+                                                    const isOut = type === 'OUT' || type.includes('KELUAR');
+                                                    return isOut ? sum + Number(m.quantity) : sum;
+                                                }, 0);
 
                                                 return (
                                                 <Fragment key={key}>
                                                     <tr className="bg-slate-800 border-y-2 border-slate-900">
-                                                        <td colSpan={7} className="px-8 py-2">
+                                                        <td colSpan={8} className="px-8 py-2">
                                                             <div className="flex justify-between items-center">
                                                                 <span className="text-[11px] font-black text-white uppercase tracking-widest flex items-center gap-2">
                                                                     <Calendar className="w-3.5 h-3.5 text-blue-400" />
@@ -962,12 +1046,20 @@ export function InventoryView({
                                                         </td>
                                                     </tr>
                                                         {group.items.map(mov => {
-                                                            const type = mov.type || 'ADJUSTMENT';
+                                                            const type = (mov.type || 'ADJUSTMENT').toUpperCase();
                                                             const isActuallyIn = type === 'IN' || (type === 'ADJUSTMENT' && (mov.reason || '').toLowerCase().includes('mutasi'));
-                                                            const isActuallyOut = type === 'OUT';
+                                                            const isActuallyOut = type === 'OUT' || type.includes('KELUAR');
                                                             
                                                             return (
-                                                                <tr key={mov.id} className="hover:bg-gray-50/50 transition-colors">
+                                                                <tr key={mov.id} className={`hover:bg-gray-50/50 transition-colors ${selectedMovementIds.includes(mov.id) ? 'bg-blue-50/50' : ''}`}>
+                                                                    <td className="px-6 py-4 text-center w-12">
+                                                                        <input 
+                                                                            type="checkbox"
+                                                                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                                            checked={selectedMovementIds.includes(mov.id)}
+                                                                            onChange={() => toggleSelectMovement(mov.id)}
+                                                                        />
+                                                                    </td>
                                                                     <td className="px-6 py-4 text-center text-gray-400 font-medium text-xs">
                                                                         {ingredientMovements.indexOf(mov) + 1}
                                                                     </td>
@@ -1037,25 +1129,36 @@ export function InventoryView({
                             </table>
                         </div>
                         <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-between items-center">
-                            <div className="flex gap-3">
-                                <button 
-                                    onClick={() => {
-                                        setStockAction('IN');
-                                        setStockForm({ quantity: 0, reason: '' });
-                                        setIsStockModalOpen(true);
-                                    }}
-                                    className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
-                                >
-                                    <Plus className="w-5 h-5" />
-                                    Input Mutasi Baru
-                                </button>
-                                <button 
-                                    onClick={handleExportPDF}
-                                    className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200"
-                                >
-                                    <Printer className="w-5 h-5" />
-                                    Cetak PDF
-                                </button>
+                            <div className="flex gap-3 items-center">
+                                {selectedMovementIds.length > 0 && (
+                                    <button 
+                                        onClick={handleBulkDeleteMovements}
+                                        className="flex items-center gap-2 px-6 py-3 bg-red-600 text-white rounded-2xl font-bold hover:bg-red-700 transition-all shadow-lg shadow-red-200 animate-in fade-in slide-in-from-left-4"
+                                    >
+                                        <Trash2 className="w-5 h-5" />
+                                        Hapus {selectedMovementIds.length} Terpilih
+                                    </button>
+                                )}
+                                <div className={`flex gap-3 transition-opacity duration-200 ${selectedMovementIds.length > 0 ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+                                    <button 
+                                        onClick={() => {
+                                            setStockAction('IN');
+                                            setStockForm({ quantity: 0, reason: '' });
+                                            setIsStockModalOpen(true);
+                                        }}
+                                        className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
+                                    >
+                                        <Plus className="w-5 h-5" />
+                                        Input Mutasi Baru
+                                    </button>
+                                    <button 
+                                        onClick={handleExportPDF}
+                                        className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200"
+                                    >
+                                        <Printer className="w-5 h-5" />
+                                        Cetak PDF
+                                    </button>
+                                </div>
                             </div>
                             <Button onClick={() => setIsStockCardOpen(false)}>Tutup</Button>
                         </div>

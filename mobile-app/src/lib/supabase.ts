@@ -1,19 +1,19 @@
 import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createClient } from '@supabase/supabase-js';
+import * as SupabaseJS from '@supabase/supabase-js';
+var createClient = SupabaseJS.createClient;
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+var supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
+var supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 
-// Safety check to prevent crash if environment variables are missing
-const finalUrl = supabaseUrl || 'https://placeholder.supabase.co';
-const finalKey = supabaseAnonKey || 'placeholder';
+var finalUrl = supabaseUrl || 'https://placeholder.supabase.co';
+var finalKey = supabaseAnonKey || 'placeholder';
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('[Supabase] CRITICAL: URL or Anon Key is missing! Check eas.json or .env');
+  console.error('[Supabase] CRITICAL: URL or Anon Key is missing!');
 }
 
-export const supabase = createClient(finalUrl, finalKey, {
+export var supabase = createClient(finalUrl, finalKey, {
   auth: {
     storage: AsyncStorage,
     autoRefreshToken: true,

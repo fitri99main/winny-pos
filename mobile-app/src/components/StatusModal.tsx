@@ -1,33 +1,35 @@
-import React, { useEffect, useRef } from 'react';
-import { View, Text, Modal, TouchableOpacity, StyleSheet, Animated, Platform, Easing } from 'react-native';
-import { CheckCircle2, AlertTriangle, Info, RefreshCw, X, ArrowUpCircle } from 'lucide-react-native';
+import React from 'react';
+import * as RN from 'react-native';
+var View = RN.View;
+var Text = RN.Text;
+var Modal = RN.Modal;
+var TouchableOpacity = RN.TouchableOpacity;
+var StyleSheet = RN.StyleSheet;
+var Animated = RN.Animated;
+var Platform = RN.Platform;
+var Easing = RN.Easing;
+import * as Lucide from 'lucide-react-native';
+var CheckCircle2 = Lucide.CheckCircle2;
+var AlertTriangle = Lucide.AlertTriangle;
+var Info = Lucide.Info;
+var RefreshCw = Lucide.RefreshCw;
+var X = Lucide.X;
 
-interface StatusModalProps {
-    visible: boolean;
-    onClose: () => void;
-    title: string;
-    message: string;
-    type?: 'success' | 'warning' | 'info' | 'update';
-    confirmText?: string;
-    onConfirm?: () => void;
-    showClose?: boolean;
-}
+export default function StatusModal(props) {
+    var visible = props.visible;
+    var onClose = props.onClose;
+    var title = props.title;
+    var message = props.message;
+    var type = props.type || 'success';
+    var confirmText = props.confirmText || 'Tutup';
+    var onConfirm = props.onConfirm;
+    var showClose = props.showClose !== undefined ? props.showClose : true;
 
-export default function StatusModal({
-    visible,
-    onClose,
-    title,
-    message,
-    type = 'success',
-    confirmText = 'Tutup',
-    onConfirm,
-    showClose = true
-}: StatusModalProps) {
-    const scaleAnim = useRef(new Animated.Value(0.8)).current;
-    const opacityAnim = useRef(new Animated.Value(0)).current;
-    const rotateAnim = useRef(new Animated.Value(0)).current;
+    var scaleAnim = React.useRef(new Animated.Value(0.8)).current;
+    var opacityAnim = React.useRef(new Animated.Value(0)).current;
+    var rotateAnim = React.useRef(new Animated.Value(0)).current;
 
-    useEffect(() => {
+    React.useEffect(function() {
         if (visible) {
             Animated.parallel([
                 Animated.spring(scaleAnim, {
@@ -62,73 +64,63 @@ export default function StatusModal({
 
     if (!visible) return null;
 
-    const spin = rotateAnim.interpolate({
+    var spin = rotateAnim.interpolate({
         inputRange: [0, 1],
         outputRange: ['0deg', '360deg']
     });
 
-    const getIcon = () => {
-        switch (type) {
-            case 'success': return <CheckCircle2 size={42} color="#10b981" strokeWidth={2.5} />;
-            case 'warning': return <AlertTriangle size={42} color="#f59e0b" strokeWidth={2.5} />;
-            case 'update': return (
-                <Animated.View style={{ transform: [{ rotate: spin }] }}>
-                    <RefreshCw size={42} color="#3b82f6" strokeWidth={2.5} />
-                </Animated.View>
+    var getIcon = function() {
+        if (type === 'success') return React.createElement(CheckCircle2, { size: 42, color: "#10b981", strokeWidth: 2.5 });
+        if (type === 'warning') return React.createElement(AlertTriangle, { size: 42, color: "#f59e0b", strokeWidth: 2.5 });
+        if (type === 'update') {
+            return React.createElement(Animated.View, { style: { transform: [{ rotate: spin }] } },
+                React.createElement(RefreshCw, { size: 42, color: "#3b82f6", strokeWidth: 2.5 })
             );
-            default: return <Info size={42} color="#3b82f6" strokeWidth={2.5} />;
         }
+        return React.createElement(Info, { size: 42, color: "#3b82f6", strokeWidth: 2.5 });
     };
 
-    const getIconBg = () => {
-        switch (type) {
-            case 'success': return '#f0fdf4';
-            case 'warning': return '#fffbeb';
-            case 'update': return '#f0f9ff';
-            default: return '#f0f9ff';
-        }
+    var getIconBg = function() {
+        if (type === 'success') return '#f0fdf4';
+        if (type === 'warning') return '#fffbeb';
+        if (type === 'update') return '#f0f9ff';
+        return '#f0f9ff';
     };
 
-    const getBtnBg = () => {
-        switch (type) {
-            case 'success': return '#10b981';
-            case 'warning': return '#f59e0b';
-            case 'update': return '#3b82f6';
-            default: return '#3b82f6';
-        }
+    var getBtnBg = function() {
+        if (type === 'success') return '#10b981';
+        if (type === 'warning') return '#f59e0b';
+        if (type === 'update') return '#3b82f6';
+        return '#3b82f6';
     };
 
-    return (
-        <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
-            <View style={styles.overlay}>
-                <Animated.View style={[styles.container, { opacity: opacityAnim, transform: [{ scale: scaleAnim }] }]}>
-                    {showClose && (
-                        <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
-                            <X size={18} color="#94a3b8" />
-                        </TouchableOpacity>
-                    )}
-                    
-                    <View style={[styles.iconBox, { backgroundColor: getIconBg() }]}>
-                        {getIcon()}
-                    </View>
+    return React.createElement(Modal, { transparent: true, visible: visible, animationType: "fade", onRequestClose: onClose },
+        React.createElement(View, { style: styles.overlay },
+            React.createElement(Animated.View, { style: [styles.container, { opacity: opacityAnim, transform: [{ scale: scaleAnim }] }] },
+                showClose ? React.createElement(TouchableOpacity, { style: styles.closeBtn, onPress: onClose },
+                    React.createElement(X, { size: 18, color: "#94a3b8" })
+                ) : null,
+                
+                React.createElement(View, { style: [styles.iconBox, { backgroundColor: getIconBg() }] },
+                    getIcon()
+                ),
 
-                    <Text style={styles.title}>{title}</Text>
-                    <Text style={styles.message}>{message}</Text>
+                React.createElement(Text, { style: styles.title }, title),
+                React.createElement(Text, { style: styles.message }, message),
 
-                    <TouchableOpacity 
-                        style={[styles.mainBtn, { backgroundColor: getBtnBg() }]} 
-                        onPress={onConfirm || onClose}
-                        activeOpacity={0.7}
-                    >
-                        <Text style={styles.btnText}>{confirmText}</Text>
-                    </TouchableOpacity>
-                </Animated.View>
-            </View>
-        </Modal>
+                React.createElement(TouchableOpacity, {
+                    style: [styles.mainBtn, { backgroundColor: getBtnBg() }],
+                    onPress: onConfirm || onClose,
+                    activeOpacity: 0.7
+                },
+                    React.createElement(Text, { style: styles.btnText }, confirmText)
+                )
+            )
+        )
     );
 }
 
-const styles = StyleSheet.create({
+var styles = StyleSheet.create({
     overlay: { 
         flex: 1, 
         backgroundColor: 'rgba(15, 23, 42, 0.75)', 
@@ -204,4 +196,5 @@ const styles = StyleSheet.create({
         letterSpacing: 0.3 
     }
 });
+
 

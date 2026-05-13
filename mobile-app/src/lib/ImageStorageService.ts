@@ -1,69 +1,72 @@
-import { supabase } from './supabase';
+import * as SupabaseLib from './supabase';
+var supabase = SupabaseLib.supabase;
 
-export class ImageStorageService {
-    private static BUCKET = 'product-images';
+export var ImageStorageService = {
+    BUCKET: 'product-images',
 
     /**
      * Upload an image to Supabase Storage from a local URI (React Native)
      */
-    static async uploadImage(uri: string): Promise<string> {
-        const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.jpg`;
-        const filePath = `${fileName}`;
+    uploadImage: function(uri) {
+        var self = this;
+        var randomPart = Math.random().toString(36).substring(2);
+        var fileName = randomPart + "-" + Date.now() + ".jpg";
+        var filePath = fileName;
 
-        // Reliable way to upload in React Native: fetch the URI as a Blob
-        const response = await fetch(uri);
-        const blob = await response.blob();
+        return fetch(uri).then(function(response) {
+            return response.blob();
+        }).then(function(blob) {
+            return supabase.storage
+                .from(self.BUCKET)
+                .upload(filePath, blob, {
+                    contentType: 'image/jpeg'
+                });
+        }).then(function(res) {
+            if (res.error) throw res.error;
 
-        const { error: uploadError } = await supabase.storage
-            .from(this.BUCKET)
-            .upload(filePath, blob, {
-                contentType: 'image/jpeg'
-            });
+            var publicRes = supabase.storage
+                .from(self.BUCKET)
+                .getPublicUrl(filePath);
 
-        if (uploadError) throw uploadError;
-
-        const { data: { publicUrl } } = supabase.storage
-            .from(this.BUCKET)
-            .getPublicUrl(filePath);
-
-        return publicUrl;
-    }
+            return publicRes.data.publicUrl;
+        });
+    },
 
     /**
      * Delete an image from Supabase Storage by its public URL
      */
-    static async deleteImage(url: string | null | undefined): Promise<void> {
-        if (!url) return;
+    deleteImage: function(url) {
+        var self = this;
+        if (!url) return Promise.resolve();
 
         try {
-            // Extract the filename from the public URL
-            const parts = url.split('/');
-            const fileName = parts[parts.length - 1];
+            var parts = url.split('/');
+            var fileName = parts[parts.length - 1];
 
-            if (!fileName) return;
+            if (!fileName) return Promise.resolve();
 
-            const { error } = await supabase.storage
-                .from(this.BUCKET)
-                .remove([fileName]);
-
-            if (error) {
-                console.warn('Failed to delete image from storage:', error);
-            }
+            return supabase.storage
+                .from(self.BUCKET)
+                .remove([fileName]).then(function(res) {
+                    if (res.error) {
+                        console.warn('Failed to delete image from storage:', res.error);
+                    }
+                });
         } catch (error) {
             console.error('Error parsing image URL for deletion:', error);
+            return Promise.resolve();
         }
-    }
+    },
 
     /**
      * Replace an old image with a new one from a URI
      */
-    static async replaceImage(oldUrl: string | null | undefined, newUri: string): Promise<string> {
-        // 1. Delete old image if it exists
-        if (oldUrl) {
-            await this.deleteImage(oldUrl);
-        }
-
-        // 2. Upload new image
-        return await this.uploadImage(newUri);
+    replaceImage: function(oldUrl, newUri) {
+        var self = this;
+        var cleanupPromise = oldUrl ? this.deleteImage(oldUrl) : Promise.resolve();
+        
+        return cleanupPromise.then(function() {
+            return self.uploadImage(newUri);
+        });
     }
-}
+};

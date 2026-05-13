@@ -1,120 +1,98 @@
-import React, { useState } from 'react';
-import { View, Text, Modal, TouchableOpacity, TextInput, StyleSheet } from 'react-native';
+import React from 'react';
+import * as RN from 'react-native';
+var View = RN.View;
+var Text = RN.Text;
+var Modal = RN.Modal;
+var TouchableOpacity = RN.TouchableOpacity;
+var TextInput = RN.TextInput;
+var StyleSheet = RN.StyleSheet;
+import * as Lucide from 'lucide-react-native';
+var Tag = Lucide.Tag;
+var X = Lucide.X;
 
-interface DiscountModalProps {
-    visible: boolean;
-    onClose: () => void;
-    currentTotal: number;
-    onApply: (discount: { type: 'percentage' | 'fixed'; value: number; reason?: string }) => void;
-}
+export default function DiscountModal(props) {
+    var visible = props.visible;
+    var onClose = props.onClose;
+    var onApply = props.onApply;
+    var subtotal = props.currentTotal || props.subtotal || 0;
 
-export default function DiscountModal({ visible, onClose, currentTotal, onApply }: DiscountModalProps) {
-    const [type, setType] = useState<'percentage' | 'fixed'>('percentage');
-    const [value, setValue] = useState('');
-    const [reason, setReason] = useState('');
+    var stateType = React.useState('percentage'); // 'percentage' or 'amount'
+    var type = stateType[0];
+    var setType = stateType[1];
 
-    const handleApply = () => {
-        const numValue = parseFloat(value) || 0;
-        if (numValue <= 0) return;
-        onApply({ type, value: numValue, reason: reason.trim() || undefined });
-        setValue('');
-        setReason('');
+    var stateValue = React.useState('');
+    var value = stateValue[0];
+    var setValue = stateValue[1];
+
+    var handleApply = function() {
+        var val = Number(value);
+        if (isNaN(val) || val <= 0) {
+            onApply({ type: type, value: 0 });
+            onClose();
+            return;
+        }
+
+        onApply({ type: type, value: val });
         onClose();
     };
 
-    const calculateAmount = () => {
-        const numValue = parseFloat(value) || 0;
-        if (type === 'percentage') return (currentTotal * numValue) / 100;
-        return numValue;
-    };
+    return React.createElement(Modal, { visible: visible, transparent: true, animationType: "fade" },
+        React.createElement(View, { style: styles.overlay },
+            React.createElement(View, { style: styles.container },
+                React.createElement(View, { style: styles.header },
+                    React.createElement(View, { style: styles.titleWrapper },
+                        React.createElement(Tag, { size: 20, color: "#ea580c" }),
+                        React.createElement(Text, { style: styles.title }, "Tambah Diskon")
+                    ),
+                    React.createElement(TouchableOpacity, { onPress: onClose },
+                        React.createElement(X, { size: 24, color: "#64748b" })
+                    )
+                ),
 
-    const formatCurrency = (val: number) => {
-        return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(val);
-    };
+                React.createElement(View, { style: styles.typeSelector },
+                    React.createElement(TouchableOpacity, {
+                        style: [styles.typeBtn, type === 'percentage' && styles.typeBtnActive],
+                        onPress: function() { setType('percentage'); }
+                    },
+                        React.createElement(Text, { style: [styles.typeText, type === 'percentage' && styles.typeTextActive] }, "Persen (%)")
+                    ),
+                    React.createElement(TouchableOpacity, {
+                        style: [styles.typeBtn, type === 'amount' && styles.typeBtnActive],
+                        onPress: function() { setType('amount'); }
+                    },
+                        React.createElement(Text, { style: [styles.typeText, type === 'amount' && styles.typeTextActive] }, "Nominal (Rp)")
+                    )
+                ),
 
-    return (
-        <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-            <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
-                <TouchableOpacity style={styles.container} activeOpacity={1} onPress={e => e.stopPropagation()}>
-                    <Text style={styles.title}>Terapkan Diskon</Text>
-                    
-                    <View style={styles.tabs}>
-                        <TouchableOpacity 
-                            style={[styles.tab, type === 'percentage' && styles.activeTab]} 
-                            onPress={() => setType('percentage')}
-                        >
-                            <Text style={[styles.tabText, type === 'percentage' && styles.activeTabText]}>Persen (%)</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                            style={[styles.tab, type === 'fixed' && styles.activeTab]} 
-                            onPress={() => setType('fixed')}
-                        >
-                            <Text style={[styles.tabText, type === 'fixed' && styles.activeTabText]}>Jumlah Tetap</Text>
-                        </TouchableOpacity>
-                    </View>
+                React.createElement(TextInput, {
+                    style: styles.input,
+                    placeholder: type === 'percentage' ? "0%" : "Rp 0",
+                    keyboardType: "numeric",
+                    value: value,
+                    onChangeText: setValue,
+                    autoFocus: true
+                }),
 
-                    <TextInput
-                        style={styles.input}
-                        placeholder={type === 'percentage' ? 'Persen (misal: 10)' : 'Jumlah (misal: 10000)'}
-                        value={value}
-                        onChangeText={setValue}
-                        keyboardType="numeric"
-                        autoFocus
-                    />
-
-                    <View style={{ marginTop: 16 }}>
-                        <Text style={{ fontSize: 13, color: '#6b7280', marginBottom: 8, fontWeight: '600' }}>Alasan Diskon (Opsional)</Text>
-                        <TextInput
-                            style={[styles.input, { fontSize: 14, fontWeight: 'normal' }]}
-                            placeholder="Misal: Promo Ulang Tahun, Member..."
-                            value={reason}
-                            onChangeText={setReason}
-                        />
-                    </View>
-
-                    {value !== '' && (
-                        <View style={styles.summary}>
-                            <Text style={styles.summaryLabel}>Potongan:</Text>
-                            <Text style={styles.summaryValue}>-{formatCurrency(calculateAmount())}</Text>
-                        </View>
-                    )}
-
-                    <View style={styles.footer}>
-                        <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={onClose}>
-                            <Text style={styles.cancelText}>Batal</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                            style={[styles.button, styles.confirmButton, !value && styles.disabledButton]} 
-                            onPress={handleApply}
-                            disabled={!value}
-                        >
-                            <Text style={styles.confirmText}>Terapkan</Text>
-                        </TouchableOpacity>
-                    </View>
-                </TouchableOpacity>
-            </TouchableOpacity>
-        </Modal>
+                React.createElement(TouchableOpacity, { style: styles.applyBtn, onPress: handleApply },
+                    React.createElement(Text, { style: styles.applyText }, "Terapkan Diskon")
+                )
+            )
+        )
     );
 }
 
-const styles = StyleSheet.create({
-    overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
-    container: { backgroundColor: 'white', borderRadius: 24, padding: 24 },
-    title: { fontSize: 20, fontWeight: 'bold', marginBottom: 20, color: '#111827' },
-    tabs: { flexDirection: 'row', gap: 8, marginBottom: 16 },
-    tab: { flex: 1, paddingVertical: 10, borderRadius: 12, backgroundColor: '#f3f4f6', alignItems: 'center', borderWidth: 1, borderColor: '#e5e7eb' },
-    activeTab: { backgroundColor: '#ea580c', borderColor: '#ea580c' },
-    tabText: { fontWeight: '600', color: '#4b5563', fontSize: 13 },
-    activeTabText: { color: 'white' },
-    input: { backgroundColor: '#f9fafb', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 14, fontSize: 18, fontWeight: 'bold' },
-    summary: { marginTop: 16, padding: 12, backgroundColor: '#fff7ed', borderRadius: 12, flexDirection: 'row', justifyContent: 'space-between' },
-    summaryLabel: { color: '#9a3412', fontWeight: '600' },
-    summaryValue: { color: '#ea580c', fontWeight: 'bold' },
-    footer: { flexDirection: 'row', gap: 12, marginTop: 20 },
-    button: { flex: 1, padding: 16, borderRadius: 12, alignItems: 'center' },
-    cancelButton: { backgroundColor: '#f3f4f6' },
-    confirmButton: { backgroundColor: '#ea580c' },
-    disabledButton: { opacity: 0.5 },
-    cancelText: { fontWeight: 'bold', color: '#4b5563' },
-    confirmText: { fontWeight: 'bold', color: 'white' }
+var styles = StyleSheet.create({
+    overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+    container: { backgroundColor: '#fff', borderRadius: 24, padding: 24, width: '100%' },
+    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
+    titleWrapper: { flexDirection: 'row', alignItems: 'center' },
+    title: { fontSize: 18, fontWeight: 'bold', color: '#1e293b', marginLeft: 8 },
+    typeSelector: { flexDirection: 'row', backgroundColor: '#f1f5f9', borderRadius: 12, padding: 4, marginBottom: 20 },
+    typeBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 8 },
+    typeBtnActive: { backgroundColor: '#fff', elevation: 2 },
+    typeText: { fontSize: 14, color: '#64748b', fontWeight: '600' },
+    typeTextActive: { color: '#ea580c' },
+    input: { backgroundColor: '#f1f5f9', borderRadius: 12, padding: 16, fontSize: 18, fontWeight: 'bold', textAlign: 'center', marginBottom: 24 },
+    applyBtn: { backgroundColor: '#ea580c', padding: 16, borderRadius: 12, alignItems: 'center' },
+    applyText: { color: '#fff', fontWeight: 'bold', fontSize: 16 }
 });

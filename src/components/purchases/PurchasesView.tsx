@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { ShoppingCart, Plus, History, RotateCcw, Search, Calendar, FileText, CheckCircle, AlertTriangle, Trash2, Edit, ScanLine } from 'lucide-react';
+import { ShoppingCart, Plus, History, RotateCcw, Search, Calendar, FileText, CheckCircle, AlertTriangle, Trash2, Edit, ScanLine, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
 import { useBarcodeScanner } from '../../hooks/useBarcodeScanner';
@@ -62,6 +62,7 @@ export function PurchasesView({
 }: PurchasesViewProps) {
     const [activeTab, setActiveTab] = useState<'history' | 'input' | 'returns'>('history');
     const [searchQuery, setSearchQuery] = useState('');
+    const [statusFilter, setStatusFilter] = useState<'All' | 'Pending' | 'Completed' | 'Returned'>('All');
     const [returnSearchQuery, setReturnSearchQuery] = useState('');
     const [startDate, setStartDate] = useState(() => {
         const date = new Date();
@@ -179,21 +180,33 @@ export function PurchasesView({
         const purchaseNoFinal = inputForm.purchaseNo || `PO-2026-${String(purchases.length + 1).padStart(3, '0')}`;
         const purchaseData = {
             purchase_no: purchaseNoFinal,
-            supplier_invoice_no: inputForm.supplierInvoiceNo || '', // Add to payload
             supplier_name: inputForm.supplierName,
             date: inputForm.date || new Date().toISOString().split('T')[0],
-            items_count: totalItemsCount,
             total_amount: totalAmount + (Number(inputForm.adjustment) || 0),
             adjustment: Number(inputForm.adjustment) || 0,
-            status: isEditing ? 'Completed' : 'Pending',
+            status: inputForm.status || (isEditing ? 'Completed' : 'Pending'),
             payment_method: inputForm.payment_method || 'Tunai',
             branch_id: currentBranchId,
-            items_list: purchaseItems
+            items_list: purchaseItems,
+            supplier_invoice_no: inputForm.supplierInvoiceNo || ''
         };
 
         try {
             if (isEditing && editingId) {
-                await onCRUD('purchases', 'update', { id: editingId, ...purchaseData });
+                // EXPLICITLY send only confirmed columns to avoid 400 error
+                const updatePayload = {
+                    purchase_no: purchaseNoFinal,
+                    supplier_name: inputForm.supplierName,
+                    date: inputForm.date || new Date().toISOString().split('T')[0],
+                    total_amount: totalAmount + (Number(inputForm.adjustment) || 0),
+                    adjustment: Number(inputForm.adjustment) || 0,
+                    status: 'Completed',
+                    payment_method: inputForm.payment_method || 'Tunai',
+                    branch_id: currentBranchId,
+                    items_list: purchaseItems,
+                    supplier_invoice_no: inputForm.supplierInvoiceNo || ''
+                };
+                await onCRUD('purchases', 'update', { id: editingId, ...updatePayload });
             } else {
                 const result = await onCRUD('purchases', 'create', purchaseData);
                 
@@ -269,6 +282,11 @@ export function PurchasesView({
     const handleEdit = (po: any) => {
         setIsEditing(true);
         setEditingId(po.id);
+        
+        // Check if supplier exists in master contacts
+        const supplierExists = contacts.some(c => c.name === po.supplier_name && c.type === 'Supplier');
+        setIsManualSupplier(!supplierExists);
+
         setInputForm({
             date: po.date,
             supplierName: po.supplier_name,
@@ -282,10 +300,48 @@ export function PurchasesView({
         setActiveTab('input');
     };
 
-    const handleDelete = (po: any) => {
-        if (window.confirm(`Hapus riwayat pembelian ${po.purchase_no}?`)) {
-            onCRUD('purchases', 'delete', { id: po.id });
-            toast.success('Data pembelian dihapus');
+    const handleDelete = async (po: any) => {
+        if (window.confirm(`Hapus riwayat pembelian ${po.purchase_no}? Stok yang sudah bertambah tidak akan berkurang otomatis.`)) {
+            try {
+                await onCRUD('purchases', 'delete', { id: po.id });
+                toast.success('Data pembelian dihapus');
+            } catch (err) {
+                console.error(err);
+            }
+        }
+    };
+
+    const handleDeleteReturn = async (ret: any) => {
+        if (window.confirm(`Hapus data retur ${ret.return_no}?`)) {
+            try {
+                await onCRUD('purchase_returns', 'delete', { id: ret.id });
+                toast.success('Data retur dihapus');
+            } catch (err) {
+                console.error(err);
+            }
+        }
+    };
+
+    const handleSyncManual = async (po: any) => {
+        if (po.status !== 'Completed') {
+            toast.error('Hanya PO berstatus Selesai yang dapat disinkronkan ke Akuntansi');
+            return;
+        }
+        
+        try {
+            toast.loading('Mensinkronkan ke Akuntansi...', { id: 'sync-po' });
+            
+            // CRITICAL: Only send the core purchase fields, NOT the flattened row fields like isFirst
+            await onCRUD('purchases', 'update', { 
+                id: po.id, 
+                status: 'Completed',
+                purchase_no: po.purchase_no,
+                total_amount: po.total_amount
+            });
+            
+            toast.success('Sinkronisasi Akuntansi Berhasil', { id: 'sync-po' });
+        } catch (err: any) {
+            toast.error('Gagal Sinkronisasi: ' + err.message, { id: 'sync-po' });
         }
     };
 
@@ -293,12 +349,14 @@ export function PurchasesView({
     const filteredPurchases = purchases.filter(p => {
         const matchesBranch = !currentBranchId || String(p.branch_id) === String(currentBranchId) || !p.branch_id;
         const matchesSearch = (p.purchase_no || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-                             (p.supplier_name || '').toLowerCase().includes(searchQuery.toLowerCase());
+                             (p.supplier_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                             (p.supplier_invoice_no || '').toLowerCase().includes(searchQuery.toLowerCase());
         
         const pDate = p.date ? String(p.date).split('T')[0] : '';
         const matchesDate = pDate >= startDate && pDate <= endDate;
+        const matchesStatus = statusFilter === 'All' || p.status === statusFilter;
 
-        return matchesBranch && matchesSearch && matchesDate;
+        return matchesBranch && matchesSearch && matchesDate && matchesStatus;
     }).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     const filteredReturns = returns.filter(r =>
@@ -344,8 +402,8 @@ export function PurchasesView({
     const renderHistory = () => (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="p-4 border-b border-gray-100 bg-gray-50/30">
-                <div className="flex justify-between items-center">
-                    <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex flex-wrap items-center gap-3 flex-1">
                         <div className="relative max-w-xs w-full">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                             <input
@@ -353,9 +411,28 @@ export function PurchasesView({
                                 placeholder="Cari No. PO atau Supplier..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 text-sm border rounded-xl"
+                                className="w-full pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none transition-all"
                             />
                         </div>
+                        
+                        <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-gray-200 shadow-sm">
+                            {['All', 'Pending', 'Completed', 'Returned'].map((s) => (
+                                <button
+                                    key={s}
+                                    onClick={() => setStatusFilter(s as any)}
+                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                                        statusFilter === s 
+                                        ? 'bg-orange-600 text-white shadow-md shadow-orange-200' 
+                                        : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                                    }`}
+                                >
+                                    {s === 'All' ? 'Semua' : s === 'Pending' ? 'Menunggu' : s === 'Completed' ? 'Selesai' : 'Retur'}
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="h-8 w-px bg-gray-200 mx-1" />
+
                         <DateRangePicker 
                             startDate={startDate}
                             endDate={endDate}
@@ -365,8 +442,9 @@ export function PurchasesView({
                             }}
                         />
                     </div>
-                    <Button onClick={() => setActiveTab('input')} className="gap-2">
-                        <Plus className="w-4 h-4" /> Tambah Pembelian
+                    
+                    <Button onClick={() => setActiveTab('input')} className="gap-2 bg-gradient-to-br from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white shadow-lg shadow-orange-200/50 border-none px-6 py-5 rounded-2xl transition-all hover:scale-105 active:scale-95">
+                        <Plus className="w-4 h-4" /> <span className="font-black uppercase tracking-widest text-[11px]">Tambah Pembelian</span>
                     </Button>
                 </div>
             </div>
@@ -422,30 +500,49 @@ export function PurchasesView({
                                     </span>
                                 )}
                             </td>
-                            <td className="px-6 py-4 flex justify-center gap-2">
-                                {row.isFirst && (
-                                    <>
-                                        {row.status === 'Pending' && (
-                                            <button onClick={() => handleMarkCompleted(row)} className="p-2 hover:bg-green-50 text-green-600 rounded-lg" title="Tandai Selesai">
-                                                <CheckCircle className="w-4 h-4" />
+                             <td className="px-6 py-4">
+                                <div className="flex items-center justify-center gap-1.5">
+                                    {row.isFirst && (
+                                        <>
+                                            {/* Sync Action */}
+                                            <button 
+                                                onClick={() => handleSyncManual(row)}
+                                                className={`p-2 rounded-xl transition-all shadow-sm border ${
+                                                    row.is_synced 
+                                                    ? 'bg-green-50 text-green-600 border-green-100 hover:bg-green-100' 
+                                                    : 'bg-orange-50 text-orange-600 border-orange-100 hover:bg-orange-100 animate-pulse'
+                                                }`}
+                                                title={row.is_synced ? "Tersinkron ke Akuntansi" : "Belum Sinkron - Klik untuk Sinkron"}
+                                            >
+                                                <RefreshCw className={`w-3.5 h-3.5 ${row.is_synced ? '' : 'animate-spin-slow'}`} />
                                             </button>
-                                        )}
-                                        <button 
-                                            onClick={() => handleEdit(row)}
-                                            className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg" 
-                                            title="Edit"
-                                        >
-                                            <Edit className="w-4 h-4" />
-                                        </button>
-                                        <button 
-                                            onClick={() => handleDelete(row)}
-                                            className="p-2 hover:bg-red-50 text-red-600 rounded-lg" 
-                                            title="Hapus"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
-                                    </>
-                                )}
+
+                                            {row.status === 'Pending' && (
+                                                <button 
+                                                    onClick={() => handleMarkCompleted(row)} 
+                                                    className="p-2 bg-green-50 hover:bg-green-600 text-green-600 hover:text-white border border-green-100 rounded-xl transition-all shadow-sm group" 
+                                                    title="Tandai Selesai"
+                                                >
+                                                    <CheckCircle className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+                                                </button>
+                                            )}
+                                            <button 
+                                                onClick={() => handleEdit(row)}
+                                                className="p-2 bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white border border-blue-100 rounded-xl transition-all shadow-sm group" 
+                                                title="Edit PO"
+                                            >
+                                                <Edit className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+                                            </button>
+                                            <button 
+                                                onClick={() => handleDelete(row)}
+                                                className="p-2 bg-red-50 hover:bg-red-600 text-red-600 hover:text-white border border-red-100 rounded-xl transition-all shadow-sm group" 
+                                                title="Hapus PO"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
                             </td>
                         </tr>
                     ))}
@@ -908,8 +1005,9 @@ export function PurchasesView({
                             <th className="px-6 py-4">No. Retur</th>
                             <th className="px-6 py-4">Ref. PO</th>
                             <th className="px-6 py-4">Tanggal</th>
-                            <th className="px-6 py-4">Alasan</th>
+                             <th className="px-6 py-4">Alasan</th>
                             <th className="px-6 py-4 text-center">Status</th>
+                            <th className="px-6 py-4 text-center">Aksi</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -924,6 +1022,15 @@ export function PurchasesView({
                                         }`}>
                                         {ret.status}
                                     </span>
+                                </td>
+                                <td className="px-6 py-4 text-center">
+                                    <button 
+                                        onClick={() => handleDeleteReturn(ret)}
+                                        className="p-2 bg-red-50 hover:bg-red-600 text-red-600 hover:text-white border border-red-100 rounded-xl transition-all shadow-sm group" 
+                                        title="Hapus Retur"
+                                    >
+                                        <Trash2 className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+                                    </button>
                                 </td>
                             </tr>
                         ))}

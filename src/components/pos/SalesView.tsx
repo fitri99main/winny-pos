@@ -219,6 +219,7 @@ export const SalesView = memo(function SalesView({
     products = []
 }: SalesViewProps) {
     const { role } = useAuth();
+    const formatCurrency = (n: number) => `Rp ${Math.round(n || 0).toLocaleString('id-ID')}`;
     const isAdmin = useMemo(() => {
         const r = role?.toLowerCase() || '';
         return r === 'admin' || r === 'owner' || r === 'administrator' || r === 'superadmin';
@@ -627,6 +628,7 @@ export const SalesView = memo(function SalesView({
         fetchRecipesForOrder(sale);
     };
 
+
     const fetchRecipesForOrder = async (sale: SalesOrder) => {
         const productIds = (sale.productDetails || []).map(p => {
             // Need to find product_id. In web SalesOrder, productDetails usually comes from sale_items
@@ -754,8 +756,70 @@ export const SalesView = memo(function SalesView({
     const handleUpdateSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (onUpdateSale && selectedOrderToEdit) {
+            // Ensure productDetails is included in the update
             onUpdateSale(editForm as SalesOrder);
             setIsEditModalOpen(false);
+        }
+    };
+
+    const handleEditItemQuantity = (index: number, delta: number) => {
+        if (!editForm.productDetails) return;
+        const newItems = [...editForm.productDetails];
+        const item = { ...newItems[index] };
+        item.quantity = Math.max(1, item.quantity + delta);
+        newItems[index] = item;
+        
+        const newTotal = newItems.reduce((sum, it) => sum + (it.price * it.quantity), 0);
+        setEditForm({ ...editForm, productDetails: newItems, totalAmount: newTotal });
+    };
+
+    const handleRemoveItemFromEdit = (index: number) => {
+        if (!editForm.productDetails) return;
+        const newItems = editForm.productDetails.filter((_, i) => i !== index);
+        const newTotal = newItems.reduce((sum, it) => sum + (it.price * it.quantity), 0);
+        setEditForm({ ...editForm, productDetails: newItems, totalAmount: newTotal });
+    };
+
+    const handleAddItemToEdit = (product: any) => {
+        const newItems = [...(editForm.productDetails || [])];
+        const existingIdx = newItems.findIndex(it => it.product_id === product.id);
+        
+        if (existingIdx !== -1) {
+            newItems[existingIdx].quantity += 1;
+        } else {
+            newItems.push({
+                product_id: product.id,
+                name: product.name,
+                price: product.price,
+                quantity: 1,
+                category: product.category,
+                target: product.target
+            });
+        }
+        
+        const newTotal = newItems.reduce((sum, it) => sum + (it.price * it.quantity), 0);
+        setEditForm({ ...editForm, productDetails: newItems, totalAmount: newTotal });
+    };
+
+    const handleMarkSelesai = async (saleId: number) => {
+        if (!confirm('Tandai transaksi ini sebagai Selesai? Tindakan ini akan memicu pengurangan stok bahan baku (jika belum).')) return;
+        
+        try {
+            const { error } = await supabase
+                .from('sales')
+                .update({ 
+                    status: 'Selesai',
+                    completed_at: new Date().toISOString()
+                })
+                .eq('id', saleId);
+
+            if (error) throw error;
+            toast.success('Transaksi ditandai Selesai dan stok telah diproses.');
+            setIsDetailsModalOpen(false);
+            // If onRefresh was available we would call it here, but typically parent handles refresh via subscription
+        } catch (err: any) {
+            console.error('Error marking as Selesai:', err);
+            toast.error('Gagal memperbarui status: ' + err.message);
         }
     };
 
@@ -957,20 +1021,12 @@ export const SalesView = memo(function SalesView({
                                         </div>
                                     </td>
                                     <td className="px-3 py-2 text-center">
-                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${sale.status === 'Completed' ? 'bg-green-50 text-green-700 border-green-200' :
-                                            sale.status === 'Served' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                                                sale.status === 'Pending' ? 'bg-orange-50 text-orange-700 border-orange-200' :
-                                                    sale.status === 'Paid' ? 'bg-teal-50 text-teal-700 border-teal-200' :
-                                                        sale.status === 'Unpaid' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
-                                                            sale.status === 'Returned' ? 'bg-red-50 text-red-700 border-red-200' :
-                                                                'bg-gray-50 text-gray-700 border-gray-200'
-                                            }`}>
-                                            {sale.status === 'Completed' ? 'Selesai' :
-                                                sale.status === 'Served' ? 'Disajikan' :
-                                                    sale.status === 'Pending' ? 'Diproses' :
-                                                        sale.status === 'Paid' ? 'Dibayar' :
-                                                            sale.status === 'Unpaid' ? 'Belum Bayar' :
-                                                                sale.status === 'Returned' ? 'Retur' : sale.status}
+                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                            sale.status === 'Completed' || sale.status === 'Selesai' || sale.status === 'Paid' ? 'bg-green-100 text-green-700' :
+                                            sale.status === 'Returned' ? 'bg-red-100 text-red-700' :
+                                            'bg-yellow-100 text-yellow-700'
+                                        }`}>
+                                            {sale.status === 'Paid' ? 'BAYAR' : (sale.status || 'HOLD').toUpperCase()}
                                         </span>
                                     </td>
                                     <td className="px-3 py-2 text-center hidden lg:table-cell">
@@ -1362,13 +1418,23 @@ export const SalesView = memo(function SalesView({
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
                         <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg animate-in zoom-in-95 overflow-hidden">
                             <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                                <div>
-                                    <h3 className="font-bold text-lg text-gray-800">Detail Transaksi</h3>
-                                    <p className="text-xs text-gray-500 font-mono">{selectedOrderDetails.orderNo}</p>
-                                </div>
-                                <button onClick={() => setIsDetailsModalOpen(false)} className="p-2 hover:bg-gray-200 rounded-full text-gray-400">
+                                <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-xl font-bold text-gray-900">Detail Transaksi</h3>
+                            <div className="flex gap-2">
+                                {(selectedOrderDetails.status !== 'Completed' && selectedOrderDetails.status !== 'Selesai') && (
+                                    <Button 
+                                        onClick={() => handleMarkSelesai(selectedOrderDetails.id)}
+                                        className="bg-green-600 hover:bg-green-700 text-white"
+                                    >
+                                        <CheckCircle className="w-4 h-4 mr-2" />
+                                        Selesaikan Pesanan (Potong Stok)
+                                    </Button>
+                                )}
+                                <Button variant="ghost" size="icon" onClick={() => setIsDetailsModalOpen(false)}>
                                     <X className="w-5 h-5" />
-                                </button>
+                                </Button>
+                            </div>
+                        </div>
                             </div>
                             <div className="p-6 max-h-[75vh] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200">
                                 <div className="flex justify-between mb-6 text-sm">
@@ -1523,6 +1589,15 @@ export const SalesView = memo(function SalesView({
                                     Hapus Transaksi
                                 </Button>
                                 <div className="flex gap-3">
+                                    {['Paid', 'Served', 'Pending'].includes(selectedOrderDetails.status) && (
+                                        <Button 
+                                            className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
+                                            onClick={() => handleMarkSelesai(selectedOrderDetails.id)}
+                                        >
+                                            <CheckCircle className="w-4 h-4" />
+                                            Tandai Selesai & Potong Stok
+                                        </Button>
+                                    )}
                                     <Button variant="outline" onClick={() => handlePrintReceipt(selectedOrderDetails)}>Cetak Struk</Button>
                                     <Button className="bg-gray-800" onClick={() => setIsDetailsModalOpen(false)}>Tutup</Button>
                                 </div>
@@ -1547,7 +1622,7 @@ export const SalesView = memo(function SalesView({
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Meja</label>
                                         <input
                                             type="text"
-                                            className="w-full p-2 border rounded-lg"
+                                            className="w-full p-2 border rounded-lg text-sm"
                                             value={editForm.tableNo || ''}
                                             onChange={e => setEditForm({ ...editForm, tableNo: e.target.value })}
                                         />
@@ -1556,38 +1631,123 @@ export const SalesView = memo(function SalesView({
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Pelanggan</label>
                                         <input
                                             type="text"
-                                            className="w-full p-2 border rounded-lg"
+                                            className="w-full p-2 border rounded-lg text-sm"
                                             value={editForm.customerName || ''}
                                             onChange={e => setEditForm({ ...editForm, customerName: e.target.value })}
                                         />
                                     </div>
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Kasir</label>
-                                    <select
-                                        className="w-full p-2 border rounded-lg"
-                                        value={editForm.waiterName || ''}
-                                        onChange={e => setEditForm({ ...editForm, waiterName: e.target.value })}
-                                    >
-                                        <option value="">- Pilih Kasir -</option>
-                                        {(employees || []).map(emp => (
-                                            <option key={emp.id} value={emp.name}>{emp.name}</option>
+
+                                {/* Item Editor */}
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-700">Produk Terjual</label>
+                                    <div className="border rounded-lg overflow-hidden bg-gray-50 max-h-48 overflow-y-auto">
+                                        {(editForm.productDetails || []).map((item, idx) => (
+                                            <div key={idx} className="flex items-center justify-between p-2 border-b bg-white last:border-0">
+                                                <div className="flex-1 min-w-0 mr-2">
+                                                    <p className="text-xs font-bold truncate">{item.name}</p>
+                                                    <p className="text-[10px] text-gray-500">{formatCurrency(item.price)}</p>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="flex items-center border rounded-md overflow-hidden">
+                                                        <button 
+                                                            type="button"
+                                                            onClick={() => handleEditItemQuantity(idx, -1)}
+                                                            className="px-2 py-1 bg-gray-100 hover:bg-gray-200 text-xs"
+                                                        >-</button>
+                                                        <span className="px-2 text-xs font-bold min-w-[24px] text-center">{item.quantity}</span>
+                                                        <button 
+                                                            type="button"
+                                                            onClick={() => handleEditItemQuantity(idx, 1)}
+                                                            className="px-2 py-1 bg-gray-100 hover:bg-gray-200 text-xs"
+                                                        >+</button>
+                                                    </div>
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => handleRemoveItemFromEdit(idx)}
+                                                        className="p-1 text-red-500 hover:bg-red-50 rounded"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </div>
                                         ))}
-                                    </select>
+                                    </div>
+                                    
+                                    {/* Add Product Search */}
+                                    <div className="relative pt-1">
+                                        <div className="flex gap-2">
+                                            <div className="relative flex-1">
+                                                <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-gray-400" />
+                                                <input 
+                                                    type="text"
+                                                    placeholder="Cari produk tambah..."
+                                                    className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm"
+                                                    onChange={(e) => {
+                                                        const q = e.target.value.toLowerCase();
+                                                        if (q.length < 2) {
+                                                            (e.target as any).nextSibling.style.display = 'none';
+                                                            return;
+                                                        }
+                                                        (e.target as any).nextSibling.style.display = 'block';
+                                                    }}
+                                                />
+                                                <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-10 max-h-40 overflow-y-auto hidden">
+                                                    {(products || []).map(p => (
+                                                        <button
+                                                            key={p.id}
+                                                            type="button"
+                                                            className="w-full text-left p-2 hover:bg-blue-50 text-xs border-b last:border-0"
+                                                            onClick={(e) => {
+                                                                handleAddItemToEdit(p);
+                                                                ((e.currentTarget.parentNode as HTMLElement).previousSibling as HTMLInputElement).value = '';
+                                                                (e.currentTarget.parentNode as HTMLElement).style.display = 'none';
+                                                            }}
+                                                        >
+                                                            <p className="font-bold">{p.name}</p>
+                                                            <p className="text-gray-500">{formatCurrency(p.price)}</p>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Metode Pembayaran</label>
-                                    <select
-                                        className="w-full p-2 border rounded-lg"
-                                        value={editForm.paymentMethod || ''}
-                                        onChange={e => setEditForm({ ...editForm, paymentMethod: e.target.value })}
-                                    >
-                                        <option value="">- Pilih Metode -</option>
-                                        {(paymentMethods || []).filter(m => m.is_active).map(m => (
-                                            <option key={m.id} value={m.name}>{m.name}</option>
-                                        ))}
-                                    </select>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Kasir</label>
+                                        <select
+                                            className="w-full p-2 border rounded-lg text-sm"
+                                            value={editForm.waiterName || ''}
+                                            onChange={e => setEditForm({ ...editForm, waiterName: e.target.value })}
+                                        >
+                                            <option value="">- Pilih Kasir -</option>
+                                            {(employees || []).map(emp => (
+                                                <option key={emp.id} value={emp.name}>{emp.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Metode Bayar</label>
+                                        <select
+                                            className="w-full p-2 border rounded-lg text-sm"
+                                            value={editForm.paymentMethod || ''}
+                                            onChange={e => setEditForm({ ...editForm, paymentMethod: e.target.value })}
+                                        >
+                                            <option value="">- Pilih Metode -</option>
+                                            {(paymentMethods || []).filter(m => m.is_active).map(m => (
+                                                <option key={m.id} value={m.name}>{m.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
                                 </div>
+
+                                <div className="pt-2 border-t flex items-center justify-between">
+                                    <span className="text-sm font-bold text-gray-700">Total Akhir:</span>
+                                    <span className="text-lg font-extrabold text-blue-600">{formatCurrency(editForm.totalAmount || 0)}</span>
+                                </div>
+
                                 <div className="flex justify-end gap-3 pt-2">
                                     <Button type="button" variant="outline" onClick={() => setIsEditModalOpen(false)}>Batal</Button>
                                     <Button type="submit" className="bg-blue-600 hover:bg-blue-700">Simpan Perubahan</Button>

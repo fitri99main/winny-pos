@@ -1,151 +1,306 @@
-import React, { useState, useEffect } from 'react';
-import {
-    View,
-    Text,
-    TouchableOpacity,
-    StyleSheet,
-    FlatList,
-    TextInput,
-    ActivityIndicator,
-    Modal,
-    Image,
-    Alert,
-    ScrollView
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
-import { supabase } from '../lib/supabase';
-import { useSession } from '../context/SessionContext';
+import * as React from 'react';
+import * as RN from 'react-native';
+var View = RN.View;
+var Text = RN.Text;
+var TouchableOpacity = RN.TouchableOpacity;
+var StyleSheet = RN.StyleSheet;
+var FlatList = RN.FlatList;
+var TextInput = RN.TextInput;
+var ActivityIndicator = RN.ActivityIndicator;
+var Modal = RN.Modal;
+var Image = RN.Image;
+var Alert = RN.Alert;
+var ScrollView = RN.ScrollView;
+import * as RNSAC from 'react-native-safe-area-context';
+var SafeAreaView = RNSAC.SafeAreaView;
+import * as NavNative from '@react-navigation/native';
+var useNavigation = NavNative.useNavigation;
+import * as SupabaseLib from '../lib/supabase';
+var supabase = SupabaseLib.supabase;
+import * as SessionLib from '../context/SessionContext';
+var useSession = SessionLib.useSession;
 import * as ImagePicker from 'expo-image-picker';
-import { ImageStorageService } from '../lib/ImageStorageService';
-import { ChevronLeft } from 'lucide-react-native';
+import * as ImageStorageLib from '../lib/ImageStorageService';
+var ImageStorageService = ImageStorageLib.ImageStorageService;
+import * as Lucide from 'lucide-react-native';
+var ChevronLeft = Lucide.ChevronLeft;
 
 export default function ProductScreen() {
-    const navigation = useNavigation();
-    const { currentBranchId } = useSession();
-    const [products, setProducts] = useState<any[]>([]);
-    const [filteredProducts, setFilteredProducts] = useState<any[]>([]);
-    const [search, setSearch] = useState('');
-    const [loading, setLoading] = useState(true);
+    var navigation = useNavigation();
+    var session = useSession();
+    var currentBranchId = session.currentBranchId;
+    
+    var stateProducts = React.useState([]);
+    var products = stateProducts[0];
+    var setProducts = stateProducts[1];
 
-    // Edit Modal State
-    const [modalVisible, setModalVisible] = useState(false);
-    const [editingProduct, setEditingProduct] = useState<any>(null);
-    const [uploading, setUploading] = useState(false);
+    var stateFilteredProducts = React.useState([]);
+    var filteredProducts = stateFilteredProducts[0];
+    var setFilteredProducts = stateFilteredProducts[1];
 
-    useEffect(() => {
+    var stateSearch = React.useState('');
+    var search = stateSearch[0];
+    var setSearch = stateSearch[1];
+
+    var stateLoading = React.useState(true);
+    var loading = stateLoading[0];
+    var setLoading = stateLoading[1];
+
+    var stateModalVisible = React.useState(false);
+    var modalVisible = stateModalVisible[0];
+    var setModalVisible = stateModalVisible[1];
+
+    var stateEditingProduct = React.useState(null);
+    var editingProduct = stateEditingProduct[0];
+    var setEditingProduct = stateEditingProduct[1];
+
+    var stateUploading = React.useState(false);
+    var uploading = stateUploading[0];
+    var setUploading = stateUploading[1];
+
+    var stateCategories = React.useState([] as any[]);
+    var categories = stateCategories[0];
+    var setCategories = stateCategories[1];
+
+    var stateUnits = React.useState([] as any[]);
+    var units = stateUnits[0];
+    var setUnits = stateUnits[1];
+
+    var stateBrands = React.useState([] as any[]);
+    var brands = stateBrands[0];
+    var setBrands = stateBrands[1];
+
+    var stateActiveTab = React.useState('produk');
+    var activeTab = stateActiveTab[0];
+    var setActiveTab = stateActiveTab[1];
+
+    var stateIngredients = React.useState([] as any[]);
+    var ingredients = stateIngredients[0];
+    var setIngredients = stateIngredients[1];
+
+    var stateFilteredIngredients = React.useState([] as any[]);
+    var filteredIngredients = stateFilteredIngredients[0];
+    var setFilteredIngredients = stateFilteredIngredients[1];
+
+    var fetchProducts = function() {
+        if (!currentBranchId) {
+            setLoading(false);
+            return;
+        }
+        setLoading(true);
+        
+        // Fetch products and master data in parallel
+        return Promise.all([
+            supabase.from('products').select('*').or('branch_id.eq.' + currentBranchId + ',branch_id.is.null').order('name', { ascending: true }),
+            supabase.from('ingredients').select('*').or('branch_id.eq.' + currentBranchId + ',branch_id.is.null').order('name', { ascending: true }),
+            supabase.from('categories').select('*').order('name', { ascending: true }),
+            supabase.from('units').select('*').order('name', { ascending: true }),
+            supabase.from('brands').select('*').order('name', { ascending: true })
+        ]).then(function(results) {
+            var resP = results[0];
+            var resI = results[1];
+            var resC = results[2];
+            var resU = results[3];
+            var resB = results[4];
+
+            if (resP.error) throw resP.error;
+            setProducts(resP.data || []);
+            setFilteredProducts(resP.data || []);
+            
+            if (resI.data) {
+                setIngredients(resI.data);
+                setFilteredIngredients(resI.data);
+            }
+            
+            if (resC.data) setCategories(resC.data);
+            if (resU.data) setUnits(resU.data);
+            if (resB.data) setBrands(resB.data);
+        })['catch'](function(error) {
+            console.error('Error fetching data:', error);
+            Alert.alert('Error', 'Gagal mengambil data produk/master');
+        }).finally(function() {
+            setLoading(false);
+        });
+    };
+
+    React.useEffect(function() {
         if (currentBranchId) {
             fetchProducts();
+        } else {
+            // Ensure loading stops even if branch ID is not yet available
+            setLoading(false);
         }
     }, [currentBranchId]);
 
-    useEffect(() => {
-        if (search.trim() === '') {
-            setFilteredProducts(products);
+    React.useEffect(function() {
+        var searchLower = search.toLowerCase();
+        if (activeTab === 'produk') {
+            if (search.trim() === '') {
+                setFilteredProducts(products);
+            } else {
+                setFilteredProducts(products.filter(function(p) {
+                    return (p.name && p.name.toLowerCase().includes(searchLower)) || (p.code && p.code.toLowerCase().includes(searchLower));
+                }));
+            }
         } else {
-            const filtered = products.filter(p =>
-                p.name.toLowerCase().includes(search.toLowerCase()) ||
-                p.code.toLowerCase().includes(search.toLowerCase())
-            );
-            setFilteredProducts(filtered);
+            if (search.trim() === '') {
+                setFilteredIngredients(ingredients);
+            } else {
+                setFilteredIngredients(ingredients.filter(function(i) {
+                    return (i.name && i.name.toLowerCase().includes(searchLower)) || (i.code && i.code.toLowerCase().includes(searchLower));
+                }));
+            }
         }
-    }, [search, products]);
+    }, [search, products, ingredients, activeTab]);
 
-    const fetchProducts = async () => {
-        if (!currentBranchId || isNaN(Number(currentBranchId))) {
-            setLoading(false);
-            return;
-        }
-        try {
-            setLoading(true);
-            const { data, error } = await supabase
-                .from('products')
-                .select('*')
-                .or(`branch_id.eq.${currentBranchId},branch_id.is.null`)
-                .order('name', { ascending: true });
-
-            if (error) throw error;
-            setProducts(data || []);
-            setFilteredProducts(data || []);
-        } catch (error) {
-            console.error('Error fetching products:', error);
-            Alert.alert('Error', 'Gagal mengambil data produk');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handlePickImage = async () => {
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (status !== 'granted') {
-            Alert.alert('Izin Ditolak', 'Aplikasi membutuhkan akses galeri untuk mengunggah gambar.');
-            return;
-        }
-
-        const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: true,
-            aspect: [1, 1],
-            quality: 0.7,
-        });
-
-        if (!result.canceled && result.assets && result.assets[0].uri) {
-            uploadImage(result.assets[0].uri);
-        }
-    };
-
-    const uploadImage = async (uri: string) => {
-        try {
-            setUploading(true);
-            
-            // Use ImageStorageService to handle replacement (deletes old image automatically)
-            const publicUrl = await ImageStorageService.replaceImage(editingProduct?.image_url, uri);
-
-            setEditingProduct({ ...editingProduct, image_url: publicUrl });
+    var uploadImage = function(uri) {
+        setUploading(true);
+        var oldUrl = editingProduct ? editingProduct.image_url : null;
+        return ImageStorageService.replaceImage(oldUrl, uri).then(function(publicUrl) {
+            setEditingProduct(Object.assign({}, editingProduct, { image_url: publicUrl }));
             Alert.alert('Sukses', 'Gambar berhasil diperbarui');
-        } catch (error: any) {
+        })['catch'](function(error) {
             console.error('Upload error:', error);
-            Alert.alert('Error', 'Gagal mengunggah gambar: ' + error.message);
-        } finally {
+            Alert.alert('Error', 'Gagal mengunggah gambar: ' + ((error && error.message) || 'Error tidak dikenal'));
+        }).finally(function() {
             setUploading(false);
-        }
+        });
     };
 
-    const handleSave = async () => {
+    var handlePickImage = function() {
+        return ImagePicker.requestMediaLibraryPermissionsAsync().then(function(res) {
+            if (res.status !== 'granted') {
+                Alert.alert('Izin Ditolak', 'Aplikasi membutuhkan akses galeri untuk mengunggah gambar.');
+                return;
+            }
+
+            return ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: true,
+                aspect: [1, 1],
+                quality: 0.7,
+            });
+        }).then(function(result) {
+            if (result && !result.canceled && result.assets && result.assets[0].uri) {
+                uploadImage(result.assets[0].uri);
+            }
+        });
+    };
+
+    var handleSave = function() {
         if (!editingProduct.name || !editingProduct.code) {
             Alert.alert('Info', 'Nama dan Kode Produk wajib diisi');
             return;
         }
 
-        try {
-            setLoading(true);
-            const { error } = await supabase
-                .from('products')
-                .update({
-                    name: editingProduct.name,
-                    code: editingProduct.code,
-                    price: parseFloat(editingProduct.price) || 0,
-                    category: editingProduct.category,
-                    image_url: editingProduct.image_url,
-                    is_sellable: editingProduct.is_sellable !== false // Preserve or default to true
-                })
-                .eq('id', editingProduct.id);
+        setLoading(true);
+        var isNew = !editingProduct.id;
+        var payload = {
+            name: editingProduct.name,
+            code: editingProduct.code,
+            price: parseFloat(editingProduct.price) || 0,
+            cost: parseFloat(editingProduct.cost) || 0,
+            category: editingProduct.category,
+            brand: editingProduct.brand,
+            unit: editingProduct.unit,
+            image_url: editingProduct.image_url,
+            is_sellable: editingProduct.is_sellable !== false,
+            target: editingProduct.target || 'Kitchen',
+            addons: editingProduct.addons || [],
+            recipe: editingProduct.recipe || [],
+            branch_id: editingProduct.branch_id || currentBranchId
+        };
 
-            if (error) throw error;
+        var query = isNew ? supabase.from('products').insert(payload) : supabase.from('products').update(payload).eq('id', editingProduct.id);
 
-            Alert.alert('Sukses', 'Produk berhasil diperbarui');
+        return query.then(function(res) {
+            if (res.error) throw res.error;
+            Alert.alert('Sukses', 'Produk berhasil ' + (isNew ? 'ditambahkan' : 'diperbarui'));
             setModalVisible(false);
-            fetchProducts();
-        } catch (error: any) {
-            console.error('Update error:', error);
-            Alert.alert('Error', 'Gagal memperbarui produk: ' + error.message);
-        } finally {
+            return fetchProducts();
+        })['catch'](function(error) {
+            console.error('Save error:', error);
+            Alert.alert('Error', 'Gagal menyimpan produk: ' + ((error && error.message) || 'Error tidak dikenal'));
+        }).finally(function() {
             setLoading(false);
-        }
+        });
     };
 
-    const handleDelete = async () => {
-        if (!editingProduct?.id) return;
+    var handleAddNew = function() {
+        setEditingProduct({
+            name: '',
+            code: 'P' + Date.now().toString().slice(-4),
+            price: 0,
+            cost: 0,
+            category: '',
+            brand: '',
+            unit: 'pcs',
+            is_sellable: true,
+            target: 'Kitchen',
+            addons: [],
+            branch_id: currentBranchId
+        });
+        setModalVisible(true);
+    };
+
+    var handleAddAddon = function() {
+        var currentAddons = editingProduct.addons || [];
+        setEditingProduct(Object.assign({}, editingProduct, { 
+            addons: currentAddons.concat([{ id: Date.now(), name: '', price: 0 }])
+        }));
+    };
+
+    var handleRemoveAddon = function(addonId) {
+        var currentAddons = editingProduct.addons || [];
+        setEditingProduct(Object.assign({}, editingProduct, { 
+            addons: currentAddons.filter(function(a) { return a.id !== addonId; })
+        }));
+    };
+
+    var handleUpdateAddon = function(addonId, field, value) {
+        var currentAddons = editingProduct.addons || [];
+        setEditingProduct(Object.assign({}, editingProduct, { 
+            addons: currentAddons.map(function(a) { 
+                if (a.id === addonId) {
+                    var na = Object.assign({}, a);
+                    na[field] = field === 'price' ? parseFloat(value) || 0 : value;
+                    return na;
+                }
+                return a;
+            })
+        }));
+    };
+
+    var handleAddRecipe = function() {
+        var currentRecipe = editingProduct.recipe || [];
+        setEditingProduct(Object.assign({}, editingProduct, { 
+            recipe: currentRecipe.concat([{ ingredientId: '', amount: 0 }])
+        }));
+    };
+
+    var handleRemoveRecipe = function(idx) {
+        var currentRecipe = editingProduct.recipe || [];
+        setEditingProduct(Object.assign({}, editingProduct, { 
+            recipe: currentRecipe.filter(function(_, i) { return i !== idx; })
+        }));
+    };
+
+    var handleUpdateRecipe = function(idx, field, value) {
+        var currentRecipe = editingProduct.recipe || [];
+        setEditingProduct(Object.assign({}, editingProduct, { 
+            recipe: currentRecipe.map(function(r, i) { 
+                if (i === idx) {
+                    var nr = Object.assign({}, r);
+                    nr[field] = field === 'amount' ? parseFloat(value) || 0 : value;
+                    return nr;
+                }
+                return r;
+            })
+        }));
+    };
+
+    var handleDelete = function() {
+        if (!editingProduct || !editingProduct.id) return;
         
         Alert.alert(
             'Konfirmasi Arsip',
@@ -155,514 +310,449 @@ export default function ProductScreen() {
                 { 
                     text: 'Arsipkan', 
                     style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            setLoading(true);
-                            // Try delete first
-                            const { error: deleteError } = await supabase
-                                .from('products')
-                                .delete()
-                                .eq('id', editingProduct.id);
-                            
-                            if (deleteError) {
-                                if (deleteError.code === '23503') {
-                                    // Referenced, so archive
-                                    const { error: archiveError } = await supabase
-                                        .from('products')
-                                        .update({ is_sellable: false })
-                                        .eq('id', editingProduct.id);
-                                    
-                                    if (archiveError) throw archiveError;
-                                    Alert.alert('Arsip Berhasil', 'Produk memiliki riwayat transaksi, sehingga diarsipkan secara otomatis.');
+                    onPress: function() {
+                        setLoading(true);
+                        return supabase
+                            .from('products')
+                            .delete()
+                            .eq('id', editingProduct.id)
+                            .then(function(delRes) {
+                                if (delRes.error) {
+                                    if (delRes.error.code === '23503') {
+                                        return supabase
+                                            .from('products')
+                                            .update({ is_sellable: false })
+                                            .eq('id', editingProduct.id)
+                                            .then(function(arcRes) {
+                                                if (arcRes.error) throw arcRes.error;
+                                                Alert.alert('Arsip Berhasil', 'Produk memiliki riwayat transaksi, sehingga diarsipkan secara otomatis.');
+                                            });
+                                    } else {
+                                        throw delRes.error;
+                                    }
                                 } else {
-                                    throw deleteError;
+                                    Alert.alert('Sukses', 'Produk berhasil dihapus');
                                 }
-                            } else {
-                                Alert.alert('Sukses', 'Produk berhasil dihapus');
-                            }
-                            
-                            setModalVisible(false);
-                            fetchProducts();
-                        } catch (error: any) {
-                            Alert.alert('Error', 'Gagal menghapus: ' + error.message);
-                        } finally {
-                            setLoading(false);
-                        }
+                            })
+                            .then(function() {
+                                setModalVisible(false);
+                                return fetchProducts();
+                            })['catch'](function(error) {
+                                Alert.alert('Error', 'Gagal menghapus: ' + ((error && error.message) || 'Error tidak dikenal'));
+                            })
+                            .finally(function() {
+                                setLoading(false);
+                            });
                     }
                 }
             ]
         );
     };
 
-    const renderProductItem = ({ item }: { item: any }) => (
-        <TouchableOpacity
-            style={styles.productCard}
-            onPress={() => {
+    var renderIngredientItem = function(data) {
+        var item = data.item;
+        var isLow = (item.current_stock || 0) <= (item.min_stock || 0);
+        
+        // Find products using this ingredient
+        var usedBy = products.filter(function(p) {
+            return p.recipe && p.recipe.some(function(r) { return String(r.ingredientId) === String(item.id); });
+        }).map(function(p) { return p.name; });
+
+        return React.createElement(View, { style: styles.productCard },
+            React.createElement(View, { style: [styles.productImageContainer, { backgroundColor: '#f0f9ff' }] },
+                React.createElement(Lucide.Package, { size: 24, color: "#0ea5e9" })
+            ),
+            React.createElement(View, { style: styles.productInfo },
+                React.createElement(Text, { style: styles.productName, numberOfLines: 1 }, item.name),
+                React.createElement(Text, { style: styles.productCode }, item.code || '-'),
+                usedBy.length > 0 && React.createElement(Text, { style: { fontSize: 8, color: '#64748b', fontStyle: 'italic', marginTop: 2 } }, 
+                    "Digunakan di: " + usedBy.join(', ')
+                ),
+                React.createElement(View, { style: { flexDirection: 'row', alignItems: 'center', marginTop: 4 } },
+                    React.createElement(Text, { style: [styles.productPrice, { color: isLow ? '#ef4444' : '#10b981' }] }, (item.current_stock || 0) + " " + (item.unit || '')),
+                    React.createElement(Text, { style: { fontSize: 10, color: '#94a3b8', marginHorizontal: 6 } }, "•"),
+                    React.createElement(Text, { style: { fontSize: 10, color: '#64748b' } }, "Min: " + (item.min_stock || 0))
+                )
+            ),
+            isLow && React.createElement(View, { style: [styles.categoryBadge, { backgroundColor: '#fef2f2', borderColor: '#fee2e2' }] },
+                React.createElement(Text, { style: [styles.categoryBadgeText, { color: '#ef4444' }] }, "LOW")
+            )
+        );
+    };
+
+    var renderProductItem = function(data) {
+        var item = data.item;
+        return React.createElement(TouchableOpacity, {
+            style: styles.productCard,
+            onPress: function() {
                 setEditingProduct(item);
                 setModalVisible(true);
-            }}
-        >
-            <View style={styles.productImageContainer}>
-                {item.image_url ? (
-                    <Image source={{ uri: item.image_url }} style={styles.productImage} />
-                ) : (
-                    <Text style={styles.imagePlaceholderText}>📦</Text>
-                )}
-            </View>
-            <View style={styles.productInfo}>
-                <Text style={styles.productName} numberOfLines={1}>{item.name}</Text>
-                <Text style={styles.productCode}>{item.code}</Text>
-                <Text style={styles.productPrice}>Rp {item.price?.toLocaleString()}</Text>
-            </View>
-            <View style={styles.categoryBadge}>
-                <Text style={styles.categoryBadgeText}>{item.category || '-'}</Text>
-            </View>
-        </TouchableOpacity>
-    );
+            }
+        },
+            React.createElement(View, { style: styles.productImageContainer },
+                item.image_url ? React.createElement(Image, { source: { uri: item.image_url }, style: styles.productImage }) : React.createElement(Text, { style: styles.imagePlaceholderText }, "\uD83D\uDCE6")
+            ),
+            React.createElement(View, { style: styles.productInfo },
+                React.createElement(Text, { style: styles.productName, numberOfLines: 1 }, item.name),
+                React.createElement(View, { style: { flexDirection: 'row', alignItems: 'center', marginTop: 2 } },
+                    React.createElement(Text, { style: styles.productCode }, item.code),
+                    React.createElement(Text, { style: { fontSize: 10, color: '#94a3b8', marginHorizontal: 4 } }, "•"),
+                    React.createElement(Text, { style: { fontSize: 10, color: '#64748b' } }, (item.addons ? item.addons.length : 0) + " Topping"),
+                    React.createElement(Text, { style: { fontSize: 10, color: '#94a3b8', marginHorizontal: 4 } }, "•"),
+                    React.createElement(Text, { style: { fontSize: 10, color: '#64748b' } }, (item.recipe ? item.recipe.length : 0) + " Bahan")
+                ),
+                (item.recipe && item.recipe.length > 0) && React.createElement(View, { style: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4, gap: 4 } },
+                    item.recipe.slice(0, 3).map(function(r, idx) {
+                        var ing = ingredients.find(function(i) { return String(i.id) === String(r.ingredientId); });
+                        return React.createElement(View, { key: idx, style: { backgroundColor: '#f1f5f9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 } },
+                            React.createElement(Text, { style: { fontSize: 8, color: '#475569' } }, (ing ? ing.name : '???') + " " + (r.amount || 0))
+                        );
+                    }),
+                    item.recipe.length > 3 ? React.createElement(Text, { style: { fontSize: 8, color: '#94a3b8' } }, "+" + (item.recipe.length - 3)) : null
+                ),
+                React.createElement(View, { style: { flexDirection: 'row', alignItems: 'center', marginTop: 4 } },
+                    React.createElement(Text, { style: styles.productPrice }, "Rp " + (item.price ? item.price.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".") : "0")),
+                    React.createElement(Text, { style: { fontSize: 10, color: '#94a3b8', marginHorizontal: 6 } }, "/"),
+                    React.createElement(Text, { style: { fontSize: 10, color: '#ef4444', fontWeight: 'bold' } }, "Modal: Rp " + (item.cost ? item.cost.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".") : "0"))
+                )
+            ),
+            React.createElement(View, { style: { flexDirection: 'row', position: 'absolute', top: 8, right: 8, gap: 4 } },
+                React.createElement(View, { style: styles.categoryBadge },
+                    React.createElement(Text, { style: styles.categoryBadgeText }, item.category || '-')
+                ),
+                item.target && React.createElement(View, { style: [styles.categoryBadge, { backgroundColor: item.target === 'Bar' ? '#f0f9ff' : '#f0fdf4', borderColor: item.target === 'Bar' ? '#bae6fd' : '#bbf7d0' }] },
+                    React.createElement(Text, { style: [styles.categoryBadgeText, { color: item.target === 'Bar' ? '#0ea5e9' : '#10b981' }] }, item.target === 'Kitchen' ? 'DAPUR' : item.target.toUpperCase())
+                )
+            )
+        );
+    };
 
-    return (
-        <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-                    <ChevronLeft size={32} color="#1f2937" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Manajemen Produk</Text>
-            </View>
+    return React.createElement(SafeAreaView, { style: styles.container },
+        React.createElement(View, { style: styles.header },
+            React.createElement(TouchableOpacity, { onPress: function() { navigation.goBack(); }, style: styles.backButton },
+                React.createElement(ChevronLeft, { size: 32, color: "#1f2937" })
+            ),
+            React.createElement(View, { style: { flex: 1 } },
+                React.createElement(Text, { style: styles.headerTitle }, "Manajemen Produk")
+            ),
+            React.createElement(TouchableOpacity, { onPress: handleAddNew, style: styles.addButton },
+                React.createElement(Lucide.Plus, { size: 24, color: "white" })
+            )
+        ),
 
-            <View style={styles.searchContainer}>
-                <TextInput
-                    style={styles.searchInput}
-                    placeholder="Cari nama atau kode produk..."
-                    value={search}
-                    onChangeText={setSearch}
-                />
-            </View>
+        React.createElement(View, { style: styles.tabContainer },
+            [
+                { id: 'produk', label: 'Produk', icon: Lucide.LayoutGrid },
+                { id: 'bahan_baku', label: 'Bahan Baku', icon: Lucide.FlaskConical }
+            ].map(function(t) {
+                var isActive = activeTab === t.id;
+                return React.createElement(TouchableOpacity, { 
+                    key: t.id,
+                    onPress: function() { setActiveTab(t.id); setSearch(''); },
+                    style: [styles.tabButton, isActive && styles.tabButtonActive]
+                },
+                    React.createElement(t.icon, { size: 16, color: isActive ? '#ea580c' : '#64748b', style: { marginRight: 6 } }),
+                    React.createElement(Text, { style: [styles.tabButtonText, isActive && styles.tabButtonTextActive] }, t.label)
+                );
+            })
+        ),
 
-            {loading && !modalVisible ? (
-                <View style={styles.center}>
-                    <ActivityIndicator size="large" color="#ea580c" />
-                </View>
-            ) : (
-                <FlatList
-                    data={filteredProducts}
-                    keyExtractor={(item, index) => (item?.id ?? index).toString()}
-                    renderItem={renderProductItem}
-                    contentContainerStyle={styles.listContent}
-                    ListEmptyComponent={
-                        <View style={styles.emptyState}>
-                            <Text style={styles.emptyIcon}>🔍</Text>
-                            <Text style={styles.emptyTitle}>Produk tidak ditemukan</Text>
-                        </View>
-                    }
-                />
-            )}
+        React.createElement(View, { style: styles.searchContainer },
+            React.createElement(TextInput, {
+                style: styles.searchInput,
+                placeholder: "Cari nama atau kode produk...",
+                value: search,
+                onChangeText: setSearch
+            })
+        ),
 
-            {/* Edit Modal */}
-            <Modal
-                visible={modalVisible}
-                animationType="slide"
-                transparent={true}
-                onRequestClose={() => setModalVisible(false)}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <View style={styles.modalHeader}>
-                            <Text style={styles.modalHeaderTitle}>Edit Produk</Text>
-                            <TouchableOpacity onPress={() => setModalVisible(false)}>
-                                <Text style={styles.closeModalText}>Tutup</Text>
-                            </TouchableOpacity>
-                        </View>
+        loading && !modalVisible ? React.createElement(View, { style: styles.center },
+            React.createElement(ActivityIndicator, { size: "large", color: "#ea580c" })
+        ) : React.createElement(FlatList, {
+            data: activeTab === 'produk' ? filteredProducts : filteredIngredients,
+            keyExtractor: function(item, index) { return (item && item.id ? item.id : index).toString(); },
+            renderItem: activeTab === 'produk' ? renderProductItem : renderIngredientItem,
+            contentContainerStyle: styles.listContent,
+            ListEmptyComponent: React.createElement(View, { style: styles.emptyState },
+                React.createElement(Text, { style: styles.emptyIcon }, "\uD83D\uDD0D"),
+                React.createElement(Text, { style: styles.emptyTitle }, (activeTab === 'produk' ? "Produk" : "Bahan Baku") + " tidak ditemukan")
+            )
+        }),
 
-                        <ScrollView style={styles.modalBody}>
-                            <View style={styles.imageUploadSection}>
-                                <View style={{ position: 'relative' }}>
-                                    <TouchableOpacity
-                                        style={styles.imagePicker}
-                                        onPress={handlePickImage}
-                                        disabled={uploading}
-                                    >
-                                        {editingProduct?.image_url ? (
-                                            <Image source={{ uri: editingProduct.image_url }} style={styles.uploadPreview} />
-                                        ) : (
-                                            <View style={styles.uploadPlaceholder}>
-                                                <Text style={styles.uploadIcon}>📷</Text>
-                                                <Text style={styles.uploadText}>Ketuk untuk Upload</Text>
-                                            </View>
-                                        )}
-                                        {uploading && (
-                                            <View style={styles.uploadingOverlay}>
-                                                <ActivityIndicator color="white" />
-                                            </View>
-                                        )}
-                                    </TouchableOpacity>
-                                    
-                                    {editingProduct?.image_url && (
-                                        <TouchableOpacity
-                                            style={styles.removeImageOverlay}
-                                            onPress={async () => {
-                                                Alert.alert(
-                                                    'Hapus Gambar',
-                                                    'Yakin ingin menghapus gambar ini dari penyimpanan?',
-                                                    [
-                                                        { text: 'Batal', style: 'cancel' },
-                                                        { 
-                                                            text: 'Hapus', 
-                                                            style: 'destructive',
-                                                            onPress: async () => {
-                                                                await ImageStorageService.deleteImage(editingProduct.image_url);
-                                                                setEditingProduct({ ...editingProduct, image_url: null });
-                                                            }
-                                                        }
-                                                    ]
-                                                );
-                                            }}
-                                        >
-                                            <Text style={styles.removeImageIcon}>✕</Text>
-                                        </TouchableOpacity>
-                                    )}
-                                </View>
-                                {editingProduct?.image_url && (
-                                    <Text style={styles.imageStatusText}>Gambar aktif tersimpan di cloud</Text>
-                                )}
-                            </View>
+        React.createElement(Modal, {
+            visible: modalVisible,
+            animationType: "slide",
+            transparent: true,
+            onRequestClose: function() { setModalVisible(false); }
+        },
+            React.createElement(View, { style: styles.modalOverlay },
+                React.createElement(View, { style: styles.modalContent },
+                    React.createElement(View, { style: styles.modalHeader },
+                        React.createElement(Text, { style: styles.modalHeaderTitle }, (editingProduct && editingProduct.id) ? "Edit Produk" : "Tambah Produk"),
+                        React.createElement(TouchableOpacity, { onPress: function() { setModalVisible(false); }, style: styles.closeModalBtn },
+                            React.createElement(Lucide.X, { size: 20, color: '#64748b' })
+                        )
+                    ),
 
-                            <View style={styles.formGroup}>
-                                <Text style={styles.label}>Kode Produk (SKU)</Text>
-                                <TextInput
-                                    style={styles.input}
-                                    value={editingProduct?.code}
-                                    onChangeText={(text) => setEditingProduct({ ...editingProduct, code: text })}
-                                />
-                            </View>
+                    React.createElement(ScrollView, { style: styles.modalBody },
+                        React.createElement(View, { style: styles.imageUploadSection },
+                            React.createElement(View, { style: { position: 'relative' } },
+                                React.createElement(TouchableOpacity, {
+                                    style: styles.imagePicker,
+                                    onPress: handlePickImage,
+                                    disabled: uploading
+                                },
+                                    editingProduct && editingProduct.image_url ? React.createElement(Image, { source: { uri: editingProduct.image_url }, style: styles.uploadPreview }) : React.createElement(View, { style: styles.uploadPlaceholder },
+                                        React.createElement(Text, { style: styles.uploadIcon }, "\uD83D\uDCF7"),
+                                        React.createElement(Text, { style: styles.uploadText }, "Ketuk untuk Upload")
+                                    ),
+                                    uploading ? React.createElement(View, { style: styles.uploadingOverlay },
+                                        React.createElement(ActivityIndicator, { color: "white" })
+                                    ) : null
+                                ),
+                                
+                                editingProduct && editingProduct.image_url ? React.createElement(TouchableOpacity, {
+                                    style: styles.removeImageOverlay,
+                                    onPress: function() {
+                                        Alert.alert(
+                                            'Hapus Gambar',
+                                            'Yakin ingin menghapus gambar ini dari penyimpanan?',
+                                            [
+                                                { text: 'Batal', style: 'cancel' },
+                                                { 
+                                                    text: 'Hapus', 
+                                                    style: 'destructive',
+                                                    onPress: function() {
+                                                        return ImageStorageService.deleteImage(editingProduct.image_url).then(function() {
+                                                            setEditingProduct(Object.assign({}, editingProduct, { image_url: null }));
+                                                        });
+                                                    }
+                                                }
+                                            ]
+                                        );
+                                    }
+                                },
+                                    React.createElement(Text, { style: styles.removeImageIcon }, "\u2715")
+                                ) : null
+                            ),
+                            editingProduct && editingProduct.image_url ? React.createElement(Text, { style: styles.imageStatusText }, "Gambar aktif tersimpan di cloud") : null
+                        ),
 
-                            <View style={styles.formGroup}>
-                                <Text style={styles.label}>Nama Produk</Text>
-                                <TextInput
-                                    style={styles.input}
-                                    value={editingProduct?.name}
-                                    onChangeText={(text) => setEditingProduct({ ...editingProduct, name: text })}
-                                />
-                            </View>
+                        React.createElement(View, { style: { flexDirection: 'row', gap: 10, marginBottom: 12 } },
+                            React.createElement(View, { style: { flex: 0.4 } },
+                                React.createElement(Text, { style: styles.labelCompact }, "SKU"),
+                                React.createElement(TextInput, {
+                                    style: styles.inputCompact,
+                                    value: editingProduct ? editingProduct.code : '',
+                                    onChangeText: function(text) { setEditingProduct(Object.assign({}, editingProduct, { code: text })); }
+                                })
+                            ),
+                            React.createElement(View, { style: { flex: 0.6 } },
+                                React.createElement(Text, { style: styles.labelCompact }, "Nama Produk"),
+                                React.createElement(TextInput, {
+                                    style: styles.inputCompact,
+                                    value: editingProduct ? editingProduct.name : '',
+                                    onChangeText: function(text) { setEditingProduct(Object.assign({}, editingProduct, { name: text })); }
+                                })
+                            )
+                        ),
 
-                            <View style={styles.formGroup}>
-                                <Text style={styles.label}>Harga Jual</Text>
-                                <TextInput
-                                    style={styles.input}
-                                    value={(editingProduct?.price || '').toString()}
-                                    keyboardType="numeric"
-                                    onChangeText={(text) => setEditingProduct({ ...editingProduct, price: text })}
-                                />
-                            </View>
+                        React.createElement(View, { style: { flexDirection: 'row', gap: 10, marginBottom: 12 } },
+                            React.createElement(View, { style: { flex: 1 } },
+                                React.createElement(Text, { style: styles.labelCompact }, "Harga Jual"),
+                                React.createElement(TextInput, {
+                                    style: styles.inputCompact,
+                                    value: editingProduct && editingProduct.price != null ? editingProduct.price.toString() : '',
+                                    keyboardType: "numeric",
+                                    onChangeText: function(text) { setEditingProduct(Object.assign({}, editingProduct, { price: text })); }
+                                })
+                            ),
+                            React.createElement(View, { style: { flex: 1 } },
+                                React.createElement(Text, { style: styles.labelCompact }, "HPP (Modal)"),
+                                React.createElement(TextInput, {
+                                    style: styles.inputCompact,
+                                    value: editingProduct && editingProduct.cost != null ? editingProduct.cost.toString() : '',
+                                    keyboardType: "numeric",
+                                    onChangeText: function(text) { setEditingProduct(Object.assign({}, editingProduct, { cost: text })); }
+                                })
+                            )
+                        ),
 
-                            <View style={styles.formGroup}>
-                                <Text style={styles.label}>Kategori</Text>
-                                <TextInput
-                                    style={styles.input}
-                                    value={editingProduct?.category}
-                                    onChangeText={(text) => setEditingProduct({ ...editingProduct, category: text })}
-                                />
-                            </View>
+                        React.createElement(View, { style: { flexDirection: 'row', gap: 10, marginBottom: 12 } },
+                            React.createElement(View, { style: { flex: 1 } },
+                                React.createElement(Text, { style: styles.labelCompact }, "Kategori"),
+                                React.createElement(TextInput, {
+                                    style: styles.inputCompact,
+                                    value: editingProduct ? editingProduct.category : '',
+                                    onChangeText: function(text) { setEditingProduct(Object.assign({}, editingProduct, { category: text })); }
+                                })
+                            ),
+                            React.createElement(View, { style: { flex: 1 } },
+                                React.createElement(Text, { style: styles.labelCompact }, "Target Print"),
+                                React.createElement(TouchableOpacity, { 
+                                    style: [styles.inputCompact, { justifyContent: 'center' }],
+                                    onPress: function() {
+                                        Alert.alert("Pilih Target Print", "Tentukan printer tujuan untuk produk ini:", [
+                                            { text: "Dapur (Kitchen)", onPress: function() { setEditingProduct(Object.assign({}, editingProduct, { target: 'Kitchen' })); } },
+                                            { text: "Bar", onPress: function() { setEditingProduct(Object.assign({}, editingProduct, { target: 'Bar' })); } },
+                                            { text: "Batal", style: 'cancel' }
+                                        ]);
+                                    }
+                                },
+                                    React.createElement(Text, { style: { fontSize: 14, color: (editingProduct && editingProduct.target) ? '#0f172a' : '#94a3b8' } }, 
+                                        (editingProduct && editingProduct.target) ? (editingProduct.target === 'Kitchen' ? 'Dapur' : editingProduct.target) : 'Dapur'
+                                    )
+                                )
+                            )
+                        ),
 
-                            <TouchableOpacity
-                                style={styles.saveButton}
-                                onPress={handleSave}
-                                disabled={loading}
-                            >
-                                {loading ? (
-                                    <ActivityIndicator color="white" />
-                                ) : (
-                                    <Text style={styles.saveButtonText}>Simpan Perubahan</Text>
-                                )}
-                            </TouchableOpacity>
+                        React.createElement(View, { style: { flexDirection: 'row', gap: 10, marginBottom: 12 } },
+                            React.createElement(View, { style: { flex: 1 } },
+                                React.createElement(Text, { style: styles.labelCompact }, "Satuan"),
+                                React.createElement(TextInput, {
+                                    style: styles.inputCompact,
+                                    value: editingProduct ? editingProduct.unit : '',
+                                    onChangeText: function(text) { setEditingProduct(Object.assign({}, editingProduct, { unit: text })); }
+                                })
+                            ),
+                            React.createElement(View, { style: { flex: 1 } })
+                        ),
 
-                            {editingProduct?.id && (
-                                <TouchableOpacity
-                                    style={[styles.saveButton, { backgroundColor: '#fee2e2', shadowColor: '#ef4444', marginTop: 12 }]}
-                                    onPress={handleDelete}
-                                    disabled={loading}
-                                >
-                                    <Text style={[styles.saveButtonText, { color: '#ef4444' }]}>Hapus / Arsipkan Produk</Text>
-                                </TouchableOpacity>
-                            )}
-                        </ScrollView>
-                    </View>
-                </View>
-            </Modal>
-        </SafeAreaView>
+                        // Recipe / Komposisi Section
+                        React.createElement(View, { style: { marginBottom: 16 } },
+                            React.createElement(View, { style: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 } },
+                                React.createElement(Text, { style: styles.labelCompact }, "Komposisi Bahan Baku"),
+                                React.createElement(TouchableOpacity, { onPress: handleAddRecipe, style: { padding: 4 } },
+                                    React.createElement(Lucide.PlusCircle, { size: 18, color: "#0ea5e9" })
+                                )
+                            ),
+                            (editingProduct && editingProduct.recipe && editingProduct.recipe.length > 0) ? editingProduct.recipe.map(function(rec, idx) {
+                                var ing = ingredients.find(function(i) { return i.id === rec.ingredientId; });
+                                return React.createElement(View, { key: idx, style: { flexDirection: 'row', gap: 6, marginBottom: 6, alignItems: 'center' } },
+                                    React.createElement(TouchableOpacity, { 
+                                        style: { flex: 2, backgroundColor: '#f8fafc', borderRadius: 8, borderWidth: 1, borderColor: '#f1f5f9', height: 40, justifyContent: 'center', paddingHorizontal: 10 },
+                                        onPress: function() {
+                                            Alert.alert("Pilih Bahan", "Pilih bahan baku untuk resep ini:", ingredients.map(function(ig) {
+                                                return { text: ig.name, onPress: function() { handleUpdateRecipe(idx, 'ingredientId', ig.id); } };
+                                            }).concat([{ text: "Batal", style: 'cancel' }]));
+                                        }
+                                    },
+                                        React.createElement(Text, { style: { fontSize: 12, color: ing ? '#0f172a' : '#94a3b8' } }, ing ? ing.name : "Pilih Bahan...")
+                                    ),
+                                    React.createElement(TextInput, {
+                                        style: [styles.inputCompact, { flex: 1 }],
+                                        placeholder: "Porsi",
+                                        keyboardType: "numeric",
+                                        value: (rec.amount || 0).toString(),
+                                        onChangeText: function(t) { handleUpdateRecipe(idx, 'amount', t); }
+                                    }),
+                                    React.createElement(TouchableOpacity, { onPress: function() { handleRemoveRecipe(idx); } },
+                                        React.createElement(Lucide.Trash2, { size: 18, color: "#ef4444" })
+                                    )
+                                );
+                            }) : React.createElement(Text, { style: { fontSize: 10, color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', marginBottom: 8 } }, "Belum ada resep")
+                        ),
+
+                        // Addons / Topping Section
+                        React.createElement(View, { style: { marginBottom: 24 } },
+                            React.createElement(View, { style: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 } },
+                                React.createElement(Text, { style: styles.labelCompact }, "Topping / Add-ons"),
+                                React.createElement(TouchableOpacity, { onPress: handleAddAddon, style: { padding: 4 } },
+                                    React.createElement(Lucide.PlusCircle, { size: 20, color: "#ea580c" })
+                                )
+                            ),
+                            (editingProduct && editingProduct.addons && editingProduct.addons.length > 0) ? editingProduct.addons.map(function(addon, idx) {
+                                return React.createElement(View, { key: addon.id || idx, style: { flexDirection: 'row', gap: 8, marginBottom: 8, alignItems: 'center' } },
+                                    React.createElement(TextInput, {
+                                        style: [styles.inputCompact, { flex: 2, padding: 8 }],
+                                        placeholder: "Nama Topping",
+                                        value: addon.name,
+                                        onChangeText: function(t) { handleUpdateAddon(addon.id, 'name', t); }
+                                    }),
+                                    React.createElement(TextInput, {
+                                        style: [styles.inputCompact, { flex: 1.5, padding: 8 }],
+                                        placeholder: "Harga",
+                                        keyboardType: "numeric",
+                                        value: addon.price.toString(),
+                                        onChangeText: function(t) { handleUpdateAddon(addon.id, 'price', t); }
+                                    }),
+                                    React.createElement(TouchableOpacity, { onPress: function() { handleRemoveAddon(addon.id); } },
+                                        React.createElement(Lucide.Trash2, { size: 20, color: "#ef4444" })
+                                    )
+                                );
+                            }) : React.createElement(Text, { style: { fontSize: 12, color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', marginBottom: 12 } }, "Belum ada topping")
+                        ),
+
+                        React.createElement(View, { style: { flexDirection: 'row', gap: 12, marginTop: 12, marginBottom: 100 } },
+                            React.createElement(TouchableOpacity, {
+                                style: [styles.saveBtnCompact, { flex: 2 }],
+                                onPress: handleSave,
+                                disabled: loading
+                            },
+                                loading ? React.createElement(ActivityIndicator, { color: "white" }) : React.createElement(Text, { style: styles.saveBtnTextCompact }, "Simpan")
+                            ),
+                            (editingProduct && editingProduct.id) ? React.createElement(TouchableOpacity, {
+                                style: [styles.saveBtnCompact, { flex: 1, backgroundColor: '#fee2e2' }],
+                                onPress: handleDelete,
+                                disabled: loading
+                            },
+                                React.createElement(Lucide.Trash2, { size: 18, color: "#ef4444" })
+                            ) : null
+                        )
+                    )
+                )
+            )
+        )
     );
 }
 
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#f9fafb',
-    },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 20,
-        backgroundColor: 'white',
-        borderBottomWidth: 1,
-        borderBottomColor: '#f3f4f6',
-    },
-    backButton: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        backgroundColor: '#f3f4f6',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 12,
-        // Add subtle shadow for visibility
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 2,
-        elevation: 2,
-    },
-    backButtonText: {
-        fontSize: 28,
-        color: '#1f2937',
-        fontWeight: 'bold',
-        marginTop: -2, // Optical alignment for the arrow
-    },
-    headerTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        color: '#1f2937',
-    },
-    searchContainer: {
-        padding: 16,
-        backgroundColor: 'white',
-    },
-    searchInput: {
-        backgroundColor: '#f3f4f6',
-        padding: 12,
-        borderRadius: 12,
-        fontSize: 16,
-    },
-    listContent: {
-        padding: 16,
-    },
-    productCard: {
-        backgroundColor: 'white',
-        borderRadius: 16,
-        padding: 12,
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 12,
-        borderWidth: 1,
-        borderColor: '#f3f4f6',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 5,
-        elevation: 1,
-    },
-    productImageContainer: {
-        width: 60,
-        height: 60,
-        backgroundColor: '#f3f4f6',
-        borderRadius: 12,
-        alignItems: 'center',
-        justifyContent: 'center',
-        overflow: 'hidden',
-    },
-    productImage: {
-        width: '100%',
-        height: '100%',
-    },
-    imagePlaceholderText: {
-        fontSize: 24,
-    },
-    productInfo: {
-        flex: 1,
-        marginLeft: 12,
-    },
-    productName: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: '#1f2937',
-    },
-    productCode: {
-        fontSize: 12,
-        color: '#6b7280',
-        marginTop: 2,
-    },
-    productPrice: {
-        fontSize: 14,
-        fontWeight: 'bold',
-        color: '#ea580c',
-        marginTop: 4,
-    },
-    categoryBadge: {
-        backgroundColor: '#fff7ed',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: '#ffedd5',
-    },
-    categoryBadgeText: {
-        fontSize: 10,
-        fontWeight: 'bold',
-        color: '#ea580c',
-        textTransform: 'uppercase',
-    },
-    center: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    emptyState: {
-        alignItems: 'center',
-        marginTop: 100,
-    },
-    emptyIcon: {
-        fontSize: 48,
-        color: '#d1d5db',
-        marginBottom: 16,
-    },
-    emptyTitle: {
-        fontSize: 18,
-        color: '#6b7280',
-        fontWeight: '500',
-    },
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        justifyContent: 'flex-end',
-    },
-    modalContent: {
-        backgroundColor: 'white',
-        borderTopLeftRadius: 32,
-        borderTopRightRadius: 32,
-        height: '85%',
-    },
-    modalHeader: {
-        padding: 24,
-        borderBottomWidth: 1,
-        borderBottomColor: '#f3f4f6',
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    modalHeaderTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        color: '#1f2937',
-    },
-    closeModalText: {
-        color: '#ea580c',
-        fontWeight: 'bold',
-    },
-    modalBody: {
-        padding: 24,
-    },
-    imageUploadSection: {
-        alignItems: 'center',
-        marginBottom: 24,
-    },
-    imagePicker: {
-        width: 150,
-        height: 150,
-        borderRadius: 24,
-        backgroundColor: '#f9fafb',
-        borderWidth: 2,
-        borderColor: '#f3f4f6',
-        borderStyle: 'dashed',
-        justifyContent: 'center',
-        alignItems: 'center',
-        overflow: 'hidden',
-    },
-    uploadPreview: {
-        width: '100%',
-        height: '100%',
-    },
-    uploadPlaceholder: {
-        alignItems: 'center',
-    },
-    uploadIcon: {
-        fontSize: 32,
-        marginBottom: 8,
-    },
-    uploadText: {
-        fontSize: 12,
-        color: '#9ca3af',
-        fontWeight: '500',
-    },
-    uploadingOverlay: {
-        ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(0,0,0,0.3)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    removeImageText: {
-        marginTop: 12,
-        color: '#ef4444',
-        fontWeight: '600',
-        fontSize: 12,
-    },
-    removeImageOverlay: {
-        position: 'absolute',
-        top: 8,
-        right: 8,
-        backgroundColor: 'rgba(239, 68, 68, 0.9)',
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 2,
-        borderColor: 'white',
-    },
-    removeImageIcon: {
-        color: 'white',
-        fontSize: 16,
-        fontWeight: 'bold',
-    },
-    imageStatusText: {
-        fontSize: 10,
-        color: '#9ca3af',
-        marginTop: 8,
-        fontWeight: 'bold',
-        textAlign: 'center',
-    },
-    formGroup: {
-        marginBottom: 20,
-    },
-    label: {
-        fontSize: 12,
-        fontWeight: 'bold',
-        color: '#6b7280',
-        marginBottom: 8,
-        textTransform: 'uppercase',
-    },
-    input: {
-        backgroundColor: '#f9fafb',
-        borderWidth: 1,
-        borderColor: '#f3f4f6',
-        borderRadius: 16,
-        padding: 16,
-        fontSize: 16,
-        color: '#1f2937',
-    },
-    saveButton: {
-        backgroundColor: '#ea580c',
-        padding: 20,
-        borderRadius: 20,
-        alignItems: 'center',
-        marginTop: 20,
-        marginBottom: 100,
-        shadowColor: '#ea580c',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 10,
-        elevation: 5,
-    },
-    saveButtonText: {
-        color: 'white',
-        fontSize: 16,
-        fontWeight: 'bold',
-    },
+var styles = StyleSheet.create({
+    container: { flex: 1, backgroundColor: '#f9fafb' },
+    header: { flexDirection: 'row', alignItems: 'center', padding: 20, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+    backButton: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#f3f4f6', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+    addButton: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#ea580c', justifyContent: 'center', alignItems: 'center' },
+    headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#1f2937' },
+    searchContainer: { padding: 16, backgroundColor: 'white' },
+    searchInput: { backgroundColor: '#f3f4f6', padding: 12, borderRadius: 12, fontSize: 16 },
+    listContent: { padding: 16 },
+    productCard: { backgroundColor: 'white', borderRadius: 16, padding: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: '#f3f4f6', elevation: 1 },
+    productImageContainer: { width: 60, height: 60, backgroundColor: '#f3f4f6', borderRadius: 12, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+    productImage: { width: '100%', height: '100%' },
+    imagePlaceholderText: { fontSize: 24 },
+    productInfo: { flex: 1, marginLeft: 12 },
+    productName: { fontSize: 16, fontWeight: 'bold', color: '#1f2937' },
+    productCode: { fontSize: 12, color: '#6b7280', marginTop: 2 },
+    productPrice: { fontSize: 14, fontWeight: 'bold', color: '#ea580c', marginTop: 4 },
+    categoryBadge: { backgroundColor: '#fff7ed', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: '#ffedd5' },
+    categoryBadgeText: { fontSize: 10, fontWeight: 'bold', color: '#ea580c', textTransform: 'uppercase' },
+    center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    emptyState: { alignItems: 'center', marginTop: 100 },
+    emptyIcon: { fontSize: 48, color: '#d1d5db', marginBottom: 16 },
+    emptyTitle: { fontSize: 18, color: '#6b7280', fontWeight: '500' },
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+    modalContent: { backgroundColor: 'white', borderTopLeftRadius: 24, borderTopRightRadius: 24, height: '75%' },
+    modalHeader: { paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#f3f4f6', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    modalHeaderTitle: { fontSize: 18, fontWeight: 'bold', color: '#1f2937' },
+    closeModalBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#f3f4f6', justifyContent: 'center', alignItems: 'center' },
+    modalBody: { padding: 20 },
+    imageUploadSection: { alignItems: 'center', marginBottom: 16 },
+    imagePicker: { width: 100, height: 100, borderRadius: 16, backgroundColor: '#f9fafb', borderWidth: 1.5, borderColor: '#f3f4f6', borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+    uploadPreview: { width: '100%', height: '100%' },
+    uploadPlaceholder: { alignItems: 'center' },
+    uploadIcon: { fontSize: 24, marginBottom: 4 },
+    uploadText: { fontSize: 10, color: '#9ca3af', fontWeight: '500' },
+    uploadingOverlay: Object.assign({}, StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center' }),
+    removeImageOverlay: { position: 'absolute', top: 4, right: 4, backgroundColor: 'rgba(239, 68, 68, 0.9)', width: 24, height: 24, borderRadius: 12, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'white' },
+    removeImageIcon: { color: 'white', fontSize: 12, fontWeight: 'bold' },
+    imageStatusText: { fontSize: 9, color: '#9ca3af', marginTop: 4, fontWeight: 'bold', textAlign: 'center' },
+    labelCompact: { fontSize: 10, fontWeight: 'bold', color: '#94a3b8', marginBottom: 6, textTransform: 'uppercase' },
+    inputCompact: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#f1f5f9', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: '#1e293b' },
+    saveBtnCompact: { backgroundColor: '#ea580c', paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center', elevation: 2 },
+    saveBtnTextCompact: { color: 'white', fontSize: 14, fontWeight: 'bold' },
+    tabContainer: { flexDirection: 'row', backgroundColor: 'white', paddingHorizontal: 16, paddingBottom: 12 },
+    tabButton: { flex: 1, flexDirection: 'row', paddingVertical: 10, borderRadius: 12, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc' },
+    tabButtonActive: { backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#ffedd5' },
+    tabButtonText: { fontSize: 13, fontWeight: '600', color: '#64748b' },
+    tabButtonTextActive: { color: '#ea580c' },
+    saveButtonText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
 });

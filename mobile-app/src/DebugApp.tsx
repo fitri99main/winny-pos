@@ -2,16 +2,14 @@ import * as React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
 export default function DebugApp() {
-    return (
-        <View style={styles.container}>
-            <Text style={styles.title}>doitPOS</Text>
-            <Text style={styles.status}>Aplikasi berhasil dimuat dalam mode cadangan.</Text>
-            <Text style={styles.info}>Periksa konfigurasi utama aplikasi sebelum digunakan.</Text>
-        </View>
+    return React.createElement(View, { style: styles.container },
+        React.createElement(Text, { style: styles.title }, "doitPOS"),
+        React.createElement(Text, { style: styles.status }, "Aplikasi berhasil dimuat dalam mode cadangan."),
+        React.createElement(Text, { style: styles.info }, "Periksa konfigurasi utama aplikasi sebelum digunakan.")
     );
 }
 
-const styles = StyleSheet.create({
+var styles = StyleSheet.create({
     container: {
         flex: 1,
         justifyContent: 'center',

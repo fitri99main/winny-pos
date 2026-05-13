@@ -1,93 +1,98 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, Modal, TouchableOpacity, TextInput, ScrollView, StyleSheet, Alert, useWindowDimensions, ActivityIndicator } from 'react-native';
+import React from 'react';
+import * as RN from 'react-native';
 
-interface PaymentModalProps {
-    visible: boolean;
-    onClose: () => void;
-    total: number;
-    subtotal?: number;
-    tax?: number;
-    serviceCharge?: number;
-    discount?: number;
-    onConfirm: (paymentData: {
-        method: string;
-        amount: number;
-        change: number;
-    }) => void;
-    onManualItem?: () => void;
-    onDiscount?: () => void;
-    onSplitBill?: () => void;
-    onHold?: () => void;
-    paymentMethods?: DynamicPaymentMethod[];
-}
+var View = RN.View;
+var Text = RN.Text;
+var Modal = RN.Modal;
+var TouchableOpacity = RN.TouchableOpacity;
+var TextInput = RN.TextInput;
+var ScrollView = RN.ScrollView;
+var StyleSheet = RN.StyleSheet;
+var Alert = RN.Alert;
+var useWindowDimensions = RN.useWindowDimensions;
+var ActivityIndicator = RN.ActivityIndicator;
 
-export interface DynamicPaymentMethod {
-    id: string | number;
-    name: string;
-    type: string;
-}
-
-const DEFAULT_METHODS = [
+var DEFAULT_METHODS = [
     { id: 'cash', name: 'Tunai', icon: '💵', color: '#10b981', type: 'cash' },
     { id: 'qris', name: 'QRIS', icon: '📱', color: '#f59e0b', type: 'digital' },
     { id: 'debit', name: 'Debit', icon: '💳', color: '#3b82f6', type: 'card' }
 ];
 
-const getMethodIconAndColor = (type: string) => {
+var getMethodIconAndColor = function(type) {
     switch (type) {
         case 'cash': return { icon: '💵', color: '#10b981' };
         case 'card': return { icon: '💳', color: '#3b82f6' };
         case 'digital': return { icon: '📱', color: '#f59e0b' };
-        default: return { icon: '📝', color: '#6366f1' }; // fallback
+        default: return { icon: '📝', color: '#6366f1' };
     }
 };
 
-export default function PaymentModal({
-    visible,
-    onClose,
-    total,
-    subtotal,
-    tax,
-    serviceCharge,
-    discount,
-    onConfirm,
-    onManualItem,
-    onDiscount,
-    onSplitBill,
-    onHold,
-    paymentMethods
-}: PaymentModalProps) {
-    const { width } = useWindowDimensions();
-    const isSmallDevice = width < 380;
+export default function PaymentModal(props) {
+    var visible = props.visible;
+    var onClose = props.onClose;
+    var total = props.total;
+    var subtotal = props.subtotal;
+    var tax = props.tax;
+    var serviceCharge = props.serviceCharge;
+    var discount = props.discount;
+    var onConfirm = props.onConfirm;
+    var onManualItem = props.onManualItem;
+    var onDiscount = props.onDiscount;
+    var onSplitBill = props.onSplitBill;
+    var onHold = props.onHold;
+    var paymentMethods = props.paymentMethods;
+
+    var windowSize = useWindowDimensions();
+    var width = windowSize.width;
+    var isSmallDevice = width < 380;
     
-    // Map dynamic methods to include icon and color
-    const displayMethods = paymentMethods && paymentMethods.length > 0 
-        ? paymentMethods.map(m => ({
-            id: String(m.id || m.name),
-            name: m.name,
-            type: m.type,
-            ...getMethodIconAndColor(m.type)
-        }))
-        : DEFAULT_METHODS;
+    var displayMethods = [];
+    if (paymentMethods && paymentMethods.length > 0) {
+        for (var i = 0; i < paymentMethods.length; i++) {
+            var m = paymentMethods[i];
+            var styles_icon_color = getMethodIconAndColor(m.type);
+            displayMethods.push({
+                id: String(m.id || m.name),
+                name: m.name,
+                type: m.type,
+                icon: styles_icon_color.icon,
+                color: styles_icon_color.color
+            });
+        }
+    } else {
+        displayMethods = DEFAULT_METHODS;
+    }
 
-    const [selectedMethod, setSelectedMethod] = useState(displayMethods[0]?.id || 'cash');
-    const [paidAmount, setPaidAmount] = useState('');
-    const [change, setChange] = useState(0);
-    const [error, setError] = useState<string | null>(null);
-    const [loading, setLoading] = useState(false);
+    var stateSelectedMethod = React.useState(displayMethods[0] ? displayMethods[0].id : 'cash');
+    var selectedMethod = stateSelectedMethod[0];
+    var setSelectedMethod = stateSelectedMethod[1];
 
-    // Calculate change whenever paid amount changes
-    useEffect(() => {
-        const paid = parseFloat(paidAmount.replace(/,/g, '')) || 0;
-        const changeAmount = paid - total;
+    var statePaidAmount = React.useState('');
+    var paidAmount = statePaidAmount[0];
+    var setPaidAmount = statePaidAmount[1];
+
+    var stateChange = React.useState(0);
+    var change = stateChange[0];
+    var setChange = stateChange[1];
+
+    var stateError = React.useState(null);
+    var error = stateError[0];
+    var setError = stateError[1];
+
+    var stateLoading = React.useState(false);
+    var loading = stateLoading[0];
+    var setLoading = stateLoading[1];
+
+    React.useEffect(function() {
+        var paidValue = parseFloat(paidAmount.replace(/,/g, '')) || 0;
+        var changeAmount = paidValue - total;
         setChange(changeAmount >= 0 ? changeAmount : 0);
-        if (error) setError(null); // Clear error when amount changes
+        if (error) setError(null);
     }, [paidAmount, total]);
 
-    // Reset when modal opens
-    useEffect(() => {
+    React.useEffect(function() {
         if (visible) {
-            setSelectedMethod(displayMethods[0]?.id || 'cash');
+            setSelectedMethod(displayMethods[0] ? displayMethods[0].id : 'cash');
             setPaidAmount('');
             setChange(0);
             setError(null);
@@ -95,25 +100,33 @@ export default function PaymentModal({
         }
     }, [visible]);
 
-    const handleNumberPad = (value: string) => {
+    var handleNumberPad = function(value) {
         if (value === 'C') {
             setPaidAmount('');
         } else if (value === '⌫') {
-            setPaidAmount(prev => prev.slice(0, -1));
+            setPaidAmount(function(prev) { return prev.slice(0, -1); });
         } else {
-            setPaidAmount(prev => prev + value);
+            setPaidAmount(function(prev) { return prev + value; });
         }
     };
 
-    const handleQuickAmount = (amount: number) => {
+    var handleQuickAmount = function(amount) {
         setPaidAmount((amount || 0).toString());
     };
 
-    const paid = parseFloat(paidAmount.replace(/,/g, '')) || 0;
-    const selectedObj = displayMethods.find(m => m.id === selectedMethod);
-    const isCashType = selectedObj ? selectedObj.type === 'cash' || selectedMethod === 'cash' : false;
+    var paid = parseFloat(paidAmount.replace(/,/g, '')) || 0;
+    
+    var selectedObj = null;
+    for (var j = 0; j < displayMethods.length; j++) {
+        if (displayMethods[j].id === selectedMethod) {
+            selectedObj = displayMethods[j];
+            break;
+        }
+    }
 
-    const handleConfirm = async () => {
+    var isCashType = selectedObj ? (selectedObj.type === 'cash' || selectedMethod === 'cash') : false;
+
+    var handleConfirm = function() {
         if (isCashType && paid < total) {
             setError('Jumlah pembayaran kurang dari total');
             return;
@@ -121,479 +134,209 @@ export default function PaymentModal({
 
         setLoading(true);
 
-        // Safety timeout: if onConfirm takes more than 15 seconds, force-stop the spinner
-        const timeoutId = setTimeout(() => {
-            if (loading) {
-                console.warn('[PaymentModal] onConfirm timed out after 15s');
-                setLoading(false);
-                setError('Waktu habis: Transaksi mungkin sudah masuk tapi aplikasi tidak menerima respon. Cek daftar pesanan.');
-            }
+        var timeoutId = setTimeout(function() {
+            setLoading(false);
+            setError('Waktu habis: Transaksi mungkin sudah masuk tapi aplikasi tidak menerima respon. Cek daftar pesanan.');
         }, 15000);
 
-        try {
-            await onConfirm({
-                method: selectedObj?.name || 'Tunai',
-                amount: paid || total,
-                change: isCashType ? change : 0
+        var promise = onConfirm({
+            method: selectedObj ? selectedObj.name : 'Tunai',
+            amount: paid || total,
+            change: isCashType ? change : 0
+        });
+
+        if (promise && typeof promise.then === 'function') {
+            promise.then(function() {
+                clearTimeout(timeoutId);
+                setLoading(false);
+            })['catch'](function(err) {
+                clearTimeout(timeoutId);
+                setError(err.message || 'Gagal memproses pembayaran');
+                setLoading(false);
             });
+        } else {
             clearTimeout(timeoutId);
-            // We don't call onClose() here because POSScreen will close the modal 
-            // after the full transaction (and possible success modal) is ready.
-            // But we should reset loading if it takes a while to unmount/close
-            setLoading(false);
-        } catch (err: any) {
-            clearTimeout(timeoutId);
-            setError(err.message || 'Gagal memproses pembayaran');
             setLoading(false);
         }
     };
 
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat('id-ID', {
-            style: 'currency',
-            currency: 'IDR',
-            minimumFractionDigits: 0
-        }).format(amount);
+    var formatCurrency = function(amount) {
+        var valNum = Math.floor(Number(amount));
+        return 'Rp ' + valNum.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
     };
 
-    return (
-        <Modal
-            visible={visible}
-            transparent
-            animationType="slide"
-            onRequestClose={onClose}
-        >
-            <View style={styles.overlay}>
-                <View style={styles.container}>
-                    {/* Header */}
-                    <View style={styles.header}>
-                        <Text style={styles.title}>Pembayaran</Text>
-                        <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                            <Text style={styles.closeText}>✕</Text>
-                        </TouchableOpacity>
-                    </View>
+    var renderedMethods = displayMethods.map(function(method) {
+        return React.createElement(TouchableOpacity, {
+            key: method.id,
+            style: [
+                styles.methodButton,
+                isSmallDevice ? { minWidth: '48%', paddingVertical: 8 } : null,
+                selectedMethod === method.id ? {
+                    backgroundColor: method.color,
+                    borderColor: method.color
+                } : null
+            ],
+            onPress: function() { setSelectedMethod(method.id); }
+        },
+            React.createElement(View, { style: { flexDirection: 'row', alignItems: 'center' } },
+                React.createElement(Text, { style: [styles.methodIcon, isSmallDevice ? { fontSize: 18, marginBottom: 0 } : null, { marginRight: 6 }] }, method.icon),
+                React.createElement(Text, { style: [styles.methodName, selectedMethod === method.id ? styles.methodNameActive : null] }, method.name)
+            )
+        );
+    });
 
-                    <ScrollView showsVerticalScrollIndicator={false}>
-                    <View style={[
-                        styles.totalSection,
-                        isSmallDevice && { padding: 12, margin: 12, marginBottom: 4 }
-                    ]}>
-                        <View style={{ width: '100%', marginBottom: 12, borderBottomWidth: 1, borderBottomColor: '#e2e8f0', paddingBottom: 8 }}>
-                            <View style={styles.breakdownRow}>
-                                <Text style={styles.breakdownLabel}>Subtotal</Text>
-                                <Text style={styles.breakdownValue}>{formatCurrency(subtotal || 0)}</Text>
-                            </View>
-                            {(serviceCharge || 0) > 0 && (
-                                <View style={styles.breakdownRow}>
-                                    <Text style={styles.breakdownLabel}>Layanan</Text>
-                                    <Text style={styles.breakdownValue}>+{formatCurrency(serviceCharge || 0)}</Text>
-                                </View>
-                            )}
-                            {(tax || 0) > 0 && (
-                                <View style={styles.breakdownRow}>
-                                    <Text style={styles.breakdownLabel}>Pajak</Text>
-                                    <Text style={styles.breakdownValue}>+{formatCurrency(tax || 0)}</Text>
-                                </View>
-                            )}
-                            {(discount || 0) > 0 && (
-                                <View style={styles.breakdownRow}>
-                                    <Text style={styles.breakdownLabel}>Diskon</Text>
-                                    <Text style={[styles.breakdownValue, { color: '#ef4444' }]}>-{formatCurrency(discount || 0)}</Text>
-                                </View>
-                            )}
-                        </View>
-                        <Text style={styles.totalLabel}>Total Pembayaran</Text>
-                        <Text style={[
-                            styles.totalAmount,
-                            isSmallDevice && { fontSize: 22 }
-                        ]}>{formatCurrency(total)}</Text>
-                    </View>
+    var renderedQuickAmounts = [total, 50000, 100000, 200000].map(function(amount) {
+        return React.createElement(TouchableOpacity, {
+            key: amount,
+            style: styles.quickButton,
+            onPress: function() { handleQuickAmount(amount); }
+        },
+            React.createElement(Text, { style: styles.quickButtonText }, formatCurrency(amount))
+        );
+    });
 
-                        {/* Payment Quick Actions */}
-                        <View style={[
-                            styles.paymentActionsRow,
-                            isSmallDevice && { paddingHorizontal: 12, paddingBottom: 8, gap: 6 }
-                        ]}>
-                            <TouchableOpacity style={styles.payActionBtn} onPress={onManualItem}>
-                                <Text style={[styles.payActionIcon, isSmallDevice && { fontSize: 14 }]}>➕</Text>
-                                <Text style={styles.payActionText}>Manual</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.payActionBtn} onPress={onDiscount}>
-                                <Text style={[styles.payActionIcon, isSmallDevice && { fontSize: 14 }]}>🏷️</Text>
-                                <Text style={styles.payActionText}>Diskon</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.payActionBtn} onPress={onSplitBill}>
-                                <Text style={[styles.payActionIcon, isSmallDevice && { fontSize: 14 }]}>✂️</Text>
-                                <Text style={styles.payActionText}>Split</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.payActionBtn} onPress={onHold}>
-                                <Text style={[styles.payActionIcon, isSmallDevice && { fontSize: 14 }]}>⏸️</Text>
-                                <Text style={styles.payActionText}>Hold</Text>
-                            </TouchableOpacity>
-                        </View>
+    var renderedNumberPad = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '000', '0', '\u232B'].map(function(num) {
+        return React.createElement(TouchableOpacity, {
+            key: num,
+            style: [styles.numberButton, isSmallDevice ? { height: 42, borderRadius: 10 } : null],
+            onPress: function() { handleNumberPad(num === '\u232B' ? '⌫' : num); }
+        },
+            React.createElement(Text, { style: [styles.numberText, isSmallDevice ? { fontSize: 16 } : null] }, num)
+        );
+    });
 
-                        {/* Payment Methods */}
-                        <View style={[
-                            styles.section,
-                            isSmallDevice && { paddingHorizontal: 12 }
-                        ]}>
-                            <Text style={styles.sectionTitle}>Metode Pembayaran</Text>
-                            <View style={[
-                                styles.methodsGrid,
-                                isSmallDevice && { gap: 6 }
-                            ]}>
-                                {displayMethods.map(method => (
-                                    <TouchableOpacity
-                                        key={method.id}
-                                        style={[
-                                            styles.methodButton,
-                                            isSmallDevice && { minWidth: '48%', paddingVertical: 8 },
-                                            selectedMethod === method.id && {
-                                                backgroundColor: method.color,
-                                                borderColor: method.color
-                                            }
-                                        ]}
-                                        onPress={() => setSelectedMethod(method.id)}
-                                    >
-                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                            <Text style={[styles.methodIcon, isSmallDevice && { fontSize: 18, marginBottom: 0 }]}>{method.icon}</Text>
-                                            <Text style={[
-                                                styles.methodName,
-                                                selectedMethod === method.id && styles.methodNameActive
-                                            ]}>
-                                                {method.name}
-                                            </Text>
-                                        </View>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                        </View>
-
-                        {/* Amount Input (for Cash only) */}
-                        {(displayMethods.find(m => m.id === selectedMethod)?.type === 'cash' || selectedMethod === 'cash') && (
-                            <View style={styles.section}>
-                                <Text style={styles.sectionTitle}>Jumlah Dibayar</Text>
-                                <TextInput
-                                    style={styles.amountInput}
-                                    value={paidAmount}
-                                    onChangeText={setPaidAmount}
-                                    keyboardType="numeric"
-                                    placeholder="0"
-                                    placeholderTextColor="#9ca3af"
-                                />
-
-                                {/* Quick Amount Buttons */}
-                                <View style={styles.quickAmounts}>
-                                    {[total, 50000, 100000, 200000].map(amount => (
-                                        <TouchableOpacity
-                                            key={amount}
-                                            style={styles.quickButton}
-                                            onPress={() => handleQuickAmount(amount)}
-                                        >
-                                            <Text style={styles.quickButtonText}>
-                                                {formatCurrency(amount)}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </View>
-
-                                {error && (
-                                    <View style={styles.errorBanner}>
-                                        <Text style={styles.errorText}>⚠️ {error}</Text>
-                                    </View>
-                                )}
-
-                                {/* Change Display */}
-                                {change > 0 && (
-                                    <View style={styles.changeSection}>
-                                        <Text style={styles.changeLabel}>Kembalian</Text>
-                                        <Text style={styles.changeAmount}>{formatCurrency(change)}</Text>
-                                    </View>
-                                )}
-                            </View>
-                        )}
-
-                        {/* Number Pad */}
-                        {(displayMethods.find(m => m.id === selectedMethod)?.type === 'cash' || selectedMethod === 'cash') && (
-                            <View style={[
-                                styles.numberPad,
-                                isSmallDevice && { padding: 12, gap: 6 }
-                            ]}>
-                                {['1', '2', '3', '4', '5', '6', '7', '8', '9', '000', '0', '⌫'].map(num => (
-                                    <TouchableOpacity
-                                        key={num}
-                                        style={[
-                                            styles.numberButton,
-                                            isSmallDevice && { height: 42, borderRadius: 10 }
-                                        ]}
-                                        onPress={() => handleNumberPad(num)}
-                                    >
-                                        <Text style={[
-                                            styles.numberText,
-                                            isSmallDevice && { fontSize: 16 }
-                                        ]}>{num}</Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                        )}
-                    </ScrollView>
-
-                    {/* Confirm Button */}
-                    <TouchableOpacity
-                        style={[
-                            styles.confirmButton,
-                            { backgroundColor: displayMethods.find(m => m.id === selectedMethod)?.color || '#10b981' },
-                            (loading || (isCashType && paid < total)) && { opacity: 0.6 }
-                        ]}
-                        onPress={handleConfirm}
-                        disabled={loading || (isCashType && paid < total)}
-                    >
-                        {loading ? (
-                            <ActivityIndicator color="white" size="small" />
-                        ) : (
-                            <Text style={styles.confirmText}>
-                                Konfirmasi Pembayaran
-                            </Text>
-                        )}
-                    </TouchableOpacity>
-                </View>
-            </View>
-        </Modal>
+    return React.createElement(Modal, { visible: visible, transparent: true, animationType: "slide", onRequestClose: onClose },
+        React.createElement(View, { style: styles.overlay },
+            React.createElement(View, { style: styles.container },
+                React.createElement(View, { style: styles.header },
+                    React.createElement(Text, { style: styles.title }, "Pembayaran"),
+                    React.createElement(TouchableOpacity, { onPress: onClose, style: styles.closeButton },
+                        React.createElement(Text, { style: styles.closeText }, "\u2715")
+                    )
+                ),
+                React.createElement(ScrollView, { showsVerticalScrollIndicator: false },
+                    React.createElement(View, { style: [styles.totalSection, isSmallDevice ? { padding: 12, margin: 12, marginBottom: 4 } : null] },
+                        React.createElement(View, { style: { width: '100%', marginBottom: 12, borderBottomWidth: 1, borderBottomColor: '#e2e8f0', paddingBottom: 8 } },
+                            React.createElement(View, { style: styles.breakdownRow },
+                                React.createElement(Text, { style: styles.breakdownLabel }, "Subtotal"),
+                                React.createElement(Text, { style: styles.breakdownValue }, formatCurrency(subtotal || 0))
+                            ),
+                            (serviceCharge || 0) > 0 ? React.createElement(View, { style: styles.breakdownRow },
+                                React.createElement(Text, { style: styles.breakdownLabel }, "Layanan"),
+                                React.createElement(Text, { style: styles.breakdownValue }, "+" + formatCurrency(serviceCharge || 0))
+                            ) : null,
+                            (tax || 0) > 0 ? React.createElement(View, { style: styles.breakdownRow },
+                                React.createElement(Text, { style: styles.breakdownLabel }, "Pajak"),
+                                React.createElement(Text, { style: styles.breakdownValue }, "+" + formatCurrency(tax || 0))
+                            ) : null,
+                            (discount || 0) > 0 ? React.createElement(View, { style: styles.breakdownRow },
+                                React.createElement(Text, { style: styles.breakdownLabel }, "Diskon"),
+                                React.createElement(Text, { style: [styles.breakdownValue, { color: '#ef4444' }] }, "-" + formatCurrency(discount || 0))
+                            ) : null
+                        ),
+                        React.createElement(Text, { style: styles.totalLabel }, "Total Pembayaran"),
+                        React.createElement(Text, { style: [styles.totalAmount, isSmallDevice ? { fontSize: 22 } : null] }, formatCurrency(total))
+                    ),
+                    React.createElement(View, { style: [styles.paymentActionsRow, isSmallDevice ? { paddingHorizontal: 12, paddingBottom: 8 } : null] },
+                        React.createElement(TouchableOpacity, { style: [styles.payActionBtn, { marginRight: (isSmallDevice ? 6 : 8) }], onPress: onManualItem },
+                            React.createElement(Text, { style: [styles.payActionIcon, isSmallDevice ? { fontSize: 14 } : null] }, "\u2795"),
+                            React.createElement(Text, { style: styles.payActionText }, "Manual")
+                        ),
+                        React.createElement(TouchableOpacity, { style: [styles.payActionBtn, { marginRight: (isSmallDevice ? 6 : 8) }], onPress: onDiscount },
+                            React.createElement(Text, { style: [styles.payActionIcon, isSmallDevice ? { fontSize: 14 } : null] }, "\uD83C\uDFF7\uFE0F"),
+                            React.createElement(Text, { style: styles.payActionText }, "Diskon")
+                        ),
+                        React.createElement(TouchableOpacity, { style: [styles.payActionBtn, { marginRight: (isSmallDevice ? 6 : 8) }], onPress: onSplitBill },
+                            React.createElement(Text, { style: [styles.payActionIcon, isSmallDevice ? { fontSize: 14 } : null] }, "\u2702\uFE0F"),
+                            React.createElement(Text, { style: styles.payActionText }, "Split")
+                        ),
+                        React.createElement(TouchableOpacity, { style: [styles.payActionBtn, { marginRight: (isSmallDevice ? 6 : 8) }], onPress: onHold },
+                            React.createElement(Text, { style: [styles.payActionIcon, isSmallDevice ? { fontSize: 14 } : null] }, "\u23F8\uFE0F"),
+                            React.createElement(Text, { style: styles.payActionText }, "Hold")
+                        ),
+                        React.createElement(TouchableOpacity, { style: [styles.payActionBtn, { backgroundColor: '#f0fdf4', borderColor: '#86efac' }], onPress: props.onPreview },
+                            React.createElement(Text, { style: [styles.payActionIcon, isSmallDevice ? { fontSize: 14 } : null] }, "\uD83D\uDCC4"),
+                            React.createElement(Text, { style: [styles.payActionText, { color: '#166534' }] }, "Preview")
+                        )
+                    ),
+                    React.createElement(View, { style: [styles.section, isSmallDevice ? { paddingHorizontal: 12 } : null] },
+                        React.createElement(Text, { style: styles.sectionTitle }, "Metode Pembayaran"),
+                        React.createElement(View, { style: [styles.methodsGrid] }, renderedMethods)
+                    ),
+                    isCashType ? React.createElement(View, { style: styles.section },
+                        React.createElement(Text, { style: styles.sectionTitle }, "Jumlah Dibayar"),
+                        React.createElement(TextInput, {
+                            style: styles.amountInput,
+                            value: paidAmount,
+                            onChangeText: setPaidAmount,
+                            keyboardType: "numeric",
+                            placeholder: "0",
+                            placeholderTextColor: "#9ca3af"
+                        }),
+                        React.createElement(View, { style: styles.quickAmounts }, renderedQuickAmounts),
+                        error ? React.createElement(View, { style: styles.errorBanner },
+                            React.createElement(Text, { style: styles.errorText }, "\u26A0\uFE0F " + error)
+                        ) : null,
+                        change > 0 ? React.createElement(View, { style: styles.changeSection },
+                            React.createElement(Text, { style: styles.changeLabel }, "Kembalian"),
+                            React.createElement(Text, { style: styles.changeAmount }, formatCurrency(change))
+                        ) : null
+                    ) : null,
+                    isCashType ? React.createElement(View, { style: [styles.numberPad, isSmallDevice ? { padding: 12 } : null] }, renderedNumberPad) : null
+                ),
+                React.createElement(TouchableOpacity, {
+                    style: [
+                        styles.confirmButton,
+                        { backgroundColor: (selectedObj ? selectedObj.color : '#10b981') },
+                        (loading || (isCashType && paid < total)) ? { opacity: 0.6 } : null
+                    ],
+                    onPress: handleConfirm,
+                    disabled: loading || (isCashType && paid < total)
+                },
+                    loading ? React.createElement(ActivityIndicator, { color: "white", size: "small" }) : React.createElement(Text, { style: styles.confirmText }, "Konfirmasi Pembayaran")
+                )
+            )
+        )
     );
 }
 
-const styles = StyleSheet.create({
-    overlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        justifyContent: 'center',
-        padding: 20,
-    },
-    container: {
-        backgroundColor: '#fff',
-        borderRadius: 24,
-        maxHeight: '90%',
-        maxWidth: 500,
-        width: '100%',
-        alignSelf: 'center',
-        overflow: 'hidden',
-        paddingBottom: 10,
-    },
-    header: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: '#f3f4f6',
-    },
-    paymentActionsRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        paddingTop: 8,
-        paddingBottom: 12,
-        gap: 8,
-    },
-    payActionBtn: {
-        flex: 1,
-        backgroundColor: '#f8fafc',
-        paddingVertical: 10,
-        borderRadius: 12,
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#e2e8f0',
-    },
-    payActionIcon: {
-        fontSize: 16,
-        marginBottom: 2,
-    },
-    payActionText: {
-        fontSize: 10,
-        fontWeight: 'bold',
-        color: '#64748b',
-    },
-    title: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        color: '#111827',
-    },
-    closeButton: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        backgroundColor: '#f3f4f6',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    closeText: {
-        fontSize: 18,
-        color: '#6b7280',
-    },
-    totalSection: {
-        padding: 16,
-        backgroundColor: '#f9fafb',
-        borderRadius: 16,
-        margin: 16,
-        marginBottom: 8,
-        alignItems: 'center',
-    },
-    totalLabel: {
-        fontSize: 12,
-        color: '#6b7280',
-        marginBottom: 2,
-    },
-    totalAmount: {
-        fontSize: 28,
-        fontWeight: 'bold',
-        color: '#111827',
-    },
-    section: {
-        paddingHorizontal: 16,
-        paddingBottom: 12,
-    },
-    sectionTitle: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#374151',
-        marginBottom: 8,
-    },
-    methodsGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 8,
-    },
-    methodButton: {
-        flex: 1,
-        minWidth: '30%',
-        paddingVertical: 10,
-        paddingHorizontal: 8,
-        borderRadius: 12,
-        borderWidth: 1.5,
-        borderColor: '#e5e7eb',
-        backgroundColor: '#fff',
-        alignItems: 'center',
-    },
-    methodIcon: {
-        fontSize: 24,
-        marginBottom: 4,
-    },
-    methodName: {
-        fontSize: 12,
-        fontWeight: '600',
-        color: '#6b7280',
-    },
-    methodNameActive: {
-        color: '#fff',
-    },
-    amountInput: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        color: '#111827',
-        padding: 12,
-        borderRadius: 12,
-        backgroundColor: '#f9fafb',
-        borderWidth: 1.5,
-        borderColor: '#e5e7eb',
-        textAlign: 'center',
-    },
-    quickAmounts: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 8,
-        marginTop: 12,
-    },
-    quickButton: {
-        flex: 1,
-        minWidth: '22%',
-        padding: 12,
-        borderRadius: 8,
-        backgroundColor: '#f3f4f6',
-        alignItems: 'center',
-    },
-    quickButtonText: {
-        fontSize: 11,
-        fontWeight: '600',
-        color: '#374151',
-    },
-    changeSection: {
-        marginTop: 16,
-        padding: 16,
-        borderRadius: 12,
-        backgroundColor: '#dcfce7',
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    changeLabel: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#166534',
-    },
-    changeAmount: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        color: '#166534',
-    },
-    numberPad: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        padding: 16,
-        paddingTop: 0,
-        gap: 8,
-    },
-    numberButton: {
-        width: '31%',
-        height: 50,
-        borderRadius: 12,
-        backgroundColor: '#f3f4f6',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    numberText: {
-        fontSize: 20,
-        fontWeight: '600',
-        color: '#374151',
-    },
-    confirmButton: {
-        margin: 16,
-        marginTop: 4,
-        padding: 14,
-        borderRadius: 12,
-        alignItems: 'center',
-    },
-    confirmText: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: '#fff',
-    },
-    errorBanner: {
-        marginTop: 12,
-        padding: 10,
-        borderRadius: 8,
-        backgroundColor: '#fef2f2',
-        borderWidth: 1,
-        borderColor: '#fee2e2',
-        alignItems: 'center',
-    },
-    errorText: {
-        fontSize: 13,
-        color: '#dc2626',
-        fontWeight: '600',
-    },
-    breakdownRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: 4,
-        width: '100%',
-    },
-    breakdownLabel: {
-        fontSize: 12,
-        color: '#64748b',
-    },
-    breakdownValue: {
-        fontSize: 12,
-        fontWeight: 'bold',
-        color: '#1e293b',
-    },
+var styles = StyleSheet.create({
+    overlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'center', padding: 20 },
+    container: { backgroundColor: '#fff', borderRadius: 24, maxHeight: '90%', maxWidth: 500, width: '100%', alignSelf: 'center', overflow: 'hidden', paddingBottom: 10 },
+    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+    paymentActionsRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
+    payActionBtn: { flex: 1, backgroundColor: '#f8fafc', paddingVertical: 10, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#e2e8f0' },
+    payActionIcon: { fontSize: 16, marginBottom: 2 },
+    payActionText: { fontSize: 10, fontWeight: 'bold', color: '#64748b' },
+    title: { fontSize: 20, fontWeight: 'bold', color: '#111827' },
+    closeButton: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center' },
+    closeText: { fontSize: 18, color: '#6b7280' },
+    totalSection: { padding: 16, backgroundColor: '#f9fafb', borderRadius: 16, margin: 16, marginBottom: 8, alignItems: 'center' },
+    totalLabel: { fontSize: 12, color: '#6b7280', marginBottom: 2 },
+    totalAmount: { fontSize: 28, fontWeight: 'bold', color: '#111827' },
+    section: { paddingHorizontal: 16, paddingBottom: 12 },
+    sectionTitle: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 8 },
+    methodsGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+    methodButton: { flex: 1, minWidth: '30%', paddingVertical: 10, paddingHorizontal: 8, borderRadius: 12, borderWidth: 1.5, borderColor: '#e5e7eb', backgroundColor: '#fff', alignItems: 'center', margin: 4 },
+    methodIcon: { fontSize: 24, marginBottom: 4 },
+    methodName: { fontSize: 12, fontWeight: '600', color: '#6b7280' },
+    methodNameActive: { color: '#fff' },
+    amountInput: { fontSize: 24, fontWeight: 'bold', color: '#111827', padding: 12, borderRadius: 12, backgroundColor: '#f9fafb', borderWidth: 1.5, borderColor: '#e5e7eb', textAlign: 'center' },
+    quickAmounts: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 12 },
+    quickButton: { flex: 1, minWidth: '22%', padding: 12, borderRadius: 8, backgroundColor: '#f3f4f6', alignItems: 'center', margin: 4 },
+    quickButtonText: { fontSize: 11, fontWeight: '600', color: '#374151' },
+    changeSection: { marginTop: 16, padding: 16, borderRadius: 12, backgroundColor: '#dcfce7', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    changeLabel: { fontSize: 16, fontWeight: '600', color: '#166534' },
+    changeAmount: { fontSize: 24, fontWeight: 'bold', color: '#166534' },
+    numberPad: { flexDirection: 'row', flexWrap: 'wrap', padding: 16, paddingTop: 0 },
+    numberButton: { width: '31%', height: 50, borderRadius: 12, backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center', margin: '1%' },
+    numberText: { fontSize: 20, fontWeight: '600', color: '#374151' },
+    confirmButton: { margin: 16, marginTop: 4, padding: 14, borderRadius: 12, alignItems: 'center' },
+    confirmText: { fontSize: 16, fontWeight: 'bold', color: '#fff' },
+    errorBanner: { marginTop: 12, padding: 10, borderRadius: 8, backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fee2e2', alignItems: 'center' },
+    errorText: { fontSize: 13, color: '#dc2626', fontWeight: '600' },
+    breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4, width: '100%' },
+    breakdownLabel: { fontSize: 12, color: '#64748b' },
+    breakdownValue: { fontSize: 12, fontWeight: 'bold', color: '#1e293b' },
 });
+

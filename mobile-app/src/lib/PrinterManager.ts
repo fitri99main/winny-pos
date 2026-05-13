@@ -5,7 +5,6 @@ import { PermissionsAndroid, Platform, Alert } from 'react-native';
 import { Buffer } from 'buffer';
 import Constants from 'expo-constants';
 import { resolveOrderTypeDisplay } from './orderTypeUtils';
-import { supabase } from './supabase';
 
 const PRINTER_STORAGE_KEY = '@selected_printer_address';
 const KITCHEN_PRINTER_KEY = '@kitchen_printer_address';
@@ -20,37 +19,10 @@ export class PrinterManager {
     private static bleManager = (isExpoGo || Platform.OS === 'web') ? null : new BleManager();
     private static isScanning = false;
     private static isInitialized = false;
+    private static currentConnectedMac: string | null = null;
     private static connectionStatus: Record<string, 'connected' | 'disconnected' | 'connecting'> = {};
     private static logoCache: Record<string, string> = {};
-    private static currentActiveMac: string | null = null;
-    
-    static getConnectionStatus(mac: string): 'connected' | 'disconnected' | 'connecting' {
-        if (!mac) return 'disconnected';
-        const cleanMac = mac.toUpperCase();
-        return this.connectionStatus[cleanMac] || 'disconnected';
-    }
-
-    static async getBase64Image(url: string): Promise<string | null> {
-        if (this.logoCache[url]) return this.logoCache[url];
-        try {
-            const response = await fetch(url);
-            const blob = await response.blob();
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    const base64data = reader.result as string;
-                    const base64 = base64data.split(',')[1];
-                    this.logoCache[url] = base64;
-                    resolve(base64);
-                };
-                reader.onerror = reject;
-                reader.readAsDataURL(blob);
-            });
-        } catch (e) {
-            console.error('[PrinterManager] getBase64Image error for URL:', url, e);
-            return null;
-        }
-    }
+    private static printQueue: Promise<any> = Promise.resolve();
 
     static async requestPermissions() {
         if (Platform.OS === 'android') {
@@ -61,27 +33,27 @@ export class PrinterManager {
                     PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
                     PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
                 ]);
-                return (
-                    granted['android.permission.BLUETOOTH_SCAN'] === PermissionsAndroid.RESULTS.GRANTED &&
-                    granted['android.permission.BLUETOOTH_CONNECT'] === PermissionsAndroid.RESULTS.GRANTED &&
-                    granted['android.permission.ACCESS_FINE_LOCATION'] === PermissionsAndroid.RESULTS.GRANTED
-                );
+                const bluetoothOk = granted['android.permission.BLUETOOTH_SCAN'] === PermissionsAndroid.RESULTS.GRANTED &&
+                                   granted['android.permission.BLUETOOTH_CONNECT'] === PermissionsAndroid.RESULTS.GRANTED;
+                const locationOk = granted['android.permission.ACCESS_FINE_LOCATION'] === PermissionsAndroid.RESULTS.GRANTED;
+                return { bluetooth: bluetoothOk, location: locationOk, all: bluetoothOk && locationOk };
             } else {
-                const granted = await PermissionsAndroid.request(
-                    PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
-                );
-                return granted === PermissionsAndroid.RESULTS.GRANTED;
+                const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
+                const ok = granted === PermissionsAndroid.RESULTS.GRANTED;
+                return { bluetooth: true, location: ok, all: ok };
             }
         }
-        return true;
+        return { bluetooth: true, location: true, all: true };
     }
 
     static async initPrinter() {
         if (!isExpoGo && Platform.OS !== 'web') {
             if (this.isInitialized) return;
             try {
-                const hasPermission = await this.requestPermissions();
-                if (!hasPermission) return;
+                const perms = await this.requestPermissions() as any;
+                if (!perms.bluetooth) {
+                    console.warn('Bluetooth permissions missing, but attempting init anyway...');
+                }
                 await BLEPrinter.init();
                 this.isInitialized = true;
             } catch (e) {
@@ -107,9 +79,8 @@ export class PrinterManager {
         if (!this.bleManager) throw new Error('Bluetooth Manager tidak terinisialisasi.');
         const state = await this.bleManager.state();
         if (state !== 'PoweredOn') throw new Error('Bluetooth Anda sedang mati.');
-        const hasPermission = await this.requestPermissions();
-        if (!hasPermission) throw new Error('Izin Bluetooth ditolak.');
-
+        const perms = await this.requestPermissions() as any;
+        if (!perms.bluetooth) throw new Error('Izin Bluetooth ditolak.');
         if (this.isScanning) this.bleManager.stopDeviceScan();
         this.isScanning = true;
         this.bleManager.startDeviceScan(null, null, (error, device) => {
@@ -145,538 +116,616 @@ export class PrinterManager {
         return await AsyncStorage.getItem(key);
     }
 
-    static async ensureConnection(macAddress: string): Promise<boolean> {
-        if (isExpoGo || Platform.OS === 'web') return true;
-        const mac = macAddress.toUpperCase();
+    static async getBase64FromUrl(url: string, paperWidth: string = '58mm'): Promise<string | null> {
+        if (!url || url.length < 5) return null;
         
-        if (this.currentActiveMac === mac) {
-            console.log(`[PrinterManager] Already connected to ${mac}`);
-            // Small safety delay for existing connection
-            await new Promise(r => setTimeout(r, 200));
-            return true;
-        }
+        // Force clear cache for logo debugging
+        this.logoCache = {};
 
         try {
+            let cleanUrl = url.trim();
+            
+            // Determine canvas width based on paper type
+            const is80mm = paperWidth.toLowerCase() === '80mm';
+            const canvasWidth = is80mm ? 576 : 384;
+
+            // Use Weserv (wsrv.nl) to create a canvas that matches the printer width
+            const encodedUrl = encodeURIComponent(cleanUrl);
+            cleanUrl = `https://wsrv.nl/?url=${encodedUrl}&w=${canvasWidth}&h=50&fit=contain&bg=white&output=png&filt=greyscale&trim=10`;
+
+            const response = await fetch(cleanUrl);
+            if (!response.ok) {
+                console.warn('Failed to fetch logo from URL:', cleanUrl);
+                return null;
+            }
+            const arrayBuffer = await response.arrayBuffer();
+            const rawBase64 = Buffer.from(arrayBuffer).toString('base64');
+            const cleanedBase64 = rawBase64.replace(/^data:.*?;base64,/, '').replace(/[\r\n]/g, '');
+            if (cleanedBase64.length < 100) return null;
+            return cleanedBase64;
+        } catch (error) { 
+            console.error('Error converting logo to base64:', error);
+            return null; 
+        }
+    }
+
+    static getConnectionStatus(macAddress: string | null | undefined) {
+        if (!macAddress) return 'disconnected';
+        return this.connectionStatus[macAddress.toUpperCase()] || 'disconnected';
+    }
+
+    static async checkConnection(macAddress: string): Promise<boolean> {
+        if (isExpoGo || Platform.OS === 'web') return true;
+        try {
             await this.initPrinter();
-            console.log(`[PrinterManager] Connecting to ${mac}...`);
+            const mac = macAddress.toUpperCase();
             this.connectionStatus[mac] = 'connecting';
             await BLEPrinter.connectPrinter(mac);
             this.connectionStatus[mac] = 'connected';
-            this.currentActiveMac = mac;
-            // Robust delay after new connection
-            await new Promise(r => setTimeout(r, 1500));
             return true;
         } catch (e) {
-            console.error(`[PrinterManager] Connection failed to ${mac}:`, e);
-            this.connectionStatus[mac] = 'disconnected';
-            this.currentActiveMac = null;
+            if (macAddress) this.connectionStatus[macAddress.toUpperCase()] = 'disconnected';
             return false;
         }
     }
 
-    static async checkConnection(macAddress: string): Promise<boolean> {
-        return this.ensureConnection(macAddress);
-    }
-
-    static async reconnectAllConfiguredPrinters(): Promise<{ success: boolean; results: Record<string, boolean> }> {
-        const results: Record<string, boolean> = {};
-        let overallSuccess = true;
-
-        const printers = [
-            { key: '@selected_printer_address', label: 'Kasir' },
-            { key: '@kitchen_printer_address', label: 'Dapur' },
-            { key: '@bar_printer_address', label: 'Bar' }
+    static async reconnectAllConfiguredPrinters() {
+        const types: {key: PrinterType, label: string}[] = [
+            {key: 'receipt', label: 'Kasir'},
+            {key: 'kitchen', label: 'Dapur'},
+            {key: 'bar', label: 'Bar'},
+            {key: 'report', label: 'Laporan'}
         ];
+        const results: Record<string, boolean> = {};
+        let success = true;
 
-        for (const printer of printers) {
-            const mac = await AsyncStorage.getItem(printer.key);
+        for (const item of types) {
+            const mac = await this.getSelectedPrinter(item.key);
             if (mac) {
-                console.log(`[PrinterManager] Reconnecting ${printer.label} (${mac})...`);
-                const success = await this.ensureConnection(mac);
-                results[printer.label] = success;
-                if (!success) overallSuccess = false;
-                // Wait between connections to avoid BLE collision
-                await new Promise(r => setTimeout(r, 1000));
+                const ok = await this.checkConnection(mac);
+                results[item.label] = ok;
+                if (!ok) success = false;
             }
         }
-
-        return { success: overallSuccess, results };
+        return { results, success };
     }
 
-    static padColumns(left: string, right: string, width: number = 32, isPreview: boolean = false): string {
+    static padColumns(left: string | null | undefined, right: string | null | undefined, width: number = 32): string {
         const leftStr = left || '';
         const rightStr = right || '';
-        
-        if (isPreview) {
-            return `${leftStr}[R]${rightStr}`;
-        }
-
         const spaceCount = width - (leftStr.length + rightStr.length);
         if (spaceCount <= 0) return leftStr + ' ' + rightStr;
         return leftStr + ' '.repeat(spaceCount) + rightStr;
     }
 
-    static formatReceipt(orderData: any, isPreview: boolean = false): string {
-        const paperWidth = orderData.receipt_paper_width === '80mm' ? 42 : 32;
-        const CENTER = isPreview ? '[C]' : COMMANDS.TEXT_FORMAT.TXT_ALIGN_CT;
-        const LEFT = isPreview ? '[L]' : COMMANDS.TEXT_FORMAT.TXT_ALIGN_LT;
-        const BOLD_ON = isPreview ? '<b>' : COMMANDS.TEXT_FORMAT.TXT_BOLD_ON;
-        const BOLD_OFF = isPreview ? '</b>' : COMMANDS.TEXT_FORMAT.TXT_BOLD_OFF;
-        const DOUBLE_ON = isPreview ? '[BIG]' : COMMANDS.TEXT_FORMAT.TXT_4SQUARE;
-        const DOUBLE_OFF = isPreview ? '[/BIG]' : COMMANDS.TEXT_FORMAT.TXT_NORMAL;
-        const LINE = '-'.repeat(paperWidth) + '\n';
-        
-        // Reset removed from here as it's now sent prior to strings in the main print functions
-        let text = isPreview ? '' : ''; 
-        if (orderData.show_logo) text += CENTER + '[LOGO]\n';
-
-        const shopName = orderData.receipt_header || orderData.shop_name || 'WINNY COFFEE PNK';
-        // Using TXT_4SQUARE (Double Width + Double Height) to match the "Old Account" large font look
-        text += CENTER + BOLD_ON + (isPreview ? '' : COMMANDS.TEXT_FORMAT.TXT_4SQUARE) + shopName.toUpperCase() + DOUBLE_OFF + BOLD_OFF + '\n';
-        if (orderData.shop_address) text += CENTER + orderData.shop_address + '\n';
-        if (orderData.shop_phone) text += CENTER + `Telp: ${orderData.shop_phone}` + '\n';
-        text += LINE;
-        text += LEFT + `No: ${orderData.order_no || orderData.orderNo || '-'}\n`;
-        if (orderData.show_date !== false) {
-            const date = new Date(orderData.created_at || orderData.date || Date.now());
-            const dateStr = date.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '/');
-            const timeStr = date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(/:/g, '.');
-            text += `Waktu: ${dateStr}, ${timeStr}\n`;
-        }
-        
-        // Resolve Order Type & Table
-        const tableRef = orderData.table_no || orderData.tableNo || orderData.table || '-';
-        const info = resolveOrderTypeDisplay(tableRef, orderData);
-        
-        // Match Photo Label: "Order: "
-        const orderLabel = info.orderTypeLabel || (info.orderType === 'take_away' ? 'TAKE AWAY' : 'DINE IN');
-        text += `Order: ${orderLabel}\n`;
-        
-        // Force Table Number display for customer receipt if it exists and not take away
-        if (tableRef && tableRef !== '-' && info.orderType !== 'take_away') {
-            text += BOLD_ON + `Meja: ${tableRef}` + BOLD_OFF + '\n';
-        } else if (info.tableValue && info.tableValue !== '-') {
-            text += BOLD_ON + `Meja: ${info.tableValue}` + BOLD_OFF + '\n';
-        }
-
-        if (orderData.show_cashier_name !== false && (orderData.cashier_name || orderData.waiter_name)) {
-            text += `Kasir: ${orderData.cashier_name || orderData.waiter_name}\n`;
-        }
-        text += LINE;
-
-        let hasTaxedItems = false;
-        (orderData.items || []).forEach((item: any) => {
-            const isTaxed = item.is_taxed === true;
-            if (isTaxed) hasTaxedItems = true;
-            const label = `${item.quantity}x ${item.product_name || item.name}${isTaxed ? '*' : ''}`;
-            const price = (item.price * item.quantity).toLocaleString('id-ID');
-            text += this.padColumns(label, price, paperWidth, isPreview) + '\n';
-            if (item.notes) text += `  (${item.notes})\n`;
-        });
-        if (hasTaxedItems) {
-            text += LEFT + '  (*) = Produk Kena Pajak\n';
-        }
-        text += LINE;
-
-        const total = Number(orderData.total_amount || orderData.total || 0);
-        const discount = Number(orderData.discount || 0);
-        const tax = Number(orderData.tax || 0);
-        const service = Number(orderData.service_charge || 0);
-        const subtotal = total + discount - tax - service;
-
-        text += this.padColumns('Subtotal', subtotal.toLocaleString('id-ID'), paperWidth, isPreview) + '\n';
-        if (discount > 0) {
-            text += this.padColumns('Diskon', '-' + discount.toLocaleString('id-ID'), paperWidth, isPreview) + '\n';
-        }
-        if (service > 0) {
-            text += this.padColumns('Layanan', service.toLocaleString('id-ID'), paperWidth, isPreview) + '\n';
-        }
-        if (tax > 0) {
-            text += this.padColumns('Pajak', tax.toLocaleString('id-ID'), paperWidth, isPreview) + '\n';
-        }
-
-        // Secure TOTAL formatting for 58mm
-        if (paperWidth <= 32) {
-            text += BOLD_ON + this.padColumns('TOTAL', total.toLocaleString('id-ID'), paperWidth, isPreview) + BOLD_OFF + '\n';
-        } else {
-            text += BOLD_ON + DOUBLE_ON + this.padColumns('TOTAL', total.toLocaleString('id-ID'), paperWidth, isPreview) + DOUBLE_OFF + BOLD_OFF + '\n';
-        }
-        text += LINE;
-
-        let paidAmount = Number(orderData.paid_amount != null ? orderData.paid_amount : total);
-        let change = Number(orderData.change != null ? orderData.change : 0);
-        
-        if (isNaN(paidAmount)) paidAmount = 0;
-        if (isNaN(change)) change = 0;
-        
-        text += this.padColumns('Bayar', paidAmount.toLocaleString('id-ID'), paperWidth, isPreview) + '\n';
-        text += this.padColumns('Kembali', change.toLocaleString('id-ID'), paperWidth, isPreview) + '\n';
-        text += this.padColumns('Metode Bayar', orderData.payment_method || 'Tunai', paperWidth, isPreview) + '\n';
-        text += LINE;
-
-        // [WIFI VOUCHER LOGIC - Physical Photo Mirror]
-        if (orderData.enable_wifi_vouchers && orderData.wifi_voucher) {
-            text += CENTER + "Gunakan Kode dibawah, atau ketik\n";
-            text += CENTER + "kan WINNY.NET dibrowser Anda\n";
-            
-            const voucherStr = String(orderData.wifi_voucher);
-            const voucherList = voucherStr.split(',').map(c => c.trim()).filter(c => c.length > 0);
-            
-            if (voucherList.length > 1) {
-                // If multiple codes, use BOLD instead of DOUBLE to prevent wrapping on 58mm
-                const codes = voucherList.join('   ');
-                text += CENTER + BOLD_ON + codes + BOLD_OFF + '\n';
-            } else if (voucherList.length === 1) {
-                text += CENTER + BOLD_ON + DOUBLE_ON + voucherList[0] + DOUBLE_OFF + BOLD_OFF + '\n';
-            }
-            text += LINE;
-        }
-
-        // [FOOTER - Mirroring Web Settings]
-        const footer = orderData.receipt_footer || "Terima Kasih Atas Kunjungannya..";
-        text += CENTER + footer + '\n';
-        text += CENTER + shopName.toUpperCase() + '\n';
-        
-        text += '\n';
-        return text;
-    }
-
-    static formatKitchenTicket(items: any[], orderData: any, targetName: string, isPreview: boolean = false): string {
-        const CENTER = isPreview ? '[C]' : COMMANDS.TEXT_FORMAT.TXT_ALIGN_CT;
-        const LEFT = isPreview ? '[L]' : COMMANDS.TEXT_FORMAT.TXT_ALIGN_LT;
-        const BOLD_ON = isPreview ? '<b>' : COMMANDS.TEXT_FORMAT.TXT_BOLD_ON;
-        const BOLD_OFF = isPreview ? '</b>' : COMMANDS.TEXT_FORMAT.TXT_BOLD_OFF;
-        const DOUBLE_ON = isPreview ? '[BIG]' : COMMANDS.TEXT_FORMAT.TXT_4SQUARE;
-        const DOUBLE_OFF = isPreview ? '[/BIG]' : COMMANDS.TEXT_FORMAT.TXT_NORMAL;
-        const LINE = isPreview ? '--------------------------------\n' : '--------------------------------\n';
-
-        const orderNo = orderData.order_no || orderData.orderNo || '-';
-        const tableNo = orderData.table_no || orderData.tableNo || '';
-        const customer = orderData.customer_name || orderData.customerName || '';
-
-        // Kitchen header using DOUBLE_ON (Double Height + Double Width) for maximum visibility
-        let text = CENTER + BOLD_ON + DOUBLE_ON + `PESANAN ${targetName.toUpperCase()}` + DOUBLE_OFF + BOLD_OFF + '\n';
-        text += `No: ${orderNo}\n`;
-        if (tableNo && tableNo !== '-') text += BOLD_ON + DOUBLE_ON + `MEJA: ${tableNo}` + DOUBLE_OFF + BOLD_OFF + '\n';
-        if (customer && customer !== 'Guest') text += `Pelanggan: ${customer}\n`;
-        text += LINE + LEFT;
-
-        items.forEach((item: any) => {
-            const name = item.product_name || item.name || 'Produk';
-            // Using DOUBLE_ON (4SQUARE) for maximal visibility as requested
-            text += BOLD_ON + DOUBLE_ON + `${item.quantity}x ${name}` + DOUBLE_OFF + BOLD_OFF + '\n';
-            if (item.notes) text += BOLD_ON + `  * CATATAN: ${item.notes}` + BOLD_OFF + '\n';
-        });
-
-        text += LINE + CENTER + `Waktu: ${new Date().toLocaleString('id-ID')}\n`;
-        text += '\n\n\n\n\n';
-        // Add cut command just in case the printer supports it
-        text += '\x1d\x56\x42\x00'; 
-        return text;
-    }
-
-    static async printOrderReceipt(orderData: any) {
-        let macAddress = await this.getSelectedPrinter('receipt');
-        if (!macAddress) {
-            console.warn('[PrinterManager] Receipt printer mac is null');
-            return false;
-        }
-        
+    static formatReceipt(orderData: any, isPreview: boolean = false, skipInit: boolean = false): string {
         try {
-            await this.initPrinter();
-            const mac = macAddress.toUpperCase();
+            const { 
+                shop_name, shopName, shop_address, shopAddress, shop_phone, shopPhone,
+                items = [], total, service_charge, tax, discount, payment_method, paymentType, payment_type,
+                order_no, orderNo, created_at, date: orderDate,
+                customer_name, customerName, customer_level, customerLevel,
+                show_waiter, show_date, show_table, show_customer_name, show_cashier_name, show_customer_status,
+                waiter_name, waiterName, table_no, tableNo, cashier_name, cashierName,
+                wifi_voucher, wifiVoucher, wifi_voucher_notice, wifiNotice, wifi_notice,
+                receipt_header, receiptHeader, receipt_footer, receiptFooter,
+                receipt_paper_width, receiptPaperWidth, show_logo, receipt_footer_feed
+            } = orderData;
+
+            const paperWidthStr = (receipt_paper_width || receiptPaperWidth || '58mm').toLowerCase();
+            const is80mm = paperWidthStr === '80mm';
+            const width = is80mm ? 48 : 32;
+            const line = '-'.repeat(width);
+
+            const displayShopName = (shop_name || shopName || 'WINNY COFFEE PNK').trim();
+            const displayHeader = (receipt_header || receiptHeader || '').trim();
+            const displayFooter = (receipt_footer || receiptFooter || '').trim();
+            const displayAddress = (shop_address || shopAddress || '').trim();
+            const displayPhone = (shop_phone || shopPhone || '').trim();
             
-            // [SAFETY HARVEST] if data is missing, fetch directly from SQL
-            if (!orderData.receipt_logo_url || !orderData.receipt_header) {
-                try {
-                    const { data: safetyData } = await supabase.from('store_settings').select('*').eq('id', 1).maybeSingle();
-                    if (safetyData) {
-                        orderData.receipt_logo_url = orderData.receipt_logo_url || safetyData.receipt_logo_url;
-                        orderData.receipt_header = orderData.receipt_header || safetyData.receipt_header || safetyData.store_name;
-                        orderData.receipt_paper_width = orderData.receipt_paper_width || safetyData.receipt_paper_width;
-                        orderData.show_logo = orderData.show_logo ?? safetyData.show_logo;
-                        orderData.enable_auto_cut = orderData.enable_auto_cut ?? safetyData.enable_auto_cut;
-                    }
-                } catch (err) {
-                    console.warn('[PrinterManager] Safety harvest failed', err);
-                }
+            const CENTER = isPreview ? '[C]' : COMMANDS.TEXT_FORMAT.TXT_ALIGN_CT;
+            const LEFT = isPreview ? '[L]' : COMMANDS.TEXT_FORMAT.TXT_ALIGN_LT;
+            const BOLD_ON = isPreview ? '<b>' : COMMANDS.TEXT_FORMAT.TXT_BOLD_ON;
+            const BOLD_OFF = isPreview ? '</b>' : COMMANDS.TEXT_FORMAT.TXT_BOLD_OFF;
+            const DOUBLE_ON = isPreview ? '' : COMMANDS.TEXT_FORMAT.TXT_2HEIGHT;
+            const DOUBLE_OFF = isPreview ? '' : COMMANDS.TEXT_FORMAT.TXT_NORMAL;
+            const BIG_ON = isPreview ? '' : COMMANDS.TEXT_FORMAT.TXT_4SQUARE;
+            const BIG_OFF = isPreview ? '' : COMMANDS.TEXT_FORMAT.TXT_NORMAL;
+
+            let receiptText = '';
+            
+            if (isPreview && show_logo !== false) {
+                receiptText += '[LOGO]\n';
+            }
+            
+            // 1. Header (Primary Shop Name)
+            if (displayHeader) {
+                receiptText += CENTER + BOLD_ON + DOUBLE_ON + displayHeader.toUpperCase() + DOUBLE_OFF + BOLD_OFF + '\n';
+            } else if (displayShopName) {
+                receiptText += CENTER + BOLD_ON + DOUBLE_ON + displayShopName.toUpperCase() + DOUBLE_OFF + BOLD_OFF + '\n';
             }
 
-            // Force a fresh connection/reset for every print to prevent "reverting" issues
-            console.log(`[PrinterManager] Ensuring connection to ${mac}...`);
-            const connected = await this.ensureConnection(mac);
-            if (!connected) return false;
+            // 2. Address & Phone
+            if (displayAddress) {
+                receiptText += CENTER + displayAddress + '\n';
+            }
+            if (displayPhone) {
+                receiptText += CENTER + 'Telp: ' + displayPhone + '\n';
+            }
             
-            // 1. Handle Logo if present
-            if (orderData.show_logo && orderData.receipt_logo_url) {
-                const base64 = await this.getBase64Image(orderData.receipt_logo_url);
-                if (base64) {
-                    console.log('[PrinterManager] Logo loaded, attempting printImageBase64...');
-                    try {
-                        const paperWidth = orderData.receipt_paper_width === '80mm' ? 48 : 32;
-                        await BLEPrinter.printImageBase64(base64, {
-                            imageWidth: paperWidth <= 32 ? 80 : 120,
-                            imageHeight: paperWidth <= 32 ? 40 : 60,
-                        });
-                        await new Promise(r => setTimeout(r, 200));
-                    } catch (picErr) {
-                        console.warn('[PrinterManager] printImageBase64 failed, skipping logo:', picErr);
-                    }
-                }
+            receiptText += CENTER + line + '\n';
+            receiptText += LEFT;
+            
+            // 3. Info Section
+            receiptText += `No: ${order_no || orderNo || '-'}\n`;
+            
+            if (show_date !== false) {
+                const rawDate = created_at || orderDate || new Date();
+                const displayDate = new Date(rawDate).toLocaleString('id-ID', {
+                    year: 'numeric', month: '2-digit', day: '2-digit',
+                    hour: '2-digit', minute: '2-digit'
+                });
+                receiptText += `Waktu: ${displayDate}\n`;
+            }
+            
+            if (show_table !== false && (table_no || tableNo)) {
+                receiptText += `Meja: ${table_no || tableNo}\n`;
+            }
+            
+            if (show_customer_name !== false && (customer_name || customerName)) {
+                receiptText += `Pelanggan: ${customer_name || customerName}\n`;
+            }
+            
+            if (show_customer_status !== false && (customer_level || customerLevel)) {
+                receiptText += `Status: ${customer_level || customerLevel}\n`;
             }
 
-            // 2. Print the text receipt (Strip the [LOGO] tag after printing the picture)
-            const text = '\x1b\x40' + this.formatReceipt(orderData).replace(/\[LOGO\]\n?/, ''); // Prepend ESC @ (Reset)
-            
-            let success = false;
-            try {
-                await BLEPrinter.printBill(text);
-                success = true;
-            } catch (printErr) {
-                console.warn('[PrinterManager] First print attempt failed. Retrying connection...', printErr);
-                this.currentActiveMac = null;
-                const reconnected = await this.ensureConnection(mac);
-                if (reconnected) {
-                    try {
-                        await BLEPrinter.printBill(text);
-                        success = true;
-                    } catch (secondErr) {
-                        console.error('[PrinterManager] Second print attempt failed:', secondErr);
-                    }
-                }
+            if (show_cashier_name !== false && (cashier_name || cashierName)) {
+                receiptText += `Kasir: ${cashier_name || cashierName}\n`;
             }
             
-            console.log('[PrinterManager] Receipt printed:', success);
-            return success;
-        } catch (e) {
-            console.error('[PrinterManager] Print Receipt Error:', e);
-            this.currentActiveMac = null;
-            return false;
+            if (show_waiter !== false && (waiter_name || waiterName)) {
+                receiptText += `Pelayan: ${waiter_name || waiterName}\n`;
+            }
+            
+            receiptText += CENTER + line + '\n';
+            receiptText += LEFT;
+      
+            // 4. Items
+            items.forEach((item: any) => {
+                const qty = item.quantity || 1;
+                const name = (item.name || 'Produk').toUpperCase();
+                const price = Number(item.price || 0);
+                const sub = qty * price;
+
+                // Line 1: NAME
+                receiptText += LEFT + name + '\n';
+                
+                // Line 2: Qty x Price [Right] Subtotal
+                const qtyPricePart = `  ${qty}x ${price.toLocaleString('id-ID')}`;
+                const subStr = sub.toLocaleString('id-ID');
+                
+                if (isPreview) {
+                    receiptText += LEFT + qtyPricePart + '[R]' + subStr + '\n';
+                } else {
+                    const spaceCount = width - qtyPricePart.length - subStr.length;
+                    receiptText += LEFT + qtyPricePart + ' '.repeat(Math.max(0, spaceCount)) + subStr + '\n';
+                }
+
+                if (item.notes) {
+                    receiptText += LEFT + '  (' + item.notes + ')\n';
+                }
+            });
+            
+            receiptText += CENTER + line + '\n';
+            receiptText += LEFT;
+
+            // 5. Totals
+            const formatRow = (label: string, val: number | string) => {
+                const labelStr = label.toString();
+                const valStr = typeof val === 'number' ? Math.floor(val).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".") : val;
+                return labelStr + ' '.repeat(Math.max(1, width - labelStr.length - valStr.length)) + valStr + '\n';
+            };
+
+            const subtotalVal = items.reduce((acc: number, item: any) => acc + (item.price * item.quantity), 0);
+            receiptText += formatRow('Subtotal', subtotalVal);
+            
+            if (discount > 0) {
+                receiptText += formatRow('Diskon', '-' + Math.floor(discount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, "."));
+            }
+            
+            if (service_charge > 0) {
+                receiptText += formatRow('Layanan', Math.floor(service_charge).toString().replace(/\B(?=(\d{3})+(?!\d))/g, "."));
+            }
+            
+            if (tax > 0) {
+                receiptText += formatRow('Pajak', Math.floor(tax).toString().replace(/\B(?=(\d{3})+(?!\d))/g, "."));
+            }
+            
+            receiptText += BOLD_ON + formatRow('TOTAL', total || 0) + BOLD_OFF;
+            receiptText += CENTER + line + '\n';
+            receiptText += LEFT;
+            
+            // 6. Payment
+            const mMethod = (payment_method || paymentType || payment_type || 'Tunai').toUpperCase();
+            const mPaid = orderData.paid_amount || orderData.amount_paid || total || 0;
+            receiptText += formatRow(mMethod, mPaid);
+            
+            if (mPaid > (total || 0)) {
+                receiptText += formatRow('Kembali', (orderData.change || 0));
+            }
+            
+            receiptText += CENTER + line + '\n';
+
+            // 7. Voucher Section
+            const voucherObj = typeof wifi_voucher === 'object' ? wifi_voucher : null;
+            const displayWifiVoucher = (voucherObj?.code || wifi_voucher || (orderData && orderData.wifi_voucher_code) || wifiVoucher || '').toString();
+            if (displayWifiVoucher && displayWifiVoucher.length > 1) {
+                const displayWifiNotice = (wifi_voucher_notice || wifi_notice || wifiNotice || voucherObj?.notice || 'Gunakan kode ini untuk akses WiFi').trim();
+                receiptText += CENTER + displayWifiNotice + '\n';
+                receiptText += CENTER + BOLD_ON + BIG_ON + displayWifiVoucher + BIG_OFF + BOLD_OFF + '\n';
+                receiptText += CENTER + line + '\n';
+            }
+
+            // 8. Footer Section
+            if (displayFooter) {
+                receiptText += CENTER + displayFooter + '\n';
+            }
+            
+            // Bottom Name (as per web preview)
+            if (displayHeader) {
+                receiptText += CENTER + displayHeader.toUpperCase() + '\n';
+            }
+
+            // 9. Feed & Cut
+            // Total minimal feed (no explicit cut command to avoid double cuts)
+            if (!isPreview) {
+                receiptText += '\n'.repeat(3);
+            }
+            return receiptText;
+        } catch (error) {
+            console.error('Error formatting receipt:', error);
+            return 'ERROR FORMATTING RECEIPT';
         }
     }
 
-    static async printToTarget(items: any[], type: PrinterType, orderData: any): Promise<{success: boolean, count: number}> {
-        const targetName = type === 'kitchen' ? 'Dapur' : 'Bar';
-        const filtered = items.filter(i => {
-            const itarget = (i.target || '').toLowerCase().trim();
-            const icat = (i.category || '').toLowerCase().trim();
-            const iname = (i.name || '').toLowerCase().trim();
-            
-            // Heuristic for Bar items (Broad keywords for Winny Coffee context)
-            const isBarRelated = 
-                itarget === 'bar' || itarget === 'minuman' || itarget === 'minum' || itarget === 'drink' || itarget === 'coffee' ||
-                icat.includes('minum') || icat.includes('drink') || icat.includes('coffee') || icat.includes('kopi') || 
-                icat.includes('juice') || icat.includes('jus') || icat.includes('bar') || icat.includes('teh') ||
-                icat.includes('susu') || icat.includes('ice') || icat.includes('boba') || icat.includes('beverage') ||
-                icat.includes('botol') || icat.includes('kaleng') || icat.includes('fresh') ||
-                iname.includes('kopi') || iname.includes('juice') || iname.includes('teh') || iname.includes('drink') || 
-                iname.includes('ice') || iname.includes('jus') || iname.includes('susu') || iname.includes('tea') || 
-                iname.includes('kopi') || iname.includes('jeruk') || iname.includes('boba') || iname.includes('cola') || 
-                iname.includes('fanta') || iname.includes('sprite') || iname.includes('yakult') || iname.includes('milo') ||
-                iname.includes('lemon') || iname.includes('melon') || iname.includes('lychee') || iname.includes('krating') ||
-                iname.includes('aqua') || iname.includes('le minerale') || iname.includes('leminerale') || iname.includes('teh botol');
+    static formatKitchenTicket(items: any[], orderData: any, targetName: string): string {
+        const { order_no, table_no, created_at, waiter_name, notes } = orderData;
+        const displayOrderNo = order_no || '-';
+        const displayDate = created_at ? new Date(created_at).toLocaleString('id-ID') : new Date().toLocaleString('id-ID');
+        const CENTER = COMMANDS.TEXT_FORMAT.TXT_ALIGN_CT;
+        const LEFT = COMMANDS.TEXT_FORMAT.TXT_ALIGN_LT;
+        const BOLD_ON = COMMANDS.TEXT_FORMAT.TXT_BOLD_ON;
+        const BOLD_OFF = COMMANDS.TEXT_FORMAT.TXT_BOLD_OFF;
+        const DOUBLE_ON = COMMANDS.TEXT_FORMAT.TXT_4SQUARE;
+        const DOUBLE_OFF = COMMANDS.TEXT_FORMAT.TXT_NORMAL;
+        const LINE = '--------------------------------\n';
+        let ticketText = CENTER + BOLD_ON + DOUBLE_ON + `PESANAN ${targetName.toUpperCase()}` + DOUBLE_OFF + BOLD_OFF + '\n';
+        ticketText += CENTER + `No: ${displayOrderNo}\n`;
+        if (table_no) ticketText += CENTER + BOLD_ON + DOUBLE_ON + `MEJA: ${table_no}` + DOUBLE_OFF + BOLD_OFF + '\n';
+        ticketText += CENTER + LINE + LEFT;
+        (items || []).forEach((item: any) => {
+            ticketText += BOLD_ON + DOUBLE_ON + `${item.quantity}x ${item.name}` + DOUBLE_OFF + BOLD_OFF + '\n';
+            if (item.notes) ticketText += `   * Catatan: ${item.notes}\n`;
+            ticketText += '\n';
+        });
+        ticketText += CENTER + LINE + `Waktu: ${displayDate}\n`;
+        if (waiter_name) ticketText += `Pelayan: ${waiter_name}\n`;
+        ticketText += '\n'.repeat(3);
+        return ticketText;
+    }
 
-            if (type === 'bar') {
-                return itarget === 'bar' || isBarRelated;
-            }
+    static async printToTarget(items: any[], type: PrinterType, orderData: any) {
+        // Queue the entire operation to prevent race conditions
+        const result = await new Promise<{success: boolean, count: number}>((resolve) => {
+            this.printQueue = this.printQueue.then(async () => {
+                const opResult = await this.executePrintToTarget(items, type, orderData);
+                resolve(opResult);
+            }).catch(err => {
+                console.error('[PrinterManager] PrintToTarget Queue Error:', err);
+                resolve({ success: false, count: 0 });
+            });
+        });
+        return result;
+    }
 
+    private static async executePrintToTarget(items: any[], type: PrinterType, orderData: any) {
+        if (!items || items.length === 0) return { success: true, count: 0 };
+        
+        // Filter items based on target
+        const filteredItems = items.filter(it => {
+            const t = (it.target || '').toUpperCase();
             if (type === 'kitchen') {
-                // Kitchen takes explicitly marked items
-                if (itarget === 'kitchen' || itarget === 'dapur' || itarget === 'kds' || itarget === 'makanan' || itarget === 'food') return true;
-                
-                // If it's bar related, don't print to kitchen unless target is explicitly kitchen
-                if (isBarRelated && itarget !== 'kitchen' && itarget !== 'dapur') return false;
-
-                // FALLBACK: If it's not bar related and not explicitly bar, it goes to kitchen
-                return true;
+                return t === 'KITCHEN' || t === 'DAPUR' || !t; // Default to kitchen if no target
             }
-            
-            return itarget === type || !itarget;
+            if (type === 'bar') {
+                return t === 'BAR';
+            }
+            return true;
         });
 
-        if (filtered.length === 0) {
-            console.log(`[PrinterManager] No items for ${targetName}`);
+        if (filteredItems.length === 0) {
+            console.log(`[PrinterManager] No items found for ${type} after filtering.`);
             return { success: true, count: 0 };
         }
 
         let macAddress = await this.getSelectedPrinter(type);
         if (!macAddress) {
-            console.warn(`[PrinterManager] ${targetName} printer not configured`);
-            Alert.alert('Printer Belum Diatur', `Alamat printer ${targetName} belum diatur di menu Pengaturan.`);
-            return { success: false, count: 0 };
+            console.warn(`[PrinterManager] No printer configured for ${type}`);
+            return { success: false, count: filteredItems.length };
         }
-
-        // Add robust reset command + the ticket text
-        const text = '\x1b\x40' + this.formatKitchenTicket(filtered, orderData, targetName);
+        
+        console.log(`[PrinterManager] Preparing to print ${filteredItems.length} items to ${type} (${macAddress})`);
+        const ticketText = this.formatKitchenTicket(filteredItems, orderData, type === 'kitchen' ? 'Dapur' : 'Bar');
+        
         try {
+            if (isExpoGo) return { success: true, count: filteredItems.length };
             await this.initPrinter();
             const mac = macAddress.toUpperCase();
-            console.log(`[PrinterManager] Target ${targetName}: ${mac} (Current: ${this.currentActiveMac})`);
-
-            // FORCED RESET for Target Printers ONLY if MAC address changes to avoid lag
-            if (this.currentActiveMac && this.currentActiveMac !== mac) {
-                console.log(`[PrinterManager] Target printer switch detected (${this.currentActiveMac} -> ${mac}). Resetting connection...`);
-                try {
-                    await BLEPrinter.closeConn();
-                    this.currentActiveMac = null;
-                    await new Promise(r => setTimeout(r, 500));
-                } catch (e) {}
+            
+            // Coba hubungkan jika belum terhubung ATAU jika printer aktif saat ini berbeda
+            if (this.connectionStatus[mac] !== 'connected' || this.currentConnectedMac !== mac) {
+                console.log(`[PrinterManager] Switching/Connecting to ${type} printer at ${mac}...`);
+                await BLEPrinter.connectPrinter(mac);
+                this.connectionStatus[mac] = 'connected';
+                this.currentConnectedMac = mac;
+                // Jeda sedikit setelah ganti printer/koneksi baru
+                await new Promise(resolve => setTimeout(resolve, 200));
             }
+            
+            console.log(`[PrinterManager] Sending ticket to ${type} printer...`);
+            await BLEPrinter.printBill(ticketText);
+            console.log(`[PrinterManager] ${type} print successful.`);
+            return { success: true, count: filteredItems.length };
+        } catch (error) { 
+            console.error(`[PrinterManager] ${type} print failed:`, error);
+            const typeLabel = type === 'kitchen' ? 'Dapur' : (type === 'bar' ? 'Bar' : 'Kasir');
+            Alert.alert('Gagal Cetak', `Gagal mengirim data ke printer ${typeLabel}. Pastikan Bluetooth aktif dan printer dalam jangkauan.`);
+            return { success: false, count: filteredItems.length }; 
+        }
+    }
+    
+    static async printOrderReceipt(orderData: any) {
+        // Queue the entire operation to prevent race conditions
+        const result = await new Promise<boolean>((resolve) => {
+            this.printQueue = this.printQueue.then(async () => {
+                const opResult = await this.executePrintOrderReceipt(orderData);
+                resolve(opResult);
+            }).catch(err => {
+                console.error('[PrinterManager] PrintReceipt Queue Error:', err);
+                resolve(false);
+            });
+        });
+        return result;
+    }
 
-            const connected = await this.ensureConnection(mac);
-            if (!connected) return { success: false, count: 0 };
-
-            const printData = '\x1b\x40' + text;
-            let success = false;
-            try {
-                await BLEPrinter.printBill(printData);
-                success = true;
-            } catch (printErr) {
-                console.warn(`[PrinterManager] First target print attempt failed for ${targetName}. Retrying connection...`, printErr);
-                this.currentActiveMac = null;
-                const reconnected = await this.ensureConnection(mac);
-                if (reconnected) {
-                    try {
-                        await BLEPrinter.printBill(printData);
-                        success = true;
-                    } catch (secondErr) {
-                        console.error(`[PrinterManager] Second target print attempt for ${targetName} failed:`, secondErr);
-                    }
+    private static async executePrintOrderReceipt(orderData: any) {
+        if (!orderData) return false;
+        
+        // Priority Fallback: Coba ambil printer kasir, jika tidak ada pakai bar, jika tidak ada pakai kitchen
+        let macAddress = await this.getSelectedPrinter('receipt') || 
+                         await this.getSelectedPrinter('bar') || 
+                         await this.getSelectedPrinter('kitchen');
+                         
+        if (!macAddress) {
+            console.warn('[PrinterManager] No printer configured anywhere for receipt');
+            Alert.alert('Printer Belum Diatur', 'Harap atur alamat printer di menu Pengaturan.');
+            return false;
+        }
+        
+        try {
+            const receiptText = this.formatReceipt(orderData);
+            if (isExpoGo) return true;
+            await this.initPrinter();
+            const mac = macAddress.toUpperCase();
+            
+            // Koneksi
+            if (this.connectionStatus[mac] !== 'connected' || this.currentConnectedMac !== mac) {
+                console.log(`[PrinterManager] Connecting to printer for receipt at ${mac}...`);
+                await BLEPrinter.connectPrinter(mac);
+                this.connectionStatus[mac] = 'connected';
+                this.currentConnectedMac = mac;
+                await new Promise(resolve => setTimeout(resolve, 300));
+            }
+            
+            // Logo (Opsional, jangan biarkan logo menggagalkan struk)
+            if (orderData.show_logo && orderData.receipt_logo_url) {
+                try {
+                    const encodedUrl = encodeURIComponent(orderData.receipt_logo_url.trim());
+                    const logoUrl = `https://wsrv.nl/?url=${encodedUrl}&w=140&fit=contain&filt=greyscale&trim=10`;
+                    await BLEPrinter.printImage(logoUrl, { imageWidth: 140, imageAlignment: 'center' });
+                } catch (e) {
+                    console.warn("Logo print skipped:", e);
                 }
             }
-            return { success, count: filtered.length };
-        } catch (e) {
-            console.error(`[PrinterManager] Print to ${targetName} Error:`, e);
-            this.currentActiveMac = null;
-            return { success: false, count: 0 };
+
+            console.log("[PrinterManager] Sending final bill text...");
+            await BLEPrinter.printBill(receiptText);
+            return true;
+        } catch (error) { 
+            console.error('Print Receipt Error:', error);
+            Alert.alert('Gagal Cetak Struk', 'Pastikan Bluetooth aktif dan printer dalam jangkauan.');
+            return false;
         }
     }
 
-    static async testPrint(type: PrinterType = 'receipt') {
-        const mac = await this.getSelectedPrinter(type);
-        if (!mac) throw new Error('Printer belum diatur');
-        const text = '\x1b\x40' + `\nTEST PRINT ${type.toUpperCase()}\nStatus: Berhasil\n\n\n\n\n\n\n${COMMANDS.PAPER.PAPER_FULL_CUT}`;
-        const connected = await this.ensureConnection(mac);
-        if (!connected) return;
-        await BLEPrinter.printBill(text);
-    }
-
-    static formatSalesReport(data: any, isPreview: boolean = false): string {
-        const paperWidth = data.paperWidth || 32; 
-        const DASH = '-'.repeat(paperWidth) + '\n';
-        const DOUBLE = '='.repeat(paperWidth) + '\n';
+    static formatSalesReport(reportData: any, isPreview: boolean = false): string {
+        const width = reportData.paperWidth || 32;
+        const line = '-'.repeat(width);
         const CENTER = isPreview ? '[C]' : COMMANDS.TEXT_FORMAT.TXT_ALIGN_CT;
         const LEFT = isPreview ? '[L]' : COMMANDS.TEXT_FORMAT.TXT_ALIGN_LT;
         const BOLD_ON = isPreview ? '<b>' : COMMANDS.TEXT_FORMAT.TXT_BOLD_ON;
         const BOLD_OFF = isPreview ? '</b>' : COMMANDS.TEXT_FORMAT.TXT_BOLD_OFF;
-        const DOUBLE_ON = isPreview ? '[BIG]' : COMMANDS.TEXT_FORMAT.TXT_4SQUARE;
-        const DOUBLE_OFF = isPreview ? '[/BIG]' : COMMANDS.TEXT_FORMAT.TXT_NORMAL;
+        const BIG_ON = isPreview ? '[BIG]' : COMMANDS.TEXT_FORMAT.TXT_4SQUARE;
+        const BIG_OFF = isPreview ? '[/BIG]' : COMMANDS.TEXT_FORMAT.TXT_NORMAL;
 
-        // [HARD RESET]
-        let text = isPreview ? '' : '\x1b\x40\x1b\x4d\x00';
+        const formatCurrency = (val: any) => {
+            const v = Math.floor(Number(val || 0));
+            return v.toLocaleString('id-ID');
+        };
+
+        const formatRow = (label: string, val: string | number) => {
+            const valStr = typeof val === 'number' ? formatCurrency(val) : val.toString();
+            const labelStr = label.substring(0, width - valStr.length - 1);
+            const spaceCount = width - labelStr.length - valStr.length;
+            return labelStr + (spaceCount > 0 ? ' '.repeat(spaceCount) : ' ') + valStr;
+        };
+
+        let report = '';
+        report += CENTER + BOLD_ON + BIG_ON + (reportData.shopName || 'WINNY COFFEE').toUpperCase() + BIG_OFF + BOLD_OFF + '\n';
+        if (reportData.address) report += CENTER + reportData.address + '\n';
+        if (reportData.phone) report += CENTER + 'Telp: ' + reportData.phone + '\n';
+        report += CENTER + line + '\n';
         
-        // HEADER matching modal UI - Logo and Address hidden as requested
-        text += CENTER + BOLD_ON + DOUBLE_ON + (data.shopName || 'WINNY COFFEE PNK').toUpperCase() + DOUBLE_OFF + BOLD_OFF + '\n';
-        text += CENTER + DASH;
-        
-        text += CENTER + BOLD_ON + 'RINGKASAN SELESAI SHIFT' + BOLD_OFF + '\n';
-        text += CENTER + (data.dateRange || '') + '\n';
-        text += CENTER + `Kasir: ${data.generatedBy || 'Kasir'}\n`;
-        text += CENTER + `Status: TUTUP\n`;
-        text += CENTER + DOUBLE + LEFT;
+        report += CENTER + BOLD_ON + 'RINGKASAN SHIFT' + BOLD_OFF + '\n';
+        report += CENTER + (reportData.dateRange || '') + '\n';
+        report += CENTER + line + '\n';
 
-        // SECTION: RINGKASAN
-        text += BOLD_ON + 'RINGKASAN' + BOLD_OFF + '\n';
-        text += this.padColumns('Total Transaksi:', (data.totalOrders || 0).toString(), paperWidth, isPreview) + '\n';
-        text += this.padColumns('Tunai:', (data.cashTotal || 0).toLocaleString('id-ID'), paperWidth, isPreview) + '\n';
-        text += this.padColumns('QRIS:', (data.qrTotal || 0).toLocaleString('id-ID'), paperWidth, isPreview) + '\n';
-        if ((data.totalDiscount || 0) > 0) {
-            text += this.padColumns('Total Diskon:', '-' + (data.totalDiscount || 0).toLocaleString('id-ID'), paperWidth, isPreview) + '\n';
-        }
-        if ((data.totalTax || 0) > 0) {
-            text += this.padColumns('Total Pajak:', (data.totalTax || 0).toLocaleString('id-ID'), paperWidth, isPreview) + '\n';
-        }
-        text += BOLD_ON + this.padColumns('TOTAL BERSIH (NET):', (data.totalSales || 0).toLocaleString('id-ID'), paperWidth, isPreview) + BOLD_OFF + '\n';
-        const avgOrder = data.totalOrders > 0 ? Math.round(data.totalSales / data.totalOrders) : 0;
-        text += this.padColumns('Rata-rata/Order:', avgOrder.toLocaleString('id-ID'), paperWidth, isPreview) + '\n';
-        text += CENTER + DASH + LEFT;
+        report += LEFT + formatRow('Kasir:', reportData.generatedBy || '-') + '\n';
+        report += LEFT + formatRow('Total Order:', reportData.totalOrders || 0) + '\n';
+        report += LEFT + BOLD_ON + formatRow('TOTAL SALES:', reportData.totalSales || 0) + BOLD_OFF + '\n';
+        report += CENTER + line + '\n';
 
-        // SECTION: BUKTI FISIK KAS
-        text += BOLD_ON + 'BUKTI FISIK KAS' + BOLD_OFF + '\n';
-        text += this.padColumns('Total Penjualan Tunai:', (data.cashTotal || 0).toLocaleString('id-ID'), paperWidth, isPreview) + '\n';
-        text += this.padColumns('Modal Awal:', (data.openingBalance || 0).toLocaleString('id-ID'), paperWidth, isPreview) + '\n';
-        text += BOLD_ON + this.padColumns('Total (Uang Laci+Modal):', (data.expectedCash || 0).toLocaleString('id-ID'), paperWidth, isPreview) + BOLD_OFF + '\n';
-        
-        if (data.actualCash !== undefined) {
-            text += this.padColumns('Kas Fisik Kasir:', (data.actualCash || 0).toLocaleString('id-ID'), paperWidth, isPreview) + '\n';
-            text += BOLD_ON + this.padColumns('Selisih:', (data.variance || 0).toLocaleString('id-ID'), paperWidth, isPreview) + BOLD_OFF + '\n';
-        }
-        text += CENTER + DASH + LEFT;
-
-        // SECTION: KATEGORI PRODUK
-        if (data.showCategoryOnSummary !== false && data.categorySummary && data.categorySummary.length > 0) {
-            text += BOLD_ON + 'KATEGORI PRODUK' + BOLD_OFF + '\n';
-            data.categorySummary.forEach((c: any) => {
-                text += this.padColumns(c.name || c.category || 'Lainnya', (c.amount || 0).toLocaleString('id-ID'), paperWidth, isPreview) + '\n';
+        report += LEFT + BOLD_ON + 'RINCIAN PEMBAYARAN' + BOLD_OFF + '\n';
+        if (reportData.paymentSummary && reportData.paymentSummary.length > 0) {
+            reportData.paymentSummary.forEach((p: any) => {
+                report += LEFT + formatRow((p.method || 'Tunai').toUpperCase(), p.amount) + '\n';
             });
-            text += CENTER + DASH;
+        }
+        if (reportData.totalTax > 0) report += LEFT + formatRow('PAJAK', reportData.totalTax) + '\n';
+        if (reportData.totalDiscount > 0) report += LEFT + formatRow('DISKON', '-' + formatCurrency(reportData.totalDiscount)) + '\n';
+        report += CENTER + line + '\n';
+
+        report += LEFT + BOLD_ON + 'REKONSILIASI KAS' + BOLD_OFF + '\n';
+        report += LEFT + formatRow('Modal Awal:', reportData.openingBalance || 0) + '\n';
+        report += LEFT + formatRow('Penjualan Tunai:', reportData.cashTotal || 0) + '\n';
+        report += LEFT + BOLD_ON + formatRow('Total Seharusnya:', reportData.expectedCash || 0) + BOLD_OFF + '\n';
+        report += LEFT + formatRow('Kas Fisik:', reportData.actualCash || 0) + '\n';
+        
+        const variance = reportData.variance || 0;
+        report += LEFT + BOLD_ON + formatRow('SELISIH:', variance) + BOLD_OFF + '\n';
+        report += CENTER + line + '\n';
+
+        if (reportData.showCategoryOnSummary !== false && reportData.categorySummary && reportData.categorySummary.length > 0) {
+            report += LEFT + BOLD_ON + 'PENJUALAN PER KATEGORI' + BOLD_OFF + '\n';
+            reportData.categorySummary.forEach((c: any) => {
+                report += LEFT + formatRow(c.category || c.name || 'Lainnya', c.amount) + '\n';
+            });
+            report += CENTER + line + '\n';
         }
 
-        text += '\n' + CENTER + `Dicetak pada: ${new Date().toLocaleString('id-ID')}\n`;
-        text += CENTER + BOLD_ON + '[ BUKTI FISIK SAH ]' + BOLD_OFF + '\n';
-        if (data.receiptFooter) text += CENTER + data.receiptFooter + '\n';
+        report += CENTER + '\n' + BOLD_ON + 'Dicetak pada:' + BOLD_OFF + '\n';
+        report += CENTER + new Date().toLocaleString('id-ID') + '\n\n\n\n';
+        
+        if (!isPreview) {
+            report += '\n'.repeat(3);
+        }
 
-        text += '\n'.repeat(7) + (isPreview ? '' : (data.enableAutoCut !== false ? COMMANDS.PAPER.PAPER_FULL_CUT : ''));
-        return text;
+        return report;
     }
 
-    static async printSalesReport(data: any) {
-        console.log('[PrinterManager] printSalesReport started');
-        
-        let macAddress: string | null = null;
+    static async printSalesReport(reportData: any) {
+        const result = await new Promise<boolean>((resolve) => {
+            this.printQueue = this.printQueue.then(async () => {
+                const opResult = await this.executePrintSalesReport(reportData);
+                resolve(opResult);
+            }).catch(err => {
+                console.error('[PrinterManager] PrintReport Queue Error:', err);
+                resolve(false);
+            });
+        });
+        return result;
+    }
+
+    private static async executePrintSalesReport(reportData: any) {
+        let macAddress = await this.getSelectedPrinter('report') || await this.getSelectedPrinter('receipt');
+        if (!macAddress) return false;
+        const reportText = this.formatSalesReport(reportData);
         try {
-            macAddress = await this.getSelectedPrinter('report') || await this.getSelectedPrinter('receipt');
-        } catch (e) {
-            console.error('[PrinterManager] Error getting printer address:', e);
-        }
-        
+            if (isExpoGo) return true;
+            await this.initPrinter();
+            const mac = macAddress.toUpperCase();
+            if (this.connectionStatus[mac] !== 'connected' || this.currentConnectedMac !== mac) {
+                console.log(`[PrinterManager] Switching/Connecting to report printer at ${mac}...`);
+                await BLEPrinter.connectPrinter(mac);
+                this.connectionStatus[mac] = 'connected';
+                this.currentConnectedMac = mac;
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+            
+            // Cetak Logo di laporan jika diinginkan
+            if (reportData.receipt_logo_url) {
+                const encodedUrl = encodeURIComponent(reportData.receipt_logo_url.trim());
+                const logoUrl = `https://wsrv.nl/?url=${encodedUrl}&w=140&fit=contain&filt=greyscale&trim=10`;
+                
+                // No delay needed here
+                await BLEPrinter.printImage(logoUrl, { 
+                    imageWidth: 140, 
+                    imageAlignment: 'center' 
+                });
+                // No delay needed here
+            }
+
+            await BLEPrinter.printBill(reportText);
+            return true;
+        } catch (error) { return false; }
+    }
+
+    static async testPrint(type: PrinterType = 'receipt') {
+        const result = await new Promise<boolean>((resolve, reject) => {
+            this.printQueue = this.printQueue.then(async () => {
+                const opResult = await this.executeTestPrint(type);
+                resolve(opResult);
+            }).catch(err => {
+                console.error('[PrinterManager] TestPrint Queue Error:', err);
+                reject(err);
+            });
+        });
+        return result;
+    }
+
+    private static async executeTestPrint(type: PrinterType = 'receipt') {
+        let macAddress = await this.getSelectedPrinter(type);
         if (!macAddress) {
-            Alert.alert('Kesalahan Printer', 'Alamat printer tidak ditemukan. Mohon atur di menu Pengaturan.');
-            return false;
+            throw new Error(`Printer ${type} belum dikonfigurasi`);
         }
 
+        const label = type === 'receipt' ? 'KASIR' : (type === 'report' ? 'LAPORAN' : (type === 'kitchen' ? 'DAPUR' : 'BAR'));
+        const CENTER = COMMANDS.TEXT_FORMAT.TXT_ALIGN_CT;
+        const BOLD_ON = COMMANDS.TEXT_FORMAT.TXT_BOLD_ON;
+        const BOLD_OFF = COMMANDS.TEXT_FORMAT.TXT_BOLD_OFF;
+        const DOUBLE_ON = COMMANDS.TEXT_FORMAT.TXT_2HEIGHT;
+        const DOUBLE_OFF = COMMANDS.TEXT_FORMAT.TXT_NORMAL;
+        
+        let testText = CENTER + BOLD_ON + DOUBLE_ON + "TEST PRINT " + label + DOUBLE_OFF + BOLD_OFF + "\n\n";
+        testText += CENTER + "Koneksi Berhasil!\n";
+        testText += CENTER + "MAC: " + macAddress.toUpperCase() + "\n";
+        testText += CENTER + "Waktu: " + new Date().toLocaleString('id-ID') + "\n\n";
+        testText += "--------------------------------\n";
+        testText += CENTER + "Printer thermal Anda siap digunakan\n";
+        testText += CENTER + "Terima Kasih\n\n\n";
+
         try {
+            if (isExpoGo) return true;
             await this.initPrinter();
             const mac = macAddress.toUpperCase();
             
-            // [SAFETY HARVEST]
-            if (!data.receiptLogoUrl || !data.shopName) {
-                try {
-                    const { data: safetyData } = await supabase.from('store_settings').select('*').eq('id', 1).maybeSingle();
-                    if (safetyData) {
-                        data.receiptLogoUrl = data.receiptLogoUrl || safetyData.receipt_logo_url;
-                        data.shopName = data.shopName || safetyData.receipt_header || safetyData.store_name;
-                        data.paperWidth = data.paperWidth || (safetyData.receipt_paper_width === '80mm' ? 48 : 32);
-                        data.enableAutoCut = data.enableAutoCut ?? safetyData.enable_auto_cut;
-                    }
-                } catch (err) {
-                    console.warn('[PrinterManager] Safety harvest (report) failed', err);
-                }
+            if (this.connectionStatus[mac] !== 'connected' || this.currentConnectedMac !== mac) {
+                console.log(`[PrinterManager] Switching/Connecting for test print at ${mac}...`);
+                await BLEPrinter.connectPrinter(mac);
+                this.connectionStatus[mac] = 'connected';
+                this.currentConnectedMac = mac;
+                await new Promise(resolve => setTimeout(resolve, 200));
             }
-
-            // Force fresh connection/reset for every report to ensure consistency
-            console.log(`[PrinterManager] Ensuring connection for report: ${mac}`);
-            const connected = await this.ensureConnection(mac);
-            if (!connected) return false;
             
-            const text = '\x1b\x40' + this.formatSalesReport(data);
-            await BLEPrinter.printBill(text);
+            // Short delay after connection
+            await new Promise(resolve => setTimeout(resolve, 200));
+            
+            await BLEPrinter.printBill(testText);
             return true;
-        } catch (e: any) {
-            console.error('[PrinterManager] printSalesReport error:', e);
-            Alert.alert('Gagal Cetak', 'Gagal mengirim data ke printer. Detail: ' + e.message);
-            this.currentActiveMac = null;
-            return false;
+        } catch (error: any) {
+            console.error(`[PrinterManager] Test print failed:`, error);
+            throw error;
         }
     }
 }

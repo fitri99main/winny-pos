@@ -1,60 +1,108 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, SafeAreaView, StyleSheet, ActivityIndicator, Alert, FlatList, Modal, useWindowDimensions } from 'react-native';
-import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
-import { CheckCircle2, X } from 'lucide-react-native';
-import { supabase } from '../lib/supabase';
-import { useSession } from '../context/SessionContext';
+import React from 'react';
+import * as RN from 'react-native';
+var View = RN.View;
+var Text = RN.Text;
+var TouchableOpacity = RN.TouchableOpacity;
+var ScrollView = RN.ScrollView;
+var SafeAreaView = RN.SafeAreaView;
+var StyleSheet = RN.StyleSheet;
+var ActivityIndicator = RN.ActivityIndicator;
+var Alert = RN.Alert;
+var FlatList = RN.FlatList;
+var Modal = RN.Modal;
+var useWindowDimensions = RN.useWindowDimensions;
+import * as NavNative from '@react-navigation/native';
+var useNavigation = NavNative.useNavigation;
+var useRoute = NavNative.useRoute;
+var useFocusEffect = NavNative.useFocusEffect;
+import * as Lucide from 'lucide-react-native';
+var CheckCircle2 = Lucide.CheckCircle2;
+var X = Lucide.X;
+import * as SupabaseLib from '../lib/supabase';
+var supabase = SupabaseLib.supabase;
+import * as SessionLib from '../context/SessionContext';
+var useSession = SessionLib.useSession;
 
 export default function KDSScreen() {
-    const navigation = useNavigation();
-    const route = useRoute();
-    const { initialFilter = 'All' } = (route.params as any) || {};
-    const { width, height } = useWindowDimensions();
-    const isSmallDevice = width < 480;
-    const isLandscape = width > height;
-    const isWide = width >= 600;
-    const numColumns = isWide ? 4 : (width >= 380 ? 2 : 1);
-    const { currentBranchId } = useSession();
+    var navigation = useNavigation();
+    var route = useRoute();
+    var params = route.params || {};
+    var initialFilter = params.initialFilter || 'All';
+    var dims = useWindowDimensions();
+    var width = dims.width;
+    var height = dims.height;
+    var isSmallDevice = width < 480;
+    var isLandscape = width > height;
+    var isWide = width >= 600;
+    var numColumns = isWide ? 4 : (width >= 380 ? 2 : 1);
+    var session = useSession();
+    var currentBranchId = session.currentBranchId;
 
-    const [orders, setOrders] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [filter, setFilter] = useState<'All' | 'Kitchen' | 'Bar'>(initialFilter);
-    const [now, setNow] = useState(new Date());
-    const [showCompleteModal, setShowCompleteModal] = useState(false);
-    const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
-    const [completing, setCompleting] = useState(false);
+    var stateOrders = React.useState([]);
+    var orders = stateOrders[0];
+    var setOrders = stateOrders[1];
 
-    useEffect(() => {
-        const interval = setInterval(() => setNow(new Date()), 30000);
-        return () => clearInterval(interval);
+    var stateLoading = React.useState(true);
+    var loading = stateLoading[0];
+    var setLoading = stateLoading[1];
+
+    var stateFilter = React.useState(initialFilter);
+    var filter = stateFilter[0];
+    var setFilter = stateFilter[1];
+
+    var stateNow = React.useState(new Date());
+    var now = stateNow[0];
+    var setNow = stateNow[1];
+
+    var stateShowCompleteModal = React.useState(false);
+    var showCompleteModal = stateShowCompleteModal[0];
+    var setShowCompleteModal = stateShowCompleteModal[1];
+
+    var stateSelectedOrderId = React.useState(null);
+    var selectedOrderId = stateSelectedOrderId[0];
+    var setSelectedOrderId = stateSelectedOrderId[1];
+
+    var stateCompleting = React.useState(false);
+    var completing = stateCompleting[0];
+    var setCompleting = stateCompleting[1];
+
+    React.useEffect(function() {
+        var interval = setInterval(function() { setNow(new Date()); }, 30000);
+        return function() { clearInterval(interval); };
     }, []);
 
-    useEffect(() => {
+    var fetchActiveOrders = function() {
+        if (!currentBranchId) return;
+        return supabase
+            .from('sales')
+            .select('*, items:sale_items(*)')
+            .eq('branch_id', currentBranchId)
+            .neq('status', 'Completed')
+            .order('date', { ascending: false })
+            .limit(50)
+            .then(function(res) {
+                if (res.error) throw res.error;
+                setOrders(res.data || []);
+            })['catch'](function(error) {
+                console.error('Error fetching KDS orders:', error);
+            })
+            .finally(function() {
+                setLoading(false);
+            });
+    };
+
+    React.useEffect(function() {
         if (!currentBranchId) return;
 
         fetchActiveOrders();
 
-        const branchIdInt = parseInt(currentBranchId);
-        const filterValue = isNaN(branchIdInt) ? currentBranchId : branchIdInt;
-        console.log('[KDSScreen] Subscribing to branch:', currentBranchId, '(Filter:', filterValue, ')');
-
-        const salesSub = supabase.channel(`kds_sales_${currentBranchId}`)
+        var salesSub = supabase.channel('kds_sales_' + currentBranchId)
             .on('postgres_changes', 
                 { event: '*', schema: 'public', table: 'sales' }, 
-                (payload) => {
-                    const newRow = payload.new as any;
-                    const eventType = payload.eventType;
-
-                    console.log('[KDSScreen] Real-time Sales Event Received:', {
-                        event: eventType,
-                        row_id: newRow?.id,
-                        row_branch: newRow?.branch_id,
-                        current_app_branch: currentBranchId
-                    });
-
-                    // Manual filter for branch_id (safer than Postgres filter string)
+                function(payload) {
+                    var newRow = payload.new;
+                    var eventType = payload.eventType;
                     if (newRow && String(newRow.branch_id || '').trim() === String(currentBranchId || '').trim()) {
-                        console.log('[KDSScreen] Match found! Refreshing orders...');
                         fetchActiveOrders();
                     } else if (eventType === 'DELETE') {
                         fetchActiveOrders();
@@ -62,704 +110,361 @@ export default function KDSScreen() {
                 }
             );
 
-        salesSub.subscribe((status) => {
-            console.log(`[KDSScreen] Sales subscription status for branch ${currentBranchId}:`, status);
+        salesSub.subscribe(function(status) {
             if (status === 'SUBSCRIBED') {
                 fetchActiveOrders();
             }
         });
 
-        const itemsSub = supabase.channel(`kds_items_${currentBranchId}`)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'sale_items' }, () => {
-                console.log('[KDSScreen] Item change detected');
+        var itemsSub = supabase.channel('kds_items_' + currentBranchId)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'sale_items' }, function() {
                 fetchActiveOrders();
             });
 
-        itemsSub.subscribe((status) => {
-            console.log(`[KDSScreen] Items subscription status for branch ${currentBranchId}:`, status);
-        });
+        itemsSub.subscribe();
 
-        // Polling fallback (60s as KDS is less critical for instant entry than POS but good to have)
-        const pollingInterval = setInterval(fetchActiveOrders, 60000);
+        var pollingInterval = setInterval(fetchActiveOrders, 60000);
 
-        return () => {
+        return function() {
             supabase.removeChannel(salesSub);
             supabase.removeChannel(itemsSub);
             clearInterval(pollingInterval);
         };
     }, [currentBranchId]);
 
-    const fetchActiveOrders = async () => {
-        if (!currentBranchId) return;
+    var determineTarget = function(item) {
+        var nameLow = (item.product_name || item.name || '').toLowerCase();
+        var categoryLow = (item.category || '').toLowerCase();
+        var drinks = ['minum', 'drink', 'beverage', 'juice', 'jus', 'tea', 'teh', 'coffee', 'kopi', 'susu', 'milk', 'water', 'air', 'mineral', 'soda', 'cola', 'coke', 'sprite', 'fanta', 'beer', 'bir', 'wine', 'cocktail', 'mocktail', 'smoothie', 'shake', 'milo', 'boba', 'thai tea', 'green tea', 'lemongrass', 'jeruk', 'lemon', 'alpukat', 'mangga', 'strawberry', 'jahe', 'madu', 'sirup', 'cendol', 'dawet', 'wedang', 'gembira', 'arak', 'espresso', 'latte', 'cappuccino', 'frappe'];
         
-        try {
-            // Loosened status filter: Fetch ALL orders to identify what's hiding them
-            const { data, error } = await supabase
-                .from('sales')
-                .select(`
-                    *,
-                    items:sale_items(*)
-                `)
-                .eq('branch_id', currentBranchId)
-                .neq('status', 'Completed') // Only active orders
-                .order('date', { ascending: false })
-                .limit(50);
-
-            if (error) throw error;
-
-            console.log('[KDS] Raw orders fetched:', data?.length);
-            setOrders(data || []);
-        } catch (error) {
-            console.error('Error fetching KDS orders:', error);
-            showToast('Gagal memuat data: ' + (error as any).message, 'error');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const getElapsedTime = (dateStr: string) => {
-        if (!dateStr) return '0m';
-        const start = new Date(dateStr).getTime();
-        const diff = now.getTime() - start;
-        const minutes = Math.floor(diff / 60000);
-        return `${minutes}m`;
-    };
-
-    const handleUpdateItemStatus = async (itemId: number, newStatus: string) => {
-        // Optimistic UI Update
-        const originalOrders = [...orders];
-        setOrders(prevOrders => 
-            prevOrders.map(order => ({
-                ...order,
-                items: (order.items || []).map((item: any) => 
-                    item.id === itemId ? { ...item, status: newStatus } : item
-                )
-            }))
-        );
-
-        try {
-            console.log('[KDS] Updating item:', itemId, 'to', newStatus);
-            const { error } = await supabase
-                .from('sale_items')
-                .update({ status: newStatus })
-                .eq('id', itemId);
-
-            if (error) {
-                // Revert state on error
-                setOrders(originalOrders);
-                throw error;
+        var isDrink = false;
+        for (var i = 0; i < drinks.length; i++) {
+            if (categoryLow.indexOf(drinks[i]) !== -1 || nameLow.indexOf(drinks[i]) !== -1) {
+                isDrink = true;
+                break;
             }
-            
-            console.log('[KDS] Item status updated successfully');
-        } catch (error: any) {
-            console.error('Error updating item status:', error);
-            const msg = error.message || 'Periksa koneksi internet Anda';
-            Alert.alert('Gagal Update', `Tidak bisa mengubah status item: ${msg}`);
         }
+        if (!isDrink) {
+            if (nameLow.indexOf('es ') === 0 || nameLow.indexOf('ice ') === 0 || nameLow.indexOf(' es ') !== -1 || nameLow.indexOf(' ice ') !== -1 || nameLow.indexOf(' panas') !== -1 || nameLow.indexOf(' hot') !== -1 || nameLow.indexOf(' dingin') !== -1 || nameLow.indexOf(' cold') !== -1) {
+                isDrink = true;
+            }
+        }
+        return isDrink ? 'Bar' : 'Kitchen';
     };
 
-    const handleCompleteOrder = (orderId: number) => {
+    var getElapsedTime = function(dateStr) {
+        if (!dateStr) return '0m';
+        var start = new Date(dateStr).getTime();
+        var diff = now.getTime() - start;
+        var minutes = Math.floor(diff / 60000);
+        return minutes + 'm';
+    };
+
+    var handleUpdateItemStatus = function(itemId, newStatus) {
+        var originalOrders = JSON.parse(JSON.stringify(orders));
+        setOrders(function(prevOrders) {
+            return prevOrders.map(function(order) {
+                var newItems = (order.items || []).map(function(item) {
+                    return item.id === itemId ? Object.assign({}, item, { status: newStatus }) : item;
+                });
+                return Object.assign({}, order, { items: newItems });
+            });
+        });
+
+        return supabase
+            .from('sale_items')
+            .update({ status: newStatus })
+            .eq('id', itemId)
+            .then(function(res) {
+                if (res.error) throw res.error;
+            })['catch'](function(error) {
+                setOrders(originalOrders);
+                Alert.alert('Gagal Update', 'Tidak bisa mengubah status item.');
+            });
+    };
+
+    var handleCompleteOrder = function(orderId) {
         setSelectedOrderId(orderId);
         setShowCompleteModal(true);
     };
 
-    const confirmCompleteOrder = async () => {
+    var confirmCompleteOrder = function() {
         if (!selectedOrderId) return;
-        
-        const originalOrders = [...orders];
-        const orderIdToComplete = selectedOrderId;
+        var orderIdToComplete = selectedOrderId;
+        var originalOrders = JSON.parse(JSON.stringify(orders));
+        var currentFilter = filter;
 
-        const currentFilter = filter;
-
-        // 1. Update local state immediately (Optimistic UI)
-        setOrders(prev => prev.map(o => {
-            if (o.id === orderIdToComplete) {
-                return {
-                    ...o,
-                    items: (o.items || []).map((item: any) => 
-                        (currentFilter === 'All' || (item.target || determineTarget(item)) === currentFilter)
-                            ? { ...item, status: 'Served' }
-                            : item
-                    )
-                };
-            }
-            return o;
-        }));
+        setOrders(function(prev) {
+            return prev.map(function(o) {
+                if (o.id === orderIdToComplete) {
+                    var newItems = (o.items || []).map(function(item) {
+                        if (currentFilter === 'All' || (item.target || determineTarget(item)) === currentFilter) {
+                            return Object.assign({}, item, { status: 'Served' });
+                        }
+                        return item;
+                    });
+                    return Object.assign({}, o, { items: newItems });
+                }
+                return o;
+            });
+        });
         
-        // Hide modal immediately
         setShowCompleteModal(false);
         setSelectedOrderId(null);
 
-        try {
-            // 2. Update DB
-            if (currentFilter === 'All') {
-                await supabase.from('sale_items').update({ status: 'Served' }).eq('sale_id', orderIdToComplete);
-            } else {
-                await supabase.from('sale_items').update({ status: 'Served' }).eq('sale_id', orderIdToComplete).eq('target', currentFilter);
+        var updatePromise = currentFilter === 'All' ? 
+            supabase.from('sale_items').update({ status: 'Served' }).eq('sale_id', orderIdToComplete) :
+            supabase.from('sale_items').update({ status: 'Served' }).eq('sale_id', orderIdToComplete).eq('target', currentFilter);
+
+        return updatePromise.then(function() {
+            var order = null;
+            for (var i = 0; i < originalOrders.length; i++) {
+                if (originalOrders[i].id === orderIdToComplete) {
+                    order = originalOrders[i];
+                    break;
+                }
             }
 
-            // 3. Check if all items are served
-            const order = originalOrders.find(o => o.id === orderIdToComplete);
             if (order) {
-                const updatedItems = (order.items || []).map((item: any) => 
-                    (currentFilter === 'All' || (item.target || determineTarget(item)) === currentFilter)
-                        ? { ...item, status: 'Served' }
-                        : item
-                );
-                const allServed = updatedItems.every((i: any) => i.status === 'Served');
+                var updatedItems = (order.items || []).map(function(item) {
+                    if (currentFilter === 'All' || (item.target || determineTarget(item)) === currentFilter) {
+                        return Object.assign({}, item, { status: 'Served' });
+                    }
+                    return item;
+                });
+                var allServed = true;
+                for (var j = 0; j < updatedItems.length; j++) {
+                    if (updatedItems[j].status !== 'Served') {
+                        allServed = false;
+                        break;
+                    }
+                }
 
                 if (allServed) {
-                    let waitingTime = '';
-                    const start = new Date(order.created_at || order.date).getTime();
-                    const diff = Date.now() - start;
-                    const minutes = Math.floor(diff / 60000);
-                    waitingTime = `${minutes} menit`;
+                    var start = new Date(order.created_at || order.date).getTime();
+                    var diff = Date.now() - start;
+                    var minutes = Math.floor(diff / 60000);
+                    var waitingTime = minutes + ' menit';
 
-                    await supabase
+                    return supabase
                         .from('sales')
                         .update({ 
                             status: 'Completed',
                             waiting_time: waitingTime
                         })
-                        .eq('id', orderIdToComplete);
-                    
-                    setOrders(prev => prev.filter(o => o.id !== orderIdToComplete));
+                        .eq('id', orderIdToComplete)
+                        .then(function() {
+                            setOrders(function(prev) {
+                                return prev.filter(function(o) { return o.id !== orderIdToComplete; });
+                            });
+                        });
                 }
             }
-        } catch (error: any) {
-            console.error('Error completing order station items:', error);
-            // Revert optimistic UI on error
+        })['catch'](function(error) {
             setOrders(originalOrders);
-            Alert.alert('Gagal Selesai', `Gagal menyimpan status pesanan: ${error.message}`);
-        }
+            Alert.alert('Gagal Selesai', 'Gagal menyimpan status pesanan.');
+        });
     };
 
-    const determineTarget = (item: any) => {
-        // Robust Heuristic: Matches Web version
-        const nameLow = (item.product_name || item.name || '').toLowerCase();
-        const categoryLow = (item.category || '').toLowerCase();
-
-        const isDrink = [
-            'minum', 'drink', 'beverage', 'juice', 'jus', 'tea', 'teh', 'coffee', 'kopi', 
-            'susu', 'milk', 'water', 'air', 'mineral', 'soda', 'cola', 'coke', 'sprite', 'fanta',
-            'beer', 'bir', 'wine', 'cocktail', 'mocktail', 'smoothie', 'shake', 'milo', 
-            'boba', 'thai tea', 'green tea', 'lemongrass', 'jeruk', 'lemon', 'alpukat', 'mangga', 
-            'strawberry', 'jahe', 'madu', 'sirup', 'cendol', 'dawet', 'wedang', 'gembira', 'arak',
-            'espresso', 'latte', 'cappuccino', 'frappe'
-        ].some(k => categoryLow.includes(k) || nameLow.includes(k)) || 
-        nameLow.startsWith('es ') || nameLow.startsWith('ice ') || 
-        nameLow.includes(' es ') || nameLow.includes(' ice ') ||
-        nameLow.includes(' panas') || nameLow.includes(' hot') || 
-        nameLow.includes(' dingin') || nameLow.includes(' cold');
-
-        return isDrink ? 'Bar' : 'Kitchen';
-    };
-
-    const filteredOrders = orders.map(order => {
-        const items = (order.items || []).filter((item: any) => {
+    var filteredOrders = orders.map(function(order) {
+        var items = (order.items || []).filter(function(item) {
             if (filter === 'All') return true;
-            // Use existing target or fallback to smart determination
-            const finalTarget = item.target || determineTarget(item);
+            var finalTarget = item.target || determineTarget(item);
             return finalTarget === filter;
         });
-        return { ...order, items: items.filter((item: any) => item.status !== 'Served') };
-    }).filter(order => order.items.length > 0);
+        var activeItems = items.filter(function(item) { return item.status !== 'Served'; });
+        return Object.assign({}, order, { items: activeItems });
+    }).filter(function(order) { return order.items.length > 0; });
 
-    const renderOrderItem = ({ item: order }: { item: any }) => {
-        const allItemsReady = (order.items || []).every((i: any) => i.status === 'Ready');
-        const elapsed = parseInt(getElapsedTime(order.date));
+    var renderOrderItem = function(params) {
+        var order = params.item;
+        var allItemsReady = true;
+        for (var i = 0; i < order.items.length; i++) {
+            if (order.items[i].status !== 'Ready') {
+                allItemsReady = false;
+                break;
+            }
+        }
+        var elapsedStr = getElapsedTime(order.date);
+        var elapsed = parseInt(elapsedStr);
 
-        return (
-            <View style={[
-                styles.orderCard,
-                isSmallDevice && { width: '100%', padding: 12, borderRadius: 16 }
-            ]}>
-                <View style={[
-                    styles.orderHeader,
-                    isSmallDevice && { marginBottom: 8, paddingBottom: 8 }
-                ]}>
-                    <View>
-                        <Text style={styles.orderNo}>{order.order_no}</Text>
-                        <Text style={[
-                            styles.tableName,
-                            isSmallDevice && { fontSize: 14 }
-                        ]}>Meja {order.table_no || '-'}</Text>
-                    </View>
-                    <View style={styles.headerInfo}>
-                        <Text style={[styles.timeText, elapsed > 15 && styles.timeWarning]}>
-                            {elapsed}m lalu
-                        </Text>
-                        <Text style={styles.waiterName}>👤 {order.waiter_name || 'Kiosk'}</Text>
-                    </View>
-                </View>
-
-                <View style={[
-                    styles.itemsList,
-                    isSmallDevice && { marginBottom: 12 }
-                ]}>
-                    {order.items.map((item: any, index: number) => (
-                        <View key={`item-${item.id || index}-${index}`} style={styles.itemRow}>
-                            <View style={styles.itemMain}>
-                                <View style={[
-                                    styles.quantityBadge, 
-                                    item.status === 'Ready' && styles.quantityBadgeReady,
-                                    isSmallDevice && { width: 22, height: 22, borderRadius: 6, marginRight: 6 }
-                                ]}>
-                                    <Text style={[
-                                        styles.quantityText,
-                                        isSmallDevice && { fontSize: 10 }
-                                    ]}>{item.quantity}</Text>
-                                </View>
-                                <Text 
-                                    style={[
-                                        styles.itemName, 
-                                        item.status === 'Ready' && styles.itemNameReady,
-                                        isSmallDevice && { fontSize: 11 }
-                                    ]}
-                                    numberOfLines={1}
-                                    ellipsizeMode="tail"
-                                >
-                                    {item.product_name}
-                                </Text>
-                                {item.notes ? (
-                                    <View style={{ marginLeft: 32, marginTop: 1 }}>
-                                        <Text style={{ fontSize: 10, color: '#ea580c', fontStyle: 'italic' }}>
-                                            • {item.notes}
-                                        </Text>
-                                    </View>
-                                ) : null}
-                            </View>
-                            {item.status !== 'Ready' && (
-                                <TouchableOpacity 
-                                    style={[
-                                        styles.readyButton,
-                                        item.status === 'Preparing' ? { backgroundColor: '#ecfdf5', borderColor: '#10b981' } : { backgroundColor: '#fff7ed', borderColor: '#fdba74' },
-                                        isSmallDevice && { paddingVertical: 2, paddingHorizontal: 6 }
-                                    ]}
-                                    onPress={() => handleUpdateItemStatus(item.id, item.status === 'Preparing' ? 'Ready' : 'Preparing')}
-                                >
-                                    <Text style={[
-                                        styles.readyButtonText,
-                                        item.status === 'Preparing' ? { color: '#10b981' } : { color: '#ea580c' },
-                                        isSmallDevice && { fontSize: 9 }
-                                    ]}>
-                                        {item.status === 'Preparing' ? 'Selesai' : 'Proses'}
-                                    </Text>
-                                </TouchableOpacity>
-                            )}
-                            {item.status === 'Ready' && (
-                                <Text style={[
-                                    styles.readyBadge,
-                                    isSmallDevice && { fontSize: 12 }
-                                ]}>✅</Text>
-                            )}
-                        </View>
-                    ))}
-                </View>
-
-                <TouchableOpacity 
-                    style={[
-                        styles.completeButton, 
-                        !allItemsReady && styles.completeButtonDisabled,
-                        isSmallDevice && { paddingVertical: 10, borderRadius: 10 }
-                    ]}
-                    disabled={!allItemsReady}
-                    onPress={() => handleCompleteOrder(order.id)}
-                >
-                    <Text style={[
-                        styles.completeButtonText, 
-                        !allItemsReady && styles.completeButtonTextDisabled,
-                        isSmallDevice && { fontSize: 12 }
-                    ]}>
-                        {allItemsReady ? 'Siap Sajikan' : 'Belum Lengkap'}
-                    </Text>
-                </TouchableOpacity>
-            </View>
+        return React.createElement(View, { style: [styles.orderCard, isSmallDevice && { width: '100%', padding: 12, borderRadius: 16 }] },
+            React.createElement(View, { style: [styles.orderHeader, isSmallDevice && { marginBottom: 8, paddingBottom: 8 }] },
+                React.createElement(View, null,
+                    React.createElement(Text, { style: styles.orderNo }, order.order_no),
+                    React.createElement(Text, { style: [styles.tableName, isSmallDevice && { fontSize: 14 }] }, "Meja " + (order.table_no || '-'))
+                ),
+                React.createElement(View, { style: styles.headerInfo },
+                    React.createElement(Text, { style: [styles.timeText, elapsed > 15 && styles.timeWarning] }, elapsedStr + " lalu"),
+                    React.createElement(Text, { style: styles.waiterName }, "\uD83D\uDC64 " + (order.waiter_name || 'Kiosk'))
+                )
+            ),
+            React.createElement(View, { style: [styles.itemsList, isSmallDevice && { marginBottom: 12 }] },
+                order.items.map(function(item, index) {
+                    return React.createElement(View, { key: 'item-' + (item.id || index) + '-' + index, style: styles.itemRow },
+                        React.createElement(View, { style: styles.itemMain },
+                            React.createElement(View, { style: [styles.quantityBadge, item.status === 'Ready' && styles.quantityBadgeReady, isSmallDevice && { width: 22, height: 22, borderRadius: 6, marginRight: 6 }] },
+                                React.createElement(Text, { style: [styles.quantityText, isSmallDevice && { fontSize: 10 }] }, item.quantity)
+                            ),
+                            React.createElement(Text, { 
+                                style: [styles.itemName, item.status === 'Ready' && styles.itemNameReady, isSmallDevice && { fontSize: 11 }],
+                                numberOfLines: 1,
+                                ellipsizeMode: "tail"
+                            }, item.product_name),
+                            item.notes ? React.createElement(View, { style: { marginLeft: 32, marginTop: 1 } },
+                                React.createElement(Text, { style: { fontSize: 10, color: '#ea580c', fontStyle: 'italic' } }, "\u2022 " + item.notes)
+                            ) : null
+                        ),
+                        item.status !== 'Ready' ? React.createElement(TouchableOpacity, { 
+                            style: [styles.readyButton, item.status === 'Preparing' ? { backgroundColor: '#ecfdf5', borderColor: '#10b981' } : { backgroundColor: '#fff7ed', borderColor: '#fdba74' }, isSmallDevice && { paddingVertical: 2, paddingHorizontal: 6 }],
+                            onPress: function() { handleUpdateItemStatus(item.id, item.status === 'Preparing' ? 'Ready' : 'Preparing'); }
+                        },
+                            React.createElement(Text, { style: [styles.readyButtonText, item.status === 'Preparing' ? { color: '#10b981' } : { color: '#ea580c' }, isSmallDevice && { fontSize: 9 }] },
+                                item.status === 'Preparing' ? 'Selesai' : 'Proses'
+                            )
+                        ) : React.createElement(Text, { style: [styles.readyBadge, isSmallDevice && { fontSize: 12 }] }, "\u2705")
+                    );
+                })
+            ),
+            React.createElement(TouchableOpacity, { 
+                style: [styles.completeButton, !allItemsReady && styles.completeButtonDisabled, isSmallDevice && { paddingVertical: 10, borderRadius: 10 }],
+                disabled: !allItemsReady,
+                onPress: function() { handleCompleteOrder(order.id); }
+            },
+                React.createElement(Text, { style: [styles.completeButtonText, !allItemsReady && styles.completeButtonTextDisabled, isSmallDevice && { fontSize: 12 }] },
+                    allItemsReady ? 'Siap Sajikan' : 'Belum Lengkap'
+                )
+            )
         );
     };
 
-    return (
-        <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-                    <Text style={styles.backButtonText}>&lsaquo;</Text>
-                </TouchableOpacity>
-                <View style={{ flex: 1 }}>
-                    <Text style={styles.headerTitle}>Monitor Pesanan</Text>
-                    <Text style={{ fontSize: 10, color: '#64748b' }}>Cabang: {currentBranchId || 'Tidak Diketahui'} • Total: {orders.length} Data</Text>
-                </View>
-                <TouchableOpacity 
-                    onPress={() => {
-                        fetchActiveOrders();
-                    }} 
-                    style={{ backgroundColor: '#f1f5f9', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12 }}
-                >
-                    <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#ea580c' }}>Segarkan</Text>
-                </TouchableOpacity>
-            </View>
-
-            <View style={styles.tabsContainer}>
-                {(['All', 'Kitchen', 'Bar'] as const).map((t) => (
-                    <TouchableOpacity
-                        key={t}
-                        style={[styles.tab, filter === t && styles.activeTab]}
-                        onPress={() => setFilter(t)}
-                    >
-                        <Text style={[styles.tabText, filter === t && styles.activeTabText]}>
-                            {t === 'All' ? 'Semua' : t === 'Kitchen' ? 'Dapur' : 'Bar'}
-                        </Text>
-                    </TouchableOpacity>
-                ))}
-            </View>
-
-            {loading ? (
-                <View style={styles.centerContent}>
-                    <ActivityIndicator size="large" color="#ea580c" />
-                </View>
-            ) : filteredOrders.length === 0 ? (
-                <View style={styles.centerContent}>
-                    <Text style={styles.emptyText}>Tidak ada pesanan aktif</Text>
-                </View>
-            ) : (
-                <FlatList
-                    data={filteredOrders}
-                    renderItem={renderOrderItem}
-                    keyExtractor={(item, index) => `order-${item?.id || index}-${index}`}
-                    contentContainerStyle={[
-                        styles.listContent,
-                        isSmallDevice && { padding: 8 }
-                    ]}
-                    numColumns={numColumns}
-                    key={`kds-grid-${numColumns}`}
-                />
-            )}
-
-            {/* Modern Complete Order Modal */}
-            <Modal
-                visible={showCompleteModal}
-                transparent={true}
-                animationType="fade"
-                onRequestClose={() => setShowCompleteModal(false)}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modernModalContent}>
-                        <TouchableOpacity 
-                            style={styles.closeModalButton}
-                            onPress={() => setShowCompleteModal(false)}
-                        >
-                            <X size={20} color="#94a3b8" />
-                        </TouchableOpacity>
-
-                        <View style={styles.modalIconContainer}>
-                            <CheckCircle2 size={32} color="#10b981" />
-                        </View>
-                        
-                        <Text style={styles.modalTitle}>Selesaikan Pesanan</Text>
-                        <Text style={styles.modalDescription}>
-                            Semua item telah siap. Tandai pesanan ini sebagai selesai diproses?
-                        </Text>
-
-                        <View style={styles.modalFooter}>
-                            <TouchableOpacity
-                                style={styles.cancelModalButton}
-                                onPress={() => setShowCompleteModal(false)}
-                            >
-                                <Text style={styles.cancelModalButtonText}>Batal</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={styles.confirmModalButton}
-                                onPress={confirmCompleteOrder}
-                                disabled={completing}
-                            >
-                                {completing ? (
-                                    <ActivityIndicator size="small" color="white" />
-                                ) : (
-                                    <Text style={styles.confirmModalButtonText}>Ya, Selesai</Text>
-                                )}
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
-        </SafeAreaView>
+    return React.createElement(SafeAreaView, { style: styles.container },
+        React.createElement(View, { style: styles.header },
+            React.createElement(TouchableOpacity, { onPress: function() { navigation.goBack(); }, style: styles.backButton },
+                React.createElement(Text, { style: styles.backButtonText }, "\u2039")
+            ),
+            React.createElement(View, { style: { flex: 1 } },
+                React.createElement(Text, { style: styles.headerTitle }, "Monitor Pesanan"),
+                React.createElement(Text, { style: { fontSize: 10, color: '#64748b' } }, "Cabang: " + (currentBranchId || 'Tidak Diketahui') + " \u2022 Total: " + orders.length + " Data")
+            ),
+            React.createElement(TouchableOpacity, { 
+                onPress: function() { fetchActiveOrders(); }, 
+                style: { backgroundColor: '#f1f5f9', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12 }
+            },
+                React.createElement(Text, { style: { fontSize: 12, fontWeight: 'bold', color: '#ea580c' } }, "Segarkan")
+            )
+        ),
+        React.createElement(View, { style: styles.tabsContainer },
+            ['All', 'Kitchen', 'Bar'].map(function(t) {
+                return React.createElement(TouchableOpacity, {
+                    key: t,
+                    style: [styles.tab, filter === t && styles.activeTab],
+                    onPress: function() { setFilter(t); }
+                },
+                    React.createElement(Text, { style: [styles.tabText, filter === t && styles.activeTabText] },
+                        t === 'All' ? 'Semua' : t === 'Kitchen' ? 'Dapur' : 'Bar'
+                    )
+                );
+            })
+        ),
+        loading ? React.createElement(View, { style: styles.centerContent },
+            React.createElement(ActivityIndicator, { size: "large", color: "#ea580c" })
+        ) : (filteredOrders.length === 0 ? React.createElement(View, { style: styles.centerContent },
+            React.createElement(Text, { style: styles.emptyText }, "Tidak ada pesanan aktif")
+        ) : React.createElement(FlatList, {
+            data: filteredOrders,
+            renderItem: renderOrderItem,
+            keyExtractor: function(item, index) { return 'order-' + (item.id || index) + '-' + index; },
+            contentContainerStyle: [styles.listContent, isSmallDevice && { padding: 8 }],
+            numColumns: numColumns,
+            key: 'kds-grid-' + numColumns
+        })),
+        React.createElement(Modal, {
+            visible: showCompleteModal,
+            transparent: true,
+            animationType: "fade",
+            onRequestClose: function() { setShowCompleteModal(false); }
+        },
+            React.createElement(View, { style: styles.modalOverlay },
+                React.createElement(View, { style: styles.modernModalContent },
+                    React.createElement(TouchableOpacity, { 
+                        style: styles.closeModalButton,
+                        onPress: function() { setShowCompleteModal(false); }
+                    },
+                        React.createElement(X, { size: 20, color: "#94a3b8" })
+                    ),
+                    React.createElement(View, { style: styles.modalIconContainer },
+                        React.createElement(CheckCircle2, { size: 32, color: "#10b981" })
+                    ),
+                    React.createElement(Text, { style: styles.modalTitle }, "Selesaikan Pesanan"),
+                    React.createElement(Text, { style: styles.modalDescription }, "Semua item telah siap. Tandai pesanan ini sebagai selesai diproses?"),
+                    React.createElement(View, { style: styles.modalFooter },
+                        React.createElement(TouchableOpacity, {
+                            style: styles.cancelModalButton,
+                            onPress: function() { setShowCompleteModal(false); }
+                        },
+                            React.createElement(Text, { style: styles.cancelModalButtonText }, "Batal")
+                        ),
+                        React.createElement(TouchableOpacity, {
+                            style: styles.confirmModalButton,
+                            onPress: confirmCompleteOrder,
+                            disabled: completing
+                        },
+                            completing ? React.createElement(ActivityIndicator, { size: "small", color: "white" }) : React.createElement(Text, { style: styles.confirmModalButtonText }, "Ya, Selesai")
+                        )
+                    )
+                )
+            )
+        )
     );
 }
 
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#f3f4f6',
-    },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 10,
-        backgroundColor: 'white',
-        borderBottomWidth: 1,
-        borderBottomColor: '#e5e7eb',
-    },
-    backButton: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        backgroundColor: '#f1f5f9',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 8,
-    },
-    backButtonText: {
-        fontSize: 24,
-        lineHeight: 24,
-        color: '#1f2937',
-        textAlign: 'center',
-        marginTop: -2,
-    },
-    headerTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        color: '#1f2937',
-    },
-    tabsContainer: {
-        flexDirection: 'row',
-        padding: 6,
-        backgroundColor: 'white',
-        gap: 6,
-    },
-    tab: {
-        flex: 1,
-        paddingVertical: 6,
-        borderRadius: 8,
-        backgroundColor: '#f3f4f6',
-        alignItems: 'center',
-    },
-    activeTab: {
-        backgroundColor: '#ea580c',
-    },
-    tabText: {
-        fontWeight: 'bold',
-        color: '#6b7280',
-    },
-    activeTabText: {
-        color: 'white',
-    },
-    centerContent: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    emptyText: {
-        fontSize: 16,
-        color: '#9ca3af',
-        fontWeight: '500',
-    },
-    listContent: {
-        padding: 6,
-    },
-    columnWrapper: {
-        justifyContent: 'space-between',
-    },
-    orderCard: {
-        flex: 1,
-        margin: 4,
-        backgroundColor: 'white',
-        borderRadius: 12,
-        padding: 10,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 2,
-        elevation: 2,
-    },
-    orderHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: 8,
-        paddingBottom: 8,
-        borderBottomWidth: 1,
-        borderBottomColor: '#f3f4f6',
-    },
-    orderNo: {
-        fontSize: 10,
-        fontWeight: 'bold',
-        color: '#ea580c',
-    },
-    tableName: {
-        fontSize: 13,
-        fontWeight: '900',
-        color: '#1f2937',
-    },
-    headerInfo: {
-        alignItems: 'flex-end',
-    },
-    timeText: {
-        fontSize: 9,
-        color: '#6b7280',
-    },
-    timeWarning: {
-        color: '#ef4444',
-        fontWeight: 'bold',
-    },
-    waiterName: {
-        fontSize: 9,
-        color: '#9ca3af',
-        marginTop: 1,
-    },
-    itemsList: {
-        marginBottom: 8,
-    },
-    itemRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 4,
-    },
-    itemMain: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-    },
-    quantityBadge: {
-        width: 20,
-        height: 20,
-        borderRadius: 6,
-        backgroundColor: '#f3f4f6',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 6,
-    },
-    quantityBadgeReady: {
-        backgroundColor: '#dcfce7',
-    },
-    quantityText: {
-        fontSize: 10,
-        fontWeight: 'bold',
-        color: '#4b5563',
-    },
-    itemName: {
-        fontSize: 10,
-        color: '#374151',
-        fontWeight: '500',
-        flex: 1,
-    },
-    itemNameReady: {
-        color: '#9ca3af',
-        textDecorationLine: 'line-through',
-    },
-    readyButton: {
-        paddingVertical: 4,
-        paddingHorizontal: 8,
-        borderRadius: 6,
-        backgroundColor: '#fff7ed',
-        borderWidth: 1,
-        borderColor: '#fdba74',
-    },
-    readyButtonText: {
-        fontSize: 10,
-        fontWeight: 'bold',
-        color: '#ea580c',
-    },
-    readyBadge: {
-        fontSize: 14,
-    },
-    completeButton: {
-        backgroundColor: '#1f2937',
-        paddingVertical: 8,
-        borderRadius: 8,
-        alignItems: 'center',
-    },
-    completeButtonDisabled: {
-        backgroundColor: '#f3f4f6',
-    },
-    completeButtonText: {
-        color: 'white',
-        fontWeight: 'bold',
-        fontSize: 13,
-    },
-    completeButtonTextDisabled: {
-        color: '#9ca3af',
-    },
-    // Modern Modal Styles
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(15, 23, 42, 0.4)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 24,
-    },
-    modernModalContent: {
-        width: '100%',
-        maxWidth: 340,
-        backgroundColor: 'white',
-        borderRadius: 28,
-        padding: 24,
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 12 },
-        shadowOpacity: 0.15,
-        shadowRadius: 24,
-        elevation: 10,
-    },
-    closeModalButton: {
-        position: 'absolute',
-        top: 16,
-        right: 16,
-        padding: 4,
-    },
-    modalIconContainer: {
-        width: 64,
-        height: 64,
-        borderRadius: 20,
-        backgroundColor: '#ecfdf5',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 20,
-    },
-    modalTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        color: '#1e293b',
-        marginBottom: 10,
-    },
-    modalDescription: {
-        fontSize: 14,
-        color: '#64748b',
-        textAlign: 'center',
-        lineHeight: 20,
-        marginBottom: 28,
-        paddingHorizontal: 10,
-    },
-    modalFooter: {
-        flexDirection: 'row',
-        gap: 12,
-        width: '100%',
-    },
-    cancelModalButton: {
-        flex: 1,
-        paddingVertical: 14,
-        borderRadius: 14,
-        backgroundColor: '#f1f5f9',
-        alignItems: 'center',
-    },
-    cancelModalButtonText: {
-        color: '#64748b',
-        fontWeight: 'bold',
-        fontSize: 14,
-    },
-    confirmModalButton: {
-        flex: 2,
-        paddingVertical: 14,
-        borderRadius: 14,
-        backgroundColor: '#10b981',
-        alignItems: 'center',
-        shadowColor: '#10b981',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
-        elevation: 4,
-    },
-    confirmModalButtonText: {
-        color: 'white',
-        fontWeight: 'bold',
-        fontSize: 14,
-    },
+var styles = StyleSheet.create({
+    container: { flex: 1, backgroundColor: '#f3f4f6' },
+    header: { flexDirection: 'row', alignItems: 'center', padding: 10, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
+    backButton: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#f1f5f9', justifyContent: 'center', alignItems: 'center', marginRight: 8 },
+    backButtonText: { fontSize: 24, lineHeight: 24, color: '#1f2937', textAlign: 'center', marginTop: -2 },
+    headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#1f2937' },
+    tabsContainer: { flexDirection: 'row', padding: 6, backgroundColor: 'white' },
+    tab: { flex: 1, paddingVertical: 6, borderRadius: 8, backgroundColor: '#f3f4f6', alignItems: 'center', marginRight: 6 },
+    activeTab: { backgroundColor: '#ea580c' },
+    tabText: { fontWeight: 'bold', color: '#6b7280' },
+    activeTabText: { color: 'white' },
+    centerContent: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    emptyText: { fontSize: 16, color: '#9ca3af', fontWeight: '500' },
+    listContent: { padding: 6 },
+    orderCard: { flex: 1, margin: 4, backgroundColor: 'white', borderRadius: 12, padding: 10, elevation: 2 },
+    orderHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+    orderNo: { fontSize: 10, fontWeight: 'bold', color: '#ea580c' },
+    tableName: { fontSize: 13, fontWeight: '900', color: '#1f2937' },
+    headerInfo: { alignItems: 'flex-end' },
+    timeText: { fontSize: 9, color: '#6b7280' },
+    timeWarning: { color: '#ef4444', fontWeight: 'bold' },
+    waiterName: { fontSize: 9, color: '#9ca3af', marginTop: 1 },
+    itemsList: { marginBottom: 8 },
+    itemRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+    itemMain: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+    quantityBadge: { width: 20, height: 20, borderRadius: 6, backgroundColor: '#f3f4f6', justifyContent: 'center', alignItems: 'center', marginRight: 6 },
+    quantityBadgeReady: { backgroundColor: '#dcfce7' },
+    quantityText: { fontSize: 10, fontWeight: 'bold', color: '#4b5563' },
+    itemName: { fontSize: 10, color: '#374151', fontWeight: '500', flex: 1 },
+    itemNameReady: { color: '#9ca3af', textDecorationLine: 'line-through' },
+    readyButton: { paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6, backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fdba74' },
+    readyButtonText: { fontSize: 10, fontWeight: 'bold', color: '#ea580c' },
+    readyBadge: { fontSize: 14 },
+    completeButton: { backgroundColor: '#1f2937', paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
+    completeButtonDisabled: { backgroundColor: '#f3f4f6' },
+    completeButtonText: { color: 'white', fontWeight: 'bold', fontSize: 13 },
+    completeButtonTextDisabled: { color: '#9ca3af' },
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.4)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+    modernModalContent: { width: '100%', maxWidth: 340, backgroundColor: 'white', borderRadius: 28, padding: 24, alignItems: 'center', elevation: 10 },
+    closeModalButton: { position: 'absolute', top: 16, right: 16, padding: 4 },
+    modalIconContainer: { width: 64, height: 64, borderRadius: 20, backgroundColor: '#ecfdf5', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
+    modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#1e293b', marginBottom: 10 },
+    modalDescription: { fontSize: 14, color: '#64748b', textAlign: 'center', lineHeight: 20, marginBottom: 28, paddingHorizontal: 10 },
+    modalFooter: { flexDirection: 'row', width: '100%' },
+    cancelModalButton: { flex: 1, paddingVertical: 14, borderRadius: 14, backgroundColor: '#f1f5f9', alignItems: 'center' },
+    cancelModalButtonText: { color: '#64748b', fontWeight: 'bold', fontSize: 14 },
+    confirmModalButton: { flex: 2, paddingVertical: 14, borderRadius: 14, backgroundColor: '#10b981', alignItems: 'center', elevation: 4 },
+    confirmModalButtonText: { color: 'white', fontWeight: 'bold', fontSize: 14 },
 });

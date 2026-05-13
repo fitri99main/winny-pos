@@ -1,281 +1,340 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { supabase } from '../lib/supabase';
+import React from 'react';
+import * as SupabaseLib from '../lib/supabase';
+var supabase = SupabaseLib.supabase;
 import AsyncStorage from '@react-native-async-storage/async-storage';
+var createContext = React.createContext;
+var useContext = React.useContext;
+var useState = React.useState;
+var useEffect = React.useEffect;
 
-const ACTIVE_BRANCH_STORAGE_KEY = 'mobile_current_branch_id';
-const PREFERRED_BRANCH_NAME = 'winny coffee pnk';
+var ACTIVE_BRANCH_STORAGE_KEY = 'mobile_current_branch_id';
+var PREFERRED_BRANCH_NAME = 'winny coffee pnk';
 
-interface SessionContextType {
-    currentSession: any | null;
-    authSession: any | null;
-    isSessionActive: boolean;
-    loading: boolean;
-    checkSession: (showLoading?: boolean, force?: boolean) => Promise<void>;
-    requireMandatorySession: boolean;
-    storeSettings: any;
-    permissions: string[];
-    isDisplayOnly: boolean;
-    isAdmin: boolean;
-    branchName: string;
-    branchAddress: string;
-    branchPhone: string;
-    userName: string;
-    currentBranchId: string;
-}
+export var SessionProvider = function(props) {
+    var children = props.children;
+    var stateAuthSession = useState(null);
+    var authSession = stateAuthSession[0];
+    var setAuthSession = stateAuthSession[1];
 
-const SessionContext = createContext<SessionContextType | undefined>(undefined);
+    var stateCurrentSession = useState(null);
+    var currentSession = stateCurrentSession[0];
+    var setCurrentSession = stateCurrentSession[1];
 
-export function SessionProvider({ children }: { children: ReactNode }) {
-    const [authSession, setAuthSession] = useState<any | null>(null);
-    const [currentSession, setCurrentSession] = useState<any | null>(null);
-    const [requireMandatorySession, setRequireMandatorySession] = useState(true);
-    const [storeSettings, setStoreSettings] = useState<any>(null);
-    const [permissions, setPermissions] = useState<string[]>([]);
-    const [isDisplayOnly, setIsDisplayOnly] = useState(false);
-    const [isAdmin, setIsAdmin] = useState(false);
-    const [branchName, setBranchName] = useState('');
-    const [branchAddress, setBranchAddress] = useState('');
-    const [branchPhone, setBranchPhone] = useState('');
-    const [userName, setUserName] = useState('');
-    const [currentBranchId, setCurrentBranchId] = useState('');
-    const [loading, setLoading] = useState(true);
+    var stateRequireMandatorySession = useState(true);
+    var requireMandatorySession = stateRequireMandatorySession[0];
+    var setRequireMandatorySession = stateRequireMandatorySession[1];
 
-    const isCheckingRef = React.useRef(false);
-    const lastCheckTimeRef = React.useRef(0);
+    var stateStoreSettings = useState(null);
+    var storeSettings = stateStoreSettings[0];
+    var setStoreSettings = stateStoreSettings[1];
 
-    const resolveOperationalBranchId = async (preferredBranchId = '') => {
-        // [FIX] Removed expensive O(N*5) branch scoring logic which caused freezes for Administrators.
-        // Instead, we just fetch branch list and apply simple priority.
-        const { data: branches, error } = await supabase
+    var statePermissions = useState([]);
+    var permissions = statePermissions[0];
+    var setPermissions = statePermissions[1];
+
+    var stateIsDisplayOnly = useState(false);
+    var isDisplayOnly = stateIsDisplayOnly[0];
+    var setIsDisplayOnly = stateIsDisplayOnly[1];
+
+    var stateIsAdmin = useState(false);
+    var isAdmin = stateIsAdmin[0];
+    var setIsAdmin = stateIsAdmin[1];
+
+    var stateBranchName = useState('');
+    var branchName = stateBranchName[0];
+    var setBranchName = stateBranchName[1];
+
+    var stateBranchAddress = useState('');
+    var branchAddress = stateBranchAddress[0];
+    var setBranchAddress = stateBranchAddress[1];
+
+    var stateBranchPhone = useState('');
+    var branchPhone = stateBranchPhone[0];
+    var setBranchPhone = stateBranchPhone[1];
+
+    var stateUserName = useState('');
+    var userName = stateUserName[0];
+    var setUserName = stateUserName[1];
+
+    var stateCurrentBranchId = useState('');
+    var currentBranchId = stateCurrentBranchId[0];
+    var setCurrentBranchId = stateCurrentBranchId[1];
+
+    var stateLoading = useState(true);
+    var loading = stateLoading[0];
+    var setLoading = stateLoading[1];
+
+    var isCheckingRef = React.useRef(false);
+    var lastCheckTimeRef = React.useRef(0);
+
+    var resolveOperationalBranchId = function(preferredBranchId) {
+        if (preferredBranchId === undefined) preferredBranchId = '';
+        return supabase
             .from('branches')
             .select('id, name')
-            .order('id');
+            .order('id')
+            .then(function(res) {
+                var branches = res.data;
+                var error = res.error;
 
-        if (error || !branches || branches.length === 0) {
-            return preferredBranchId || '';
-        }
+                if (error || !branches || branches.length === 0) {
+                    return preferredBranchId || '';
+                }
 
-        // 1. Priority: User's Profile branch or Cached branch
-        if (preferredBranchId && branches.some(b => String(b.id) === preferredBranchId)) {
-            return preferredBranchId;
-        }
+                if (preferredBranchId) {
+                    var foundPreferred = false;
+                    for (var i = 0; i < branches.length; i++) {
+                        if (String(branches[i].id) === preferredBranchId) {
+                            foundPreferred = true;
+                            break;
+                        }
+                    }
+                    if (foundPreferred) return preferredBranchId;
+                }
 
-        // 2. Priority: Default Branch Name
-        const preferredByName = branches.find(
-            (branch) => String(branch.name || '').trim().toLowerCase() === PREFERRED_BRANCH_NAME
-        );
-        if (preferredByName) return String(preferredByName.id);
+                var preferredByName = null;
+                for (var j = 0; j < branches.length; j++) {
+                    var b = branches[j];
+                    if (String(b.name || '').trim().toLowerCase() === PREFERRED_BRANCH_NAME) {
+                        preferredByName = b;
+                        break;
+                    }
+                }
+                
+                if (preferredByName) return String(preferredByName.id);
 
-        // 3. Fallback: First branch
-        return String(branches[0].id);
+                return String(branches[0].id);
+            });
     };
 
-    const checkSession = async (showLoading = true, force = false) => {
-        const now = Date.now();
-        // Throttle rapid calls unless it's a forced full update
+    var checkSession = function(showLoading, force) {
+        if (showLoading === undefined) showLoading = true;
+        if (force === undefined) force = false;
+
+        var now = Date.now();
         if (isCheckingRef.current || (now - lastCheckTimeRef.current < 2000 && !showLoading && !force)) {
-            console.log('[SessionContext] checkSession: Throttled or already checking');
             return;
         }
         
-        // Failsafe timeout to prevent infinite loading screen
-        const failsafe = setTimeout(() => {
+        var failsafe = setTimeout(function() {
             if (loading) {
-                console.warn('[SessionContext] checkSession: FAILSAFE TIMEOUT - Forcing loading off');
                 setLoading(false);
             }
-        }, 8000); // 8 seconds failsafe for global session
+        }, 8000);
         
-        try {
-            isCheckingRef.current = true;
-            lastCheckTimeRef.current = now;
-            console.log('[SessionContext] Starting checkSession (showLoading:', showLoading, ')');
-            
-            // Only show full-screen loader if we don't have a session or if explicitly requested
-            if (showLoading || !currentSession) {
-                setLoading(true);
-            }
-            
-            // 1. Silent Session Check
-            const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-            
-            if (sessionError) {
-                console.warn('[SessionContext] getSession error:', sessionError.message);
-                const isStale = sessionError.message.includes('Refresh Token Not Found') || 
-                                sessionError.message.includes('invalid refresh token') ||
-                                sessionError.message.includes('session_not_found');
+        isCheckingRef.current = true;
+        lastCheckTimeRef.current = now;
+        
+        if (showLoading || !currentSession) {
+            setLoading(true);
+        }
+        
+        return supabase.auth.getSession()
+            .then(function(sessionRes) {
+                var session = sessionRes.data.session;
+                var sessionError = sessionRes.error;
                 
-                if (isStale) {
-                    console.error('[SessionContext] PERMANENT AUTH FAILURE: Session is stale. Aggressive clearing...');
-                    try {
-                        await supabase.auth.signOut();
-                        // Aggressive cleanup of all possible auth-related keys
-                        const keys = await AsyncStorage.getAllKeys();
-                        const authKeys = keys.filter(k => k.includes('supabase.auth') || k.includes('sb-') || k.includes('token'));
-                        if (authKeys.length > 0) {
-                            await AsyncStorage.multiRemove(authKeys);
-                        }
-                    } catch (e) {
-                        console.warn('[SessionContext] Cleanup error:', e);
-                    }
+                if (sessionError) {
+                    var msg = sessionError.message || '';
+                    var isStale = msg.indexOf('Refresh Token Not Found') !== -1 || 
+                                    msg.indexOf('invalid refresh token') !== -1 ||
+                                    msg.indexOf('session_not_found') !== -1;
                     
-                    setAuthSession(null);
+                    if (isStale) {
+                        return supabase.auth.signOut()
+                            .then(function() {
+                                return AsyncStorage.getAllKeys();
+                            })
+                            .then(function(keys) {
+                                var authKeys = [];
+                                for (var k = 0; k < keys.length; k++) {
+                                    if (keys[k].indexOf('supabase.auth') !== -1 || keys[k].indexOf('sb-') !== -1 || keys[k].indexOf('token') !== -1) {
+                                        authKeys.push(keys[k]);
+                                    }
+                                }
+                                if (authKeys.length > 0) {
+                                    return AsyncStorage.multiRemove(authKeys);
+                                }
+                            })
+                            .then(function() {
+                                setAuthSession(null);
+                                setCurrentSession(null);
+                                setLoading(false);
+                                return 'STALE';
+                            })['catch'](function() {
+                                setAuthSession(null);
+                                setCurrentSession(null);
+                                setLoading(false);
+                                return 'STALE';
+                            });
+                    }
+                }
+
+                setAuthSession(session);
+                if (!session) {
                     setCurrentSession(null);
                     setLoading(false);
-                    return;
+                    return 'NO_SESSION';
                 }
-            }
 
-            setAuthSession(session);
-            if (!session) {
-                console.log('[SessionContext] No active session found.');
-                setCurrentSession(null);
+                return supabase.auth.getUser()
+                    .then(function(userRes) {
+                        var user = userRes.data.user;
+                        var userError = userRes.error;
+
+                        if (userError || !user) {
+                            if (userError && userError.message && userError.message.indexOf('Refresh Token Not Found') !== -1) {
+                                return supabase.auth.signOut().then(function() {
+                                    setAuthSession(null);
+                                    setCurrentSession(null);
+                                    setLoading(false);
+                                    return 'ERROR';
+                                });
+                            }
+                            setLoading(false);
+                            return 'ERROR';
+                        }
+
+                        return Promise.all([
+                            supabase.from('store_settings').select('*').eq('id', 1).maybeSingle(),
+                            supabase.from('profiles').select('role, full_name, name, branch_id').eq('id', user.id).maybeSingle(),
+                            supabase.from('cashier_sessions').select('*').eq('user_id', user.id).eq('status', 'Open').order('opened_at', { ascending: false }).limit(1).maybeSingle(),
+                            AsyncStorage.getItem(ACTIVE_BRANCH_STORAGE_KEY)
+                        ]).then(function(results) {
+                            var settingsRes = results[0];
+                            var profileRes = results[1];
+                            var cashierSessionRes = results[2];
+                            var cachedBranchId = results[3];
+
+                            var profileData = profileRes.data;
+                            var name = 'User';
+                            if (profileData) {
+                                name = profileData.full_name || profileData.name || (user.user_metadata ? (user.user_metadata.full_name || user.user_metadata.name) : '') || (user.email ? user.email.split('@')[0] : 'User');
+                            }
+                            setUserName(name);
+                            
+                            var preferredBranchId = (profileData && profileData.branch_id)
+                                ? String(profileData.branch_id)
+                                : (cachedBranchId || currentBranchId || '');
+                            
+                            return resolveOperationalBranchId(preferredBranchId)
+                                .then(function(bId) {
+                                    if (!bId) bId = preferredBranchId;
+                                    
+                                    if (bId !== currentBranchId) {
+                                        setCurrentBranchId(bId);
+                                    }
+                                    if (bId) {
+                                        AsyncStorage.setItem(ACTIVE_BRANCH_STORAGE_KEY, bId);
+                                    }
+
+                                    if (settingsRes.data) {
+                                        setStoreSettings(settingsRes.data);
+                                    }
+
+                                    var roleName = (profileData ? profileData.role : null) || (user.user_metadata ? user.user_metadata.role : null);
+                                    var currentPerms = [];
+                                    var hasRolePermission = false;
+
+                                    if (roleName) {
+                                        return supabase
+                                            .from('roles')
+                                            .select('permissions')
+                                            .ilike('name', roleName.trim())
+                                            .maybeSingle()
+                                            .then(function(roleRes) {
+                                                var roleData = roleRes.data;
+                                                if (roleData && roleData.permissions && Array.isArray(roleData.permissions)) {
+                                                    currentPerms = roleData.permissions;
+                                                    for (var p = 0; p < currentPerms.length; p++) {
+                                                        if (currentPerms[p] === 'mandatory_session') {
+                                                            hasRolePermission = true;
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                                return finishProcessing();
+                                            });
+                                    } else {
+                                        return finishProcessing();
+                                    }
+
+                                    function finishProcessing() {
+                                        setPermissions(currentPerms);
+
+                                        var roleStr = (roleName || '').toLowerCase().trim();
+                                        var isDisplayRole = roleStr === 'display' || roleStr.indexOf('display') !== -1;
+                                        
+                                        var hasOrderOnly = false;
+                                        for (var p2 = 0; p2 < currentPerms.length; p2++) {
+                                            if (currentPerms[p2] === 'pos_order_only' || currentPerms[p2] === 'order_only') {
+                                                hasOrderOnly = true;
+                                                break;
+                                            }
+                                        }
+                                        var isDisplayOnlyVal = isDisplayRole || hasOrderOnly;
+                                        
+                                        var adminRoles = ['admin', 'administrator', 'superadmin', 'owner', 'manager', 'manajer', 'supervisor'];
+                                        var isAdminVal = false;
+                                        for (var a = 0; a < adminRoles.length; a++) {
+                                            if (roleStr.indexOf(adminRoles[a]) !== -1) {
+                                                isAdminVal = true;
+                                                break;
+                                            }
+                                        }
+
+                                        var globalRequired = (settingsRes.data && settingsRes.data.require_mandatory_session !== undefined) ? settingsRes.data.require_mandatory_session : true;
+                                        
+                                        setRequireMandatorySession(isAdminVal ? false : (isDisplayOnlyVal ? false : (globalRequired || hasRolePermission)));
+                                        setIsDisplayOnly(isDisplayOnlyVal);
+                                        setIsAdmin(isAdminVal);
+
+                                        setCurrentSession(cashierSessionRes.data);
+                                        return 'SUCCESS';
+                                    }
+                                });
+                        });
+                    });
+            })['catch'](function(error) {
+                console.error('[SessionContext] checkSession failed:', error);
+            })['finally'](function() {
+                clearTimeout(failsafe);
                 setLoading(false);
-                return;
-            }
-
-            // 2. Verified User Fetch
-            const { data: { user }, error: userError } = await supabase.auth.getUser();
-            if (userError || !user) {
-                if (userError) {
-                    console.warn('[SessionContext] getUser issue:', userError.message);
-                    // Same recovery for getUser failure
-                    if (userError.message.includes('Refresh Token Not Found')) {
-                        await supabase.auth.signOut();
-                        setAuthSession(null);
-                        setCurrentSession(null);
-                    }
-                }
-                setLoading(false);
-                return;
-            }
-
-            console.log('[SessionContext] User verified:', user.email);
-
-            // 3. Parallelize ALL remaining fetches
-            const [settingsRes, profileRes, sessionRes] = await Promise.all([
-                supabase.from('store_settings').select('*').eq('id', 1).maybeSingle(),
-                supabase.from('profiles').select('role, full_name, name, branch_id').eq('id', user.id).maybeSingle(),
-                supabase.from('cashier_sessions').select('*').eq('user_id', user.id).eq('status', 'Open').order('opened_at', { ascending: false }).limit(1).maybeSingle()
-            ]);
-
-            // Handle errors
-            if (settingsRes.error) console.warn('[SessionContext] settings error:', settingsRes.error.message);
-            if (profileRes.error) console.warn('[SessionContext] profile error:', profileRes.error.message);
-            if (sessionRes.error) console.warn('[SessionContext] session error:', sessionRes.error.message);
-
-            // Process Profile & Branch
-            const profileData = profileRes.data;
-            const name = profileData?.full_name || profileData?.name || user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'User';
-            setUserName(name);
-            
-            const cachedBranchId = await AsyncStorage.getItem(ACTIVE_BRANCH_STORAGE_KEY);
-            const preferredBranchId = profileData?.branch_id
-                ? String(profileData.branch_id)
-                : (cachedBranchId || currentBranchId || '');
-            let bId = await resolveOperationalBranchId(preferredBranchId);
-
-            if (!bId) {
-                bId = preferredBranchId;
-            }
-            
-            if (bId !== currentBranchId) {
-                console.log('[SessionContext] setting currentBranchId to:', bId);
-                setCurrentBranchId(bId);
-            }
-            if (bId) {
-                await AsyncStorage.setItem(ACTIVE_BRANCH_STORAGE_KEY, bId);
-            }
-
-            // Process Settings
-            if (settingsRes.data) {
-                console.log('[SessionContext] Global Store Settings Loaded:', {
-                    enable_wifi_vouchers: settingsRes.data.enable_wifi_vouchers,
-                    multiplier: settingsRes.data.wifi_voucher_multiplier,
-                    min_amount: settingsRes.data.wifi_voucher_min_amount
-                });
-                setStoreSettings(settingsRes.data);
-            }
-
-            // 3. Role Permissions (Conditional but fast)
-            let roleName = profileData?.role || user.user_metadata?.role;
-            let currentPerms: string[] = [];
-            let hasRolePermission = false;
-
-            if (roleName) {
-                const { data: roleData } = await supabase
-                    .from('roles')
-                    .select('permissions')
-                    .ilike('name', roleName.trim())
-                    .maybeSingle();
-                
-                if (roleData?.permissions && Array.isArray(roleData.permissions)) {
-                    currentPerms = roleData.permissions;
-                    hasRolePermission = currentPerms.includes('mandatory_session');
-                }
-            }
-
-            setPermissions(currentPerms);
-
-            // Calculate Permissions Flags
-            const roleStr = (roleName || '').toLowerCase().trim();
-            const isDisplayRole = roleStr === 'display' || roleStr.includes('display');
-            const isDisplayOnlyVal = isDisplayRole || currentPerms.includes('pos_order_only') || currentPerms.includes('order_only');
-            const isAdminVal = ['admin', 'administrator', 'superadmin', 'owner', 'manager', 'manajer', 'supervisor'].some(r => roleStr.includes(r));
-            const globalRequired = settingsRes.data?.require_mandatory_session ?? true;
-            
-            // Admins NEVER require mandatory session
-            setRequireMandatorySession(isAdminVal ? false : (isDisplayOnlyVal ? false : (globalRequired || hasRolePermission)));
-            setIsDisplayOnly(isDisplayOnlyVal);
-            setIsAdmin(isAdminVal);
-
-            // 4. Update Session
-            setCurrentSession(sessionRes.data);
-            
-        } catch (error: any) {
-            console.error('[SessionContext] checkSession failed:', error?.message || error);
-        } finally {
-            clearTimeout(failsafe);
-            setLoading(false);
-            isCheckingRef.current = false;
-            console.log('[SessionContext] checkSession complete.');
-        }
+                isCheckingRef.current = false;
+            });
     };
 
-    const fetchBranchDetails = async () => {
-        if (!currentBranchId || isNaN(Number(currentBranchId))) return; // Prevent SQL error 22P02 for string IDs like 'b1'
-        try {
-            const { data, error } = await supabase
-                .from('branches')
-                .select('name, address, phone')
-                .eq('id', currentBranchId)
-                .single();
-
-            if (error) throw error;
-            if (data) {
-                setBranchName(data.name || '');
-                setBranchAddress(data.address || '');
-                setBranchPhone(data.phone || '');
-            }
-        } catch (error) {
-            console.error('[SessionContext] Error fetching branch details:', error);
-        }
+    var fetchBranchDetails = function() {
+        if (!currentBranchId || isNaN(Number(currentBranchId))) return;
+        return supabase
+            .from('branches')
+            .select('name, address, phone')
+            .eq('id', currentBranchId)
+            .single()
+            .then(function(res) {
+                var data = res.data;
+                if (data) {
+                    setBranchName(data.name || '');
+                    setBranchAddress(data.address || '');
+                    setBranchPhone(data.phone || '');
+                }
+            })['catch'](function(error) {
+                console.error('[SessionContext] Error fetching branch details:', error);
+            });
     };
 
-    useEffect(() => {
+    React.useEffect(function() {
         checkSession();
     }, []);
 
-    useEffect(() => {
+    React.useEffect(function() {
         if (currentBranchId) {
             fetchBranchDetails();
         }
     }, [currentBranchId]);
 
-    useEffect(() => {
-        const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange((event, session) => {
-            console.log('[SessionContext] Auth event:', event, 'User:', session?.user?.email);
-            
+    React.useEffect(function() {
+        var authRes = supabase.auth.onAuthStateChange(function(event, session) {
             if (event === 'SIGNED_OUT') {
                 setAuthSession(null);
                 setCurrentSession(null);
@@ -283,40 +342,37 @@ export function SessionProvider({ children }: { children: ReactNode }) {
                 return;
             }
 
-            // Deduplicate: If we are already checking or it's the INITIAL_SESSION event
-            // which is handled by our mount useEffect, we skip to avoid race conditions
             if (event === 'INITIAL_SESSION' && isCheckingRef.current) return;
             
-            checkSession(false, true); // Force check on other auth changes
+            checkSession(false, true);
         });
+        
+        var authSubscription = authRes.data.subscription;
 
-        // 2. Realtime session changes - Only once on mount
-        const channel = supabase
+        var channel = supabase
             .channel('cashier_sessions_changes')
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'cashier_sessions' },
-                () => checkSession(false)
+                function() { checkSession(false); }
             )
             .subscribe();
 
-        return () => {
+        return function() {
             authSubscription.unsubscribe();
             supabase.removeChannel(channel);
         };
     }, []);
 
-    useEffect(() => {
-        // 3. Realtime branch changes - Depends on currentBranchId
+    React.useEffect(function() {
         if (!currentBranchId) return;
 
-        const branchChannel = supabase
+        var branchChannel = supabase
             .channel('branch_name_changes')
             .on(
                 'postgres_changes',
-                { event: 'UPDATE', schema: 'public', table: 'branches', filter: `id=eq.${currentBranchId}` },
-                (payload) => {
-                    console.log('[SessionContext] Branch updated:', payload.new.name);
+                { event: 'UPDATE', schema: 'public', table: 'branches', filter: 'id=eq.' + currentBranchId },
+                function(payload) {
                     if (payload.new.name) setBranchName(payload.new.name);
                     if (payload.new.address) setBranchAddress(payload.new.address);
                     if (payload.new.phone) setBranchPhone(payload.new.phone);
@@ -324,47 +380,47 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             )
             .subscribe();
 
-        return () => {
+        return function() {
             supabase.removeChannel(branchChannel);
         };
     }, [currentBranchId]);
 
-    useEffect(() => {
-        // 4. Realtime store_settings changes
-        const settingsChannel = supabase
+    React.useEffect(function() {
+        var settingsChannel = supabase
             .channel('store_settings_changes')
             .on(
                 'postgres_changes',
                 { event: 'UPDATE', schema: 'public', table: 'store_settings', filter: 'id=eq.1' },
-                (payload) => {
-                    console.log('[SessionContext] Store settings updated:', payload.new);
+                function(payload) {
                     setStoreSettings(payload.new);
                 }
             )
             .subscribe();
 
-        return () => {
+        return function() {
             supabase.removeChannel(settingsChannel);
         };
     }, []);
 
-    const contextValue = React.useMemo(() => ({
-        currentSession,
-        authSession,
-        isSessionActive: !!currentSession,
-        loading,
-        checkSession,
-        requireMandatorySession,
-        storeSettings,
-        permissions,
-        isDisplayOnly,
-        isAdmin,
-        branchName,
-        branchAddress,
-        branchPhone,
-        userName,
-        currentBranchId
-    }), [
+    var contextValue = React.useMemo(function() {
+        return {
+            currentSession: currentSession,
+            authSession: authSession,
+            isSessionActive: !!currentSession,
+            loading: loading,
+            checkSession: checkSession,
+            requireMandatorySession: requireMandatorySession,
+            storeSettings: storeSettings,
+            permissions: permissions,
+            isDisplayOnly: isDisplayOnly,
+            isAdmin: isAdmin,
+            branchName: branchName,
+            branchAddress: branchAddress,
+            branchPhone: branchPhone,
+            userName: userName,
+            currentBranchId: currentBranchId
+        };
+    }, [
         currentSession,
         authSession,
         loading,
@@ -380,15 +436,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         currentBranchId
     ]);
 
-    return (
-        <SessionContext.Provider value={contextValue}>
-            {children}
-        </SessionContext.Provider>
-    );
-}
+    return React.createElement(SessionContext.Provider, { value: contextValue }, children);
+};
+
+var SessionContext = createContext(undefined);
 
 export function useSession() {
-    const context = useContext(SessionContext);
+    var context = useContext(SessionContext);
     if (context === undefined) {
         throw new Error('useSession must be used within a SessionProvider');
     }

@@ -7,40 +7,56 @@ export interface OrderTypeDisplayInfo {
     displayValue: string | null;
 }
 
-const TAKE_AWAY_MARKERS = new Set([
+var TAKE_AWAY_MARKERS = [
     'TA',
     'TAKEAWAY',
     'TAKE AWAY',
     'TAKE_AWAY',
     'TANPA MEJA',
     'NO TABLE'
-]);
+];
 
-const normalizeLabel = (value: unknown, fallback: string) => {
+var normalizeLabel = function(value, fallback) {
     if (typeof value !== 'string') return fallback;
-    const trimmed = value.trim();
+    var trimmed = value.trim();
     return trimmed || fallback;
 };
 
-export function getOrderTypeSettings(settings?: any) {
+export function getOrderTypeSettings(settings) {
+    var orderCategoriesEnabled = true;
+    if (settings) {
+        if (settings.enable_order_type_categories === false || settings.enableOrderTypeCategories === false) {
+            orderCategoriesEnabled = false;
+        }
+    }
+
+    var dLabel = 'Dine In';
+    if (settings) {
+        if (settings.order_type_dine_in_label) dLabel = settings.order_type_dine_in_label;
+        else if (settings.orderTypeDineInLabel) dLabel = settings.orderTypeDineInLabel;
+    }
+
+    var tLabel = 'Take Away';
+    if (settings) {
+        if (settings.order_type_take_away_label) tLabel = settings.order_type_take_away_label;
+        else if (settings.orderTypeTakeAwayLabel) tLabel = settings.orderTypeTakeAwayLabel;
+    }
+
     return {
-        orderCategoriesEnabled: settings?.enable_order_type_categories !== false
-            && settings?.enableOrderTypeCategories !== false,
-        dineInLabel: normalizeLabel(
-            settings?.order_type_dine_in_label ?? settings?.orderTypeDineInLabel,
-            'Dine In'
-        ),
-        takeAwayLabel: normalizeLabel(
-            settings?.order_type_take_away_label ?? settings?.orderTypeTakeAwayLabel,
-            'Take Away'
-        )
+        orderCategoriesEnabled: orderCategoriesEnabled,
+        dineInLabel: normalizeLabel(dLabel, 'Dine In'),
+        takeAwayLabel: normalizeLabel(tLabel, 'Take Away')
     };
 }
 
-export function resolveOrderTypeDisplay(tableRef?: string | null, settings?: any): OrderTypeDisplayInfo {
-    const { orderCategoriesEnabled, dineInLabel, takeAwayLabel } = getOrderTypeSettings(settings);
-    const rawValue = typeof tableRef === 'string' ? tableRef.trim() : '';
-    const normalizedValue = rawValue
+export function resolveOrderTypeDisplay(tableRef, settings) {
+    var s = getOrderTypeSettings(settings);
+    var orderCategoriesEnabled = s.orderCategoriesEnabled;
+    var dineInLabel = s.dineInLabel;
+    var takeAwayLabel = s.takeAwayLabel;
+
+    var rawValue = typeof tableRef === 'string' ? tableRef.trim() : '';
+    var normalizedValue = rawValue
         .replace(/[_-]+/g, ' ')
         .replace(/\s+/g, ' ')
         .trim()
@@ -57,7 +73,13 @@ export function resolveOrderTypeDisplay(tableRef?: string | null, settings?: any
         };
     }
 
-    const isTakeAway = TAKE_AWAY_MARKERS.has(normalizedValue);
+    var isTakeAway = false;
+    for (var i = 0; i < TAKE_AWAY_MARKERS.length; i++) {
+        if (TAKE_AWAY_MARKERS[i] === normalizedValue) {
+            isTakeAway = true;
+            break;
+        }
+    }
 
     if (!orderCategoriesEnabled) {
         return {

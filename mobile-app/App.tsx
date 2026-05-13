@@ -1,63 +1,63 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Updates from 'expo-updates';
 import AppNavigator from './src/navigation/AppNavigator';
-import { SessionProvider } from './src/context/SessionContext';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import * as SessionLib from './src/context/SessionContext';
+var SessionProvider = SessionLib.SessionProvider;
+import * as RNSAC from 'react-native-safe-area-context';
+var SafeAreaProvider = RNSAC.SafeAreaProvider;
 import StatusModal from './src/components/StatusModal';
 
-// Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
 
 function App() {
-    const [updateVisible, setUpdateVisible] = useState(false);
+    var state = React.useState(false);
+    var updateVisible = state[0];
+    var setUpdateVisible = state[1];
 
-    useEffect(() => {
-        // Handle OTA Updates with listener safely
-        let subscription: any = null;
+    React.useEffect(function() {
+        var subscription = null;
         if (typeof Updates.addListener === 'function') {
-            subscription = Updates.addListener((event) => {
+            subscription = Updates.addListener(function(event) {
                 if (event.type === Updates.UpdateEventType.UPDATE_AVAILABLE) {
                     setUpdateVisible(true);
                 }
             });
         }
 
-        async function onFetchUpdateAsync() {
-            try {
-                const update = await Updates.checkForUpdateAsync();
-                if (update.isAvailable) {
-                    await Updates.fetchUpdateAsync();
-                    setUpdateVisible(true);
-                }
-            } catch (error) {
-                // Ignore error in development
-                if (!__DEV__) {
-                    console.log(`Pengecekan update gagal: ${error}`);
-                }
-            }
+        function onFetchUpdateAsync() {
+            return Updates.checkForUpdateAsync()
+                .then(function(update) {
+                    if (update.isAvailable) {
+                        return Updates.fetchUpdateAsync().then(function() {
+                            setUpdateVisible(true);
+                        });
+                    }
+                })['catch'](function(error) {
+                    if (!__DEV__) {
+                        console.log("Pengecekan update gagal: " + error);
+                    }
+                });
         }
 
-        // Hide splash screen after initialization
-        const prepare = async () => {
-            try {
-                // Minimum splash time
-                await new Promise(resolve => setTimeout(resolve, 1500));
-            } catch (e) {
+        var prepare = function() {
+            return new Promise(function(resolve) { 
+                setTimeout(resolve, 1500); 
+            }).then(function() {
+                return SplashScreen.hideAsync();
+            })['catch'](function(e) {
                 console.warn(e);
-            } finally {
-                await SplashScreen.hideAsync();
-            }
+                return SplashScreen.hideAsync();
+            });
         };
 
         prepare();
 
-        // Run manual check after 3 seconds
-        const timer = setTimeout(() => {
+        var timer = setTimeout(function() {
             onFetchUpdateAsync();
         }, 3000);
 
-        return () => {
+        return function() {
             if (subscription && typeof subscription.remove === 'function') {
                 subscription.remove();
             }
@@ -65,31 +65,27 @@ function App() {
         };
     }, []);
 
-    const handleReload = async () => {
-        try {
-            setUpdateVisible(false);
-            await Updates.reloadAsync();
-        } catch (error) {
+    var handleReload = function() {
+        setUpdateVisible(false);
+        return Updates.reloadAsync()['catch'](function(error) {
             console.error("Gagal memuat ulang:", error);
-        }
+        });
     };
 
-    return (
-        <SafeAreaProvider>
-            <SessionProvider>
-                <AppNavigator />
-                <StatusModal 
-                    visible={updateVisible}
-                    onClose={() => setUpdateVisible(false)}
-                    onConfirm={handleReload}
-                    title="Update Terbaru"
-                    message="Update terbaru tersedia, aplikasi akan dimuat ulang untuk menerapkan perubahan."
-                    type="update"
-                    confirmText="Muat Ulang Sekarang"
-                    showClose={false}
-                />
-            </SessionProvider>
-        </SafeAreaProvider>
+    return React.createElement(SafeAreaProvider, null,
+        React.createElement(SessionProvider, null,
+            React.createElement(AppNavigator, null),
+            React.createElement(StatusModal, {
+                visible: updateVisible,
+                onClose: function() { setUpdateVisible(false); },
+                onConfirm: handleReload,
+                title: "Update Terbaru",
+                message: "Update terbaru tersedia, aplikasi akan dimuat ulang untuk menerapkan perubahan.",
+                type: "update",
+                confirmText: "Muat Ulang Sekarang",
+                showClose: false
+            })
+        )
     );
 }
 

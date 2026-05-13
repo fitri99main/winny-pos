@@ -1,149 +1,147 @@
 import React from 'react';
-import { View, Text, Modal, TouchableOpacity, ScrollView, StyleSheet, Dimensions, Image } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { PrinterManager } from '../lib/PrinterManager';
+import * as RN from 'react-native';
+var View = RN.View;
+var Text = RN.Text;
+var Modal = RN.Modal;
+var TouchableOpacity = RN.TouchableOpacity;
+var ScrollView = RN.ScrollView;
+var StyleSheet = RN.StyleSheet;
+var Dimensions = RN.Dimensions;
+var Image = RN.Image;
+import * as RNSAC from 'react-native-safe-area-context';
+var SafeAreaView = RNSAC.SafeAreaView;
+import * as PrinterLib from '../lib/PrinterManager';
+var PrinterManager = PrinterLib.PrinterManager;
 
-interface ReceiptPreviewModalProps {
-    visible: boolean;
-    onClose: () => void;
-    orderData: any;
-    onPrint: () => void;
-}
+export default function ReceiptPreviewModal(props) {
+    var visible = props.visible;
+    var onClose = props.onClose;
+    var orderData = props.orderData;
+    var onPrint = props.onPrint;
 
-export default function ReceiptPreviewModal({ visible, onClose, orderData, onPrint }: ReceiptPreviewModalProps) {
     if (!orderData) return null;
 
-    const { receipt_logo_url, show_logo, receipt_paper_width } = orderData;
-    const is80mm = receipt_paper_width === '80mm';
-    const paperWidth = is80mm ? 380 : 280;
+    var receipt_logo_url = orderData.receipt_logo_url;
+    var show_logo = orderData.show_logo;
+    var receipt_paper_width = orderData.receipt_paper_width;
+    var is80mm = receipt_paper_width === '80mm';
+    var paperWidth = is80mm ? 380 : 280;
 
-    const rawText = PrinterManager.formatReceipt(orderData, true);
+    var rawText = PrinterManager.formatReceipt(orderData, true);
     
-    // Simple parser for [C], [L], [R], [LOGO] tags to render in preview
-    const renderLine = (line: string, index: number) => {
-        if (line.includes('[LOGO]')) {
-            return (
-                <View key={index} style={styles.logoContainer}>
-                    {receipt_logo_url ? (
-                        <Image 
-                            source={{ uri: receipt_logo_url }} 
-                            style={styles.receiptLogo} 
-                            resizeMode="contain" 
-                        />
-                    ) : (
-                        <View style={styles.logoPlaceholder} />
-                    )}
-                </View>
+    var renderLine = function(line, index) {
+        if (line.trim().toUpperCase().indexOf('[LOGO]') !== -1) {
+            if (show_logo === false) return null;
+            return React.createElement(View, { key: index, style: styles.logoContainer },
+                receipt_logo_url ? React.createElement(Image, {
+                    source: { uri: receipt_logo_url },
+                    style: styles.receiptLogo,
+                    resizeMode: "contain",
+                    onError: function(e) { console.warn('Logo preview error:', e.nativeEvent.error); }
+                }) : React.createElement(View, { style: styles.logoPlaceholder })
             );
         }
 
-        if (!line.trim() && line === '') return <View key={index} style={{ height: 10 }} />;
+        if (!line.trim() && line === '') return React.createElement(View, { key: index, style: { height: 10 } });
         
-        let alignment: 'center' | 'left' | 'right' = 'left';
-        let text = line;
-        let isBold = false;
-        let isBig = false;
+        var alignment = 'left';
+        var text = line;
+        var isBold = false;
+        var isBig = false;
+        var isTall = false;
 
-        if (text.includes('[BIG]')) {
+        if (text.indexOf('[BIG]') !== -1) {
             isBig = true;
             text = text.replace('[BIG]', '').replace('[/BIG]', '');
         }
+        
+        if (text.indexOf('[TALL]') !== -1) {
+            isTall = true;
+            text = text.replace('[TALL]', '').replace('[/TALL]', '');
+        }
 
-        if (text.startsWith('[C]')) {
+        if (text.indexOf('[C]') === 0) {
             alignment = 'center';
             text = text.substring(3);
-        } else if (text.startsWith('[L]')) {
+        } else if (text.indexOf('[L]') === 0) {
             alignment = 'left';
             text = text.substring(3);
-        } else if (text.startsWith('[R]')) {
+        } else if (text.indexOf('[R]') === 0) {
             alignment = 'right';
             text = text.substring(3);
         }
 
-        // Handle <b> tags
-        if (text.includes('<b>')) {
+        if (text.indexOf('<b>') !== -1) {
             isBold = true;
             text = text.replace('<b>', '').replace('</b>', '');
         }
 
-        // Handle Notes (detecting '  (' format from PrinterManager)
-        const isNote = text.trim().startsWith('(');
+        var isNote = text.trim().indexOf('(') === 0;
+        var parts = text.split('[R]');
         
-        // Split by [R] for right-aligned parts in the middle
-        const parts = text.split('[R]');
-        
-        return (
-            <View key={index} style={[styles.lineWrapper, { justifyContent: alignment === 'center' ? 'center' : 'space-between' }]}>
-                {parts.length > 1 ? (
-                    <>
-                        <Text style={[styles.receiptText, isBold && styles.boldText, isBig && styles.bigText, isNote && styles.noteText]}>{parts[0]}</Text>
-                        <Text style={[styles.receiptText, isBold && styles.boldText, isBig && styles.bigText, isNote && styles.noteText]}>{parts[1]}</Text>
-                    </>
-                ) : (
-                    <Text style={[
-                        styles.receiptText, 
-                        isBold && styles.boldText,
-                        isBig && styles.bigText,
-                        isNote && styles.noteText,
-                        { textAlign: alignment, width: '100%' }
-                    ]}>
-                        {text}
-                    </Text>
-                )}
-            </View>
+        return React.createElement(View, { key: index, style: [styles.lineWrapper, { justifyContent: alignment === 'center' ? 'center' : 'space-between' }] },
+            parts.length > 1 ? React.createElement(View, { style: { flexDirection: 'row', justifyContent: 'space-between', width: '100%' } },
+                React.createElement(Text, { style: [styles.receiptText, isBold ? styles.boldText : null, isBig ? styles.bigText : null, isTall ? styles.tallText : null, isNote ? styles.noteText : null] }, parts[0]),
+                React.createElement(Text, { style: [styles.receiptText, isBold ? styles.boldText : null, isBig ? styles.bigText : null, isTall ? styles.tallText : null, isNote ? styles.noteText : null] }, parts[1])
+            ) : React.createElement(Text, {
+                style: [
+                    styles.receiptText, 
+                    isBold ? styles.boldText : null,
+                    isBig ? styles.bigText : null,
+                    isTall ? styles.tallText : null,
+                    isNote ? styles.noteText : null,
+                    { textAlign: (alignment === 'center' ? 'center' : alignment === 'right' ? 'right' : 'left'), width: '100%' }
+                ]
+            }, text)
         );
     };
 
-    const lines = rawText.split('\n');
+    var lines = rawText.split('\n');
+    var renderedLines = [];
+    for (var i = 0; i < lines.length; i++) {
+        renderedLines.push(renderLine(lines[i], i));
+    }
 
-    return (
-        <Modal
-            visible={visible}
-            transparent
-            animationType="fade"
-            onRequestClose={onClose}
-        >
-            <View style={styles.overlay}>
-                <SafeAreaView style={styles.safeArea}>
-                    <View style={[styles.card, { maxWidth: is80mm ? 420 : 320 }]}>
-                        <View style={styles.header}>
-                            <Text style={styles.headerTitle}>Pratinjau Struk ({receipt_paper_width || '58mm'}) v2</Text>
-                            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-                                <Text style={styles.closeBtnText}>✕</Text>
-                            </TouchableOpacity>
-                        </View>
-
-                        <View style={styles.paperWrapper}>
-                            <ScrollView 
-                                style={styles.previewScroll}
-                                showsVerticalScrollIndicator={false}
-                                contentContainerStyle={styles.receiptContainer}
-                            >
-                                <View style={[styles.receiptPaper, { width: paperWidth }]}>
-                                    {lines.map((line, idx) => renderLine(line, idx))}
-                                </View>
-                            </ScrollView>
-                            
-                            {/* Decorative Jagged Edges (Bottom) */}
-                            <View style={[styles.jaggedEdge, { width: paperWidth }]} />
-                        </View>
-
-                        <View style={styles.footer}>
-                            <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
-                                <Text style={styles.cancelBtnText}>Batal</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.printBtn} onPress={onPrint}>
-                                <Text style={styles.printBtnText}>🖨️ Cetak Struk</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </SafeAreaView>
-            </View>
-        </Modal>
+    return React.createElement(Modal, {
+        visible: visible,
+        transparent: true,
+        animationType: "fade",
+        onRequestClose: onClose
+    },
+        React.createElement(View, { style: styles.overlay },
+            React.createElement(SafeAreaView, { style: styles.safeArea },
+                React.createElement(View, { style: [styles.card, { maxWidth: is80mm ? 420 : 320 }] },
+                    React.createElement(View, { style: styles.header },
+                        React.createElement(Text, { style: styles.headerTitle }, "Pratinjau Struk (" + (receipt_paper_width || '58mm') + ")"),
+                        React.createElement(TouchableOpacity, { onPress: onClose, style: styles.closeBtn },
+                            React.createElement(Text, { style: styles.closeText }, "\u2715")
+                        )
+                    ),
+                    React.createElement(View, { style: styles.paperWrapper },
+                        React.createElement(ScrollView, {
+                            style: styles.previewScroll,
+                            showsVerticalScrollIndicator: false,
+                            contentContainerStyle: styles.receiptContainer
+                        },
+                            React.createElement(View, { style: [styles.receiptPaper, { width: paperWidth }] }, renderedLines)
+                        ),
+                        React.createElement(View, { style: [styles.jaggedEdge, { width: paperWidth }] })
+                    ),
+                    React.createElement(View, { style: styles.footer },
+                        React.createElement(TouchableOpacity, { style: styles.cancelBtn, onPress: onClose },
+                            React.createElement(Text, { style: styles.cancelBtnText }, "Batal")
+                        ),
+                        React.createElement(TouchableOpacity, { style: styles.printBtn, onPress: onPrint },
+                            React.createElement(Text, { style: styles.printBtnText }, "\uD83D\uDDA8\uFE0F Cetak Struk")
+                        )
+                    )
+                )
+            )
+        )
     );
 }
 
-const styles = StyleSheet.create({
+var styles = StyleSheet.create({
     overlay: {
         flex: 1,
         backgroundColor: 'rgba(0,0,0,0.6)',
@@ -183,7 +181,7 @@ const styles = StyleSheet.create({
     closeBtn: {
         padding: 5,
     },
-    closeBtnText: {
+    closeText: {
         fontSize: 20,
         color: '#64748b',
     },
@@ -231,6 +229,12 @@ const styles = StyleSheet.create({
         lineHeight: 28,
         marginVertical: 4,
     },
+    tallText: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#000',
+        lineHeight: 22,
+    },
     noteText: {
         color: '#ea580c',
         fontStyle: 'italic',
@@ -240,8 +244,6 @@ const styles = StyleSheet.create({
         height: 10,
         backgroundColor: 'white',
         marginTop: -1,
-        // In a real app we'd use a background image or a svg for jagged edges
-        // Here we just use a white strip to simulate the bottom of paper
     },
     logoContainer: {
         alignItems: 'center',
@@ -249,8 +251,8 @@ const styles = StyleSheet.create({
         width: '100%',
     },
     receiptLogo: {
-        width: 80,
-        height: 40,
+        width: 100,
+        height: 50,
     },
     logoPlaceholder: {
         width: 80,
@@ -262,7 +264,6 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         padding: 20,
         backgroundColor: 'white',
-        gap: 12,
         borderTopWidth: 1,
         borderTopColor: '#f1f5f9',
     },
@@ -274,6 +275,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         borderWidth: 1,
         borderColor: '#e2e8f0',
+        marginRight: 12
     },
     cancelBtnText: {
         fontWeight: 'bold',
@@ -294,3 +296,4 @@ const styles = StyleSheet.create({
         fontSize: 15,
     },
 });
+

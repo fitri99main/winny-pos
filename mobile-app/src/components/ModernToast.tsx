@@ -1,132 +1,77 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Animated } from 'react-native';
+import React from 'react';
+import * as RN from 'react-native';
+var View = RN.View;
+var Text = RN.Text;
+var StyleSheet = RN.StyleSheet;
+var Animated = RN.Animated;
+import * as Lucide from 'lucide-react-native';
+var CheckCircle = Lucide.CheckCircle;
+var AlertCircle = Lucide.AlertCircle;
+var Info = Lucide.Info;
 
-interface ModernToastProps {
-    visible: boolean;
-    message: string;
-    type?: 'success' | 'info' | 'error';
-    onHide: () => void;
-}
+export default function ModernToast(props) {
+    var visible = props.visible;
+    var message = props.message;
+    var type = props.type || 'success';
+    var onHide = props.onHide;
+    
+    var stateOpacity = React.useRef(new Animated.Value(0));
+    var opacity = stateOpacity.current;
 
-export default function ModernToast({ visible, message, type = 'success', onHide }: ModernToastProps) {
-    const translateY = useRef(new Animated.Value(-100)).current;
-    const opacity = useRef(new Animated.Value(0)).current;
-    const [isRendered, setIsRendered] = useState(visible);
-
-    useEffect(() => {
+    React.useEffect(function() {
         if (visible) {
-            setIsRendered(true);
-            // Show animation
-            Animated.parallel([
-                Animated.spring(translateY, {
-                    toValue: 20,
-                    useNativeDriver: true,
-                    tension: 50,
-                    friction: 8
-                }),
-                Animated.timing(opacity, {
-                    toValue: 1,
-                    duration: 300,
-                    useNativeDriver: true
-                })
-            ]).start();
-
-            // Auto hide after 3 seconds
-            const timer = setTimeout(() => {
-                hide();
-            }, 3000);
-
-            return () => clearTimeout(timer);
-        } else {
-            hide();
+            Animated.sequence([
+                Animated.timing(opacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+                Animated.delay(2000),
+                Animated.timing(opacity, { toValue: 0, duration: 300, useNativeDriver: true })
+            ]).start(function() {
+                if (onHide) onHide();
+            });
         }
     }, [visible]);
 
-    const hide = () => {
-        Animated.parallel([
-            Animated.timing(translateY, {
-                toValue: -100,
-                duration: 300,
-                useNativeDriver: true
-            }),
-            Animated.timing(opacity, {
-                toValue: 0,
-                duration: 300,
-                useNativeDriver: true
-            })
-        ]).start(() => {
-            setIsRendered(false);
-            onHide();
-        });
-    };
+    if (!visible) return null;
 
-    if (!isRendered) return null;
-
-    const getBgColor = () => {
+    var getIcon = function() {
         switch (type) {
-            case 'success': return '#059669'; // Emerald 600
-            case 'error': return '#dc2626'; // Red 600
-            default: return '#3b82f6'; // Blue 500
+            case 'success': return React.createElement(CheckCircle, { size: 20, color: "#16a34a" });
+            case 'error': return React.createElement(AlertCircle, { size: 20, color: "#ef4444" });
+            default: return React.createElement(Info, { size: 20, color: "#3b82f6" });
         }
     };
 
-    const getIcon = () => {
+    var getStyle = function() {
         switch (type) {
-            case 'success': return '✓';
-            case 'error': return '✕';
-            default: return 'ℹ';
+            case 'success': return styles.success;
+            case 'error': return styles.error;
+            default: return styles.info;
         }
     };
 
-    return (
-        <Animated.View style={[
-            styles.container, 
-            { transform: [{ translateY }], opacity, backgroundColor: getBgColor() }
-        ]}>
-            <View style={styles.iconContainer}>
-                <Text style={styles.icon}>{getIcon()}</Text>
-            </View>
-            <Text style={styles.message}>{message}</Text>
-        </Animated.View>
+    return React.createElement(Animated.View, { style: [styles.container, getStyle(), { opacity: opacity }] },
+        getIcon(),
+        React.createElement(Text, { style: styles.message }, message)
     );
 }
 
-const styles = StyleSheet.create({
-    container: {
-        position: 'absolute',
-        top: 40,
-        left: 20,
-        right: 20,
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 12,
-        paddingHorizontal: 16,
-        borderRadius: 16,
-        zIndex: 9999,
-        elevation: 8,
+var styles = StyleSheet.create({
+    container: { 
+        position: 'absolute', 
+        bottom: 100, 
+        left: 20, 
+        right: 20, 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        padding: 16, 
+        borderRadius: 12, 
+        elevation: 5,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.15,
-        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4
     },
-    iconContainer: {
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        backgroundColor: 'rgba(255,255,255,0.2)',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: 12,
-    },
-    icon: {
-        color: 'white',
-        fontSize: 14,
-        fontWeight: 'bold',
-    },
-    message: {
-        color: 'white',
-        fontSize: 14,
-        fontWeight: '600',
-        flex: 1,
-    }
+    message: { marginLeft: 12, fontSize: 14, fontWeight: '600', color: '#1e293b' },
+    success: { backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bcf0da' },
+    error: { backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fecaca' },
+    info: { backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe' }
 });

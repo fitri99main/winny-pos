@@ -160,7 +160,7 @@ export function CashierInterface({
   const [managerAuthModalOpen, setManagerAuthModalOpen] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [pendingAuth, setPendingAuth] = useState<{
-    action: 'discount' | 'hold' | 'deleteHeld' | 'restoreHeld';
+    action: 'discount' | 'hold' | 'deleteHeld' | 'restoreHeld' | 'manual';
     data?: any;
   } | null>(null);
 
@@ -203,14 +203,15 @@ export function CashierInterface({
   const heldCount = uniqueOrders.length;
 
   // Helper to check if current user is manager/admin or if action is restricted
-  const checkAuth = (action: 'discount' | 'hold' | 'deleteHeld' | 'restoreHeld'): boolean => {
+  const checkAuth = (action: 'discount' | 'hold' | 'deleteHeld' | 'restoreHeld' | 'manual'): boolean => {
     if (isAdmin) return true;
 
     // Check specific restrictions from settings
     const isRestricted = (
       (action === 'discount' && settings?.restrict_cashier_discount) ||
       (action === 'hold' && settings?.restrict_cashier_hold) ||
-      (action === 'deleteHeld' && settings?.restrict_cashier_delete)
+      (action === 'deleteHeld' && settings?.restrict_cashier_delete) ||
+      (action === 'manual' && settings?.restrict_cashier_manual)
     );
 
     return !isRestricted;
@@ -661,8 +662,9 @@ export function CashierInterface({
   const executeSmartPrint = async (saleData: any, currentCart: OrderItem[]) => {
     try {
         console.log('[POS] Starting Smart Print check...', { cartSize: currentCart.length, initialSize: initialItems.length });
+        
+        // 1. Identify what's actually new or increased
         const diffItems = currentCart.map(item => {
-            // Find matching item by Name and Notes (since IDs change on restoration)
             const initialItem = initialItems.find(ii => 
                 ii.product.name === item.product.name && ii.notes === item.notes
             );
@@ -678,8 +680,18 @@ export function CashierInterface({
         if (diffItems.length > 0) {
             console.log('[POS] Smart Printing: Sending items to targets', diffItems);
             
-            const kitchenItems = diffItems.filter(item => item.product.target === 'Kitchen' || item.product.category?.toLowerCase().includes('makan'));
-            const barItems = diffItems.filter(item => item.product.target === 'Bar' || item.product.category?.toLowerCase().includes('minum'));
+            // Normalize target matching (case-insensitive)
+            const kitchenItems = diffItems.filter(item => {
+                const target = (item.product.target || '').toLowerCase();
+                const category = (item.product.category || '').toLowerCase();
+                return target === 'kitchen' || target === 'dapur' || target === 'kds' || category.includes('makan');
+            });
+
+            const barItems = diffItems.filter(item => {
+                const target = (item.product.target || '').toLowerCase();
+                const category = (item.product.category || '').toLowerCase();
+                return target === 'bar' || category.includes('minum') || category.includes('drink') || category.includes('coffee');
+            });
 
             const commonTicketData = {
                 orderNo: saleData.orderNo || saleData.order_no || 'ORD-?',
@@ -690,13 +702,20 @@ export function CashierInterface({
                 notes: '',
             };
 
-            if (kitchenItems.length > 0) {
+            // Respect Auto-Print Settings
+            if (kitchenItems.length > 0 && settings?.auto_print_kitchen) {
+                console.log('[POS] Printing to Kitchen...');
                 await printerService.printTicket('Kitchen', {
                     ...commonTicketData,
                     items: kitchenItems.map(i => ({ name: i.product.name, quantity: i.quantity, notes: i.notes }))
                 });
             }
-            if (barItems.length > 0) {
+            
+            if (barItems.length > 0 && settings?.auto_print_bar) {
+                console.log('[POS] Printing to Bar...');
+                // Slight delay between kitchen and bar to avoid Bluetooth collisions
+                if (kitchenItems.length > 0) await new Promise(r => setTimeout(r, 500));
+                
                 await printerService.printTicket('Bar', {
                     ...commonTicketData,
                     items: barItems.map(i => ({ name: i.product.name, quantity: i.quantity, notes: i.notes }))
@@ -951,6 +970,9 @@ export function CashierInterface({
       // Actually, easier to just call performHold logic here or force it
       handleHoldOrder(); 
     }
+    else if (action === 'manual') {
+      setManualItemModalOpen(true);
+    }
 
     setPendingAuth(null);
   };
@@ -1168,7 +1190,14 @@ export function CashierInterface({
           <QuickActionsBar
             embedded
             hasItems={orderItems.length > 0}
-            onManualItemClick={() => setManualItemModalOpen(true)}
+            onManualItemClick={() => {
+              if (checkAuth('manual')) {
+                setManualItemModalOpen(true);
+              } else {
+                setPendingAuth({ action: 'manual' });
+                setManagerAuthModalOpen(true);
+              }
+            }}
             onDiscountClick={() => {
               if (checkAuth('discount')) {
                 setDiscountModalOpen(true);

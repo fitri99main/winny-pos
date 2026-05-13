@@ -1,11 +1,12 @@
-const { withGradleProperties } = require('@expo/config-plugins');
+var configPlugins = require('@expo/config-plugins');
+var withGradleProperties = configPlugins.withGradleProperties;
 
-module.exports = (config) => {
+module.exports = function(config) {
   // Suppress any leftover Kotlin/Compose version compatibility warnings
-  config = withGradleProperties(config, (config) => {
-    const alreadySet = config.modResults.some(
-      (item) => item.key === 'androidx.compose.compiler.plugins.kotlin.suppressKotlinVersionCompatibilityCheck'
-    );
+  config = withGradleProperties(config, function(config) {
+    var alreadySet = config.modResults.some(function(item) {
+      return item.key === 'androidx.compose.compiler.plugins.kotlin.suppressKotlinVersionCompatibilityCheck';
+    });
     if (!alreadySet) {
       config.modResults.push({
         type: 'property',

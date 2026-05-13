@@ -143,19 +143,19 @@ export function SettingsView({
     };
 
     const tabs = [
-        { id: 'general', label: 'Umum', icon: Globe },
-        { id: 'account', label: 'Akun', icon: User },
-        { id: 'hours', label: 'Absensi & Jam Kerja', icon: Clock },
-        { id: 'tables', label: 'Meja', icon: LayoutGrid },
-        { id: 'appearance', label: 'Tampilan', icon: Monitor },
-        { id: 'notifications', label: 'Notifikasi', icon: Bell },
-        { id: 'cashier', label: 'Kasir', icon: Calculator },
-        { id: 'printer', label: 'Printer', icon: Printer },
-        { id: 'receipt', label: 'Templat Struk', icon: FileText },
-        { id: 'wifi', label: 'WiFi Voucher', icon: Globe },
-        { id: 'payment_methods', label: 'Metode Pembayaran', icon: CreditCard },
-        { id: 'security', label: 'Keamanan', icon: Shield },
-        { id: 'backup', label: 'Backup & Data', icon: Database },
+        { id: 'general', label: 'Umum', icon: '🏪', color: 'text-blue-500', bgColor: 'bg-blue-50' },
+        { id: 'account', label: 'Profil Akun', icon: '👤', color: 'text-pink-500', bgColor: 'bg-pink-50' },
+        { id: 'hours', label: 'Absensi & Jam', icon: '⏰', color: 'text-orange-500', bgColor: 'bg-orange-50' },
+        { id: 'tables', label: 'Manajemen Meja', icon: '🪑', color: 'text-emerald-500', bgColor: 'bg-emerald-50' },
+        { id: 'appearance', label: 'Tema Tampilan', icon: '🖥️', color: 'text-indigo-500', bgColor: 'bg-indigo-50' },
+        { id: 'notifications', label: 'Pusat Notifikasi', icon: '🔔', color: 'text-rose-500', bgColor: 'bg-rose-50' },
+        { id: 'cashier', label: 'Sistem Kasir', icon: '🧮', color: 'text-sky-600', bgColor: 'bg-sky-50' },
+        { id: 'printer', label: 'Setelan Printer', icon: '🖨️', color: 'text-slate-600', bgColor: 'bg-slate-50' },
+        { id: 'receipt', label: 'Templat Struk', icon: '📄', color: 'text-blue-600', bgColor: 'bg-blue-50' },
+        { id: 'wifi', label: 'WiFi Voucher', icon: '⚡', color: 'text-amber-500', bgColor: 'bg-amber-50' },
+        { id: 'payment_methods', label: 'Metode Bayar', icon: '💳', color: 'text-violet-500', bgColor: 'bg-violet-50' },
+        { id: 'security', label: 'Keamanan Data', icon: '🛡️', color: 'text-blue-700', bgColor: 'bg-blue-50' },
+        { id: 'backup', label: 'Backup & Restore', icon: '🗄️', color: 'text-gray-600', bgColor: 'bg-gray-50' },
     ];
 
     // Password Change State
@@ -506,19 +506,43 @@ export function SettingsView({
                     <p className="text-sm text-gray-500 dark:text-gray-400">Kelola preferensi Anda</p>
                 </div>
 
-                {tabs.map((tab) => (
-                    <button
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id)}
-                        className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === tab.id
-                            ? 'bg-white dark:bg-gray-800 shadow-sm ring-1 ring-gray-200 dark:ring-gray-700 text-primary'
-                            : 'text-gray-500 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
-                            }`}
-                    >
-                        <tab.icon className={`w-5 h-5 ${activeTab === tab.id ? 'text-primary' : 'text-gray-400'}`} />
-                        {tab.label}
-                    </button>
-                ))}
+                {tabs.map((tab) => {
+                    const isActive = activeTab === tab.id;
+                    const Icon = tab.icon;
+                    return (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all duration-300 group ${isActive
+                                ? 'bg-white dark:bg-gray-800 shadow-[0_8px_16px_-4px_rgba(0,0,0,0.1)] ring-1 ring-gray-200 dark:ring-gray-700 text-gray-900 dark:text-white scale-[1.02]'
+                                : 'text-gray-500 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
+                                }`}
+                        >
+                            <div className={`
+                                relative flex items-center justify-center w-9 h-9 rounded-xl transition-all duration-500
+                                ${isActive
+                                    ? `bg-gradient-to-br ${tab.color.replace('text-', 'from-')} to-indigo-600 shadow-lg shadow-indigo-500/20 ring-1 ring-white/20`
+                                    : `bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-800 group-hover:scale-110 group-hover:shadow-md`
+                                }
+                            `}>
+                                {/* 3D Glossy Highlight */}
+                                <div className="absolute inset-[1px] rounded-[10px] bg-gradient-to-br from-white/30 to-transparent pointer-events-none z-20" />
+                                
+                                {typeof tab.icon === 'string' ? (
+                                    <span className={`text-lg relative z-10 transition-all duration-500 ${isActive ? 'drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)]' : 'group-hover:scale-110'}`}>
+                                        {tab.icon}
+                                    </span>
+                                ) : (
+                                    <Icon className={`
+                                        w-4.5 h-4.5 relative z-10 transition-all duration-500
+                                        ${isActive ? 'text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)]' : `${tab.color} group-hover:scale-110`}
+                                    `} />
+                                )}
+                            </div>
+                            <span className="truncate">{tab.label}</span>
+                        </button>
+                    );
+                })}
             </div>
 
             {/* Sub-content Area */}
@@ -1336,8 +1360,8 @@ export function SettingsView({
                                                 await printerService.connect('Kitchen');
                                                 refreshPrinters();
                                                 toast.success('Printer Dapur terhubung!');
-                                            } catch (e) {
-                                                toast.error('Gagal menghubungkan printer. Pastikan Bluetooth aktif.');
+                                            } catch (e: any) {
+                                                toast.error(e.message || 'Gagal menghubungkan printer. Pastikan Bluetooth aktif.');
                                             }
                                         }}
                                         className="flex-1 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200"
@@ -1412,8 +1436,8 @@ export function SettingsView({
                                                 await printerService.connect('Bar');
                                                 refreshPrinters();
                                                 toast.success('Printer Bar terhubung!');
-                                            } catch (e) {
-                                                toast.error('Gagal menghubungkan printer.');
+                                            } catch (e: any) {
+                                                toast.error(e.message || 'Gagal menghubungkan printer.');
                                             }
                                         }}
                                         className="flex-1 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200"
@@ -1510,8 +1534,8 @@ export function SettingsView({
                                                 await printerService.connect('Cashier');
                                                 refreshPrinters();
                                                 toast.success('Printer Kasir terhubung!');
-                                            } catch (e) {
-                                                toast.error('Gagal menghubungkan printer.');
+                                            } catch (e: any) {
+                                                toast.error(e.message || 'Gagal menghubungkan printer.');
                                             }
                                         }}
                                         className="flex-1 bg-primary text-white hover:bg-primary/90 shadow-md"
