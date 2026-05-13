@@ -2058,7 +2058,7 @@ export interface AccountingViewProps {
     onBack?: () => void;
     currentBranchId?: string;
     purchases?: any[];
-    onPurchaseCRUD?: (table: string, action: 'create' | 'update' | 'delete', data: any) => Promise<any> | void;
+    onPurchaseCRUD?: (table: string, action: 'create' | 'update' | 'delete', data: any) => Promise<void>;
 }
 
 export function AccountingView({

@@ -45,7 +45,7 @@ interface CashierInterfaceProps {
     discount?: number;
     tax?: number;
     service?: number;
-  }) => Promise<{ wifiVoucher?: string; wifiNotice?: string } | null> | void;
+  }) => Promise<{ wifiVoucher?: string; wifiNotice?: string } | null>;
   orderItems: OrderItem[];
   orderDiscount: number;
   setOrderItems: React.Dispatch<React.SetStateAction<OrderItem[]>>;
@@ -834,9 +834,9 @@ export function CashierInterface({
       setLastSaleData(salePayload);
       
       // Process sale (this will fetch WiFi vouchers in home.tsx)
-      const voucherInfo: any = await onAddSale(salePayload);
+      const voucherInfo = await onAddSale(salePayload);
       
-      if (voucherInfo && voucherInfo.wifiVoucher) {
+      if (voucherInfo && typeof voucherInfo === 'object' && voucherInfo.wifiVoucher) {
         console.log('[CashierInterface] Received WiFi Voucher info:', voucherInfo);
         setLastSaleData(prev => prev ? { 
           ...prev, 

@@ -35,6 +35,7 @@ export interface SalesOrder {
     branchId?: string;
     status: 'Completed' | 'Returned' | 'Unpaid' | 'Pending' | 'Served' | 'Paid';
     printCount?: number;
+    time?: string;
     paidAmount?: number;
     change?: number;
     waitingTime?: string;

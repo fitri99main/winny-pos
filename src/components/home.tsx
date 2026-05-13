@@ -3654,7 +3654,7 @@ function Home() {
             onAddTransaction={handleAddJournalEntry}
             onDeleteTransaction={handleDeleteJournalEntry}
             onResetTransactions={handleResetJournalEntries}
-            onPurchaseCRUD={(target, action, data) => handleMasterDataCRUD(target, action, data)}
+            onPurchaseCRUD={async (target, action, data) => { await handleMasterDataCRUD(target, action, data); }}
             onRefresh={fetchAccounting}
             onBack={() => setActiveModule('payroll')}
             currentBranchId={currentBranchId}
