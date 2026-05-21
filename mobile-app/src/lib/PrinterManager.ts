@@ -23,8 +23,10 @@ export class PrinterManager {
     private static connectionStatus: Record<string, 'connected' | 'disconnected' | 'connecting'> = {};
     private static logoCache: Record<string, string> = {};
     private static printQueue: Promise<any> = Promise.resolve();
+    private static permissionsGranted = false;
 
     static async requestPermissions() {
+        if (this.permissionsGranted) return { bluetooth: true, location: true, all: true };
         if (Platform.OS === 'android') {
             const apiLevel = Number(Platform.Version);
             if (apiLevel >= 31) {
@@ -36,13 +38,16 @@ export class PrinterManager {
                 const bluetoothOk = granted['android.permission.BLUETOOTH_SCAN'] === PermissionsAndroid.RESULTS.GRANTED &&
                                    granted['android.permission.BLUETOOTH_CONNECT'] === PermissionsAndroid.RESULTS.GRANTED;
                 const locationOk = granted['android.permission.ACCESS_FINE_LOCATION'] === PermissionsAndroid.RESULTS.GRANTED;
+                if (bluetoothOk && locationOk) this.permissionsGranted = true;
                 return { bluetooth: bluetoothOk, location: locationOk, all: bluetoothOk && locationOk };
             } else {
                 const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
                 const ok = granted === PermissionsAndroid.RESULTS.GRANTED;
+                if (ok) this.permissionsGranted = true;
                 return { bluetooth: true, location: ok, all: ok };
             }
         }
+        this.permissionsGranted = true;
         return { bluetooth: true, location: true, all: true };
     }
 
@@ -110,9 +115,10 @@ export class PrinterManager {
     }
 
     static async getSelectedPrinter(type: PrinterType = 'receipt') {
-        const key = type === 'kitchen' ? KITCHEN_PRINTER_KEY : 
-                    (type === 'bar' ? BAR_PRINTER_KEY : 
-                    (type === 'report' ? REPORT_PRINTER_KEY : PRINTER_STORAGE_KEY));
+        const t = (type || 'receipt').toLowerCase();
+        const key = t === 'kitchen' ? KITCHEN_PRINTER_KEY : 
+                    (t === 'bar' ? BAR_PRINTER_KEY : 
+                    (t === 'report' ? REPORT_PRINTER_KEY : PRINTER_STORAGE_KEY));
         return await AsyncStorage.getItem(key);
     }
 
@@ -415,21 +421,39 @@ export class PrinterManager {
         return ticketText;
     }
 
-    static async printToTarget(items: any[], type: PrinterType, orderData: any) {
-        // Queue the entire operation to prevent race conditions
-        const result = await new Promise<{success: boolean, count: number}>((resolve) => {
-            this.printQueue = this.printQueue.then(async () => {
-                const opResult = await this.executePrintToTarget(items, type, orderData);
-                resolve(opResult);
-            }).catch(err => {
-                console.error('[PrinterManager] PrintToTarget Queue Error:', err);
-                resolve({ success: false, count: 0 });
-            });
+    private static async wrapWithTimeout(promise: Promise<any>, timeoutMs: number, fallbackValue: any): Promise<any> {
+        let timeoutHandle: any;
+        const timeoutPromise = new Promise((resolve) => {
+            timeoutHandle = setTimeout(() => resolve(fallbackValue), timeoutMs);
         });
-        return result;
+        return Promise.race([promise, timeoutPromise]).then(function(result) {
+            if (timeoutHandle) clearTimeout(timeoutHandle);
+            return result;
+        }).catch(function(err) {
+            if (timeoutHandle) clearTimeout(timeoutHandle);
+            throw err;
+        });
     }
 
-    private static async executePrintToTarget(items: any[], type: PrinterType, orderData: any) {
+    static async printToTarget(items: any[], type: PrinterType, orderData: any, silent: boolean = false) {
+        return new Promise<{success: boolean, count: number}>((resolve) => {
+            this.printQueue = this.printQueue.then(async () => {
+                try {
+                    // Penambahan timeout internal per koneksi agar queue tidak macet total
+                    const opResult = await this.wrapWithTimeout(
+                        this.executePrintToTarget(items, type, orderData, silent),
+                        15000,
+                        { success: false, count: 0 }
+                    );
+                    resolve(opResult);
+                } catch (err) {
+                    resolve({ success: false, count: 0 });
+                }
+            });
+        });
+    }
+
+    private static async executePrintToTarget(items: any[], type: PrinterType, orderData: any, silent: boolean = false) {
         if (!items || items.length === 0) return { success: true, count: 0 };
         
         // Filter items based on target
@@ -450,12 +474,18 @@ export class PrinterManager {
         }
 
         let macAddress = await this.getSelectedPrinter(type);
+        let isFallback = false;
         if (!macAddress) {
-            console.warn(`[PrinterManager] No printer configured for ${type}`);
+            macAddress = await this.getSelectedPrinter('receipt');
+            isFallback = !!macAddress;
+        }
+
+        if (!macAddress) {
+            console.warn(`[PrinterManager] No printer configured for ${type} or fallback receipt`);
             return { success: false, count: filteredItems.length };
         }
         
-        console.log(`[PrinterManager] Preparing to print ${filteredItems.length} items to ${type} (${macAddress})`);
+        console.log(`[PrinterManager] Target: ${type}, MAC: ${macAddress}${isFallback ? ' (FALLBACK)' : ''}, Items: ${filteredItems.length}`);
         const ticketText = this.formatKitchenTicket(filteredItems, orderData, type === 'kitchen' ? 'Dapur' : 'Bar');
         
         try {
@@ -465,41 +495,48 @@ export class PrinterManager {
             
             // Coba hubungkan jika belum terhubung ATAU jika printer aktif saat ini berbeda
             if (this.connectionStatus[mac] !== 'connected' || this.currentConnectedMac !== mac) {
-                console.log(`[PrinterManager] Switching/Connecting to ${type} printer at ${mac}...`);
+                console.log(`[PrinterManager] SWITCHING PRINTER to ${type.toUpperCase()}: ${mac} (Previous: ${this.currentConnectedMac})`);
                 await BLEPrinter.connectPrinter(mac);
                 this.connectionStatus[mac] = 'connected';
                 this.currentConnectedMac = mac;
-                // Jeda sedikit setelah ganti printer/koneksi baru
-                await new Promise(resolve => setTimeout(resolve, 200));
+                // Jeda lebih lama setelah ganti printer fisik agar buffer siap
+                await new Promise(resolve => setTimeout(resolve, 1500));
             }
             
-            console.log(`[PrinterManager] Sending ticket to ${type} printer...`);
+            console.log(`[PrinterManager] Sending ticket to ${type} printer (${mac})...`);
             await BLEPrinter.printBill(ticketText);
             console.log(`[PrinterManager] ${type} print successful.`);
+            // Cooling Down Delay: Beri jeda agar buffer bluetooth selesai ditransfer secara fisik sebelum koneksi diputus/dipindah
+            await new Promise(resolve => setTimeout(resolve, 2000));
             return { success: true, count: filteredItems.length };
         } catch (error) { 
             console.error(`[PrinterManager] ${type} print failed:`, error);
-            const typeLabel = type === 'kitchen' ? 'Dapur' : (type === 'bar' ? 'Bar' : 'Kasir');
-            Alert.alert('Gagal Cetak', `Gagal mengirim data ke printer ${typeLabel}. Pastikan Bluetooth aktif dan printer dalam jangkauan.`);
+            if (!silent) {
+                const typeLabel = type === 'kitchen' ? 'Dapur' : (type === 'bar' ? 'Bar' : 'Kasir');
+                Alert.alert('Gagal Cetak', `Gagal mengirim data ke printer ${typeLabel}. Pastikan Bluetooth aktif dan printer dalam jangkauan.`);
+            }
             return { success: false, count: filteredItems.length }; 
         }
     }
     
-    static async printOrderReceipt(orderData: any) {
-        // Queue the entire operation to prevent race conditions
-        const result = await new Promise<boolean>((resolve) => {
+    static async printOrderReceipt(orderData: any, silent: boolean = false) {
+        return new Promise<boolean>((resolve) => {
             this.printQueue = this.printQueue.then(async () => {
-                const opResult = await this.executePrintOrderReceipt(orderData);
-                resolve(opResult);
-            }).catch(err => {
-                console.error('[PrinterManager] PrintReceipt Queue Error:', err);
-                resolve(false);
+                try {
+                    const opResult = await this.wrapWithTimeout(
+                        this.executePrintOrderReceipt(orderData, silent),
+                        15000,
+                        false
+                    );
+                    resolve(opResult);
+                } catch (err) {
+                    resolve(false);
+                }
             });
         });
-        return result;
     }
 
-    private static async executePrintOrderReceipt(orderData: any) {
+    private static async executePrintOrderReceipt(orderData: any, silent: boolean = false) {
         if (!orderData) return false;
         
         // Priority Fallback: Coba ambil printer kasir, jika tidak ada pakai bar, jika tidak ada pakai kitchen
@@ -509,7 +546,7 @@ export class PrinterManager {
                          
         if (!macAddress) {
             console.warn('[PrinterManager] No printer configured anywhere for receipt');
-            Alert.alert('Printer Belum Diatur', 'Harap atur alamat printer di menu Pengaturan.');
+            if (!silent) Alert.alert('Printer Belum Diatur', 'Harap atur alamat printer di menu Pengaturan.');
             return false;
         }
         
@@ -541,10 +578,12 @@ export class PrinterManager {
 
             console.log("[PrinterManager] Sending final bill text...");
             await BLEPrinter.printBill(receiptText);
+            // Cooling Down Delay: Beri jeda agar buffer bluetooth selesai ditransfer secara fisik sebelum koneksi diputus/dipindah
+            await new Promise(resolve => setTimeout(resolve, 2000));
             return true;
         } catch (error) { 
             console.error('Print Receipt Error:', error);
-            Alert.alert('Gagal Cetak Struk', 'Pastikan Bluetooth aktif dan printer dalam jangkauan.');
+            if (!silent) Alert.alert('Gagal Cetak Struk', 'Pastikan Bluetooth aktif dan printer dalam jangkauan.');
             return false;
         }
     }
@@ -591,6 +630,15 @@ export class PrinterManager {
             reportData.paymentSummary.forEach((p: any) => {
                 report += LEFT + formatRow((p.method || 'Tunai').toUpperCase(), p.amount) + '\n';
             });
+        } else {
+            const cashTotal = Number(reportData.cashTotal || 0);
+            const nonCashTotal = Number(reportData.qrTotal || reportData.nonCashTotal || 0);
+            if (cashTotal > 0) {
+                report += LEFT + formatRow('TUNAI', cashTotal) + '\n';
+            }
+            if (nonCashTotal > 0) {
+                report += LEFT + formatRow('QRIS / NON TUNAI', nonCashTotal) + '\n';
+            }
         }
         if (reportData.totalTax > 0) report += LEFT + formatRow('PAJAK', reportData.totalTax) + '\n';
         if (reportData.totalDiscount > 0) report += LEFT + formatRow('DISKON', '-' + formatCurrency(reportData.totalDiscount)) + '\n';
@@ -626,11 +674,23 @@ export class PrinterManager {
 
     static async printSalesReport(reportData: any) {
         const result = await new Promise<boolean>((resolve) => {
+            const taskTimeout = setTimeout(() => {
+                console.warn('[PrinterManager] printSalesReport timed out');
+                resolve(false);
+            }, 25000);
+
             this.printQueue = this.printQueue.then(async () => {
-                const opResult = await this.executePrintSalesReport(reportData);
-                resolve(opResult);
+                try {
+                    const opResult = await this.executePrintSalesReport(reportData);
+                    clearTimeout(taskTimeout);
+                    resolve(opResult);
+                } catch (err) {
+                    clearTimeout(taskTimeout);
+                    resolve(false);
+                }
             }).catch(err => {
-                console.error('[PrinterManager] PrintReport Queue Error:', err);
+                console.error('[PrinterManager] printSalesReport Queue Error:', err);
+                clearTimeout(taskTimeout);
                 resolve(false);
             });
         });
@@ -667,6 +727,8 @@ export class PrinterManager {
             }
 
             await BLEPrinter.printBill(reportText);
+            // Cooling Down Delay: Beri jeda agar buffer bluetooth selesai ditransfer secara fisik sebelum koneksi diputus/dipindah
+            await new Promise(resolve => setTimeout(resolve, 2000));
             return true;
         } catch (error) { return false; }
     }
@@ -722,6 +784,8 @@ export class PrinterManager {
             await new Promise(resolve => setTimeout(resolve, 200));
             
             await BLEPrinter.printBill(testText);
+            // Cooling Down Delay: Beri jeda agar buffer bluetooth selesai ditransfer secara fisik sebelum koneksi diputus/dipindah
+            await new Promise(resolve => setTimeout(resolve, 2000));
             return true;
         } catch (error: any) {
             console.error(`[PrinterManager] Test print failed:`, error);

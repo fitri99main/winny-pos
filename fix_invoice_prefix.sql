@@ -1,3 +1,7 @@
+-- LEGACY / ARCHIVE
+-- Jangan gunakan file ini untuk rollout baru.
+-- Gunakan 00_pos_hold_checkout_stability.sql sebagai jalur aktif.
+--
 -- FIX INVOICE PREFIX AND HOLD LOGIC v2
 -- 1. Ensure settings are correct for WIN-26 and HOLD
 UPDATE public.store_settings 

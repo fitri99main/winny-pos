@@ -42,6 +42,8 @@ ADD COLUMN IF NOT EXISTS show_customer_name BOOLEAN DEFAULT true,
 ADD COLUMN IF NOT EXISTS invoice_mode TEXT DEFAULT 'auto',
 ADD COLUMN IF NOT EXISTS invoice_prefix TEXT DEFAULT 'INV',
 ADD COLUMN IF NOT EXISTS invoice_last_number BIGINT DEFAULT 0,
+ADD COLUMN IF NOT EXISTS hold_invoice_prefix TEXT DEFAULT 'HOLD',
+ADD COLUMN IF NOT EXISTS hold_invoice_last_number BIGINT DEFAULT 0,
 ADD COLUMN IF NOT EXISTS offline_invoice_mode TEXT DEFAULT 'auto',
 ADD COLUMN IF NOT EXISTS offline_invoice_prefix TEXT DEFAULT 'OFF',
 ADD COLUMN IF NOT EXISTS offline_invoice_last_number BIGINT DEFAULT 0;

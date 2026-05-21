@@ -6,10 +6,11 @@ module.exports = function(config) {
     if (config.modResults.language === 'groovy') {
       var contents = config.modResults.contents;
 
-      // 1. Inject into buildscript (for internal plugins like expo-updates)
-      var bypassSnippet = "\n    ext.kotlinVersion = \"1.9.24\"\n    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {\n        kotlinOptions {\n            freeCompilerArgs += [\"-Xskip-metadata-version-check\"]\n        }\n    }\n";
+      // Force a stable Kotlin version and suppress the Compose compatibility check
+      // for Expo modules in development builds.
+      var bypassSnippet = "\n    ext.kotlinVersion = \"1.9.24\"\n    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {\n        kotlinOptions {\n            freeCompilerArgs += [\"-Xskip-metadata-version-check\"]\n            freeCompilerArgs += [\"-P\", \"plugin:androidx.compose.compiler.plugins.kotlin:suppressKotlinVersionCompatibilityCheck=true\"]\n        }\n    }\n";
 
-      if (contents.indexOf('-Xskip-metadata-version-check') === -1) {
+      if (contents.indexOf('suppressKotlinVersionCompatibilityCheck=true') === -1) {
         // Inject into allprojects block (for app and subprojects)
         contents = contents.replace(
           /allprojects\s*{/,

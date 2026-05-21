@@ -10,12 +10,32 @@ import StatusModal from './src/components/StatusModal';
 
 SplashScreen.preventAutoHideAsync();
 
+var otaUpdatesEnabledByEnv = process.env.EXPO_PUBLIC_ENABLE_OTA_UPDATES;
+var shouldUseOtaUpdates = !__DEV__ && otaUpdatesEnabledByEnv !== 'false' && !!Updates.isEnabled;
+
 function App() {
     var state = React.useState(false);
     var updateVisible = state[0];
     var setUpdateVisible = state[1];
 
     React.useEffect(function() {
+        var prepare = function() {
+            return new Promise(function(resolve) { 
+                setTimeout(resolve, 1500); 
+            }).then(function() {
+                return SplashScreen.hideAsync();
+            })['catch'](function(e) {
+                console.warn(e);
+                return SplashScreen.hideAsync();
+            });
+        };
+
+        prepare();
+
+        if (!shouldUseOtaUpdates) {
+            return;
+        }
+
         var subscription = null;
         if (typeof Updates.addListener === 'function') {
             subscription = Updates.addListener(function(event) {
@@ -40,19 +60,6 @@ function App() {
                 });
         }
 
-        var prepare = function() {
-            return new Promise(function(resolve) { 
-                setTimeout(resolve, 1500); 
-            }).then(function() {
-                return SplashScreen.hideAsync();
-            })['catch'](function(e) {
-                console.warn(e);
-                return SplashScreen.hideAsync();
-            });
-        };
-
-        prepare();
-
         var timer = setTimeout(function() {
             onFetchUpdateAsync();
         }, 3000);
@@ -66,6 +73,9 @@ function App() {
     }, []);
 
     var handleReload = function() {
+        if (!shouldUseOtaUpdates) {
+            return Promise.resolve();
+        }
         setUpdateVisible(false);
         return Updates.reloadAsync()['catch'](function(error) {
             console.error("Gagal memuat ulang:", error);

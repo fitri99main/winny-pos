@@ -37,3 +37,12 @@ core
 .env
 
 .vercel
+
+# Local supabase temp
+supabase/.temp/
+
+# Scratch folder
+scratch/
+
+# Windows wrapper bypass
+powershell.bat

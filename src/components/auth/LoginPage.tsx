@@ -159,7 +159,7 @@ export default function LoginPage() {
                         </p>
                     </div>
 
-                    <form onSubmit={handleAuth} className="space-y-6">
+                    <form onSubmit={handleAuth} className="space-y-6 notranslate" translate="no">
                         {isSignUp && (
                             <div className="space-y-2">
                                 <label className="text-sm font-medium text-gray-700 ml-1">Nama Lengkap</label>
@@ -216,17 +216,21 @@ export default function LoginPage() {
                             disabled={loading}
                             className="w-full h-12 bg-primary hover:bg-primary/90 text-white text-base font-bold rounded-xl shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
                         >
-                            {loading ? (
-                                <>
-                                    <Loader2 className="w-5 h-5 mr-3 animate-spin" />
-                                    {statusText || (isSignUp ? 'Membuat akun...' : 'Masuk...')}
-                                </>
-                            ) : (
-                                <>
-                                    {isSignUp ? <UserPlus className="w-5 h-5 mr-2" /> : <LogIn className="w-5 h-5 mr-2" />}
-                                    {isSignUp ? 'Daftar' : 'Masuk'}
-                                </>
-                            )}
+                            <span className="flex items-center justify-center">
+                                <span className="mr-2 flex items-center justify-center">
+                                    {loading ? (
+                                        <Loader2 className="w-5 h-5 animate-spin" />
+                                    ) : (
+                                        isSignUp ? <UserPlus className="w-5 h-5" /> : <LogIn className="w-5 h-5" />
+                                    )}
+                                </span>
+                                <span>
+                                    {loading 
+                                        ? (statusText || (isSignUp ? 'Membuat akun...' : 'Masuk...'))
+                                        : (isSignUp ? 'Daftar' : 'Masuk')
+                                    }
+                                </span>
+                            </span>
                         </Button>
                     </form>
 

@@ -1,3 +1,7 @@
+-- LEGACY / ARCHIVE
+-- Jangan gunakan file ini untuk rollout baru.
+-- Gunakan 00_pos_hold_checkout_stability.sql sebagai jalur aktif.
+--
 -- Fungsi Upsert Sale with Items (v7 - ROBUST VERSION)
 -- Menangani konversi data JSON ke SQL dengan lebih aman untuk mencegah error pembayaran
 CREATE OR REPLACE FUNCTION upsert_sale_with_items(

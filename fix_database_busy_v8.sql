@@ -1,3 +1,7 @@
+-- LEGACY / ARCHIVE
+-- Jangan gunakan file ini untuk rollout baru.
+-- Gunakan 00_pos_hold_checkout_stability.sql sebagai jalur aktif.
+--
 -- OPTIMASI DATABASE v8 (ANTI-SIBUK)
 -- 1. Tambah Indeks agar pencarian transaksi sangat cepat dan tidak mengunci tabel lama-lama
 CREATE INDEX IF NOT EXISTS idx_sales_order_no ON public.sales(order_no);

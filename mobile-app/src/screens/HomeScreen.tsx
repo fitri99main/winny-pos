@@ -45,7 +45,7 @@ var Users = Lucide.Users;
 var Wifi = Lucide.Wifi;
 var WifiOff = Lucide.WifiOff;
 
-import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
+import Svg, { Path, Defs, LinearGradient, Stop, Line } from 'react-native-svg';
 
 import * as OfflineLib from '../lib/OfflineService';
 var OfflineService = OfflineLib.OfflineService;
@@ -65,6 +65,31 @@ function formatCurrency(value, decimals) {
     var parts = num.toFixed(dec).split('.');
     parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
     return 'Rp ' + (dec > 0 ? parts.join(',') : parts[0]);
+}
+
+function formatCompactCurrency(value) {
+    var num = Number(value) || 0;
+    if (num >= 1000000000) return 'Rp ' + (num / 1000000000).toFixed(1).replace('.0', '') + 'M';
+    if (num >= 1000000) return 'Rp ' + (num / 1000000).toFixed(1).replace('.0', '') + 'jt';
+    if (num >= 1000) return 'Rp ' + Math.round(num / 1000) + 'rb';
+    return 'Rp ' + Math.round(num);
+}
+
+function formatHourLabel(hour) {
+    var h = String(hour);
+    if (h.length < 2) h = '0' + h;
+    return h + ':00';
+}
+
+function toLocalDateKey(value) {
+    var d = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+    if (isNaN(d.getTime())) return '';
+    var y = d.getFullYear();
+    var m = String(d.getMonth() + 1);
+    var day = String(d.getDate());
+    if (m.length < 2) m = '0' + m;
+    if (day.length < 2) day = '0' + day;
+    return y + '-' + m + '-' + day;
 }
 
 function shadeColor(color, percent) {
@@ -213,66 +238,75 @@ export default function HomeScreen() {
                 days = 7;
             }
             
-            supabase.from('sales')
-                .select('total_amount, date, status')
-                .eq('branch_id', currentBranchId)
-                .in('status', PAID_STATUSES)
-                .gte('date', chartStart.toISOString())
-                .lte('date', chartEnd.toISOString())
-                .then(function(res) {
-                    if (res.data) {
-                        var totalRevenue = 0;
-                        var totalCount = res.data.length;
-                        
-                        var groups = {};
-                        if (chartFilter === 'today') {
-                            for (var h = 0; h < 24; h += 2) {
-                                var label = h + ':00';
-                                groups[h] = { label: label, value: 0, sortKey: h };
-                            }
-                            res.data.forEach(function(s) {
-                                totalRevenue += (s.total_amount || 0);
-                                var hour = new Date(s.date).getHours();
-                                var bucket = Math.floor(hour / 2) * 2;
-                                if (groups[bucket]) groups[bucket].value += s.total_amount;
-                            });
-                        } else {
-                            for (var i = 0; i < days; i++) {
-                                var d = new Date(chartStart);
-                                d.setDate(d.getDate() + i);
-                                var dStr = d.toISOString().split('T')[0];
-                                
-                                var dayNames = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
-                                var monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-                                var labelStr = dayNames[d.getDay()] + ', ' + d.getDate() + ' ' + monthNames[d.getMonth()];
-
-                                groups[dStr] = { 
-                                    label: labelStr, 
-                                    date: dStr,
-                                    value: 0,
-                                    sortKey: i
-                                };
-                            }
-                            var weekdays = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
-                            var months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-
-                            res.data.forEach(function(s) {
-                                totalRevenue += (s.total_amount || 0);
-                                var ds = s.date.split('T')[0];
-                                if (groups[ds]) groups[ds].value += s.total_amount;
-                            });
+            var salesPageSize = 1000;
+            var fetchSalesPage = function(fromIdx, acc) {
+                return supabase.from('sales')
+                    .select('total_amount, date, status')
+                    .eq('branch_id', currentBranchId)
+                    .in('status', PAID_STATUSES)
+                    .gte('date', chartStart.toISOString())
+                    .lte('date', chartEnd.toISOString())
+                    .order('date', { ascending: false })
+                    .range(fromIdx, fromIdx + salesPageSize - 1)
+                    .then(function(res) {
+                        if (res && res.error) throw res.error;
+                        var rows = (res && res.data) || [];
+                        var merged = acc.concat(rows);
+                        if (rows.length === salesPageSize) {
+                            return fetchSalesPage(fromIdx + salesPageSize, merged);
                         }
+                        return merged;
+                    });
+            };
 
-                        // Update TodayStats to sync with Chart
-                        var finalAvg = totalCount > 0 ? totalRevenue / totalCount : 0;
-                        setTodayStats({ revenue: totalRevenue, count: totalCount, average: finalAvg });
+            fetchSalesPage(0, []).then(function(salesRows) {
+                var totalRevenue = 0;
+                var totalCount = salesRows.length;
+                var groups = {};
 
-                        var sorted = Object.keys(groups).sort(function(a,b) {
-                            return groups[a].sortKey - groups[b].sortKey;
-                        }).map(function(k) { return groups[k]; });
-                        setWeeklySales(sorted);
+                if (chartFilter === 'today') {
+                    for (var h = 0; h < 24; h += 2) {
+                        var label = formatHourLabel(h);
+                        groups[h] = { label: label, value: 0, sortKey: h };
                     }
-                })['catch'](function() {});
+                    salesRows.forEach(function(s) {
+                        totalRevenue += (s.total_amount || 0);
+                        var hour = new Date(s.date).getHours();
+                        var bucket = Math.floor(hour / 2) * 2;
+                        if (groups[bucket]) groups[bucket].value += s.total_amount;
+                    });
+                } else {
+                    for (var i = 0; i < days; i++) {
+                        var d = new Date(chartStart);
+                        d.setDate(d.getDate() + i);
+                        var dStr = toLocalDateKey(d);
+                        var dayNames = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+                        var monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+                        var labelStr = dayNames[d.getDay()] + ', ' + d.getDate() + ' ' + monthNames[d.getMonth()];
+
+                        groups[dStr] = {
+                            label: labelStr,
+                            date: dStr,
+                            value: 0,
+                            sortKey: i
+                        };
+                    }
+
+                    salesRows.forEach(function(s) {
+                        totalRevenue += (s.total_amount || 0);
+                        var ds = toLocalDateKey(s.date);
+                        if (groups[ds]) groups[ds].value += s.total_amount;
+                    });
+                }
+
+                var finalAvg = totalCount > 0 ? totalRevenue / totalCount : 0;
+                setTodayStats({ revenue: totalRevenue, count: totalCount, average: finalAvg });
+
+                var sorted = Object.keys(groups).sort(function(a, b) {
+                    return groups[a].sortKey - groups[b].sortKey;
+                }).map(function(k) { return groups[k]; });
+                setWeeklySales(sorted);
+            })['catch'](function() {});
 
             // Best Sellers Optimization
             var productToCategoryMap = {};
@@ -283,16 +317,32 @@ export default function HomeScreen() {
                     pRes.data.forEach(function(p) { productToCategoryMap[p.id] = p.category; });
                 }
                 
-                return supabase.from('sale_items')
-                    .select('product_name, quantity, product_id, sales!inner(branch_id, date, status)')
-                    .eq('sales.branch_id', currentBranchId)
-                    .in('sales.status', PAID_STATUSES)
-                    .gte('sales.date', chartStart.toISOString())
-                    .lte('sales.date', chartEnd.toISOString());
-            }).then(function(res: any) {
-                if (res && res.data) {
+                var saleItemsPageSize = 1000;
+                var fetchSaleItemsPage = function(fromIdx, acc) {
+                    return supabase.from('sale_items')
+                        .select('product_name, quantity, product_id, sales!inner(branch_id, date, status)')
+                        .eq('sales.branch_id', currentBranchId)
+                        .in('sales.status', PAID_STATUSES)
+                        .gte('sales.date', chartStart.toISOString())
+                        .lte('sales.date', chartEnd.toISOString())
+                        .order('id', { ascending: true })
+                        .range(fromIdx, fromIdx + saleItemsPageSize - 1)
+                        .then(function(res) {
+                            if (res && res.error) throw res.error;
+                            var rows = (res && res.data) || [];
+                            var merged = acc.concat(rows);
+                            if (rows.length === saleItemsPageSize) {
+                                return fetchSaleItemsPage(fromIdx + saleItemsPageSize, merged);
+                            }
+                            return merged;
+                        });
+                };
+
+                return fetchSaleItemsPage(0, []);
+            }).then(function(items: any) {
+                if (items) {
                     var pMap = {};
-                    res.data.forEach(function(item) {
+                    items.forEach(function(item) {
                         var n = item.product_name || 'Produk';
                         var cat = productToCategoryMap[item.product_id] || '';
                         if (!pMap[n]) pMap[n] = { qty: 0, cat: cat };
@@ -332,6 +382,32 @@ export default function HomeScreen() {
             clearInterval(interval);
         };
     }, [currentBranchId, chartFilter]));
+    
+    // [AUTO-OPEN] Realtime listener untuk mendeteksi pesanan KIOSK/Self-Service masuk saat di Home
+    React.useEffect(function() {
+        if (!currentBranchId || isDisplayOnly || isAdmin) return;
+
+        var channel = supabase
+            .channel('orders_home_' + currentBranchId)
+            .on('postgres_changes', { 
+                event: 'INSERT', 
+                schema: 'public', 
+                table: 'sales', 
+                filter: 'branch_id=eq.' + currentBranchId 
+            }, function(payload) {
+                var newOrder = payload.new;
+                // Hanya otomatis buka jika statusnya Self-Service atau Pending (Kios)
+                if (newOrder && (newOrder.status === 'Self-Service' || newOrder.status === 'Pending')) {
+                    console.log('[HomeScreen] New remote order detected, auto-navigating to POS:', newOrder.id);
+                    (navigation as any).navigate('POS', { orderId: newOrder.id });
+                }
+            })
+            .subscribe();
+
+        return function() {
+            supabase.removeChannel(channel);
+        };
+    }, [currentBranchId, isDisplayOnly, isAdmin, navigation]);
 
     var handleLogout = function() {
         setShowLogoutModal(true);
@@ -503,16 +579,23 @@ export default function HomeScreen() {
                         })
                     )
                 ),
-                React.createElement(ScrollView, { horizontal: true, showsHorizontalScrollIndicator: false, style: { marginTop: 12 } },
+                React.createElement(View, { style: styles.chartBody },
+                    React.createElement(ScrollView, { horizontal: true, showsHorizontalScrollIndicator: false, style: { marginTop: 12 }, contentContainerStyle: { paddingRight: 8 } },
                     (weeklySales && weeklySales.length > 0) ? (function() {
                         var baseWidth = width - 64;
-                        var chartWidth = chartFilter === '30d' ? Math.max(800, weeklySales.length * 40) : baseWidth;
-                        var chartHeight = 140;
+                        var chartWidth = chartFilter === 'today'
+                            ? Math.max(baseWidth, weeklySales.length * 44)
+                            : (chartFilter === '30d' ? Math.max(800, weeklySales.length * 40) : baseWidth);
+                        var chartHeight = 150;
                         
                         var maxV = 1;
                         for (var i = 0; i < weeklySales.length; i++) {
                             if (weeklySales[i].value > maxV) maxV = weeklySales[i].value;
                         }
+
+                        var yAxisValues = [1, 0.75, 0.5, 0.25, 0].map(function(ratio) {
+                            return Math.round(maxV * ratio);
+                        });
                         
                         var points = weeklySales.map(function(day, i) {
                             var x = (i / (weeklySales.length - 1 || 1)) * chartWidth;
@@ -523,7 +606,13 @@ export default function HomeScreen() {
                         var dPath = points.map(function(p, i) { return (i === 0 ? 'M' : 'L') + p.x + ',' + p.y; }).join('');
                         var aPath = dPath + 'L' + chartWidth + ',' + chartHeight + 'L0,' + chartHeight + 'Z';
 
-                        return React.createElement(View, { style: { width: chartWidth } },
+                        return React.createElement(View, { style: styles.chartFrame },
+                            React.createElement(View, { style: styles.yAxisColumn },
+                                yAxisValues.map(function(value, idx) {
+                                    return React.createElement(Text, { key: idx, style: styles.yAxisLabel }, formatCompactCurrency(value));
+                                })
+                            ),
+                            React.createElement(View, { style: { width: chartWidth } },
                             React.createElement(Svg, { width: chartWidth, height: chartHeight },
                                 React.createElement(Defs, null,
                                     React.createElement(LinearGradient, { id: "grad", x1: "0", y1: "0", x2: "0", y2: "1" },
@@ -531,6 +620,21 @@ export default function HomeScreen() {
                                         React.createElement(Stop, { offset: "1", stopColor: "#ea580c", stopOpacity: "0" })
                                     )
                                 ),
+                                yAxisValues.map(function(value, idx) {
+                                    var yLine = idx === yAxisValues.length - 1
+                                        ? chartHeight - 1
+                                        : Math.max(0, (chartHeight / (yAxisValues.length - 1)) * idx);
+                                    return React.createElement(Line, {
+                                        key: 'grid-' + idx,
+                                        x1: "0",
+                                        y1: String(yLine),
+                                        x2: String(chartWidth),
+                                        y2: String(yLine),
+                                        stroke: "#e2e8f0",
+                                        strokeWidth: "1",
+                                        strokeDasharray: idx === yAxisValues.length - 1 ? undefined : "4 4"
+                                    });
+                                }),
                                 React.createElement(Path, { d: aPath, fill: "url(#grad)" }),
                                 React.createElement(Path, { d: dPath, fill: "none", stroke: "#ea580c", strokeWidth: "3" })
                             ),
@@ -538,14 +642,23 @@ export default function HomeScreen() {
                                 weeklySales.map(function(day, idx) {
                                     var showLabel = true;
                                     if (chartFilter === '30d') showLabel = (idx % 3 === 0 || idx === weeklySales.length - 1);
+                                    if (chartFilter === '7d') showLabel = true;
                                     return React.createElement(View, { key: idx, style: { width: chartWidth / (weeklySales.length - 1 || 1), alignItems: 'center' } },
-                                        showLabel ? React.createElement(Text, { style: [styles.barLabel, { textAlign: 'center' }] }, day.label) : null
+                                        showLabel ? React.createElement(Text, {
+                                            style: [
+                                                styles.barLabel,
+                                                { textAlign: 'center' },
+                                                chartFilter === 'today' ? styles.barLabelHour : styles.barLabelDate
+                                            ]
+                                        }, day.label) : null
                                     );
                                 })
+                            )
                             )
                         );
                     })() : React.createElement(View, { style: { height: 140, justifyContent: 'center', alignItems: 'center', width: width - 64 } },
                         React.createElement(Text, { style: { fontSize: 10, color: '#94a3b8' } }, "Belum ada data")
+                    )
                     )
                 ),
                 bestSellers.length > 0 && React.createElement(View, { style: { marginTop: 20, borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 16 } },
@@ -767,6 +880,26 @@ var styles = StyleSheet.create({
         textTransform: 'uppercase',
         letterSpacing: 0.5
     },
+    chartBody: {
+        marginTop: 4,
+    },
+    chartFrame: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+    },
+    yAxisColumn: {
+        width: 58,
+        height: 150,
+        justifyContent: 'space-between',
+        alignItems: 'flex-end',
+        paddingRight: 8,
+        paddingBottom: 2,
+    },
+    yAxisLabel: {
+        fontSize: 9,
+        color: '#64748b',
+        fontWeight: '700',
+    },
     chartArea: {
         height: 180,
         justifyContent: 'center',
@@ -794,6 +927,14 @@ var styles = StyleSheet.create({
         color: '#64748b',
         marginTop: 8,
         fontWeight: '600'
+    },
+    barLabelHour: {
+        fontSize: 8,
+        minWidth: 32,
+    },
+    barLabelDate: {
+        fontSize: 7,
+        maxWidth: 52,
     },
     miniFilterChip: {
         paddingHorizontal: 8,
@@ -845,4 +986,3 @@ var styles = StyleSheet.create({
         marginLeft: 12,
     }
 });
-

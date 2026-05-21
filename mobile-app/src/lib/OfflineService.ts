@@ -131,6 +131,18 @@ export var OfflineService = {
                         return self.checkConnectivity();
                     }).then(function(isConnected) {
                         if (!isConnected) throw new Error('Koneksi terputus saat sinkronisasi.');
+                        if (sale.client_transaction_id) {
+                            return supabase
+                                .from('sales')
+                                .select('id')
+                                .eq('client_transaction_id', sale.client_transaction_id)
+                                .maybeSingle()
+                                .then(function(clientTxRes) {
+                                    if (clientTxRes.error) throw clientTxRes.error;
+                                    if (clientTxRes.data) return clientTxRes;
+                                    return supabase.from('sales').select('id').eq('order_no', sale.order_no).maybeSingle();
+                                });
+                        }
                         return supabase.from('sales').select('id').eq('order_no', sale.order_no).maybeSingle();
                     }).then(function(existingRes) {
                         if (existingRes.error) throw new Error('Gagal verifikasi data di server: ' + existingRes.error.message);
@@ -152,7 +164,8 @@ export var OfflineService = {
                             payment_method: sale.payment_method,
                             date: sale.date,
                             paid_amount: sale.paid_amount,
-                            change: sale.change
+                            change: sale.change,
+                            client_transaction_id: sale.client_transaction_id || null
                         };
 
                         var itemsData = (sale.items || []).map(function(item) {

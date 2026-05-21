@@ -53,6 +53,27 @@ export default function CashierClosingSummaryModal(props) {
         return 'Rp ' + num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
     };
 
+    var buildNormalizedPaymentSummary = function(sourceData) {
+        if (!sourceData) return [];
+
+        var cashTotal = Number(sourceData.cash_sales || 0);
+        var nonCashTotal = Number(sourceData.non_cash_sales || 0);
+        var normalized = [];
+
+        if (cashTotal > 0) {
+            normalized.push({ method: 'Tunai', amount: cashTotal });
+        }
+        if (nonCashTotal > 0) {
+            normalized.push({ method: 'QRIS / Non Tunai', amount: nonCashTotal });
+        }
+
+        if (normalized.length === 0 && Array.isArray(sourceData.payment_summary)) {
+            return sourceData.payment_summary;
+        }
+
+        return normalized;
+    };
+
     var formatDate = function(dateStr) {
         if (!dateStr) return '-';
         try {
@@ -81,6 +102,7 @@ export default function CashierClosingSummaryModal(props) {
     if (!visible) return null;
 
     var reportData = null;
+    var normalizedPaymentSummary = buildNormalizedPaymentSummary(data);
     if (data) {
         reportData = {
             shopName: (storeSettings && storeSettings.store_name) ? storeSettings.store_name : 'WINNY COFFEE PNK',
@@ -93,6 +115,7 @@ export default function CashierClosingSummaryModal(props) {
             totalDiscount: data.total_discount,
             cashTotal: data.cash_sales,
             qrTotal: data.non_cash_sales,
+            paymentSummary: normalizedPaymentSummary,
             openingBalance: data.starting_cash,
             expectedCash: data.expected_cash,
             actualCash: data.actual_cash,
@@ -150,9 +173,9 @@ export default function CashierClosingSummaryModal(props) {
 
                     React.createElement(View, { style: styles.sectionCard },
                         React.createElement(Text, { style: styles.sectionTitle }, "DETAIL PEMBAYARAN"),
-                        (data.payment_summary || []).map(function(p, i) {
+                        normalizedPaymentSummary.map(function(p, i) {
                             return React.createElement(View, { key: i, style: styles.itemRow },
-                                React.createElement(Text, { style: styles.itemLabel }, (p.method || '').toUpperCase()),
+                                React.createElement(Text, { style: styles.itemLabel }, String(p.method || '').toUpperCase()),
                                 React.createElement(Text, { style: styles.itemValue }, formatCurrency(p.amount))
                             );
                         }),

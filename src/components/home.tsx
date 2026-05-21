@@ -2053,7 +2053,7 @@ function Home() {
     if (!currentBranchId || urlParamProcessed || loading) return;
 
     const lowerRole = role?.toLowerCase() || '';
-    const isManager = lowerRole === 'admin' || lowerRole === 'administrator' || lowerRole === 'owner';
+    const isManager = lowerRole === 'admin' || lowerRole === 'administrator' || lowerRole === 'owner' || lowerRole === 'admin kantor';
     if (isManager) return; // [FIX] Prevents Cashier loop for Admin roles on page load
 
     const params = new URLSearchParams(window.location.search);
@@ -3859,7 +3859,7 @@ function Home() {
 
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden font-sans relative transition-colors duration-300">
+    <div translate="no" className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden font-sans relative transition-colors duration-300">
       <div className="absolute top-0 left-0 w-full h-96 bg-gradient-to-b from-blue-50/50 to-transparent dark:from-blue-900/20 pointer-events-none" />
       <aside className={`${isSidebarCollapsed ? 'w-20' : 'w-56'} bg-white/70 dark:bg-gray-900/70 backdrop-blur-xl border-r border-white/20 dark:border-gray-800 flex flex-col py-8 shadow-[4px_0_24px_-4px_rgba(0,0,0,0.05)] z-20 transition-all duration-300 relative`}>
 
@@ -4142,7 +4142,9 @@ function Home() {
 
         {/* Main Content Area - Scrollable */}
         <div className="flex-1 overflow-auto relative w-full">
-          {renderActiveModule()}
+          <div className="h-full w-full">
+            {renderActiveModule()}
+          </div>
 
           {/* Watermark inside scroll area if needed, or outside */}
           <div className="fixed inset-0 flex items-center justify-center opacity-[0.02] pointer-events-none select-none z-0">

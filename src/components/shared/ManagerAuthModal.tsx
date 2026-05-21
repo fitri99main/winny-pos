@@ -32,10 +32,14 @@ export function ManagerAuthModal({
         if (pin.length < 1) return;
 
         // Filter for managers and admins
-        const managers = employees.filter(e => 
-            e.system_role === 'Administrator' || 
-            (e.position && e.position.toLowerCase().includes('manager'))
-        );
+        const managers = employees.filter(e => {
+            const role = (e.system_role || '').toLowerCase();
+            const pos = (e.position || '').toLowerCase();
+            return role === 'administrator' || 
+                   role === 'admin kantor' || 
+                   pos.includes('manager') || 
+                   pos.includes('admin kantor');
+        });
 
         // Find match by PIN
         const matchedManager = managers.find(m => (m.pin || String(m.id)) === pin);

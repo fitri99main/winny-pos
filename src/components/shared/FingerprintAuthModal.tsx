@@ -51,8 +51,15 @@ export function FingerprintAuthModal({
 
                 // Validate against Manager/Admin templates
                 const matches = employees
-                    .filter(e => e.fingerprint_template &&
-                        (e.system_role === 'Administrator' || e.position?.toLowerCase().includes('manager')))
+                    .filter(e => {
+                        if (!e.fingerprint_template) return false;
+                        const role = (e.system_role || '').toLowerCase();
+                        const pos = (e.position || '').toLowerCase();
+                        return role === 'administrator' || 
+                               role === 'admin kantor' || 
+                               pos.includes('manager') || 
+                               pos.includes('admin kantor');
+                    })
                     .map(e => ({
                         emp: e,
                         score: fingerprint.calculateSimilarity(e.fingerprint_template!, result.template!)
@@ -106,10 +113,15 @@ export function FingerprintAuthModal({
 
         if (useMock) {
             // Pick a manager template from the list for simulation if available
-            const managerTemplate = employees.find(e =>
-                e.fingerprint_template &&
-                (e.system_role === 'Administrator' || e.position?.toLowerCase().includes('manager'))
-            )?.fingerprint_template;
+            const managerTemplate = employees.find(e => {
+                if (!e.fingerprint_template) return false;
+                const role = (e.system_role || '').toLowerCase();
+                const pos = (e.position || '').toLowerCase();
+                return role === 'administrator' || 
+                       role === 'admin kantor' || 
+                       pos.includes('manager') || 
+                       pos.includes('admin kantor');
+            })?.fingerprint_template;
 
             fingerprint.mockCapture((status, result) => {
                 if (status === 'SUCCESS' && result && managerTemplate) {

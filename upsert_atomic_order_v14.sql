@@ -1,3 +1,7 @@
+-- LEGACY / ARCHIVE
+-- Jangan gunakan file ini untuk rollout baru.
+-- Gunakan 00_pos_hold_checkout_stability.sql sebagai jalur aktif.
+--
 -- Fungsi Upsert Sale with Items (v16 - COLLISION PREVENTION & LOCKING)
 CREATE OR REPLACE FUNCTION upsert_sale_with_items(
   p_sale_data JSONB,
@@ -38,7 +42,7 @@ BEGIN
   
   -- 2. Logika penomoran jika belum ada ATAU jika status berubah ke Paid (Invoice Baru)
   -- Jika transaksi diupdate dari Pending/Self-Service ke Paid, kita butuh Invoice No baru
-  IF v_order_no IS NULL OR v_order_no = '' OR (LOWER(v_status) NOT IN ('pending', 'self-service', 'unpaid') AND v_order_no LIKE 'HOLD-%') THEN
+  IF v_order_no IS NULL OR v_order_no = '' OR (LOWER(v_status) NOT IN ('pending', 'unpaid') AND v_order_no LIKE 'HOLD-%') THEN
     
     -- LOCK ROW untuk mencegah race condition
     SELECT 
@@ -49,7 +53,7 @@ BEGIN
         v_hold_prefix, v_hold_last_no
     FROM store_settings WHERE id = 1 FOR UPDATE;
 
-    IF LOWER(v_status) IN ('pending', 'self-service', 'unpaid') THEN
+    IF LOWER(v_status) IN ('pending', 'unpaid') THEN
         -- PENOMORAN HOLD / SELF-SERVICE
         v_hold_prefix := COALESCE(NULLIF(v_hold_prefix, ''), 'HOLD');
         v_hold_last_no := COALESCE(v_hold_last_no, 0);
@@ -142,7 +146,12 @@ BEGIN
     DELETE FROM sale_items WHERE sale_id = v_sale_id;
 
     FOR v_item_json IN SELECT * FROM jsonb_array_elements(p_items_data) LOOP
-      v_product_id := (v_item_json->>'product_id')::BIGINT;
+      -- Konversi ID produk dengan aman (mencegah error jika dikirim string non-numeric)
+      BEGIN
+        v_product_id := (v_item_json->>'product_id')::BIGINT;
+      EXCEPTION WHEN OTHERS THEN
+        v_product_id := NULL;
+      END;
       v_product_name := COALESCE(v_item_json->>'product_name', v_item_json->>'name', 'Produk');
       v_price := (v_item_json->>'price')::DECIMAL;
       v_quantity := (v_item_json->>'quantity')::INTEGER;

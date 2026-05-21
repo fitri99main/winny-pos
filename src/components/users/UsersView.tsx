@@ -228,19 +228,20 @@ export function UsersView({ branches: propsBranches = [] }: { branches?: any[] }
     };
 
     // Helper for Quick Presets (Recommendations)
-    const applyPreset = (type: 'admin' | 'manager' | 'cashier') => {
+    const applyPreset = (type: 'admin' | 'manager' | 'cashier' | 'admin_kantor') => {
         let perms: string[] = [];
         if (type === 'admin') perms = AVAILABLE_PERMISSIONS.map(p => p.id); // All
         if (type === 'manager') perms = ['dashboard', 'products', 'inventory', 'reports', 'employees', 'purchases', 'attendance', 'performance', 'mandatory_session', 'session_history'];
         if (type === 'cashier') perms = ['pos', 'products', 'attendance', 'mandatory_session'];
+        if (type === 'admin_kantor') perms = ['dashboard', 'products', 'inventory', 'purchases', 'reports', 'attendance', 'shifts'];
         if (type === 'display' as any) perms = ['pos', 'pos_order_only', 'products'];
 
         setNewRole(prev => ({ ...prev, permissions: perms }));
-        toast.info(`Preset ${type.toUpperCase()} diterapkan`);
+        toast.info(`Preset ${type.toUpperCase().replace('_', ' ')} diterapkan`);
     };
 
     const handleGenerateDefaults = async () => {
-        if (!confirm('Buat wewenang standar (Admin, Manajer, Kasir)?')) return;
+        if (!confirm('Buat wewenang standar (Admin, Manajer, Admin Kantor, Kasir)?')) return;
 
         const defaults = [
             {
@@ -252,6 +253,11 @@ export function UsersView({ branches: propsBranches = [] }: { branches?: any[] }
                 name: 'Manajer',
                 description: 'Manajemen operasional & laporan',
                 permissions: ['dashboard', 'products', 'inventory', 'reports', 'employees', 'purchases', 'attendance', 'performance', 'shifts', 'mandatory_session', 'session_history']
+            },
+            {
+                name: 'Admin Kantor',
+                description: 'Administrasi kantor & pembelian',
+                permissions: ['dashboard', 'products', 'inventory', 'purchases', 'reports', 'attendance', 'shifts']
             },
             {
                 name: 'Kasir',
@@ -980,6 +986,7 @@ export function UsersView({ branches: propsBranches = [] }: { branches?: any[] }
                                     <div className="flex gap-1">
                                         <button type="button" onClick={() => applyPreset('cashier')} className="text-[10px] px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors">Kasir</button>
                                         <button type="button" onClick={() => applyPreset('manager')} className="text-[10px] px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors">Manajer</button>
+                                        <button type="button" onClick={() => applyPreset('admin_kantor')} className="text-[10px] px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors">Admin Kantor</button>
                                         <button type="button" onClick={() => applyPreset('admin')} className="text-[10px] px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors">Admin</button>
                                     </div>
                                 </div>

@@ -136,8 +136,8 @@ export default function PaymentModal(props) {
 
         var timeoutId = setTimeout(function() {
             setLoading(false);
-            setError('Waktu habis: Transaksi mungkin sudah masuk tapi aplikasi tidak menerima respon. Cek daftar pesanan.');
-        }, 15000);
+            setError('Koneksi lambat: Transaksi sedang diproses di server. Harap tunggu sebentar atau cek riwayat pesanan jika tombol tetap macet.');
+        }, 30000);
 
         var promise = onConfirm({
             method: selectedObj ? selectedObj.name : 'Tunai',
@@ -250,7 +250,7 @@ export default function PaymentModal(props) {
                             React.createElement(Text, { style: [styles.payActionIcon, isSmallDevice ? { fontSize: 14 } : null] }, "\u2702\uFE0F"),
                             React.createElement(Text, { style: styles.payActionText }, "Split")
                         ),
-                        React.createElement(TouchableOpacity, { style: [styles.payActionBtn, { marginRight: (isSmallDevice ? 6 : 8) }], onPress: onHold },
+                        props.canHold !== false && React.createElement(TouchableOpacity, { style: [styles.payActionBtn, { marginRight: (isSmallDevice ? 6 : 8) }], onPress: onHold },
                             React.createElement(Text, { style: [styles.payActionIcon, isSmallDevice ? { fontSize: 14 } : null] }, "\u23F8\uFE0F"),
                             React.createElement(Text, { style: styles.payActionText }, "Hold")
                         ),
@@ -274,9 +274,6 @@ export default function PaymentModal(props) {
                             placeholderTextColor: "#9ca3af"
                         }),
                         React.createElement(View, { style: styles.quickAmounts }, renderedQuickAmounts),
-                        error ? React.createElement(View, { style: styles.errorBanner },
-                            React.createElement(Text, { style: styles.errorText }, "\u26A0\uFE0F " + error)
-                        ) : null,
                         change > 0 ? React.createElement(View, { style: styles.changeSection },
                             React.createElement(Text, { style: styles.changeLabel }, "Kembalian"),
                             React.createElement(Text, { style: styles.changeAmount }, formatCurrency(change))
@@ -284,6 +281,9 @@ export default function PaymentModal(props) {
                     ) : null,
                     isCashType ? React.createElement(View, { style: [styles.numberPad, isSmallDevice ? { padding: 12 } : null] }, renderedNumberPad) : null
                 ),
+                error ? React.createElement(View, { style: [styles.errorBanner, { marginHorizontal: 16, marginBottom: 8 }] },
+                    React.createElement(Text, { style: styles.errorText }, "\u26A0\uFE0F " + error)
+                ) : null,
                 React.createElement(TouchableOpacity, {
                     style: [
                         styles.confirmButton,

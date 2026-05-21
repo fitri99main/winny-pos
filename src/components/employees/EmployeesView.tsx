@@ -973,6 +973,7 @@ export function EmployeesView({
                                             >
                                                 <option value="">Hanya Lapangan (Staff)</option>
                                                 <option value="Cashier">Kasir (Cashier)</option>
+                                                <option value="Admin Kantor">Admin Kantor (Auth)</option>
                                                 <option value="Supervisor">Supervisor (Auth)</option>
                                                 <option value="Manager">Manager (Auth)</option>
                                                 <option value="Owner">Owner (Auth)</option>

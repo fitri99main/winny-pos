@@ -1,3 +1,7 @@
+-- LEGACY / ARCHIVE
+-- Jangan gunakan file ini untuk rollout baru.
+-- Gunakan 03_wifi_voucher_trigger_optimization.sql sebagai jalur aktif.
+--
 -- 1. PAKSA PENGATURAN KE 15.000 (Menghilangkan ketidaksinkronan)
 UPDATE public.store_settings 
 SET 
@@ -45,8 +49,9 @@ BEGIN
         v_voucher_count := LEAST(v_voucher_count, 10);
 
         -- Hanya eksekusi saat status berubah jadi lunas
-        IF (LOWER(NEW.status) IN ('paid', 'selesai', 'completed')) AND 
-           (OLD.status IS NULL OR LOWER(OLD.status) NOT IN ('paid', 'selesai', 'completed')) THEN
+        IF (TG_OP = 'INSERT' AND LOWER(NEW.status) IN ('paid', 'selesai', 'completed', 'done')) OR
+           (TG_OP = 'UPDATE' AND LOWER(NEW.status) IN ('paid', 'selesai', 'completed', 'done') AND 
+            (OLD.status IS NULL OR LOWER(OLD.status) NOT IN ('paid', 'selesai', 'completed', 'done'))) THEN
             
             -- Hapus voucher lama jika ada (mencegah double jika di-update berulang)
             DELETE FROM wifi_vouchers WHERE sale_id = NEW.id;

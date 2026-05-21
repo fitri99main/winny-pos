@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS public.store_settings (
     show_table BOOLEAN DEFAULT true,
     tax_rate NUMERIC DEFAULT 11.0,
     service_charge_rate NUMERIC DEFAULT 0.0,
+    hold_invoice_prefix TEXT DEFAULT 'HOLD',
+    hold_invoice_last_number BIGINT DEFAULT 0,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     CONSTRAINT single_row_check CHECK (id = 1)
 );

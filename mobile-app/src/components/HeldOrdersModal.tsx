@@ -1,5 +1,6 @@
 import React from 'react';
 import * as RN from 'react-native';
+
 var View = RN.View;
 var Text = RN.Text;
 var Modal = RN.Modal;
@@ -47,10 +48,13 @@ export default function HeldOrdersModal(props) {
         for (var i = 0; i < orders.length; i++) {
             (function() {
                 var order = orders[i];
-                var orderIdLabel = order.isRemote ? "☁️ Remote #" + (order.orderNo || order.id).slice(-4) : "📝 Draft #" + order.id.slice(-4);
-                
+                var orderRef = String(order.orderNo || order.id || '');
+                var orderIdLabel = order.isRemote
+                    ? "Cloud #" + orderRef.slice(-4)
+                    : "Draft #" + String(order.id || '').slice(-4);
+
                 renderedOrders.push(
-                    React.createElement(View, { key: order.id, style: [styles.orderCard, order.isRemote ? styles.remoteCard : null] },
+                    React.createElement(View, { key: String(order.id), style: [styles.orderCard, order.isRemote ? styles.remoteCard : null] },
                         React.createElement(View, { style: styles.orderHeader },
                             React.createElement(View, { style: { flex: 1 } },
                                 React.createElement(View, { style: { flexDirection: 'row', alignItems: 'center' } },
@@ -70,9 +74,12 @@ export default function HeldOrdersModal(props) {
                                 style: [styles.restoreBtn, order.isRemote ? styles.remoteRestoreBtn : null],
                                 onPress: function() { onRestore(order); }
                             },
-                                React.createElement(Text, { style: styles.restoreText }, order.isRemote ? '⚡ Terima & Bayar' : '▶ Kembalikan')
+                                React.createElement(Text, { style: styles.restoreText }, order.isRemote ? 'Terima & Bayar' : 'Kembalikan')
                             ),
-                            onDelete ? React.createElement(TouchableOpacity, { style: [styles.deleteBtn, { marginLeft: 12 }], onPress: function() { onDelete(order.id); } },
+                            onDelete ? React.createElement(TouchableOpacity, {
+                                style: [styles.deleteBtn, { marginLeft: 12 }],
+                                onPress: function() { onDelete(order); }
+                            },
                                 React.createElement(Text, { style: styles.deleteText }, "\uD83D\uDDD1\uFE0F")
                             ) : null
                         )
@@ -131,4 +138,3 @@ var styles = StyleSheet.create({
     remoteBadgeText: { color: 'white', fontSize: 8, fontWeight: 'bold' },
     remoteRestoreBtn: { backgroundColor: '#ea580c' }
 });
-

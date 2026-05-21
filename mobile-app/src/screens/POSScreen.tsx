@@ -62,6 +62,31 @@ var merge = function(target, source) {
     return target;
 };
 
+var CHECKOUT_RPC_TIMEOUT_MS = 15000;
+var TIMEOUT_VERIFY_DELAY_MS = 2000;
+var TIMEOUT_VERIFY_ATTEMPTS = 3;
+
+var sleep = function(ms) {
+    return new Promise(function(resolve) {
+        setTimeout(resolve, ms);
+    });
+};
+
+var createClientTransactionId = function(prefix) {
+    return [prefix || 'sale', Date.now(), Math.random().toString(36).slice(2, 8)].join('-');
+};
+
+var makeRpcTimeoutError = function(clientTransactionId) {
+    var err = new Error('Koneksi ke server terputus (Timeout).');
+    (err as any).code = 'CLIENT_TX_TIMEOUT';
+    (err as any).clientTransactionId = clientTransactionId || null;
+    return err;
+};
+
+var isRpcTimeoutError = function(err) {
+    return !!(err && ((err as any).code === 'CLIENT_TX_TIMEOUT'));
+};
+
 var ProductCard = memo(function(props) {
     var item = (props as any).item;
     var isTablet = (props as any).isTablet;
@@ -126,7 +151,7 @@ export default function POSScreen() {
     var height = dimensions.height;
     
     var isLandscape = width > height;
-    var isTablet = Math.min(width, height) >= 600;
+    var isTablet = Math.min(width, height) >= 480;
     var isLargeTablet = Math.min(width, height) >= 800;
     var isSmallDevice = width < 480;
     var splitProductColumns = isLargeTablet ? 4 : 3;
@@ -363,6 +388,10 @@ export default function POSScreen() {
     var isFetchingRemote = stateIsFetchingRemote[0];
     var setIsFetchingRemote = stateIsFetchingRemote[1];
 
+    var stateIsSubmitting = React.useState(false);
+    var isSubmitting = stateIsSubmitting[0];
+    var setIsSubmitting = stateIsSubmitting[1];
+
     var lastFetchTime = React.useRef(0);
     var fetchInProgress = React.useRef(false);
     var fetchTimeoutRef = React.useRef(null);
@@ -371,6 +400,18 @@ export default function POSScreen() {
     var stateToastVisible = React.useState(false);
     var toastVisible = stateToastVisible[0];
     var setToastVisible = stateToastVisible[1];
+
+    var cartRef = React.useRef(cart);
+    React.useEffect(function() { cartRef.current = cart; }, [cart]);
+    
+    var cashierModeRef = React.useRef(cashierMode);
+    React.useEffect(function() { cashierModeRef.current = cashierMode; }, [cashierMode]);
+    
+    var isActuallyDisplayRef = React.useRef(isActuallyDisplay);
+    React.useEffect(function() { isActuallyDisplayRef.current = isActuallyDisplay; }, [isActuallyDisplay]);
+    var paymentRequestIdRef = React.useRef(null);
+    var checkoutRequestIdRef = React.useRef(null);
+    var holdRequestIdRef = React.useRef(null);
 
     var stateToastMessage = React.useState('');
     var toastMessage = stateToastMessage[0];
@@ -385,6 +426,82 @@ export default function POSScreen() {
         setToastMessage(message);
         setToastType(type);
         setToastVisible(true);
+    };
+
+    var resetPendingRequestIds = function() {
+        paymentRequestIdRef.current = null;
+        checkoutRequestIdRef.current = null;
+        holdRequestIdRef.current = null;
+    };
+
+    var getOrCreateRequestId = function(refObj, prefix) {
+        if (!refObj.current) {
+            refObj.current = createClientTransactionId(prefix);
+        }
+        return refObj.current;
+    };
+
+    var verifySaleByClientTransactionId = function(clientTransactionId) {
+        if (!clientTransactionId) return Promise.resolve(null);
+        return supabase
+            .from('sales')
+            .select('id, order_no, status')
+            .eq('client_transaction_id', clientTransactionId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+            .then(function(res) {
+                if (res.error) throw res.error;
+                return res.data || null;
+            })['catch'](function(err) {
+                console.error('[POSScreen] Verify client transaction error:', err);
+                return null;
+            });
+    };
+
+    var verifyTimedOutSale = function(clientTransactionId, attemptsLeft) {
+        if (attemptsLeft === undefined) attemptsLeft = TIMEOUT_VERIFY_ATTEMPTS;
+        return verifySaleByClientTransactionId(clientTransactionId).then(function(foundSale) {
+            if (foundSale) return foundSale;
+            if (attemptsLeft <= 1) return null;
+            return sleep(TIMEOUT_VERIFY_DELAY_MS).then(function() {
+                return verifyTimedOutSale(clientTransactionId, attemptsLeft - 1);
+            });
+        });
+    };
+
+    var runUpsertSaleRequest = function(saleData, itemsData, targetSaleId, clientTransactionId) {
+        var rpcPromise = supabase.rpc('upsert_sale_with_items', {
+            p_sale_data: Object.assign({}, saleData, { client_transaction_id: clientTransactionId || null }),
+            p_items_data: mapItemsForSupabase(itemsData),
+            p_target_sale_id: targetSaleId
+        });
+        var timeoutPromise = new Promise(function(_, reject) {
+            setTimeout(function() {
+                reject(makeRpcTimeoutError(clientTransactionId));
+            }, CHECKOUT_RPC_TIMEOUT_MS);
+        });
+
+        return Promise.race([
+            rpcPromise,
+            timeoutPromise
+        ])['catch'](function(err) {
+            if (!isRpcTimeoutError(err)) throw err;
+            return verifyTimedOutSale(clientTransactionId).then(function(foundSale) {
+                if (foundSale) {
+                    return {
+                        data: {
+                            id: foundSale.id,
+                            order_no: foundSale.order_no,
+                            status: foundSale.status,
+                            verified_after_timeout: true
+                        },
+                        error: null
+                    };
+                }
+                throw err;
+            });
+        });
     };
 
     var renderSplitCartActions = function() {
@@ -436,7 +553,7 @@ export default function POSScreen() {
                     React.createElement(Text, { style: styles.quickActionIcon }, "/"),
                     React.createElement(Text, { style: styles.quickActionText }, "Pisah")
                 ),
-                (!(storeSettings && storeSettings.restrict_hold_order) || isAdmin) && React.createElement(TouchableOpacity, {
+                (cashierMode || isAdmin) && React.createElement(TouchableOpacity, {
                     style: styles.quickActionBtn,
                     onPress: function() { setShowHoldNoteModal(true); }
                 },
@@ -608,7 +725,15 @@ export default function POSScreen() {
     var isActuallyDisplay = React.useMemo(function() {
         return isDisplayOnly;
     }, [isDisplayOnly]);
-    var isSideBySide = !isActuallyDisplay;
+    var isSideBySide = !isActuallyDisplay && (isTablet || width >= 720);
+
+    // Refs for realtime closure safety
+    var cartRef = React.useRef(cart);
+    var cashierModeRef = React.useRef(cashierMode);
+    var isActuallyDisplayRef = React.useRef(isActuallyDisplay);
+    React.useEffect(function() { cartRef.current = cart; }, [cart]);
+    React.useEffect(function() { cashierModeRef.current = cashierMode; }, [cashierMode]);
+    React.useEffect(function() { isActuallyDisplayRef.current = isActuallyDisplay; }, [isActuallyDisplay]);
     var productGridColumns = isActuallyDisplay
         ? (isLargeTablet ? 5 : (isTablet ? 4 : (isSmallDevice ? 3 : 4)))
         : (isSideBySide ? splitProductColumns : (isSmallDevice ? 3 : 4));
@@ -659,127 +784,7 @@ export default function POSScreen() {
 
 
 
-    var handleTargetPrintAtCheckout = function(saleId, orderNo) {
-        console.log('[POSScreen] handleTargetPrintAtCheckout: Memulai cetak tiket otomatis...');
-        var identifier = saleId ? String(saleId) : orderNo || lastSaleId || lastOrderNo;
-        if (!identifier) return;
 
-        fetchOrderDataForReceipt(identifier).then(function(orderData) {
-            if (!orderData || !orderData.items) {
-                console.log('[POSScreen] handleTargetPrintAtCheckout: Data order atau item tidak ditemukan.');
-                return;
-            }
-            
-            var allItems = orderData.items;
-            
-            // Helper deteksi target yang sama dengan executeSmartPrint
-            var getTarget = function(item) {
-                var t = (item.target || '').toUpperCase();
-                if (t === 'BAR' || t === 'DAPUR' || t === 'KITCHEN') return t;
-                var name = (item.name || '').toLowerCase();
-                var cat = (item.category || '').toLowerCase();
-                var isDrink = ['minum', 'jus', 'tea', 'teh', 'kopi', 'coffee', 'drink', 'beer', 'soda', 'ice', 'es '].some(function(k) {
-                    return name.indexOf(k) !== -1 || cat.indexOf(k) !== -1;
-                });
-                return isDrink ? 'BAR' : 'KITCHEN';
-            };
-            
-            // 1. Filter untuk Bar
-            var barItems = allItems.filter(function(it) {
-                return getTarget(it) === 'BAR';
-            });
-            if (barItems.length > 0) {
-                console.log('[POSScreen] Mencetak ' + barItems.length + ' item ke Bar');
-                PrinterManager.printToTarget(barItems, 'bar', orderData).catch(function(e) {
-                    console.error('[POSScreen] Gagal cetak Bar (Checkout):', e);
-                });
-            }
-
-            // 2. Filter untuk Kitchen/Dapur
-            var kitchenItems = allItems.filter(function(it) {
-                var target = getTarget(it);
-                return target === 'KITCHEN' || target === 'DAPUR';
-            });
-            if (kitchenItems.length > 0) {
-                console.log('[POSScreen] Mencetak ' + kitchenItems.length + ' item ke Kitchen');
-                PrinterManager.printToTarget(kitchenItems, 'kitchen', orderData).catch(function(e) {
-                    console.error('[POSScreen] Gagal cetak Kitchen (Checkout):', e);
-                });
-            }
-        }).catch(function(e) {
-            console.error('[POSScreen] handleTargetPrintAtCheckout error:', e);
-        });
-    };
-
-    var handlePrintReceipt = function(saleIdOverride, orderNoOverride, dataOverride) {
-        var identifier = saleIdOverride
-            ? String(saleIdOverride)
-            : orderNoOverride || lastSaleId || lastOrderNo;
-
-        if (dataOverride) {
-            setIsPrinting(true);
-            return PrinterManager.printOrderReceipt(dataOverride).then(function(success) {
-                if (success) showToast('Struk sedang dicetak', 'success');
-                else Alert.alert('Gagal', 'Gagal mencetak struk. Pastikan printer terhubung.');
-            })['catch'](function(e) {
-                console.error('Print Error:', e);
-                Alert.alert('Error', 'Terjadi kesalahan saat mencetak');
-            }).finally(function() {
-                setIsPrinting(false);
-            });
-        }
-
-        if (!identifier) return Promise.resolve();
-        
-        setIsPrinting(true);
-        return fetchOrderDataForReceipt(identifier).then(function(orderData) {
-            if (!orderData) throw new Error('Order not found');
-
-            return PrinterManager.printOrderReceipt(orderData);
-        }).then(function(success) {
-            if (success) {
-                showToast('Struk sedang dicetak', 'success');
-            } else {
-                Alert.alert('Gagal', 'Gagal mencetak struk kasir. Pastikan printer terhubung.');
-            }
-        })['catch'](function(e) {
-            console.error('Print Error:', e);
-            Alert.alert('Error', 'Terjadi kesalahan saat mencetak');
-        }).finally(function() {
-            setIsPrinting(false);
-        });
-    };
-
-    var maybeAutoPrintReceipt = function(saleId, orderNo, skipTargetPrint) {
-        console.log('[POSScreen] maybeAutoPrintReceipt triggered for:', saleId, orderNo, 'skipTarget:', skipTargetPrint);
-        // Cek lebih agresif terhadap status otomatis
-        AsyncStorage.getItem('auto_print').then(function(savedAutoPrint) {
-            // Jika savedAutoPrint null atau 'true', maka isAuto dianggap true (default ON)
-            var isAuto = (savedAutoPrint !== 'false') || receiptPrintMode === 'auto';
-            console.log('[POSScreen] maybeAutoPrintReceipt check: mode=' + receiptPrintMode + ', savedAutoPrint=' + savedAutoPrint + ', isAuto=' + isAuto);
-            
-            if (!isAuto || isDisplayOnly) {
-                console.log('[POSScreen] Skipping auto-print: isAuto=' + isAuto + ', isDisplayOnly=' + isDisplayOnly);
-                return;
-            }
-
-            // Beri sedikit jeda 500ms agar data di server benar-benar siap dibaca kembali
-            setTimeout(function() {
-                console.log('[POSScreen] Executing auto-print now...');
-                handlePrintReceipt(saleId, orderNo).then(function() {
-                    if (!skipTargetPrint) {
-                        handleTargetPrintAtCheckout(saleId, orderNo);
-                    }
-                })['catch'](function(err) {
-                    console.error('[POSScreen] Auto-print execution error:', err);
-                    // Tetap coba cetak ke Dapur/Bar meskipun struk kasir gagal
-                    if (!skipTargetPrint) {
-                        handleTargetPrintAtCheckout(saleId, orderNo);
-                    }
-                });
-            }, 800);
-        });
-    };
 
     var handleReconnectPrinters = function() {
         setToastMessage('Menghubungkan ke semua printer...');
@@ -903,21 +908,21 @@ export default function POSScreen() {
             shop_name: branchName,
             shop_address: branchAddress,
             shop_phone: branchPhone,
-            receipt_header: storeSettings?.receipt_header || '',
-            receipt_footer: storeSettings?.receipt_footer || '',
-            receipt_paper_width: storeSettings?.receipt_paper_width || '58mm',
-            show_logo: storeSettings?.show_logo !== false,
-            show_date: storeSettings?.show_date !== false,
-            show_cashier_name: storeSettings?.show_cashier_name !== false,
-            show_waiter: storeSettings?.show_waiter !== false,
-            show_table: storeSettings?.show_table !== false,
-            show_customer_name: storeSettings?.show_customer_name !== false,
-            show_customer_status: storeSettings?.show_customer_status !== false,
-            receipt_footer_feed: storeSettings?.receipt_footer_feed ?? 4,
-            enable_wifi_vouchers: storeSettings?.enable_wifi_vouchers || false,
-            wifi_voucher: storeSettings?.enable_wifi_vouchers ? '[VOUCHER MUNCUL DI STRUK ASLI]' : '',
-            wifi_voucher_notice: storeSettings?.wifi_voucher_notice || 'Gunakan kode ini untuk akses WiFi',
-            receipt_logo_url: storeSettings?.receipt_logo_url || ''
+            receipt_header: (storeSettings && storeSettings.receipt_header) || '',
+            receipt_footer: (storeSettings && storeSettings.receipt_footer) || '',
+            receipt_paper_width: (storeSettings && storeSettings.receipt_paper_width) || '58mm',
+            show_logo: (storeSettings && storeSettings.show_logo) !== false,
+            show_date: (storeSettings && storeSettings.show_date) !== false,
+            show_cashier_name: (storeSettings && storeSettings.show_cashier_name) !== false,
+            show_waiter: (storeSettings && storeSettings.show_waiter) !== false,
+            show_table: (storeSettings && storeSettings.show_table) !== false,
+            show_customer_name: (storeSettings && storeSettings.show_customer_name) !== false,
+            show_customer_status: (storeSettings && storeSettings.show_customer_status) !== false,
+            receipt_footer_feed: (storeSettings && storeSettings.receipt_footer_feed) !== undefined ? storeSettings.receipt_footer_feed : 4,
+            enable_wifi_vouchers: (storeSettings && storeSettings.enable_wifi_vouchers) || false,
+            wifi_voucher: (storeSettings && storeSettings.enable_wifi_vouchers) ? '[VOUCHER MUNCUL DI STRUK ASLI]' : '',
+            wifi_voucher_notice: (storeSettings && storeSettings.wifi_voucher_notice) || 'Gunakan kode ini untuk akses WiFi',
+            receipt_logo_url: (storeSettings && storeSettings.receipt_logo_url) || ''
         };
         
         setPreviewOrderData(currentData);
@@ -1117,6 +1122,7 @@ export default function POSScreen() {
             }).then(function() {
                 return Promise.all([
                     AsyncStorage.getItem('pos_held_orders'),
+                    AsyncStorage.getItem('local_held_orders'),
                     AsyncStorage.getItem('pos_cart_draft'),
                     AsyncStorage.getItem('pos_customer_draft_name'),
                     AsyncStorage.getItem('pos_customer_draft_id'),
@@ -1128,25 +1134,46 @@ export default function POSScreen() {
                 ]);
             }).then(function(saved) {
                 var savedHeldStr = saved[0];
-                var savedCart = saved[1];
-                var savedCustName = saved[2];
-                var savedCustId = saved[3];
-                var savedTable = saved[4];
-                var savedDiscount = saved[5];
-                var savedWaiter = saved[6];
-                var savedExistingId = saved[7];
-                var savedCustomers = saved[8];
+                var savedLocalHeldStr = saved[1];
+                var savedCart = saved[2];
+                var savedCustName = saved[3];
+                var savedCustId = saved[4];
+                var savedTable = saved[5];
+                var savedDiscount = saved[6];
+                var savedWaiter = saved[7];
+                var savedExistingId = saved[8];
+                var savedCustomers = saved[9];
 
                 if (isMounted) {
-                    if (savedHeldStr) {
+                    if (savedHeldStr || savedLocalHeldStr) {
                         try {
-                            var parsedHeld = JSON.parse(savedHeldStr);
-                            if (Array.isArray(parsedHeld)) {
-                                setHeldOrders(parsedHeld.map(function(h) {
+                            var parsedHeld = savedHeldStr ? JSON.parse(savedHeldStr) : [];
+                            var parsedLocalHeld = savedLocalHeldStr ? JSON.parse(savedLocalHeldStr) : [];
+                            var mergedHeldMap = {};
+                            []
+                                .concat(Array.isArray(parsedHeld) ? parsedHeld : [])
+                                .concat(Array.isArray(parsedLocalHeld) ? parsedLocalHeld : [])
+                                .forEach(function(h) {
+                                    if (!h || !h.id) return;
                                     var obj = merge({}, h);
-                                    obj.createdAt = h.createdAt ? new Date(h.createdAt) : new Date();
-                                    return obj;
-                                }));
+                                    obj.createdAt = h.createdAt || h.date || new Date().toISOString();
+                                    obj.total = Number(h.total != null ? h.total : h.total_amount) || 0;
+                                    obj.tableNo = h.tableNo || h.table_no || '-';
+                                    obj.customerName = h.customerName || h.customer_name || 'Guest';
+                                    obj.selectedCustomerId = h.selectedCustomerId != null ? h.selectedCustomerId : (h.customer_id || null);
+                                    obj.selectedWaiter = h.selectedWaiter || h.waiter_name || '';
+                                    obj.isRemote = h.isRemote === true;
+                                    mergedHeldMap[String(h.id)] = obj;
+                                });
+
+                            var mergedHeld = Object.keys(mergedHeldMap).map(function(key) {
+                                var obj = mergedHeldMap[key];
+                                obj.createdAt = new Date(obj.createdAt);
+                                return obj;
+                            });
+
+                            if (mergedHeld.length > 0) {
+                                setHeldOrders(mergedHeld);
                             }
                         } catch (e) { console.error('Error parsing held orders:', e); }
                     }
@@ -1289,10 +1316,11 @@ export default function POSScreen() {
                     var newOrder = payload.new;
                     if (newOrder.status === 'Pending' || newOrder.status === 'Unpaid' || newOrder.status === 'Self-Service') {
                         var label = newOrder.status === 'Self-Service' ? 'SELF-SERVICE' : 'PESANAN';
+                        console.log('[POSRealtime] New order received:', newOrder.id, 'Status:', newOrder.status, 'Cart Length:', cartRef.current.length);
                         showToast(label + ' MASUK: ' + (newOrder.order_no || newOrder.id) + ' (Meja: ' + (newOrder.table_no || '-') + ')', 'info');
-                        
+
                         // AUTO-LOAD: Jika keranjang kosong dan ini adalah mode kasir, langsung muat pesanan
-                        if (cart.length === 0 && cashierMode && !isActuallyDisplay) {
+                        if (cartRef.current.length === 0 && cashierModeRef.current && !isActuallyDisplayRef.current) {
                             console.log('[POSScreen] Auto-loading incoming ' + label + ' order:', newOrder.id);
                             // Beri jeda sangat singkat agar toast muncul dulu
                             setTimeout(function() {
@@ -1483,13 +1511,19 @@ export default function POSScreen() {
 
     React.useEffect(function() {
         if (!isFirstRender.current) {
-            AsyncStorage.setItem('pos_cart_draft', JSON.stringify(cart));
-            AsyncStorage.setItem('pos_customer_draft_name', customerName);
-            AsyncStorage.setItem('pos_customer_draft_id', String(selectedCustomerId));
-            AsyncStorage.setItem('pos_table_draft', selectedTable);
-            AsyncStorage.setItem('pos_discount_draft', String(orderDiscount));
-            AsyncStorage.setItem('pos_waiter_draft', selectedWaiter);
-            AsyncStorage.setItem('pos_existing_sale_id_draft', String(existingSaleId));
+            // Beri sedikit delay agar tidak membebani UI thread saat interaksi cepat
+            var draftTimer = setTimeout(function() {
+                AsyncStorage.multiSet([
+                    ['pos_cart_draft', JSON.stringify(cart)],
+                    ['pos_customer_draft_name', customerName],
+                    ['pos_customer_draft_id', String(selectedCustomerId)],
+                    ['pos_table_draft', selectedTable],
+                    ['pos_discount_draft', String(orderDiscount)],
+                    ['pos_waiter_draft', selectedWaiter],
+                    ['pos_existing_sale_id_draft', String(existingSaleId)]
+                ]).catch(function(e) { console.error('Error saving cart draft:', e); });
+            }, 1000);
+            return function() { clearTimeout(draftTimer); };
         }
     }, [cart, customerName, selectedCustomerId, selectedTable, orderDiscount, selectedWaiter, existingSaleId]);
 
@@ -1504,6 +1538,9 @@ export default function POSScreen() {
             fetchRemotePendingOrders(true);
         }
     }, [showHeldOrdersModal]);
+
+    // Pre-connecting ditiadakan karena sering menyebabkan race condition pada bridge Bluetooth
+    // PrinterManager akan melakukan koneksi secara on-demand saat print dimulai
 
     var fetchTopSellingProducts = function() {
         if (!currentBranchId) return;
@@ -1714,16 +1751,9 @@ export default function POSScreen() {
         setCustomerName('Guest');
         setSelectedCustomerId(null);
         setIsSelfServiceOrder(false);
+        resetPendingRequestIds();
         
-        // Bersihkan draft di storage secara eksplisit
-        AsyncStorage.multiRemove([
-            'pos_cart_draft',
-            'pos_customer_draft_name',
-            'pos_customer_draft_id',
-            'pos_table_draft',
-            'pos_discount_draft',
-            'pos_existing_sale_id_draft'
-        ]).catch(function(e) { console.error('Error clearing storage drafts:', e); });
+        // Bersihkan draft di storage ditangani oleh useEffect
     }, []);
 
     var calculateSubtotal = function() { return cart.reduce(function(total, item) { return total + (item.price * item.quantity); }, 0); };
@@ -1732,7 +1762,7 @@ export default function POSScreen() {
     var calculateServiceAmount = function() { return (calculateTaxableSubtotal() * (storeSettings && storeSettings.service_rate || 0)) / 100; };
     var calculateTotal = function() { return Math.max(0, (calculateSubtotal() - orderDiscount) + calculateTaxAmount() + calculateServiceAmount()); };
 
-    var calculateActiveBreakdown = function() {
+    var calculateActiveBreakdown = React.useCallback(function() {
         if (!isSplitPayment) {
             var subtotal = calculateSubtotal();
             var tax = calculateTaxAmount();
@@ -1749,7 +1779,11 @@ export default function POSScreen() {
         var splitDiscount = orderDiscount * (splitSubtotal / totalSubtotal);
         var splitTotal = Math.max(0, splitSubtotal - splitDiscount + splitTax + splitService);
         return { subtotal: splitSubtotal, tax: splitTax, serviceCharge: splitService, discount: splitDiscount, total: splitTotal };
-    };
+    }, [cart, splitItemsToPay, isSplitPayment, orderDiscount, storeSettings, calculateSubtotal, calculateTaxAmount, calculateServiceAmount, calculateTotal]);
+
+    var activeBreakdown = React.useMemo(function() {
+        return calculateActiveBreakdown();
+    }, [calculateActiveBreakdown]);
 
     var handleAddManualItem = function(item) {
         var manualItem = {
@@ -1772,7 +1806,8 @@ export default function POSScreen() {
     };
 
     // --- SMART PRINTING LOGIC ------------------------------------------
-    var executeSmartPrint = function(saleData, currentCart, referenceItems) {
+    var executeSmartPrint = function(saleData, currentCart, referenceItems, silent) {
+        if (silent === undefined) silent = false;
         try {
             var ref = referenceItems || initialItems || [];
             // 1. Tentukan item mana yang benar-benar baru (untuk menghindari cetak ulang)
@@ -1793,47 +1828,43 @@ export default function POSScreen() {
             if (diffItems.length > 0) {
                 console.log('[POSScreen] Smart Printing: Memproses ' + diffItems.length + ' item baru.');
                 
-                // Helper untuk menentukan target jika field target kosong
-                var getTarget = function(item) {
-                    var t = (item.target || '').toUpperCase();
-                    if (t === 'BAR' || t === 'DAPUR' || t === 'KITCHEN') return t;
-                    
-                    var name = (item.name || '').toLowerCase();
-                    var cat = (item.category || '').toLowerCase();
-                    var isDrink = ['minum', 'jus', 'tea', 'teh', 'kopi', 'coffee', 'drink', 'jus', 'beer', 'soda', 'lemon', 'jeruk', 'latte', 'espresso', 'cappuccino'].some(function(k) {
-                        return name.indexOf(k) !== -1 || cat.indexOf(k) !== -1;
-                    });
-                    return isDrink ? 'BAR' : 'KITCHEN';
-                };
-
                 // Pastikan item memiliki target yang benar sebelum dikirim
                 var itemsWithTarget = diffItems.map(function(it) {
                     var obj = Object.assign({}, it);
-                    obj.target = getTarget(it);
+                    obj.target = it.target || determineTarget(it);
+                    console.log('[POSScreen] Item: ' + it.name + ', Target: ' + obj.target);
                     return obj;
                 });
 
                 // 1. Cetak Bar Dahulu
-                var barDiff = itemsWithTarget.filter(function(it) { return it.target === 'BAR'; });
+                var barDiff = itemsWithTarget.filter(function(it) { 
+                    var t = (it.target || '').toUpperCase();
+                    return t === 'BAR'; 
+                });
                 var barPromise = Promise.resolve();
                 if (barDiff.length > 0) {
                     console.log('[POSScreen] Mencetak ' + barDiff.length + ' item ke BAR');
-                    barPromise = PrinterManager.printToTarget(barDiff, 'bar', saleData).catch(function(e) {
+                    // Alert.alert('Debug Bar', 'Ditemukan ' + barDiff.length + ' item Bar'); // Debug
+                    barPromise = PrinterManager.printToTarget(barDiff, 'bar', saleData, silent).catch(function(e) {
                         console.error('[POSScreen] Gagal cetak BAR:', e);
                     });
                 }
 
-                // 2. Cetak Kitchen SETELAH Bar Selesai
+                // 2. Cetak Kitchen SETELAH Bar Selesai (dengan jeda tambahan)
                 barPromise.then(function() {
-                    var kitchenDiff = itemsWithTarget.filter(function(it) {
-                        return it.target === 'KITCHEN' || it.target === 'DAPUR';
-                    });
-                    if (kitchenDiff.length > 0) {
-                        console.log('[POSScreen] Mencetak ' + kitchenDiff.length + ' item ke DAPUR');
-                        PrinterManager.printToTarget(kitchenDiff, 'kitchen', saleData).catch(function(e) {
-                            console.error('[POSScreen] Gagal cetak DAPUR:', e);
+                    setTimeout(function() {
+                        var kitchenDiff = itemsWithTarget.filter(function(it) {
+                            var targetUp = (it.target || '').toUpperCase();
+                            // Default ke KITCHEN jika tidak ada target
+                            return targetUp === 'KITCHEN' || targetUp === 'DAPUR' || !targetUp;
                         });
-                    }
+                        if (kitchenDiff.length > 0) {
+                            console.log('[POSScreen] Mencetak ' + kitchenDiff.length + ' item ke DAPUR');
+                            PrinterManager.printToTarget(kitchenDiff, 'kitchen', saleData, silent).catch(function(e) {
+                                console.error('[POSScreen] Gagal cetak DAPUR:', e);
+                            });
+                        }
+                    }, 1500); // Jeda 1.5 detik agar koneksi bluetooth stabil
                 });
             }
         } catch (err) {
@@ -1843,18 +1874,61 @@ export default function POSScreen() {
     
     var mapItemsForSupabase = function(items) {
         return items.map(function(i) {
-            var pid = (typeof i.id === 'string' && i.id.indexOf('manual') === 0) ? null : i.id;
+            // Pastikan product_id adalah angka atau null (untuk item manual/lokal)
+            var rawId = i.product_id || i.id;
+            var pid = (rawId && !isNaN(Number(rawId)) && String(rawId).indexOf('manual') === -1) ? Number(rawId) : null;
+            
             var productName = i.name || i.product_name || 'Produk';
             return {
-                product_id: pid ? Number(pid) : null,
+                product_id: pid,
                 product_name: productName,
-                name: productName,
-                price: Number(i.price || 0),
-                quantity: Number(i.quantity || 0),
-                target: i.target || 'Bar',
-                notes: i.notes || ''
+                price: Number(i.price) || 0,
+                quantity: Number(i.quantity) || 1,
+                notes: i.notes || '',
+                target: i.target || (i.category ? determineTarget(i) : 'Bar')
             };
         });
+    };
+
+    var saveHeldOrderLocally = function(note) {
+        return AsyncStorage.getItem('local_held_orders')
+            .then(function(localHolds) {
+                var holds = localHolds ? JSON.parse(localHolds) : [];
+                var existingIdx = -1;
+                var localId = existingSaleId || ('local-' + Date.now());
+                for (var k = 0; k < holds.length; k++) {
+                    if (holds[k].id === localId) { existingIdx = k; break; }
+                }
+                var localSaleData = {
+                    id: localId,
+                    branch_id: currentBranchId,
+                    customer_name: customerName,
+                    customerName: customerName,
+                    customer_id: selectedCustomerId || null,
+                    selectedCustomerId: selectedCustomerId || null,
+                    table_no: selectedTable,
+                    tableNo: selectedTable,
+                    waiter_name: selectedWaiter || userName,
+                    selectedWaiter: selectedWaiter || userName,
+                    total_amount: calculateTotal(),
+                    total: calculateTotal(),
+                    discount: orderDiscount,
+                    status: 'Pending',
+                    note: note || '',
+                    createdAt: new Date().toISOString(),
+                    date: new Date().toISOString(),
+                    items: cart,
+                    isRemote: false
+                };
+                if (existingIdx >= 0) holds[existingIdx] = localSaleData;
+                else holds.push(localSaleData);
+                setHeldOrders(function(prev) {
+                    var next = prev.filter(function(h) { return h.id !== localId; });
+                    next.push(localSaleData);
+                    return next;
+                });
+                return AsyncStorage.setItem('local_held_orders', JSON.stringify(holds));
+            });
     };
 
     var handleHoldOrder = function(note) {
@@ -1872,17 +1946,26 @@ export default function POSScreen() {
                 status: 'Pending',
                 date: new Date().toISOString()
             };
+            var targetId = null;
+            if (existingSaleId) {
+                var numericHoldId = Number(existingSaleId);
+                if (!isNaN(numericHoldId) && numericHoldId > 0) targetId = numericHoldId;
+            }
+            var holdRequestId = getOrCreateRequestId(holdRequestIdRef, 'hold');
 
-            supabase.rpc('upsert_sale_with_items', {
-                p_sale_data: pSaleData,
-                p_items_data: mapItemsForSupabase(cart),
-                p_target_sale_id: existingSaleId ? Number(existingSaleId) : null
-            }).then(function(res) {
+            setIsSubmitting(true);
+            return runUpsertSaleRequest(
+                pSaleData,
+                cart,
+                targetId,
+                holdRequestId
+            ).then(function(res) {
                 var data = res.data as any;
                 var error = res.error;
                 if (error) throw error;
                 var smartPrintData = Object.assign({}, pSaleData, { order_no: data.order_no });
-                executeSmartPrint(smartPrintData, cart);
+                executeSmartPrint(smartPrintData, cart, initialItems, true);
+                holdRequestIdRef.current = null;
 
                 showToast('Pesanan di-hold & sinkron', 'success');
                 clearCart();
@@ -1891,33 +1974,17 @@ export default function POSScreen() {
                 fetchRemotePendingOrders(true);
             })['catch'](function(err) {
                 console.error('[POSScreen] Hold Error:', err);
-                Alert.alert('Gagal Hold', 'Terjadi kesalahan saat menyimpan pesanan ke cloud.');
+                if (isRpcTimeoutError(err)) {
+                    Alert.alert('Hold Sedang Diverifikasi', 'Status pesanan belum bisa dipastikan. Jangan tekan hold berulang. Cek daftar pesanan dalam beberapa detik.');
+                    return;
+                }
+                var errorMsg = err && err.message ? err.message : 'Terjadi kesalahan saat menyimpan pesanan ke cloud.';
+                Alert.alert('Gagal Hold', errorMsg);
+            })['finally'](function() {
+                setIsSubmitting(false);
             });
         } else {
-            AsyncStorage.getItem('local_held_orders')
-                .then(function(localHolds) {
-                    var holds = localHolds ? JSON.parse(localHolds) : [];
-                    var existingIdx = -1;
-                    var localId = existingSaleId || ('local-' + Date.now());
-                    for (var k = 0; k < holds.length; k++) {
-                        if (holds[k].id === localId) { existingIdx = k; break; }
-                    }
-                    var localSaleData = {
-                        id: localId,
-                        branch_id: currentBranchId,
-                        customer_name: customerName,
-                        table_no: selectedTable,
-                        waiter_name: selectedWaiter || userName,
-                        total_amount: calculateTotal(),
-                        discount: orderDiscount,
-                        status: 'Pending',
-                        date: new Date().toISOString(),
-                        items: cart
-                    };
-                    if (existingIdx >= 0) holds[existingIdx] = localSaleData;
-                    else holds.push(localSaleData);
-                    return AsyncStorage.setItem('local_held_orders', JSON.stringify(holds));
-                })
+            saveHeldOrderLocally(note)
                 .then(function() {
                     showToast('Pesanan disimpan LOKAL', 'success');
                     clearCart();
@@ -1930,54 +1997,144 @@ export default function POSScreen() {
         }
     };
 
+    var saveOfflineSaleAndComplete = function(saleData, itemsToProc, paymentData, breakdown, isExistingOrder) {
+        var localItems = itemsToProc.slice();
+        var offlineSaleData = Object.assign({}, saleData, {
+            items: localItems,
+            status: 'Paid'
+        });
+
+        return OfflineService.saveSale(offlineSaleData)
+            .then(function(savedOffline) {
+                var offlineId = savedOffline.id;
+                var offlineOrderNo = savedOffline.order_no;
+
+                setLastOrderNo(offlineOrderNo);
+                setLastSaleId(offlineId);
+
+                setSuccessModalConfig({ 
+                    title: 'Pembayaran Offline Berhasil!', 
+                    message: 'Transaksi disimpan secara lokal dan akan disinkronkan saat online.' 
+                });
+                paymentRequestIdRef.current = null;
+                setShowSuccessModal(true);
+                setShowPaymentModal(false);
+                setShowCartModal(false);
+
+                if (isSplitPayment) {
+                    var newCart = cart.slice();
+                    splitItemsToPay.forEach(function(sp) {
+                        var idx = -1;
+                        for (var k = 0; k < newCart.length; k++) {
+                            if (newCart[k].id === sp.id) { idx = k; break; }
+                        }
+                        if (idx !== -1) {
+                            if (newCart[idx].quantity === sp.quantity) newCart.splice(idx, 1);
+                            else newCart[idx].quantity -= sp.quantity;
+                        }
+                    });
+                    setCart(newCart);
+                    setInitialItems(newCart);
+                    setIsSplitPayment(false);
+                    setSplitItemsToPay([]);
+                    setIsPartialSplit(true);
+                } else {
+                    clearCart();
+                    setIsPartialSplit(false);
+                }
+
+                setTimeout(function() {
+                    try {
+                        handleAutomaticPrinting(offlineId, offlineOrderNo, localItems, isExistingOrder, paymentData, breakdown);
+                    } catch (e) {
+                        console.error('[POSScreen] Offline Background print execution error:', e);
+                    }
+                }, 800);
+            })
+            .catch(function(err) {
+                console.error('[POSScreen] Offline Payment Save Error:', err);
+                Alert.alert('Gagal Pembayaran', 'Gagal menyimpan transaksi offline ke memori lokal.');
+            });
+    };
+
     var handlePaymentConfirm = function(paymentData) {
-        if (cart.length === 0) return;
-        
-        var breakdown = calculateActiveBreakdown();
-        var isExistingOrder = !!existingSaleId;
-        var saleData = {
-            branch_id: Number(currentBranchId),
-            customer_name: customerName || 'Guest',
-            customer_id: selectedCustomerId ? Number(selectedCustomerId) : null,
-            table_no: selectedTable || '-',
-            waiter_name: selectedWaiter || userName || 'Kasir',
-            total_amount: Number(breakdown.total),
-            discount: Number(breakdown.discount),
-            tax: Number(breakdown.tax),
-            service_charge: Number(breakdown.serviceCharge),
-            status: 'Paid',
-            payment_method: paymentData.method,
-            paid_amount: Number(paymentData.amount),
-            change: Number(paymentData.change),
-            date: new Date().toISOString()
-        };
-
         var itemsToProc = isSplitPayment ? splitItemsToPay : cart;
+        if (itemsToProc.length === 0) {
+            Alert.alert('Info', 'Tidak ada item untuk dibayar.');
+            return;
+        }
+        
+        var saleData, targetId, isExistingOrder;
+        try {
+            var breakdown = activeBreakdown;
+            isExistingOrder = !!existingSaleId;
+            saleData = {
+                branch_id: Number(currentBranchId),
+                customer_name: customerName || 'Guest',
+                customer_id: selectedCustomerId ? Number(selectedCustomerId) : null,
+                table_no: selectedTable || '-',
+                waiter_name: selectedWaiter || userName || 'Kasir',
+                total_amount: Number(breakdown.total),
+                discount: Number(breakdown.discount),
+                tax: Number(breakdown.tax),
+                service_charge: Number(breakdown.serviceCharge),
+                status: 'Paid',
+                payment_method: paymentData.method,
+                paid_amount: Number(paymentData.amount),
+                change: Number(paymentData.change),
+                date: new Date().toISOString()
+            };
 
-        var targetId = null;
-        if (!isSplitPayment && existingSaleId) {
-            var numId = Number(existingSaleId);
-            if (!isNaN(numId) && numId > 0) targetId = numId;
+            var rawItems = isSplitPayment ? splitItemsToPay : cart;
+            itemsToProc = rawItems.map(function(it) {
+                var obj = Object.assign({}, it);
+                if (!obj.target) obj.target = determineTarget(it);
+                return obj;
+            });
+
+            targetId = null;
+            if (!isSplitPayment && existingSaleId) {
+                var numId = Number(existingSaleId);
+                if (!isNaN(numId) && numId > 0) targetId = numId;
+            }
+        } catch (syncErr) {
+            console.error('[POSScreen] Data prep error:', syncErr);
+            Alert.alert('Error Internal', 'Gagal memproses data keranjang.');
+            return Promise.reject(syncErr);
         }
 
-        supabase.rpc('upsert_sale_with_items', {
-            p_sale_data: saleData,
-            p_items_data: mapItemsForSupabase(itemsToProc),
-            p_target_sale_id: targetId
-        }).then(function(res) {
-            var data = res.data as any;
+        if (!isOnline) {
+            return saveOfflineSaleAndComplete(saleData, itemsToProc, paymentData, breakdown, isExistingOrder);
+        }
+
+        var paymentRequestId = getOrCreateRequestId(paymentRequestIdRef, 'pay');
+        saleData.client_transaction_id = paymentRequestId;
+        setIsSubmitting(true);
+        return runUpsertSaleRequest(
+            saleData,
+            itemsToProc,
+            targetId,
+            paymentRequestId
+        ).then(function(res: any) {
+            var data = res.data;
             var error = res.error;
             if (error) throw error;
             
-            maybeAutoPrintReceipt(data.id, data.order_no, isExistingOrder);
-
+            paymentRequestIdRef.current = null;
             setLastOrderNo(data.order_no);
             setLastSaleId(data.id);
-            setSuccessModalConfig({ title: 'Pembayaran Berhasil!', message: 'Transaksi telah selesai dicatat.' });
+
+            // 1. TAMPILKAN SUKSES & TUTUP MODAL SECEPATNYA (AGAR UI TIDAK FREEZE)
+            setSuccessModalConfig({
+                title: 'Pembayaran Berhasil!',
+                message: data.verified_after_timeout
+                    ? 'Transaksi berhasil ditemukan kembali setelah verifikasi server.'
+                    : 'Transaksi telah selesai dicatat.'
+            });
             setShowSuccessModal(true);
             setShowPaymentModal(false);
             setShowCartModal(false);
-            
+
             if (isSplitPayment) {
                 var newCart = cart.slice();
                 splitItemsToPay.forEach(function(sp) {
@@ -1999,15 +2156,46 @@ export default function POSScreen() {
                 clearCart();
                 setIsPartialSplit(false);
             }
+
+            // 2. JALANKAN PROSES CETAK SECARA FAST-BACKGROUND
+            // Memberi jeda lebih lama agar UI (Modal Success) selesai beranimasi/transisi
+            setTimeout(function() {
+                try {
+                    // Cetak Otomatis (Struk & KDS) dalam satu flow
+                    handleAutomaticPrinting(data.id, data.order_no, itemsToProc, isExistingOrder, paymentData, breakdown);
+                } catch (e) {
+                    console.error('[POSScreen] Background print execution error:', e);
+                }
+            }, 800);
         })['catch'](function(err) {
             console.error('[POSScreen] Payment Confirm Error:', err);
+            if (isRpcTimeoutError(err)) {
+                throw new Error('Status transaksi belum terkonfirmasi. Jangan tekan bayar ulang dengan transaksi baru. Tunggu beberapa detik lalu cek riwayat atau daftar pesanan.');
+            }
             var errorMsg = err.message || (typeof err === 'string' ? err : 'Database sibuk');
-            Alert.alert('Gagal Pembayaran', 'Error: ' + errorMsg + '\n\nPastikan internet stabil dan coba lagi.');
+            
+            Alert.alert(
+                'Gagal Pembayaran Online',
+                'Gagal menghubungi server (' + errorMsg + ').\n\nApakah Anda ingin menyimpan transaksi ini secara OFFLINE (Lokal) agar struk tetap bisa dicetak?',
+                [
+                    { text: 'Batal', style: 'cancel' },
+                    { 
+                        text: 'Simpan Offline', 
+                        onPress: function() {
+                            saveOfflineSaleAndComplete(saleData, itemsToProc, paymentData, breakdown, isExistingOrder);
+                        }
+                    }
+                ]
+            );
+            
+            throw err;
+        })['finally'](function() {
+            setIsSubmitting(false);
         });
     };
 
     var handleRestoreHeldOrder = function(order: any) {
-        if (cart.length > 0) { Alert.alert('Info', 'Kosongkan keranjang sebelum memuat pesanan'); return; }
+        if (cartRef.current.length > 0) { Alert.alert('Info', 'Kosongkan keranjang sebelum memuat pesanan'); return; }
         
         if (order.isRemote) {
             setShowHeldOrdersModal(false);
@@ -2041,36 +2229,48 @@ export default function POSScreen() {
             return; 
         }
         
-        var pSaleData = {
-            branch_id: Number(currentBranchId),
-            customer_name: customerName || 'Guest',
-            customer_id: selectedCustomerId ? Number(selectedCustomerId) : null,
-            table_no: selectedTable || '-',
-            waiter_name: selectedWaiter || userName || 'Kasir',
-            total_amount: Number(calculateTotal()),
-            status: isActuallyDisplay ? 'Self-Service' : 'Pending',
-            discount: Number(orderDiscount || 0),
-            tax: Number(calculateTaxAmount()),
-            service_charge: Number(calculateServiceAmount()),
-            date: new Date().toISOString()
-        };
+        var pSaleData, targetId;
+        try {
+            pSaleData = {
+                branch_id: Number(currentBranchId),
+                customer_name: customerName || 'Guest',
+                customer_id: selectedCustomerId ? Number(selectedCustomerId) : null,
+                table_no: selectedTable || '-',
+                waiter_name: selectedWaiter || userName || 'Kasir',
+                total_amount: Number(calculateTotal()),
+                status: isActuallyDisplay ? 'Self-Service' : 'Pending',
+                discount: Number(orderDiscount || 0),
+                tax: Number(calculateTaxAmount()),
+                service_charge: Number(calculateServiceAmount()),
+                date: new Date().toISOString()
+            };
 
-        var targetId = null;
-        if (existingSaleId) {
-            var numId = Number(existingSaleId);
-            if (!isNaN(numId) && numId > 0) targetId = numId;
+            targetId = null;
+            if (existingSaleId) {
+                var numId = Number(existingSaleId);
+                if (!isNaN(numId) && numId > 0) targetId = numId;
+            }
+        } catch (syncErr) {
+            console.error('[POSScreen] Kiosk Data prep error:', syncErr);
+            Alert.alert('Error Internal', 'Gagal memproses data pesanan.');
+            return Promise.reject(syncErr);
         }
 
-        supabase.rpc('upsert_sale_with_items', {
-            p_sale_data: pSaleData,
-            p_items_data: mapItemsForSupabase(cart),
-            p_target_sale_id: targetId
-        }).then(function(res) {
+        var checkoutRequestId = getOrCreateRequestId(checkoutRequestIdRef, 'checkout');
+        pSaleData.client_transaction_id = checkoutRequestId;
+        setIsSubmitting(true);
+        return runUpsertSaleRequest(
+            pSaleData,
+            cart,
+            targetId,
+            checkoutRequestId
+        ).then(function(res: any) {
             var data = res.data as any;
             var error = res.error;
             if (error) throw error;
+            checkoutRequestIdRef.current = null;
             var smartPrintData = Object.assign({}, pSaleData, { order_no: data.order_no });
-            // HANYA CETAK KE BAR/DAPUR SAAT CHECKOUT JIKA BUKAN MODE DISPLAY
+            // Jangan cetak otomatis ke Bar/Dapur jika dalam mode Self-Service (Kiosk)
             if (!isActuallyDisplay) {
                 executeSmartPrint(smartPrintData, cart);
             }
@@ -2094,13 +2294,21 @@ export default function POSScreen() {
             setShowCartModal(false);
         })['catch'](function(err) {
             console.error('[POSScreen] Checkout/Send KDS Error:', err);
+            if (isRpcTimeoutError(err)) {
+                Alert.alert('Pesanan Sedang Diverifikasi', 'Status pesanan belum bisa dipastikan. Jangan kirim ulang dengan transaksi baru. Tunggu beberapa detik lalu cek daftar pesanan.');
+                return;
+            }
             Alert.alert('Gagal', 'Server tidak merespon. Silakan coba lagi.');
+            throw err;
+        })['finally'](function() {
+            setIsSubmitting(false);
         });
     };
 
     var handlePrintReceipt = function(saleId) {
         if (!saleId) return Promise.resolve();
         setIsFetchingRemote(true);
+        setIsPrinting(true);
         return loadFullSaleData(saleId).then(function(fullData) {
             // RE-TRY LOGIC: Jika fitur WiFi aktif tapi voucher belum muncul, tunggu sebentar dan coba lagi sekali
             if (fullData && fullData.enable_wifi_vouchers && !fullData.wifi_voucher) {
@@ -2122,43 +2330,116 @@ export default function POSScreen() {
             Alert.alert('Gagal Cetak', 'Gagal memuat data transaksi untuk dicetak.');
         }).finally(function() {
             setIsFetchingRemote(false);
+            setIsPrinting(false);
         });
     };
 
-    var handleTargetPrintAtCheckout = function(saleId, orderNo) {
-        if (!saleId) return Promise.resolve();
-        return loadFullSaleData(saleId).then(function(fullData) {
-            if (fullData && fullData.items) {
-                var saleData = {
-                    order_no: orderNo,
-                    table_no: fullData.table_no,
-                    customer_name: fullData.customer_name,
-                    waiter_name: fullData.waiter_name,
-                    created_at: fullData.created_at
+    var handleAutomaticPrinting = function(saleId, orderNo, items, isExisting, paymentData, breakdown) {
+        console.log('[POSScreen] Starting Automatic Printing (Fast Flow)...');
+        
+        // 1. Konstruksi data struk lokal (Menghindari fetch Supabase yang lambat)
+        var localOrderData = {
+            id: saleId,
+            order_no: orderNo,
+            orderNo: orderNo,
+            table_no: selectedTable || '-',
+            customer_name: customerName || 'Guest',
+            waiter_name: selectedWaiter || userName || 'Kasir',
+            cashier_name: userName || '-',
+            total: breakdown.total,
+            subtotal: breakdown.subtotal,
+            discount: breakdown.discount,
+            tax: breakdown.tax,
+            service_charge: breakdown.serviceCharge,
+            payment_method: (paymentData && paymentData.method) || 'Tunai',
+            paid_amount: (paymentData && paymentData.amount) || breakdown.total,
+            change: (paymentData && paymentData.change) || 0,
+            date: new Date().toISOString(),
+            // Pengaturan Toko (diambil dari session context/storeSettings)
+            shop_name: branchName,
+            shop_address: branchAddress,
+            shop_phone: branchPhone,
+            receipt_header: (storeSettings && storeSettings.receipt_header) || '',
+            receipt_footer: (storeSettings && storeSettings.receipt_footer) || '',
+            show_logo: (storeSettings && storeSettings.show_logo) !== false,
+            show_date: (storeSettings && storeSettings.show_date) !== false,
+            show_table: (storeSettings && storeSettings.show_table) !== false,
+            show_customer_name: (storeSettings && storeSettings.show_customer_name) !== false,
+            show_waiter: (storeSettings && storeSettings.show_waiter) !== false,
+            show_cashier_name: (storeSettings && storeSettings.show_cashier_name) !== false,
+            receipt_logo_url: (storeSettings && storeSettings.receipt_logo_url) || '',
+            receipt_paper_width: (storeSettings && storeSettings.receipt_paper_width) || '58mm',
+            items: items.map(function(item) {
+                return {
+                    name: item.name,
+                    price: item.price,
+                    quantity: item.quantity,
+                    notes: item.notes,
+                    target: item.target || determineTarget(item)
                 };
-                // Karena ini dipanggil setelah bayar/checkout selesai, 
-                // kita anggap semua item di fullData adalah baru jika dipanggil dari sini
-                // atau kita biarkan executeSmartPrint melakukan diff dengan [] jika referenceItems tidak dikirim
-                executeSmartPrint(saleData, fullData.items, []);
-            }
-        })['catch'](function(err) {
-            console.error('[POSScreen] Target Print Error:', err);
-        });
-    };
+            })
+        };
 
-    var maybeAutoPrintReceipt = function(saleId, orderNo, isExisting) {
-        console.log('[POSScreen] Auto Printing Receipt for ID:', saleId);
-        // BERI JEDA LEBIH LAMA (2 DETIK) agar Database selesai memasangkan Wifi Voucher
-        setTimeout(function() {
-            // 1. Cetak Struk Belanja Dahulu
-            handlePrintReceipt(saleId).then(function() {
-                // Beri jeda lagi sebelum tiket target
+        var prepareLocalData = function() {
+            var localData = Object.assign({}, localOrderData);
+            if (storeSettings && storeSettings.enable_wifi_vouchers) {
+                localData.enable_wifi_vouchers = true;
+                localData.wifi_voucher_notice = storeSettings.wifi_voucher_notice || 'Gunakan kode di bawah ini untuk akses WiFi';
+                
+                var minAmount = Number(storeSettings.wifi_voucher_min_amount) || 0;
+                var multiplier = Number(storeSettings.wifi_voucher_multiplier) || 0;
+                
+                if (breakdown.total >= minAmount) {
+                    if (!isOnline || String(saleId).indexOf('off-') === 0) {
+                        return Promise.resolve(localData);
+                    }
+                    var divisor = multiplier > 0 ? multiplier : minAmount;
+                    var count = divisor > 0 ? Math.floor(breakdown.total / divisor) : 1;
+                    if (count < 1) count = 1;
+                    
+                    return WifiVoucherService.getVoucherForSale(saleId, currentBranchId || '1', count).then(function(v) {
+                        localData.wifi_voucher = v;
+                        return localData;
+                    })['catch'](function(e) {
+                        console.error('[POSScreen] Fast Auto-Print WiFi Error:', e);
+                        return localData;
+                    });
+                }
+            }
+            return Promise.resolve(localData);
+        };
+
+        // 2. Jalankan Printing
+        prepareLocalData().then(function(finalOrderData) {
+            AsyncStorage.getItem('auto_print').then(function(val) {
+                var isAuto = (val !== 'false');
+                
+                if (isAuto && !isDisplayOnly) {
+                    console.log('[POSScreen] Executing Fast Auto-Print...');
+                    PrinterManager.printOrderReceipt(finalOrderData, true)['catch'](function(e) {
+                        console.error('[POSScreen] Fast Auto-Print Error:', e);
+                    });
+                }
+
+                // 3. Tiket Bar/Dapur (Smart Print)
+                var smartPrintData = {
+                    order_no: orderNo,
+                    table_no: finalOrderData.table_no,
+                    customer_name: finalOrderData.customer_name,
+                    waiter_name: finalOrderData.waiter_name,
+                    created_at: finalOrderData.date
+                };
+                
+                // Identifikasi Self-Service agar diperlakukan seperti Transaksi Langsung (cetak semua)
+                var isSelfService = isSelfServiceOrder || isActuallyDisplay;
+                var refItems = (isExisting && !isSelfService) ? undefined : [];
+
+                // Jeda 2 detik sebelum cetak tiket Bar/Dapur agar printer belanja selesai proses
                 setTimeout(function() {
-                    // 2. Cetak BAR & DAPUR SETELAH Struk Selesai
-                    handleTargetPrintAtCheckout(saleId, orderNo);
-                }, 1200);
+                    executeSmartPrint(smartPrintData, items, refItems, false);
+                }, 2000);
             });
-        }, 2000);
+        });
     };
 
     var handleTablePress = function() {
@@ -2181,10 +2462,65 @@ export default function POSScreen() {
         });
     };
 
-    var handleDeleteHeldOrder = function(id) {
-        setHeldOrders(function(prev) {
-            return prev.filter(function(h) { return h.id !== id; });
-        });
+    var handleDeleteHeldOrder = function(order) {
+        if (!order || !order.id) return;
+
+        Alert.alert('Hapus Pesanan', 'Yakin ingin menghapus pesanan ditangguhkan ini?', [
+            { text: 'Batal', style: 'cancel' },
+            {
+                text: 'Hapus',
+                style: 'destructive',
+                onPress: function() {
+                    if (order.isRemote) {
+                        setIsSubmitting(true);
+                        supabase
+                            .from('wifi_vouchers')
+                            .update({ is_used: false, used_at: null, sale_id: null })
+                            .eq('sale_id', order.id)
+                            .then(function() {
+                                return supabase.from('sale_items').delete().eq('sale_id', order.id);
+                            })
+                            .then(function() {
+                                return supabase.from('sales').delete().eq('id', order.id);
+                            })
+                            .then(function(res) {
+                                if (res.error) throw res.error;
+                                setRemoteOrders(function(prev) {
+                                    return prev.filter(function(h) { return h.id !== order.id; });
+                                });
+                                showToast('Pesanan hold cloud dihapus', 'success');
+                                fetchRemotePendingOrders(true);
+                            })
+                            ['catch'](function(err) {
+                                console.error('[POSScreen] Delete held remote order error:', err);
+                                Alert.alert('Gagal Hapus', (err && err.message) ? err.message : 'Pesanan hold cloud gagal dihapus.');
+                            })
+                            .finally(function() {
+                                setIsSubmitting(false);
+                            });
+                        return;
+                    }
+
+                    setHeldOrders(function(prev) {
+                        return prev.filter(function(h) { return h.id !== order.id; });
+                    });
+
+                    AsyncStorage.getItem('local_held_orders')
+                        .then(function(localHolds) {
+                            var holds = localHolds ? JSON.parse(localHolds) : [];
+                            var filtered = Array.isArray(holds)
+                                ? holds.filter(function(h) { return h.id !== order.id; })
+                                : [];
+                            return AsyncStorage.setItem('local_held_orders', JSON.stringify(filtered));
+                        })
+                        ['catch'](function(err) {
+                            console.error('[POSScreen] Delete local held cache error:', err);
+                        });
+
+                    showToast('Pesanan hold lokal dihapus', 'success');
+                }
+            }
+        ]);
     };
 
     var onSplitCommit = function(selectedItems) {
@@ -2194,7 +2530,70 @@ export default function POSScreen() {
         setShowPaymentModal(true);
     };
 
+    var handleBackToMainMenu = function() {
+        if ((navigation as any).canGoBack && (navigation as any).canGoBack()) {
+            navigation.goBack();
+            return;
+        }
+        (navigation as any).navigate('Main');
+    };
+
+    // --- MEMOIZED UI COMPONENTS (To prevent Hook violation & optimize performance) ---
+    var memoizedCategoryTabs = React.useMemo(function() {
+        return React.createElement(ScrollView, { 
+            horizontal: true, 
+            showsHorizontalScrollIndicator: false, 
+            contentContainerStyle: styles.categoryScroll 
+        },
+            categories.map(function(cat) {
+                return React.createElement(TouchableOpacity, {
+                    key: cat,
+                    style: [styles.categoryTab, selectedCategory === cat && styles.activeCategoryTab],
+                    onPress: function() { setSelectedCategory(cat); }
+                },
+                    React.createElement(Text, { style: [styles.categoryText, selectedCategory === cat && styles.activeCategoryText] }, cat)
+                );
+            })
+        );
+    }, [categories, selectedCategory]);
+
+    var memoizedProductGrid = React.useMemo(function() {
+        if (loadingProducts || filteredProducts.length === 0) return null;
+        return React.createElement(FlatList, {
+            data: filteredProducts,
+            keyExtractor: function(item) { return String((item as any).id || Math.random()); },
+            numColumns: productGridColumns,
+            key: 'grid-' + productGridColumns,
+            renderItem: function(info) {
+                var item = info.item;
+                return React.createElement(View, { style: { width: (100 / productGridColumns).toFixed(1) + '%' as any, padding: (isSmallDevice ? 4 : 6) as any } },
+                    React.createElement(ProductCard as any, { 
+                        item: item, 
+                        isTablet: isTablet, 
+                        onAdd: addToCart, 
+                        formatCurrency: formatCurrency 
+                    })
+                );
+            },
+            contentContainerStyle: styles.productListContent,
+            removeClippedSubviews: true,
+            initialNumToRender: 12,
+            maxToRenderPerBatch: 24,
+            windowSize: 5
+        });
+    }, [filteredProducts, productGridColumns, addToCart, formatCurrency, isTablet, isSmallDevice, loadingProducts]);
+
     return React.createElement(SafeAreaView, { edges: ['top', 'left', 'right'], style: styles.container },
+        isActuallyDisplay && React.createElement(View, { style: styles.displayHeader },
+            React.createElement(TouchableOpacity, {
+                style: styles.displayBackButton,
+                onPress: handleBackToMainMenu
+            },
+                React.createElement(ChevronLeft, { size: 18, color: "#374151", strokeWidth: 2.5 }),
+                React.createElement(Text, { style: styles.displayBackButtonText }, "Menu Utama")
+            ),
+            React.createElement(Text, { style: styles.displayHeaderTitle, numberOfLines: 1 }, branchName || 'Katalog Pesanan')
+        ),
         !isActuallyDisplay && React.createElement(View, { style: styles.header },
             React.createElement(View, { style: { flexDirection: 'row', alignItems: 'center' } },
                 React.createElement(View, { style: { marginRight: 10 } }),
@@ -2304,17 +2703,7 @@ export default function POSScreen() {
                 ),
 
                 React.createElement(View, { style: styles.categoryContainer },
-                    React.createElement(ScrollView, { horizontal: true, showsHorizontalScrollIndicator: false, contentContainerStyle: styles.categoryScroll },
-                        categories.map(function(cat) {
-                            return React.createElement(TouchableOpacity, {
-                                key: cat,
-                                style: [styles.categoryTab, selectedCategory === cat && styles.activeCategoryTab],
-                                onPress: function() { setSelectedCategory(cat); }
-                            },
-                                React.createElement(Text, { style: [styles.categoryText, selectedCategory === cat && styles.activeCategoryText] }, cat)
-                            );
-                        })
-                    )
+                    memoizedCategoryTabs
                 ),
 
                 loadingProducts ? (
@@ -2329,24 +2718,7 @@ export default function POSScreen() {
                         React.createElement(Text, { style: styles.emptySubtitle }, "Coba cari dengan kata kunci lain atau pilih kategori berbeda.")
                     )
                 ) : (
-                    React.createElement(FlatList, {
-                        data: filteredProducts,
-                        keyExtractor: function(item) { return String((item as any).id || Math.random()); },
-                        numColumns: productGridColumns,
-                        key: 'grid-' + productGridColumns,
-                        renderItem: function(info) {
-                            var item = info.item;
-                            return React.createElement(View, { style: { width: (100 / productGridColumns).toFixed(1) + '%' as any, padding: (isSmallDevice ? 4 : 6) as any } },
-                                React.createElement(ProductCard as any, { 
-                                    item: item, 
-                                    isTablet: isTablet, 
-                                    onAdd: addToCart, 
-                                    formatCurrency: formatCurrency 
-                                })
-                            );
-                        },
-                        contentContainerStyle: styles.productListContent
-                    })
+                    memoizedProductGrid
                 )
             ),
 
@@ -2415,12 +2787,12 @@ export default function POSScreen() {
                         React.createElement(TouchableOpacity, { 
                             style: [
                                 styles.confirmButton, 
-                                { marginTop: 16, paddingVertical: 16, borderRadius: 16, backgroundColor: cart.length > 0 ? '#ea580c' : '#cbd5e1' }
+                                { marginTop: 16, paddingVertical: 16, borderRadius: 16, backgroundColor: (cart.length > 0 && !isSubmitting) ? '#ea580c' : '#cbd5e1' }
                             ], 
                             onPress: handleCheckout,
-                            disabled: cart.length === 0
+                            disabled: cart.length === 0 || isSubmitting
                         },
-                            React.createElement(Text, { style: { color: 'white', fontWeight: 'bold', fontSize: 16, textAlign: 'center' } },
+                            isSubmitting ? React.createElement(ActivityIndicator, { color: "white", size: "small" }) : React.createElement(Text, { style: { color: 'white', fontWeight: 'bold', fontSize: 16, textAlign: 'center' } },
                                 cashierMode ? 'BAYAR SEKARANG' : (existingSaleId ? 'UPDATE PESANAN' : 'KIRIM PESANAN')
                             )
                         )
@@ -2447,11 +2819,11 @@ export default function POSScreen() {
         React.createElement(PaymentModal, {
             visible: showPaymentModal,
             onClose: function() { setShowPaymentModal(false); },
-            subtotal: calculateActiveBreakdown().subtotal,
-            tax: calculateActiveBreakdown().tax,
-            serviceCharge: calculateActiveBreakdown().serviceCharge,
-            discount: calculateActiveBreakdown().discount,
-            total: calculateActiveBreakdown().total,
+            subtotal: activeBreakdown.subtotal,
+            tax: activeBreakdown.tax,
+            serviceCharge: activeBreakdown.serviceCharge,
+            discount: activeBreakdown.discount,
+            total: activeBreakdown.total,
             onConfirm: handlePaymentConfirm,
             onManualItem: function() { setShowPaymentModal(false); setShowManualItemModal(true); },
             onDiscount: function() { 
@@ -2465,6 +2837,7 @@ export default function POSScreen() {
             onSplitBill: function() { setShowPaymentModal(false); setShowSplitBillModal(true); },
             onHold: function() { setShowPaymentModal(false); setShowHoldNoteModal(true); },
             onPreview: handlePrePaymentPreview,
+            canHold: cashierMode || isAdmin,
             paymentMethods: paymentMethods
         }),
 
@@ -2582,10 +2955,11 @@ export default function POSScreen() {
                             React.createElement(Text, { style: [styles.cartTotalValueLarge, { color: '#ea580c' }] }, formatCurrency(calculateTotal()))
                         ),
                         React.createElement(TouchableOpacity, { 
-                            style: [styles.modalButton, { backgroundColor: '#ea580c', marginTop: 16, paddingVertical: 16 }], 
-                            onPress: handleCheckout
+                            style: [styles.modalButton, { backgroundColor: (!isSubmitting) ? '#ea580c' : '#cbd5e1', marginTop: 16, paddingVertical: 16 }], 
+                            onPress: handleCheckout,
+                            disabled: isSubmitting
                         },
-                            React.createElement(Text, { style: styles.confirmButtonText },
+                            isSubmitting ? React.createElement(ActivityIndicator, { color: "white", size: "small" }) : React.createElement(Text, { style: styles.confirmButtonText },
                                 isActuallyDisplay ? 'KIRIM KE KASIR' : (cashierMode ? 'PILIH PEMBAYARAN' : (existingSaleId ? 'SIMPAN UPDATE' : 'KONFIRMASI PESANAN'))
                             )
                         )
@@ -2804,6 +3178,40 @@ var styles = StyleSheet.create({
         shadowOpacity: 0.1,
         shadowRadius: 2,
         zIndex: 10
+    },
+    displayHeader: {
+        backgroundColor: 'white',
+        paddingVertical: 8,
+        paddingHorizontal: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f3f4f6',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between'
+    },
+    displayBackButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f8fafc',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        borderRadius: 999,
+        paddingHorizontal: 12,
+        paddingVertical: 8
+    },
+    displayBackButtonText: {
+        marginLeft: 4,
+        fontSize: 12,
+        fontWeight: '800',
+        color: '#374151'
+    },
+    displayHeaderTitle: {
+        flex: 1,
+        textAlign: 'right',
+        marginLeft: 12,
+        fontSize: 13,
+        fontWeight: '800',
+        color: '#111827'
     },
     headerCircleButton: {
         width: 40,
@@ -3317,4 +3725,3 @@ var styles = StyleSheet.create({
         marginTop: 4
     }
 });
-

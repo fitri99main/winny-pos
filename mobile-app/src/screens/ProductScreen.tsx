@@ -29,6 +29,7 @@ export default function ProductScreen() {
     var navigation = useNavigation();
     var session = useSession();
     var currentBranchId = session.currentBranchId;
+    var canSeeHpp = session.isAdmin || (session.permissions && session.permissions.indexOf('view_hpp_recipe') !== -1);
     
     var stateProducts = React.useState([]);
     var products = stateProducts[0];
@@ -82,6 +83,54 @@ export default function ProductScreen() {
     var filteredIngredients = stateFilteredIngredients[0];
     var setFilteredIngredients = stateFilteredIngredients[1];
 
+    var stateActiveRecipeSelectIdx = React.useState(null as number | null);
+    var activeRecipeSelectIdx = stateActiveRecipeSelectIdx[0];
+    var setActiveRecipeSelectIdx = stateActiveRecipeSelectIdx[1];
+
+    var stateIngredientSearch = React.useState('');
+    var ingredientSearch = stateIngredientSearch[0];
+    var setIngredientSearch = stateIngredientSearch[1];
+
+    var normalizeRecipe = function(recipe) {
+        if (!Array.isArray(recipe)) return [];
+        return recipe
+            .map(function(item) {
+                var ingredientId = Number(item && item.ingredientId);
+                var amount = Number(item && item.amount);
+                return {
+                    ingredientId: isNaN(ingredientId) ? null : ingredientId,
+                    amount: isNaN(amount) ? 0 : amount
+                };
+            })
+            .filter(function(item) {
+                return item.ingredientId !== null && item.amount > 0;
+            });
+    };
+
+    var calculateHppFromRecipe = function(recipe) {
+        var normalizedRecipe = normalizeRecipe(recipe);
+        if (normalizedRecipe.length === 0) return 0;
+        return normalizedRecipe.reduce(function(total, item) {
+            var ingredient = ingredients.find(function(i) {
+                return Number(i.id) === Number(item.ingredientId);
+            });
+            return total + ((ingredient && Number(ingredient.cost_per_unit)) || 0) * Number(item.amount || 0);
+        }, 0);
+    };
+
+    var normalizeProductForEdit = function(product) {
+        return Object.assign({}, product, {
+            price: product && product.price != null ? product.price : 0,
+            cost: product && product.cost != null ? product.cost : 0,
+            addons: Array.isArray(product && product.addons) ? product.addons : [],
+            recipe: normalizeRecipe(product && product.recipe)
+        });
+    };
+
+    var formatCurrency = function(value) {
+        return "Rp " + Number(value || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    };
+
     var fetchProducts = function() {
         if (!currentBranchId) {
             setLoading(false);
@@ -91,7 +140,7 @@ export default function ProductScreen() {
         
         // Fetch products and master data in parallel
         return Promise.all([
-            supabase.from('products').select('*').or('branch_id.eq.' + currentBranchId + ',branch_id.is.null').order('name', { ascending: true }),
+            supabase.from('products').select('*, recipe:product_recipes(ingredientId:ingredient_id, amount), addons:product_addons(*)').or('branch_id.eq.' + currentBranchId + ',branch_id.is.null').order('name', { ascending: true }),
             supabase.from('ingredients').select('*').or('branch_id.eq.' + currentBranchId + ',branch_id.is.null').order('name', { ascending: true }),
             supabase.from('categories').select('*').order('name', { ascending: true }),
             supabase.from('units').select('*').order('name', { ascending: true }),
@@ -104,8 +153,11 @@ export default function ProductScreen() {
             var resB = results[4];
 
             if (resP.error) throw resP.error;
-            setProducts(resP.data || []);
-            setFilteredProducts(resP.data || []);
+            var normalizedProducts = (resP.data || []).map(function(product) {
+                return normalizeProductForEdit(product);
+            });
+            setProducts(normalizedProducts);
+            setFilteredProducts(normalizedProducts);
             
             if (resI.data) {
                 setIngredients(resI.data);
@@ -195,26 +247,67 @@ export default function ProductScreen() {
 
         setLoading(true);
         var isNew = !editingProduct.id;
+        var normalizedRecipe = normalizeRecipe(editingProduct.recipe);
+        var manualCost = parseFloat(editingProduct.cost) || 0;
+        var calculatedCost = calculateHppFromRecipe(normalizedRecipe);
+        var finalCost = normalizedRecipe.length > 0 ? calculatedCost : manualCost;
         var payload = {
             name: editingProduct.name,
             code: editingProduct.code,
             price: parseFloat(editingProduct.price) || 0,
-            cost: parseFloat(editingProduct.cost) || 0,
+            cost: finalCost,
             category: editingProduct.category,
             brand: editingProduct.brand,
             unit: editingProduct.unit,
             image_url: editingProduct.image_url,
             is_sellable: editingProduct.is_sellable !== false,
             target: editingProduct.target || 'Kitchen',
-            addons: editingProduct.addons || [],
-            recipe: editingProduct.recipe || [],
+            recipe_date: normalizedRecipe.length > 0
+                ? (editingProduct.recipe_date || new Date().toISOString().split('T')[0])
+                : (editingProduct.recipe_date || null),
             branch_id: editingProduct.branch_id || currentBranchId
         };
 
-        var query = isNew ? supabase.from('products').insert(payload) : supabase.from('products').update(payload).eq('id', editingProduct.id);
+        var query = isNew 
+            ? supabase.from('products').insert([payload]).select().single() 
+            : supabase.from('products').update(payload).eq('id', editingProduct.id).select().single();
 
         return query.then(function(res) {
             if (res.error) throw res.error;
+            var savedProduct = res.data;
+            var productId = (editingProduct && editingProduct.id) || (savedProduct && savedProduct.id);
+            if (!productId) throw new Error("Product ID not found after save");
+
+            // Perform separate writes for recipe and addons
+            var recipePromise = supabase.from('product_recipes').delete().eq('product_id', productId).then(function() {
+                if (normalizedRecipe.length > 0) {
+                    var recipeItems = normalizedRecipe.map(function(r) {
+                        return {
+                            product_id: productId,
+                            ingredient_id: r.ingredientId,
+                            amount: r.amount
+                        };
+                    });
+                    return supabase.from('product_recipes').insert(recipeItems);
+                }
+            });
+
+            var addonsPromise = supabase.from('product_addons').delete().eq('product_id', productId).then(function() {
+                var currentAddons = editingProduct.addons || [];
+                if (currentAddons.length > 0) {
+                    var addonItems = currentAddons.map(function(a) {
+                        return {
+                            product_id: productId,
+                            name: a.name,
+                            price: a.price
+                        };
+                    });
+                    return supabase.from('product_addons').insert(addonItems);
+                }
+            });
+
+            return Promise.all([recipePromise, addonsPromise]);
+        }).then(function() {
             Alert.alert('Sukses', 'Produk berhasil ' + (isNew ? 'ditambahkan' : 'diperbarui'));
             setModalVisible(false);
             return fetchProducts();
@@ -238,6 +331,7 @@ export default function ProductScreen() {
             is_sellable: true,
             target: 'Kitchen',
             addons: [],
+            recipe: [],
             branch_id: currentBranchId
         });
         setModalVisible(true);
@@ -385,7 +479,7 @@ export default function ProductScreen() {
         return React.createElement(TouchableOpacity, {
             style: styles.productCard,
             onPress: function() {
-                setEditingProduct(item);
+                setEditingProduct(normalizeProductForEdit(item));
                 setModalVisible(true);
             }
         },
@@ -414,6 +508,60 @@ export default function ProductScreen() {
                     React.createElement(Text, { style: styles.productPrice }, "Rp " + (item.price ? item.price.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".") : "0")),
                     React.createElement(Text, { style: { fontSize: 10, color: '#94a3b8', marginHorizontal: 6 } }, "/"),
                     React.createElement(Text, { style: { fontSize: 10, color: '#ef4444', fontWeight: 'bold' } }, "Modal: Rp " + (item.cost ? item.cost.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".") : "0"))
+                )
+            ),
+            React.createElement(View, { style: { flexDirection: 'row', position: 'absolute', top: 8, right: 8, gap: 4 } },
+                React.createElement(View, { style: styles.categoryBadge },
+                    React.createElement(Text, { style: styles.categoryBadgeText }, item.category || '-')
+                ),
+                item.target && React.createElement(View, { style: [styles.categoryBadge, { backgroundColor: item.target === 'Bar' ? '#f0f9ff' : '#f0fdf4', borderColor: item.target === 'Bar' ? '#bae6fd' : '#bbf7d0' }] },
+                    React.createElement(Text, { style: [styles.categoryBadgeText, { color: item.target === 'Bar' ? '#0ea5e9' : '#10b981' }] }, item.target === 'Kitchen' ? 'DAPUR' : item.target.toUpperCase())
+                )
+            )
+        );
+    };
+
+    var renderProductItemSynced = function(data) {
+        var item = data.item;
+        var normalizedRecipe = normalizeRecipe(item.recipe);
+        var hasRecipe = normalizedRecipe.length > 0;
+        var finalHpp = hasRecipe ? calculateHppFromRecipe(normalizedRecipe) : (Number(item.cost) || 0);
+
+        return React.createElement(TouchableOpacity, {
+            style: styles.productCard,
+            onPress: function() {
+                setEditingProduct(normalizeProductForEdit(item));
+                setModalVisible(true);
+            }
+        },
+            React.createElement(View, { style: styles.productImageContainer },
+                item.image_url ? React.createElement(Image, { source: { uri: item.image_url }, style: styles.productImage }) : React.createElement(Text, { style: styles.imagePlaceholderText }, "\uD83D\uDCE6")
+            ),
+            React.createElement(View, { style: styles.productInfo },
+                React.createElement(Text, { style: styles.productName, numberOfLines: 1 }, item.name),
+                React.createElement(View, { style: { flexDirection: 'row', alignItems: 'center', marginTop: 2 } },
+                    React.createElement(Text, { style: styles.productCode }, item.code),
+                    React.createElement(Text, { style: { fontSize: 10, color: '#94a3b8', marginHorizontal: 4 } }, "•"),
+                    React.createElement(Text, { style: { fontSize: 10, color: '#64748b' } }, (item.addons ? item.addons.length : 0) + " Topping"),
+                    canSeeHpp && React.createElement(Text, { style: { fontSize: 10, color: '#94a3b8', marginHorizontal: 4 } }, "•"),
+                    canSeeHpp && React.createElement(Text, { style: { fontSize: 10, color: '#64748b' } }, normalizedRecipe.length + " Bahan")
+                ),
+                (canSeeHpp && hasRecipe) ? React.createElement(View, { style: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 6, gap: 4 } },
+                    normalizedRecipe.slice(0, 4).map(function(r, idx) {
+                        var ing = ingredients.find(function(i) { return String(i.id) === String(r.ingredientId); });
+                        return React.createElement(View, { key: idx, style: { backgroundColor: '#f1f5f9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 } },
+                            React.createElement(Text, { style: { fontSize: 8, color: '#475569', fontWeight: '600' } }, (ing ? ing.name : '???') + ": " + (r.amount || 0) + " " + ((ing && ing.unit) || ''))
+                        );
+                    }),
+                    normalizedRecipe.length > 4 ? React.createElement(Text, { style: { fontSize: 8, color: '#94a3b8', alignSelf: 'center' } }, "+" + (normalizedRecipe.length - 4) + " bahan") : null
+                ) : (canSeeHpp ? React.createElement(Text, { style: { fontSize: 9, color: '#94a3b8', fontStyle: 'italic', marginTop: 6 } }, "Komposisi bahan baku belum diatur") : null),
+                React.createElement(View, { style: { flexDirection: 'row', alignItems: 'center', marginTop: 6 } },
+                    React.createElement(Text, { style: styles.productPrice }, formatCurrency(item.price)),
+                    canSeeHpp && React.createElement(Text, { style: { fontSize: 10, color: '#94a3b8', marginHorizontal: 6 } }, "/"),
+                    canSeeHpp && React.createElement(Text, { style: { fontSize: 10, color: '#ef4444', fontWeight: 'bold' } }, "HPP: " + formatCurrency(finalHpp))
+                ),
+                canSeeHpp && React.createElement(Text, { style: { fontSize: 9, color: hasRecipe ? '#0f766e' : '#94a3b8', marginTop: 4, fontWeight: '600' } },
+                    hasRecipe ? "HPP sinkron dari resep bahan baku" : "Menggunakan HPP manual"
                 )
             ),
             React.createElement(View, { style: { flexDirection: 'row', position: 'absolute', top: 8, right: 8, gap: 4 } },
@@ -471,7 +619,7 @@ export default function ProductScreen() {
         ) : React.createElement(FlatList, {
             data: activeTab === 'produk' ? filteredProducts : filteredIngredients,
             keyExtractor: function(item, index) { return (item && item.id ? item.id : index).toString(); },
-            renderItem: activeTab === 'produk' ? renderProductItem : renderIngredientItem,
+            renderItem: activeTab === 'produk' ? renderProductItemSynced : renderIngredientItem,
             contentContainerStyle: styles.listContent,
             ListEmptyComponent: React.createElement(View, { style: styles.emptyState },
                 React.createElement(Text, { style: styles.emptyIcon }, "\uD83D\uDD0D"),
@@ -567,15 +715,20 @@ export default function ProductScreen() {
                                     onChangeText: function(text) { setEditingProduct(Object.assign({}, editingProduct, { price: text })); }
                                 })
                             ),
-                            React.createElement(View, { style: { flex: 1 } },
+                            canSeeHpp ? React.createElement(View, { style: { flex: 1 } },
                                 React.createElement(Text, { style: styles.labelCompact }, "HPP (Modal)"),
                                 React.createElement(TextInput, {
                                     style: styles.inputCompact,
                                     value: editingProduct && editingProduct.cost != null ? editingProduct.cost.toString() : '',
                                     keyboardType: "numeric",
                                     onChangeText: function(text) { setEditingProduct(Object.assign({}, editingProduct, { cost: text })); }
-                                })
-                            )
+                                }),
+                                (editingProduct && editingProduct.recipe && normalizeRecipe(editingProduct.recipe).length > 0) ? React.createElement(Text, { style: { fontSize: 10, color: '#0f766e', marginTop: 6, fontWeight: '600' } },
+                                    "Dipakai dari resep: Rp " + calculateHppFromRecipe(editingProduct.recipe).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".")
+                                ) : React.createElement(Text, { style: { fontSize: 10, color: '#94a3b8', marginTop: 6 } },
+                                    "Dipakai sebagai HPP manual jika resep kosong"
+                                )
+                            ) : React.createElement(View, { style: { flex: 1 } })
                         ),
 
                         React.createElement(View, { style: { flexDirection: 'row', gap: 10, marginBottom: 12 } },
@@ -619,7 +772,7 @@ export default function ProductScreen() {
                         ),
 
                         // Recipe / Komposisi Section
-                        React.createElement(View, { style: { marginBottom: 16 } },
+                        canSeeHpp ? React.createElement(View, { style: { marginBottom: 16 } },
                             React.createElement(View, { style: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 } },
                                 React.createElement(Text, { style: styles.labelCompact }, "Komposisi Bahan Baku"),
                                 React.createElement(TouchableOpacity, { onPress: handleAddRecipe, style: { padding: 4 } },
@@ -627,14 +780,13 @@ export default function ProductScreen() {
                                 )
                             ),
                             (editingProduct && editingProduct.recipe && editingProduct.recipe.length > 0) ? editingProduct.recipe.map(function(rec, idx) {
-                                var ing = ingredients.find(function(i) { return i.id === rec.ingredientId; });
+                                var ing = ingredients.find(function(i) { return String(i.id) === String(rec.ingredientId); });
                                 return React.createElement(View, { key: idx, style: { flexDirection: 'row', gap: 6, marginBottom: 6, alignItems: 'center' } },
                                     React.createElement(TouchableOpacity, { 
                                         style: { flex: 2, backgroundColor: '#f8fafc', borderRadius: 8, borderWidth: 1, borderColor: '#f1f5f9', height: 40, justifyContent: 'center', paddingHorizontal: 10 },
                                         onPress: function() {
-                                            Alert.alert("Pilih Bahan", "Pilih bahan baku untuk resep ini:", ingredients.map(function(ig) {
-                                                return { text: ig.name, onPress: function() { handleUpdateRecipe(idx, 'ingredientId', ig.id); } };
-                                            }).concat([{ text: "Batal", style: 'cancel' }]));
+                                            setActiveRecipeSelectIdx(idx);
+                                            setIngredientSearch('');
                                         }
                                     },
                                         React.createElement(Text, { style: { fontSize: 12, color: ing ? '#0f172a' : '#94a3b8' } }, ing ? ing.name : "Pilih Bahan...")
@@ -651,7 +803,7 @@ export default function ProductScreen() {
                                     )
                                 );
                             }) : React.createElement(Text, { style: { fontSize: 10, color: '#94a3b8', fontStyle: 'italic', textAlign: 'center', marginBottom: 8 } }, "Belum ada resep")
-                        ),
+                        ) : null,
 
                         // Addons / Topping Section
                         React.createElement(View, { style: { marginBottom: 24 } },
@@ -699,6 +851,79 @@ export default function ProductScreen() {
                                 React.createElement(Lucide.Trash2, { size: 18, color: "#ef4444" })
                             ) : null
                         )
+                    )
+                )
+            ),
+
+            React.createElement(Modal, {
+                visible: activeRecipeSelectIdx !== null,
+                animationType: "fade",
+                transparent: true,
+                onRequestClose: function() { setActiveRecipeSelectIdx(null); }
+            },
+                React.createElement(View, { style: styles.modalOverlay },
+                    React.createElement(View, { style: [styles.modalContent, { height: '80%' }] },
+                        React.createElement(View, { style: styles.modalHeader },
+                            React.createElement(Text, { style: styles.modalHeaderTitle }, "Pilih Bahan Baku"),
+                            React.createElement(TouchableOpacity, { 
+                                onPress: function() { setActiveRecipeSelectIdx(null); }, 
+                                style: styles.closeModalBtn 
+                            },
+                                React.createElement(Lucide.X, { size: 20, color: '#64748b' })
+                            )
+                        ),
+                        React.createElement(View, { style: { padding: 16, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' } },
+                            React.createElement(TextInput, {
+                                style: styles.searchInput,
+                                placeholder: "Cari bahan baku...",
+                                value: ingredientSearch,
+                                onChangeText: setIngredientSearch
+                            })
+                        ),
+                        React.createElement(FlatList, {
+                            data: ingredients.filter(function(ig) {
+                                var q = ingredientSearch.toLowerCase();
+                                return (ig.name && ig.name.toLowerCase().includes(q)) || 
+                                       (ig.code && ig.code.toLowerCase().includes(q));
+                            }),
+                            keyExtractor: function(item, index) { return (item && item.id ? item.id : index).toString(); },
+                            contentContainerStyle: { paddingBottom: 40 },
+                            renderItem: function(row) {
+                                var item = row.item;
+                                return React.createElement(TouchableOpacity, {
+                                    style: { 
+                                        paddingVertical: 14, 
+                                        paddingHorizontal: 16, 
+                                        borderBottomWidth: 1, 
+                                        borderBottomColor: '#f1f5f9',
+                                        flexDirection: 'row',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center'
+                                    },
+                                    onPress: function() {
+                                        handleUpdateRecipe(activeRecipeSelectIdx, 'ingredientId', item.id);
+                                        setActiveRecipeSelectIdx(null);
+                                        setIngredientSearch('');
+                                    }
+                                },
+                                    React.createElement(View, { style: { flex: 1 } },
+                                        React.createElement(Text, { style: { fontSize: 14, fontWeight: '600', color: '#1e293b' } }, item.name),
+                                        React.createElement(Text, { style: { fontSize: 11, color: '#64748b', marginTop: 2 } }, item.code || '-')
+                                    ),
+                                    React.createElement(View, { style: { alignItems: 'flex-end' } },
+                                        React.createElement(Text, { style: { fontSize: 12, fontWeight: 'bold', color: '#0ea5e9' } }, 
+                                            (item.current_stock || 0) + " " + (item.unit || '')
+                                        ),
+                                        React.createElement(Text, { style: { fontSize: 10, color: '#94a3b8', marginTop: 2 } }, 
+                                            "Min: " + (item.min_stock || 0)
+                                        )
+                                    )
+                                );
+                            },
+                            ListEmptyComponent: React.createElement(View, { style: { alignItems: 'center', marginTop: 40 } },
+                                React.createElement(Text, { style: { fontSize: 14, color: '#64748b' } }, "Bahan baku tidak ditemukan")
+                            )
+                        })
                     )
                 )
             )
