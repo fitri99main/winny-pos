@@ -122,6 +122,41 @@ export class PrinterManager {
         return await AsyncStorage.getItem(key);
     }
 
+    static async isPrinterEnabled(type: PrinterType = 'receipt') {
+        if (type === 'kitchen') {
+            const value = await AsyncStorage.getItem('enable_kitchen_printing');
+            return value !== 'false';
+        }
+        if (type === 'bar') {
+            const value = await AsyncStorage.getItem('enable_bar_printing');
+            return value !== 'false';
+        }
+        if (type === 'receipt') {
+            const value = await AsyncStorage.getItem('enable_receipt_printing');
+            return value !== 'false';
+        }
+        return true;
+    }
+
+    private static async closeCurrentConnectionIfNeeded(nextMac: string) {
+        if (isExpoGo || Platform.OS === 'web') return;
+        const normalizedNextMac = (nextMac || '').toUpperCase();
+        if (!this.currentConnectedMac || this.currentConnectedMac === normalizedNextMac) return;
+
+        try {
+            console.log(`[PrinterManager] Closing previous printer connection: ${this.currentConnectedMac} before switching to ${normalizedNextMac}`);
+            await (BLEPrinter as any).closeConn();
+        } catch (error) {
+            console.warn('[PrinterManager] Failed to close previous printer connection cleanly:', error);
+        } finally {
+            if (this.currentConnectedMac) {
+                this.connectionStatus[this.currentConnectedMac] = 'disconnected';
+            }
+            this.currentConnectedMac = null;
+            await new Promise(resolve => setTimeout(resolve, 400));
+        }
+    }
+
     static async getBase64FromUrl(url: string, paperWidth: string = '58mm'): Promise<string | null> {
         if (!url || url.length < 5) return null;
         
@@ -455,6 +490,12 @@ export class PrinterManager {
 
     private static async executePrintToTarget(items: any[], type: PrinterType, orderData: any, silent: boolean = false) {
         if (!items || items.length === 0) return { success: true, count: 0 };
+
+        const isEnabled = await this.isPrinterEnabled(type);
+        if (!isEnabled) {
+            console.log(`[PrinterManager] ${type} printer is disabled. Target print skipped.`);
+            return { success: true, count: 0 };
+        }
         
         // Filter items based on target
         const filteredItems = items.filter(it => {
@@ -473,19 +514,14 @@ export class PrinterManager {
             return { success: true, count: 0 };
         }
 
-        let macAddress = await this.getSelectedPrinter(type);
-        let isFallback = false;
-        if (!macAddress) {
-            macAddress = await this.getSelectedPrinter('receipt');
-            isFallback = !!macAddress;
-        }
+        const macAddress = await this.getSelectedPrinter(type);
 
         if (!macAddress) {
-            console.warn(`[PrinterManager] No printer configured for ${type} or fallback receipt`);
+            console.warn(`[PrinterManager] No printer configured for ${type}. Target print skipped to avoid misrouting to receipt printer.`);
             return { success: false, count: filteredItems.length };
         }
         
-        console.log(`[PrinterManager] Target: ${type}, MAC: ${macAddress}${isFallback ? ' (FALLBACK)' : ''}, Items: ${filteredItems.length}`);
+        console.log(`[PrinterManager] Target: ${type}, MAC: ${macAddress}, Items: ${filteredItems.length}`);
         const ticketText = this.formatKitchenTicket(filteredItems, orderData, type === 'kitchen' ? 'Dapur' : 'Bar');
         
         try {
@@ -495,6 +531,7 @@ export class PrinterManager {
             
             // Coba hubungkan jika belum terhubung ATAU jika printer aktif saat ini berbeda
             if (this.connectionStatus[mac] !== 'connected' || this.currentConnectedMac !== mac) {
+                await this.closeCurrentConnectionIfNeeded(mac);
                 console.log(`[PrinterManager] SWITCHING PRINTER to ${type.toUpperCase()}: ${mac} (Previous: ${this.currentConnectedMac})`);
                 await BLEPrinter.connectPrinter(mac);
                 this.connectionStatus[mac] = 'connected';
@@ -538,6 +575,12 @@ export class PrinterManager {
 
     private static async executePrintOrderReceipt(orderData: any, silent: boolean = false) {
         if (!orderData) return false;
+
+        const receiptEnabled = await this.isPrinterEnabled('receipt');
+        if (!receiptEnabled) {
+            console.log('[PrinterManager] Receipt printer is disabled. Receipt print skipped.');
+            return false;
+        }
         
         // Priority Fallback: Coba ambil printer kasir, jika tidak ada pakai bar, jika tidak ada pakai kitchen
         let macAddress = await this.getSelectedPrinter('receipt') || 
@@ -558,6 +601,7 @@ export class PrinterManager {
             
             // Koneksi
             if (this.connectionStatus[mac] !== 'connected' || this.currentConnectedMac !== mac) {
+                await this.closeCurrentConnectionIfNeeded(mac);
                 console.log(`[PrinterManager] Connecting to printer for receipt at ${mac}...`);
                 await BLEPrinter.connectPrinter(mac);
                 this.connectionStatus[mac] = 'connected';

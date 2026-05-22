@@ -72,7 +72,10 @@ export default function KDSScreen() {
     }, []);
 
     var fetchActiveOrders = function() {
-        if (!currentBranchId) return;
+        if (!currentBranchId) {
+            setLoading(false);
+            return;
+        }
         return supabase
             .from('sales')
             .select('*, items:sale_items(*)')
@@ -92,8 +95,14 @@ export default function KDSScreen() {
     };
 
     React.useEffect(function() {
-        if (!currentBranchId) return;
+        if (!currentBranchId) {
+            if (!session.loading) {
+                setLoading(false);
+            }
+            return;
+        }
 
+        setLoading(true);
         fetchActiveOrders();
 
         var salesSub = supabase.channel('kds_sales_' + currentBranchId)
@@ -130,7 +139,7 @@ export default function KDSScreen() {
             supabase.removeChannel(itemsSub);
             clearInterval(pollingInterval);
         };
-    }, [currentBranchId]);
+    }, [currentBranchId, session.loading]);
 
     var determineTarget = function(item) {
         var nameLow = (item.product_name || item.name || '').toLowerCase();
@@ -369,6 +378,8 @@ export default function KDSScreen() {
         ),
         loading ? React.createElement(View, { style: styles.centerContent },
             React.createElement(ActivityIndicator, { size: "large", color: "#ea580c" })
+        ) : (!currentBranchId ? React.createElement(View, { style: styles.centerContent },
+            React.createElement(Text, { style: styles.emptyText }, "Cabang tidak terdeteksi")
         ) : (filteredOrders.length === 0 ? React.createElement(View, { style: styles.centerContent },
             React.createElement(Text, { style: styles.emptyText }, "Tidak ada pesanan aktif")
         ) : React.createElement(FlatList, {

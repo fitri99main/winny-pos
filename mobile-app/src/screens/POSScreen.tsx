@@ -14,6 +14,7 @@ var StyleSheet = RN.StyleSheet;
 var useWindowDimensions = RN.useWindowDimensions;
 var ActivityIndicator = RN.ActivityIndicator;
 var Linking = RN.Linking;
+var InteractionManager = RN.InteractionManager;
 import * as RNSAC from 'react-native-safe-area-context';
 var SafeAreaView = RNSAC.SafeAreaView;
 import * as NavNative from '@react-navigation/native';
@@ -401,14 +402,6 @@ export default function POSScreen() {
     var toastVisible = stateToastVisible[0];
     var setToastVisible = stateToastVisible[1];
 
-    var cartRef = React.useRef(cart);
-    React.useEffect(function() { cartRef.current = cart; }, [cart]);
-    
-    var cashierModeRef = React.useRef(cashierMode);
-    React.useEffect(function() { cashierModeRef.current = cashierMode; }, [cashierMode]);
-    
-    var isActuallyDisplayRef = React.useRef(isActuallyDisplay);
-    React.useEffect(function() { isActuallyDisplayRef.current = isActuallyDisplay; }, [isActuallyDisplay]);
     var paymentRequestIdRef = React.useRef(null);
     var checkoutRequestIdRef = React.useRef(null);
     var holdRequestIdRef = React.useRef(null);
@@ -1192,7 +1185,7 @@ export default function POSScreen() {
                         if (savedCart) {
                             try {
                                 var parsedCart = JSON.parse(savedCart);
-                                if (Array.isArray(parsedCart)) setCart(parsedCart);
+                                if (Array.isArray(parsedCart)) setCart(normalizeCartItems(parsedCart));
                             } catch (e) { console.error('Error parsing saved cart:', e); }
                         }
                         if (savedCustName) setCustomerName(savedCustName);
@@ -1448,16 +1441,19 @@ export default function POSScreen() {
                     setSelectedTable(sale.table_no || '-');
                     setIsSelfServiceOrder(sale.status === 'Self-Service');
                     
-                    var items = sale.sale_items.map(function(si) {
-                        var obj = merge({}, si.product);
-                        obj.id = si.product_id;
-                        obj.name = si.product_name || (si.product && si.product.name);
-                        obj.price = si.price;
-                        obj.quantity = si.quantity;
-                        obj.target = si.target || determineTarget({ name: si.product_name, category: (si.product && si.product.category) ? si.product.category : '' });
-                        obj.notes = si.notes || '';
-                        return obj;
-                    });
+                    var items = normalizeCartItems(sale.sale_items.map(function(si) {
+                        return {
+                            id: si.product_id,
+                            product_id: si.product_id,
+                            name: si.product_name || (si.product && si.product.name),
+                            price: si.price,
+                            quantity: si.quantity,
+                            category: (si.product && si.product.category) ? si.product.category : '',
+                            is_taxed: si.is_taxed,
+                            target: si.target || determineTarget({ name: si.product_name, category: (si.product && si.product.category) ? si.product.category : '' }),
+                            notes: si.notes || ''
+                        };
+                    }));
                     setCart(items);
                     setInitialItems(items);
                     
@@ -1511,19 +1507,30 @@ export default function POSScreen() {
 
     React.useEffect(function() {
         if (!isFirstRender.current) {
-            // Beri sedikit delay agar tidak membebani UI thread saat interaksi cepat
+            var isCancelled = false;
+            var interactionTask = null;
+            // Tunggu interaksi selesai agar tap produk tidak terasa tersendat.
             var draftTimer = setTimeout(function() {
-                AsyncStorage.multiSet([
-                    ['pos_cart_draft', JSON.stringify(cart)],
-                    ['pos_customer_draft_name', customerName],
-                    ['pos_customer_draft_id', String(selectedCustomerId)],
-                    ['pos_table_draft', selectedTable],
-                    ['pos_discount_draft', String(orderDiscount)],
-                    ['pos_waiter_draft', selectedWaiter],
-                    ['pos_existing_sale_id_draft', String(existingSaleId)]
-                ]).catch(function(e) { console.error('Error saving cart draft:', e); });
+                interactionTask = InteractionManager.runAfterInteractions(function() {
+                    if (isCancelled) return;
+                    AsyncStorage.multiSet([
+                        ['pos_cart_draft', JSON.stringify(cart)],
+                        ['pos_customer_draft_name', customerName],
+                        ['pos_customer_draft_id', String(selectedCustomerId)],
+                        ['pos_table_draft', selectedTable],
+                        ['pos_discount_draft', String(orderDiscount)],
+                        ['pos_waiter_draft', selectedWaiter],
+                        ['pos_existing_sale_id_draft', String(existingSaleId)]
+                    ]).catch(function(e) { console.error('Error saving cart draft:', e); });
+                });
             }, 1000);
-            return function() { clearTimeout(draftTimer); };
+            return function() {
+                isCancelled = true;
+                clearTimeout(draftTimer);
+                if (interactionTask && typeof interactionTask.cancel === 'function') {
+                    interactionTask.cancel();
+                }
+            };
         }
     }, [cart, customerName, selectedCustomerId, selectedTable, orderDiscount, selectedWaiter, existingSaleId]);
 
@@ -1696,16 +1703,52 @@ export default function POSScreen() {
         return isDrink ? 'Bar' : 'Kitchen';
     }
 
+    var normalizeCartItem = function(item) {
+        if (!item) return null;
+
+        var rawId = item.id != null ? item.id : item.product_id;
+        var fallbackId = 'manual-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+        var normalizedId = rawId != null ? rawId : fallbackId;
+        var isManualItem = item.isManual === true || String(normalizedId).indexOf('manual-') === 0;
+        var normalized = {
+            id: normalizedId,
+            name: item.name || item.product_name || 'Produk',
+            price: Number(item.price) || 0,
+            quantity: Math.max(1, Number(item.quantity) || 1),
+            target: item.target || determineTarget(item),
+            notes: item.notes || ''
+        } as any;
+
+        var category = item.category || item.category_name;
+        if (category) normalized.category = category;
+        if (item.is_taxed === false) normalized.is_taxed = false;
+        if (isManualItem) normalized.isManual = true;
+        if (!isManualItem && item.product_id != null) normalized.product_id = item.product_id;
+
+        return normalized;
+    };
+
+    var normalizeCartItems = function(items) {
+        if (!Array.isArray(items)) return [];
+        return items.map(function(item) {
+            return normalizeCartItem(item);
+        }).filter(function(item) {
+            return !!item;
+        });
+    };
+
     var addToCart = React.useCallback(function(product) {
-        var target = determineTarget(product);
+        var normalizedProduct = normalizeCartItem(product);
+        if (!normalizedProduct) return;
+
         setCart(function(prevCart) {
             var existingItem = null;
             for (var k = 0; k < prevCart.length; k++) {
-                if (prevCart[k].id === product.id) { existingItem = prevCart[k]; break; }
+                if (prevCart[k].id === normalizedProduct.id) { existingItem = prevCart[k]; break; }
             }
             if (existingItem) {
                 return prevCart.map(function(item) { 
-                    if (item.id === product.id) {
+                    if (item.id === normalizedProduct.id) {
                         var obj = merge({}, item);
                         obj.quantity = item.quantity + 1;
                         return obj;
@@ -1713,11 +1756,7 @@ export default function POSScreen() {
                     return item;
                 });
             }
-            var newProd = merge({}, product);
-            newProd.quantity = 1;
-            newProd.target = target;
-            newProd.notes = '';
-            return prevCart.concat([newProd]);
+            return prevCart.concat([normalizedProduct]);
         });
     }, []);
 
@@ -1786,7 +1825,7 @@ export default function POSScreen() {
     }, [calculateActiveBreakdown]);
 
     var handleAddManualItem = function(item) {
-        var manualItem = {
+        var manualItem = normalizeCartItem({
             id: 'manual-' + Date.now(),
             name: item.name + (item.notes ? ' (' + item.notes + ')' : ''),
             price: item.price,
@@ -1794,7 +1833,8 @@ export default function POSScreen() {
             isManual: true,
             category: 'Manual',
             notes: item.notes
-        };
+        });
+        if (!manualItem) return;
         setCart(function(prev) { return prev.concat([manualItem]); });
         setShowManualItemModal(false);
     };
@@ -2203,7 +2243,7 @@ export default function POSScreen() {
             return;
         }
 
-        var items = order.items || [];
+        var items = normalizeCartItems(order.items || []);
         setCart(items);
         setInitialItems(items);
         setOrderDiscount(order.discount || 0);
@@ -2583,6 +2623,13 @@ export default function POSScreen() {
         });
     }, [filteredProducts, productGridColumns, addToCart, formatCurrency, isTablet, isSmallDevice, loadingProducts]);
 
+    var heldOrdersForModal = React.useMemo(function() {
+        var combined = [].concat(heldOrders).concat(remoteOrders as any);
+        return combined.sort(function(a, b) {
+            return new Date((b as any).createdAt).getTime() - new Date((a as any).createdAt).getTime();
+        });
+    }, [heldOrders, remoteOrders]);
+
     return React.createElement(SafeAreaView, { edges: ['top', 'left', 'right'], style: styles.container },
         isActuallyDisplay && React.createElement(View, { style: styles.displayHeader },
             React.createElement(TouchableOpacity, {
@@ -2816,7 +2863,7 @@ export default function POSScreen() {
             ),
         ),
 
-        React.createElement(PaymentModal, {
+        showPaymentModal && React.createElement(PaymentModal, {
             visible: showPaymentModal,
             onClose: function() { setShowPaymentModal(false); },
             subtotal: activeBreakdown.subtotal,
@@ -2841,7 +2888,7 @@ export default function POSScreen() {
             paymentMethods: paymentMethods
         }),
 
-        React.createElement(ManagerAuthModal, {
+        showManagerAuthModal && React.createElement(ManagerAuthModal, {
             visible: showManagerAuthModal,
             onClose: function() { setShowManagerAuthModal(false); },
             onSuccess: function() {
@@ -2851,7 +2898,7 @@ export default function POSScreen() {
             title: "Otorisasi Diskon"
         }),
 
-        React.createElement(Modal, { visible: showSuccessModal, transparent: true, animationType: "fade" },
+        showSuccessModal && React.createElement(Modal, { visible: showSuccessModal, transparent: true, animationType: "fade" },
             React.createElement(View, { style: [styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.8)' }] },
                 React.createElement(SafeAreaView, { style: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center' } },
                     React.createElement(View, { style: [styles.modalContent, { width: '90%', maxWidth: 450, alignItems: 'center', padding: 32 }] },
@@ -2907,7 +2954,7 @@ export default function POSScreen() {
             )
         ),
 
-        React.createElement(Modal, { visible: showCartModal, transparent: true, animationType: "slide", onRequestClose: function() { setShowCartModal(false); } },
+        showCartModal && React.createElement(Modal, { visible: showCartModal, transparent: true, animationType: "slide", onRequestClose: function() { setShowCartModal(false); } },
             React.createElement(View, { style: styles.modalOverlay },
                 React.createElement(View, { style: [styles.modalContent, styles.cartModalContent] },
                     React.createElement(View, { style: styles.modalHeader },
@@ -2968,55 +3015,50 @@ export default function POSScreen() {
             )
         ),
 
-        React.createElement(HeldOrdersModal, {
+        showHeldOrdersModal && React.createElement(HeldOrdersModal, {
             visible: showHeldOrdersModal,
             onClose: function() { setShowHeldOrdersModal(false); },
-            orders: React.useMemo(function() { 
-                var combined = [].concat(heldOrders).concat(remoteOrders as any);
-                return combined.sort(function(a, b) { 
-                    return new Date((b as any).createdAt).getTime() - new Date((a as any).createdAt).getTime(); 
-                });
-            }, [heldOrders, remoteOrders]),
+            orders: heldOrdersForModal,
             onRestore: handleRestoreHeldOrder,
             onDelete: handleDeleteHeldOrder,
             onRefresh: function() { fetchRemotePendingOrders(true); },
             isRefreshing: isFetchingRemote
         }),
 
-        React.createElement(ManualItemModal, {
+        showManualItemModal && React.createElement(ManualItemModal, {
             visible: showManualItemModal,
             onClose: function() { setShowManualItemModal(false); },
             onAdd: handleAddManualItem
         }),
 
-        React.createElement(DiscountModal, {
+        showDiscountModal && React.createElement(DiscountModal, {
             visible: showDiscountModal,
             onClose: function() { setShowDiscountModal(false); },
             currentTotal: calculateSubtotal(),
             onApply: handleApplyDiscount
         }),
 
-        React.createElement(SplitBillModal, {
+        showSplitBillModal && React.createElement(SplitBillModal, {
             visible: showSplitBillModal,
             onClose: function() { setShowSplitBillModal(false); },
             items: cart,
             onSplit: onSplitCommit
         }),
 
-        React.createElement(ReceiptPreviewModal, {
+        showReceiptPreview && React.createElement(ReceiptPreviewModal, {
             visible: showReceiptPreview,
             onClose: function() { setShowReceiptPreview(false); },
             orderData: previewOrderData,
             onPrint: function() { handlePrintReceipt(null, null, previewOrderData); }
         }),
 
-        React.createElement(HoldNoteModal, {
+        showHoldNoteModal && React.createElement(HoldNoteModal, {
             visible: showHoldNoteModal,
             onClose: function() { setShowHoldNoteModal(false); },
             onConfirm: handleHoldOrder
         }),
 
-        React.createElement(Modal, { visible: showWaiterModal, transparent: true, animationType: "slide" },
+        showWaiterModal && React.createElement(Modal, { visible: showWaiterModal, transparent: true, animationType: "slide" },
             React.createElement(View, { style: styles.modalOverlay },
                 React.createElement(View, { style: [styles.modalContent, { maxHeight: '80%' }] },
                     React.createElement(View, { style: styles.modalHeader },
@@ -3047,7 +3089,7 @@ export default function POSScreen() {
             )
         ),
 
-        React.createElement(Modal, { visible: showTableManualModal, transparent: true, animationType: "fade" },
+        showTableManualModal && React.createElement(Modal, { visible: showTableManualModal, transparent: true, animationType: "fade" },
             React.createElement(View, { style: styles.modalOverlay },
                 React.createElement(View, { style: styles.modalContent },
                     React.createElement(Text, { style: styles.modalTitle }, "Input Nomor Meja"),
