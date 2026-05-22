@@ -378,9 +378,9 @@ export default function KDSScreen() {
         ),
         loading ? React.createElement(View, { style: styles.centerContent },
             React.createElement(ActivityIndicator, { size: "large", color: "#ea580c" })
-        ) : (!currentBranchId ? React.createElement(View, { style: styles.centerContent },
+        ) : !currentBranchId ? React.createElement(View, { style: styles.centerContent },
             React.createElement(Text, { style: styles.emptyText }, "Cabang tidak terdeteksi")
-        ) : (filteredOrders.length === 0 ? React.createElement(View, { style: styles.centerContent },
+        ) : filteredOrders.length === 0 ? React.createElement(View, { style: styles.centerContent },
             React.createElement(Text, { style: styles.emptyText }, "Tidak ada pesanan aktif")
         ) : React.createElement(FlatList, {
             data: filteredOrders,
@@ -389,7 +389,7 @@ export default function KDSScreen() {
             contentContainerStyle: [styles.listContent, isSmallDevice && { padding: 8 }],
             numColumns: numColumns,
             key: 'kds-grid-' + numColumns
-        })),
+        }),
         React.createElement(Modal, {
             visible: showCompleteModal,
             transparent: true,
