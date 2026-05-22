@@ -55,7 +55,9 @@ export function SettingsView({
     };
 
     // Profile Settings State
-    const { user } = useAuth();
+    const { user, role } = useAuth();
+    const lowerRole = role?.toLowerCase() || '';
+    const isAdmin = lowerRole === 'admin' || lowerRole === 'owner' || lowerRole === 'administrator' || lowerRole === 'superadmin';
     const [profileName, setProfileName] = useState('');
     const [updatingProfile, setUpdatingProfile] = useState(false);
     const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -615,6 +617,28 @@ export function SettingsView({
                                     />
                                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
                                 </div>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Persentase Transaksi Terlihat (%)</label>
+                                <div className="relative">
+                                    <input
+                                        type="number"
+                                        value={localSettings.sales_view_percentage ?? 70}
+                                        onChange={e => handleLocalChange({ ...localSettings, sales_view_percentage: parseInt(e.target.value) || 0 })}
+                                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-gray-50 disabled:text-gray-400 dark:bg-zinc-800 dark:border-zinc-700"
+                                        placeholder="70"
+                                        min="0"
+                                        max="100"
+                                        disabled={!isAdmin}
+                                    />
+                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
+                                </div>
+                                <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">
+                                    Persentase data transaksi penjualan yang dapat dilihat oleh wewenang yang dibatasi (wewenang "Batasi Lihat Penjualan" aktif). Hanya dapat diubah oleh Administrator.
+                                </p>
                             </div>
                         </div>
 

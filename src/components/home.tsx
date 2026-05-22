@@ -619,7 +619,8 @@ function Home() {
     show_logo: true,
     receipt_logo_url: '',
     address: '',
-    enable_table_management: true
+    enable_table_management: true,
+    sales_view_percentage: 70
   });
 
   // --- WiFi Voucher State ---
@@ -980,6 +981,7 @@ function Home() {
 
 
   const fetchTransactions = async () => {
+    if (loading) return;
     if (!currentBranchId) return;
 
     // [OPTIMIZED] Fetch only the most recent 500 sales to prevent lag during high traffic.
@@ -1010,7 +1012,13 @@ function Home() {
     }
 
     if (salesData) {
-      const formattedSales = salesData.map(s => ({
+      const hasLimit = permissions?.includes('limit_sales_view');
+      const limitPercentage = Number(storeSettings?.sales_view_percentage ?? 70);
+      const filteredSalesData = hasLimit
+        ? salesData.filter(s => (s.id % 100) < limitPercentage)
+        : salesData;
+
+      const formattedSales = filteredSalesData.map(s => ({
         ...s,
         productDetails: (s.items || []).map((i: any) => ({
           product_id: i.product_id,
@@ -1057,7 +1065,7 @@ function Home() {
       }));
       setSales(formattedSales);
 
-      const pendingFromDB = salesData
+      const pendingFromDB = filteredSalesData
         .filter(s => ['Pending', 'Paid', 'Preparing', 'Ready', 'Unpaid'].includes(s.status))
         .map(s => ({
           id: s.id,
@@ -1090,7 +1098,13 @@ function Home() {
 
     const { data: returnsData } = await supabase.from('sales_returns').select('*').order('created_at', { ascending: false });
     if (returnsData) {
-      setReturns(returnsData.map(r => ({
+      const hasLimit = permissions?.includes('limit_sales_view');
+      const limitPercentage = Number(storeSettings?.sales_view_percentage ?? 70);
+      const filteredReturnsData = hasLimit
+        ? returnsData.filter(r => (Number(r.sale_id) % 100) < limitPercentage)
+        : returnsData;
+
+      setReturns(filteredReturnsData.map(r => ({
         ...r,
         id: r.id,
         returnNo: r.return_no,
@@ -1114,10 +1128,11 @@ function Home() {
       transactionChannels.forEach(ch => ch.unsubscribe());
       if (fetchTransactionsDebounceRef.current) clearTimeout(fetchTransactionsDebounceRef.current);
     };
-  }, [currentBranchId]);
+  }, [currentBranchId, permissions, storeSettings?.sales_view_percentage, loading]);
 
   // --- Accounting Integration ---
   const fetchAccounting = async () => {
+    if (loading) return;
     const { data: accData } = await supabase.from('accounts').select('*').order('code');
     if (accData) setAccounts(accData);
 
@@ -1191,7 +1206,18 @@ function Home() {
 
     const processJournalData = (data: any[] | null) => {
       if (data) {
-        setJournalEntries(data.map(j => ({
+        const hasLimit = permissions?.includes('limit_sales_view');
+        const limitPercentage = Number(storeSettings?.sales_view_percentage ?? 70);
+        const filteredJournalData = hasLimit
+          ? data.filter(j => {
+              if (j.source_type === 'sale' && j.reference_id) {
+                return (Number(j.reference_id) % 100) < limitPercentage;
+              }
+              return true;
+            })
+          : data;
+
+        setJournalEntries(filteredJournalData.map(j => ({
           ...j,
           debitAccount: j.debit_account,
           creditAccount: j.credit_account,
@@ -1213,7 +1239,7 @@ function Home() {
     return () => {
       accountingChannels.forEach(ch => ch.unsubscribe());
     };
-  }, []);
+  }, [loading, permissions, storeSettings?.sales_view_percentage]);
 
   // --- Employees Integration ---
   const fetchEmployees = async () => {
@@ -1313,26 +1339,42 @@ function Home() {
 
           // Update Sales State (Handles both INSERT and UPDATE)
           setSales(prev => {
+            const hasLimit = permissions?.includes('limit_sales_view');
+            const limitPercentage = Number(storeSettings?.sales_view_percentage ?? 70);
+            const isAllowed = !hasLimit || (Number(formattedSale.id) % 100) < limitPercentage;
+
             const index = prev.findIndex(s => s.id === formattedSale.id);
             if (index !== -1) {
-              const updated = [...prev];
-              updated[index] = formattedSale;
-              return updated;
+              if (isAllowed) {
+                const updated = [...prev];
+                updated[index] = formattedSale;
+                return updated;
+              } else {
+                return prev.filter(s => s.id !== formattedSale.id);
+              }
             }
-            return [formattedSale, ...prev];
+            return isAllowed ? [formattedSale, ...prev] : prev;
           });
 
           // Update Pending Orders
           const isPending = ['Pending', 'Paid', 'Preparing', 'Ready', 'Unpaid'].includes(formattedSale.status);
           if (isPending) {
             setPendingOrders(prev => {
+              const hasLimit = permissions?.includes('limit_sales_view');
+              const limitPercentage = Number(storeSettings?.sales_view_percentage ?? 70);
+              const isAllowed = !hasLimit || (Number(formattedSale.id) % 100) < limitPercentage;
+
               const index = prev.findIndex(o => o.id === formattedSale.id);
               if (index !== -1) {
-                const updated = [...prev];
-                updated[index] = formattedSale;
-                return updated;
+                if (isAllowed) {
+                  const updated = [...prev];
+                  updated[index] = formattedSale;
+                  return updated;
+                } else {
+                  return prev.filter(o => o.id !== formattedSale.id);
+                }
               }
-              return [formattedSale, ...prev];
+              return isAllowed ? [formattedSale, ...prev] : prev;
             });
           } else {
             setPendingOrders(prev => prev.filter(o => o.id !== formattedSale.id));
@@ -3662,9 +3704,10 @@ function Home() {
             sales={sales}
             accounts={accounts}
             transactions={journalEntries}
+            storeSettings={storeSettings}
           />
         );
-      case 'session_history': return <SessionHistoryView branchId={currentBranchId} />;
+      case 'session_history': return <SessionHistoryView branchId={currentBranchId} storeSettings={storeSettings} />;
       case 'employees': return (
         <EmployeesView
           employees={employees}

@@ -40,9 +40,9 @@ export function UsersView({ branches: propsBranches = [] }: { branches?: any[] }
         { id: 'payroll', label: 'Payroll', description: 'Penggajian' },
         { id: 'performance', label: 'Performa', description: 'KPI & Komisi' },
 
-        // Keuangan
         { id: 'reports', label: 'Laporan', description: 'Laporan lengkap' },
         { id: 'accounting', label: 'Akuntansi', description: 'Jurnal & Keuangan' },
+        { id: 'limit_sales_view', label: 'Batasi Lihat Penjualan', description: 'Hanya melihat sebagian persentase transaksi penjualan yang ditentukan di Pengaturan' },
 
         // Administrasi
         { id: 'branches', label: 'Cabang', description: 'Manajemen outlet' },
@@ -228,12 +228,13 @@ export function UsersView({ branches: propsBranches = [] }: { branches?: any[] }
     };
 
     // Helper for Quick Presets (Recommendations)
-    const applyPreset = (type: 'admin' | 'manager' | 'cashier' | 'admin_kantor') => {
+    const applyPreset = (type: 'admin' | 'manager' | 'cashier' | 'admin_kantor' | 'admin_perusahaan') => {
         let perms: string[] = [];
         if (type === 'admin') perms = AVAILABLE_PERMISSIONS.map(p => p.id); // All
         if (type === 'manager') perms = ['dashboard', 'products', 'inventory', 'reports', 'employees', 'purchases', 'attendance', 'performance', 'mandatory_session', 'session_history'];
         if (type === 'cashier') perms = ['pos', 'products', 'attendance', 'mandatory_session'];
         if (type === 'admin_kantor') perms = ['dashboard', 'products', 'inventory', 'purchases', 'reports', 'attendance', 'shifts'];
+        if (type === 'admin_perusahaan') perms = ['dashboard', 'products', 'inventory', 'purchases', 'reports', 'accounting', 'contacts', 'employees', 'attendance', 'shifts', 'limit_sales_view'];
         if (type === 'display' as any) perms = ['pos', 'pos_order_only', 'products'];
 
         setNewRole(prev => ({ ...prev, permissions: perms }));
@@ -258,6 +259,11 @@ export function UsersView({ branches: propsBranches = [] }: { branches?: any[] }
                 name: 'Admin Kantor',
                 description: 'Administrasi kantor & pembelian',
                 permissions: ['dashboard', 'products', 'inventory', 'purchases', 'reports', 'attendance', 'shifts']
+            },
+            {
+                name: 'Admin Perusahaan',
+                description: 'Administrasi perusahaan dengan batasan lihat penjualan',
+                permissions: ['dashboard', 'products', 'inventory', 'purchases', 'reports', 'accounting', 'contacts', 'employees', 'attendance', 'shifts', 'limit_sales_view']
             },
             {
                 name: 'Kasir',
@@ -987,6 +993,7 @@ export function UsersView({ branches: propsBranches = [] }: { branches?: any[] }
                                         <button type="button" onClick={() => applyPreset('cashier')} className="text-[10px] px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors">Kasir</button>
                                         <button type="button" onClick={() => applyPreset('manager')} className="text-[10px] px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors">Manajer</button>
                                         <button type="button" onClick={() => applyPreset('admin_kantor')} className="text-[10px] px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors">Admin Kantor</button>
+                                        <button type="button" onClick={() => applyPreset('admin_perusahaan')} className="text-[10px] px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors">Admin Perusahaan</button>
                                         <button type="button" onClick={() => applyPreset('admin')} className="text-[10px] px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors">Admin</button>
                                     </div>
                                 </div>

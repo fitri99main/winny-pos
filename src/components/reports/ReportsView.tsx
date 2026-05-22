@@ -54,7 +54,7 @@ const normalizeDateValue = (value: unknown) => {
 };
 
 export function ReportsView({ sales: initialSales, returns: initialReturns, purchases: initialPurchases = [], purchaseReturns: initialPurchaseReturns = [], paymentMethods, storeSettings, branchId, branches }: ReportsViewProps) {
-    const { role } = useAuth();
+    const { role, permissions, loading } = useAuth();
     const isAdmin = useMemo(() => {
         const r = role?.toLowerCase() || '';
         return r === 'admin' || r === 'owner' || r === 'administrator' || r === 'superadmin';
@@ -68,12 +68,9 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
     const [reportType, setReportType] = useState<'sales' | 'purchases'>('sales');
 
     const [searchQuery, setSearchQuery] = useState('');
-    const [startDate, setStartDate] = useState(() => {
-        const date = new Date();
-        date.setDate(date.getDate() - 30); // Default last 30 days
-        return formatDateForInput(date);
-    });
+    const [startDate, setStartDate] = useState(() => formatDateForInput(new Date()));
     const [endDate, setEndDate] = useState(() => formatDateForInput(new Date()));
+    const [hasAppliedDefaultToday, setHasAppliedDefaultToday] = useState(false);
     const [selectedBranch, setSelectedBranch] = useState(branchId || 'all');
     const [methodFilter, setMethodFilter] = useState('All');
     const [showFilters, setShowFilters] = useState(false);
@@ -204,6 +201,7 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
     }, [selectedSaleDetail, selectedOrderRecipes]);
 
     const fetchRealData = async () => {
+        if (loading) return;
         if (!startDate || !endDate) return;
         setIsLoadingRealData(true);
         try {
@@ -239,7 +237,13 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
                 }
             }
 
-            const formattedSales = allSales.map(s => ({
+            const hasLimit = permissions?.includes('limit_sales_view');
+            const limitPercentage = Number(storeSettings?.sales_view_percentage ?? 70);
+            const filteredSales = hasLimit
+                ? allSales.filter(s => (s.id % 100) < limitPercentage)
+                : allSales;
+
+            const formattedSales = filteredSales.map(s => ({
                 ...s,
                 orderNo: s.order_no,
                 totalAmount: Number(s.total_amount || 0),
@@ -283,7 +287,10 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
                     retHasMore = false;
                 }
             }
-            setRealReturns(allReturns.map(r => ({
+            const filteredReturns = hasLimit
+                ? allReturns.filter(r => (Number(r.sale_id) % 100) < limitPercentage)
+                : allReturns;
+            setRealReturns(filteredReturns.map(r => ({
                 ...r,
                 refundAmount: Number(r.refund_amount || 0)
             })));
@@ -327,8 +334,25 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
     };
 
     useEffect(() => {
-        fetchRealData();
-    }, [startDate, endDate, selectedBranch]);
+        if (!loading && role !== null && !hasAppliedDefaultToday) {
+            const lowerRole = role?.toLowerCase().trim() || '';
+            const isRestricted = lowerRole === 'admin perusahaan' || permissions?.includes('limit_sales_view');
+            if (isRestricted) {
+                setStartDate(formatDateForInput(new Date()));
+            } else {
+                const date = new Date();
+                date.setDate(date.getDate() - 30);
+                setStartDate(formatDateForInput(date));
+            }
+            setHasAppliedDefaultToday(true);
+        }
+    }, [loading, role, permissions, hasAppliedDefaultToday]);
+
+    useEffect(() => {
+        if (hasAppliedDefaultToday) {
+            fetchRealData();
+        }
+    }, [startDate, endDate, selectedBranch, permissions, storeSettings?.sales_view_percentage, loading, hasAppliedDefaultToday]);
 
     const filteredSales = useMemo(() => {
         return realSales.filter(s => {

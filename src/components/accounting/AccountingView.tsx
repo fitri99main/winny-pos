@@ -40,7 +40,8 @@ interface JournalEntry {
 // ============================================================
 // TAB LAPORAN HPP - Snapshot Harga Pokok Penjualan
 // ============================================================
-function HppReportTab({ startDate, endDate, currentBranchId }: { startDate: string; endDate: string; currentBranchId: string }) {
+function HppReportTab({ startDate, endDate, currentBranchId, storeSettings }: { startDate: string; endDate: string; currentBranchId: string; storeSettings?: any }) {
+    const { permissions, loading: authLoading } = useAuth();
     const [loading, setLoading] = useState(false);
     const [hasLoaded, setHasLoaded] = useState(false);
     const [monthlyData, setMonthlyData] = useState<any[]>([]);
@@ -67,9 +68,10 @@ function HppReportTab({ startDate, endDate, currentBranchId }: { startDate: stri
         if (hasLoaded) {
             fetchData();
         }
-    }, [localStart, localEnd, currentBranchId]);
+    }, [localStart, localEnd, currentBranchId, permissions, storeSettings?.sales_view_percentage, authLoading]);
 
     const fetchData = async () => {
+        if (authLoading) return;
         if (fetchingRef.current) return;
         fetchingRef.current = true;
         setLoading(true);
@@ -87,7 +89,7 @@ function HppReportTab({ startDate, endDate, currentBranchId }: { startDate: stri
                     .from('sale_items')
                     .select(`
                         id, product_id, product_name, quantity, price, cost, 
-                        sales!inner(created_at, date, status, branch_id, total_amount, order_no)
+                        sales!inner(id, created_at, date, status, branch_id, total_amount, order_no)
                     `)
                     .gte('sales.date', localStart)
                     .lte('sales.date', localEnd)
@@ -101,7 +103,12 @@ function HppReportTab({ startDate, endDate, currentBranchId }: { startDate: stri
                         const s = item.sales;
                         return ['paid', 'completed', 'selesai', 'served', 'success'].includes((s?.status || '').toLowerCase());
                     });
-                    allItems = [...allItems, ...statusOkItems];
+                    const hasLimit = permissions?.includes('limit_sales_view');
+                    const limitPercentage = Number(storeSettings?.sales_view_percentage ?? 70);
+                    const filteredItems = hasLimit
+                        ? statusOkItems.filter((item: any) => item.sales && (item.sales.id % 100) < limitPercentage)
+                        : statusOkItems;
+                    allItems = [...allItems, ...filteredItems];
                     if (data.length < pageSize) hasMore = false;
                     else from += pageSize;
                 } else {
@@ -2048,6 +2055,7 @@ export interface AccountingViewProps {
     accounts?: Account[];
     transactions?: any[];
     sales?: any[]; // [NEW] Added for direct sync
+    storeSettings?: any;
     onAddAccount?: (acc: Account) => Promise<void>;
     onUpdateAccount?: (acc: Account) => Promise<void>;
     onDeleteAccount?: (code: string) => Promise<void>;
@@ -2065,6 +2073,7 @@ export function AccountingView({
     accounts = [],
     transactions = [],
     sales = [], // [NEW] Added for direct sync
+    storeSettings,
     onAddAccount = async () => { },
     onUpdateAccount = async () => { },
     onDeleteAccount = async () => { },
@@ -2077,7 +2086,7 @@ export function AccountingView({
     purchases = [],
     onPurchaseCRUD = async () => { }
 }: AccountingViewProps) {
-    const { user, role } = useAuth();
+    const { user, role, permissions, loading } = useAuth();
 
     const [activeTab, setActiveTab] = useState('overview');
     const [journalSearch, setJournalSearch] = useState('');
@@ -2261,6 +2270,22 @@ export function AccountingView({
     // --- Date Filtering State ---
     const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
     const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+    const [hasAppliedDefaultToday, setHasAppliedDefaultToday] = useState(false);
+
+    useEffect(() => {
+        if (!loading && role !== null && !hasAppliedDefaultToday) {
+            const lowerRole = role?.toLowerCase().trim() || '';
+            const isRestricted = lowerRole === 'admin perusahaan' || permissions?.includes('limit_sales_view');
+            if (isRestricted) {
+                setStartDate(new Date().toISOString().split('T')[0]);
+            } else {
+                const date = new Date();
+                date.setDate(date.getDate() - 30);
+                setStartDate(date.toISOString().split('T')[0]);
+            }
+            setHasAppliedDefaultToday(true);
+        }
+    }, [loading, role, permissions, hasAppliedDefaultToday]);
 
     // [DIAGNOSTIC] Log current data state
     useMemo(() => {
@@ -2274,6 +2299,7 @@ export function AccountingView({
     }, [transactions, accounts, startDate, endDate]);
 
     const fetchRealData = async () => {
+        if (loading) return;
         if (!currentBranchId || !startDate || !endDate) return;
         setIsLoadingRealData(true);
         try {
@@ -2302,7 +2328,12 @@ export function AccountingView({
                     hasMore = false;
                 }
             }
-            setRealSales(allSales);
+            const hasLimit = permissions?.includes('limit_sales_view');
+            const limitPercentage = Number(storeSettings?.sales_view_percentage ?? 70);
+            const filteredSales = hasLimit
+                ? allSales.filter(s => (s.id % 100) < limitPercentage)
+                : allSales;
+            setRealSales(filteredSales);
 
             // 2. Fetch Purchases with Pagination
             let allPurchases: any[] = [];
@@ -2338,8 +2369,10 @@ export function AccountingView({
     };
 
     useEffect(() => {
-        fetchRealData();
-    }, [startDate, endDate, currentBranchId]);
+        if (hasAppliedDefaultToday) {
+            fetchRealData();
+        }
+    }, [startDate, endDate, currentBranchId, permissions, storeSettings?.sales_view_percentage, loading, hasAppliedDefaultToday]);
 
     // --- Filtered Transactions for Reports ---
     const filteredTransactions = useMemo(() => {
@@ -3919,6 +3952,7 @@ export function AccountingView({
                         startDate={startDate}
                         endDate={endDate}
                         currentBranchId={currentBranchId || sales[0]?.branch_id || ''}
+                        storeSettings={storeSettings}
                     />
                 )}
                 {activeTab === 'balance' && renderFinancialPosition()}

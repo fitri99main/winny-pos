@@ -27,10 +27,11 @@ interface SessionHistory {
 
 interface SessionHistoryViewProps {
     branchId?: string | null;
+    storeSettings?: any;
 }
 
-export const SessionHistoryView = memo(function SessionHistoryView({ branchId }: SessionHistoryViewProps) {
-    const { role } = useAuth();
+export const SessionHistoryView = memo(function SessionHistoryView({ branchId, storeSettings }: SessionHistoryViewProps) {
+    const { role, permissions, loading: authLoading } = useAuth();
     const isAdmin = useMemo(() => {
         const r = role?.toLowerCase() || '';
         return r === 'admin' || r === 'owner' || r === 'administrator' || r === 'superadmin';
@@ -81,7 +82,12 @@ export const SessionHistoryView = memo(function SessionHistoryView({ branchId }:
                     hasMore = false;
                 }
             }
-            const saleIds = allSales.map(s => s.id);
+            const hasLimit = permissions?.includes('limit_sales_view');
+            const limitPercentage = Number(storeSettings?.sales_view_percentage ?? 70);
+            const filteredSales = hasLimit
+                ? allSales.filter(s => (s.id % 100) < limitPercentage)
+                : allSales;
+            const saleIds = filteredSales.map(s => s.id);
             
             if (saleIds.length === 0) {
                 setSelectedCategorySummary([]);
@@ -180,27 +186,8 @@ export const SessionHistoryView = memo(function SessionHistoryView({ branchId }:
     const [forceCloseOpen, setForceCloseOpen] = useState(false);
     const [isDeletingFiltered, setIsDeletingFiltered] = useState(false);
 
-    useEffect(() => {
-        fetchSessions();
-
-        // Subscribe to realtime updates for cashier sessions
-        const channel = supabase
-            .channel('cashier_sessions_changes')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'cashier_sessions' }, () => {
-                fetchSessions();
-            })
-            .subscribe();
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
-    }, [branchId]);
-
-    useEffect(() => {
-        applyFilters();
-    }, [sessions, searchQuery, dateFrom, dateTo, statusFilter, datePreset]);
-
     const fetchSessions = useCallback(async () => {
+        if (authLoading) return;
         setLoading(true);
         try {
             let allSessions: any[] = [];
@@ -234,6 +221,10 @@ export const SessionHistoryView = memo(function SessionHistoryView({ branchId }:
                 }
             }
 
+            const hasLimit = permissions?.includes('limit_sales_view');
+            const limitPercentage = Number(storeSettings?.sales_view_percentage ?? 70);
+            const scale = hasLimit ? (limitPercentage / 100) : 1;
+
             const sessionsWithNames = allSessions.map(s => {
                 let name = s.employee_name || 'Unknown';
                 // Name Normalization
@@ -242,9 +233,21 @@ export const SessionHistoryView = memo(function SessionHistoryView({ branchId }:
                 } else if (name.toLowerCase().trim() === 'azla' || name.toLowerCase().includes('azla sakiya')) {
                     name = 'Azla Sakiya';
                 }
+
+                const scaledTotalSales = (s.total_sales || 0) * scale;
+                const scaledCashSales = (s.cash_sales || 0) * scale;
+                const scaledQrisSales = (s.qris_sales || 0) * scale;
+                const expectedCash = (s.starting_cash || 0) + scaledCashSales;
+                const variance = s.actual_cash !== null ? (s.actual_cash - expectedCash) : (s.difference || 0) * scale;
+
                 return {
                     ...s,
-                    user_name: name
+                    user_name: name,
+                    total_sales: scaledTotalSales,
+                    cash_sales: scaledCashSales,
+                    qris_sales: scaledQrisSales,
+                    expected_cash: expectedCash,
+                    difference: variance
                 };
             });
 
@@ -255,7 +258,27 @@ export const SessionHistoryView = memo(function SessionHistoryView({ branchId }:
         } finally {
             setLoading(false);
         }
-    }, [branchId]);
+    }, [branchId, permissions, storeSettings?.sales_view_percentage, authLoading]);
+
+    useEffect(() => {
+        fetchSessions();
+
+        // Subscribe to realtime updates for cashier sessions
+        const channel = supabase
+            .channel('cashier_sessions_changes')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'cashier_sessions' }, () => {
+                fetchSessions();
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [branchId, fetchSessions]);
+
+    useEffect(() => {
+        applyFilters();
+    }, [sessions, searchQuery, dateFrom, dateTo, statusFilter, datePreset]);
 
     const applyFilters = useCallback(() => {
         let filtered = [...sessions];
