@@ -30,27 +30,74 @@ const formatDateForInput = (date: Date) => {
     return `${year}-${month}-${day}`;
 };
 
-const normalizeDateValue = (value: unknown) => {
-    if (!value) return '';
+const parseReportDate = (value: unknown) => {
+    if (!value) return null;
 
     if (value instanceof Date) {
-        return formatDateForInput(value);
+        return new Date(value.getTime());
     }
 
     const raw = String(value).trim();
-    if (!raw) return '';
+    if (!raw) return null;
 
-    const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    const hasTimezone = /Z$|[+-]\d{2}:?\d{2}$/.test(raw);
+    if (hasTimezone) {
+        const parsed = new Date(raw);
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    const match = raw.match(
+        /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2})(?::(\d{2}))?(?::(\d{2}))?)?/
+    );
+
     if (match) {
-        return match[1];
+        const [, year, month, day, hours = '0', minutes = '0', seconds = '0'] = match;
+        return new Date(
+            Number(year),
+            Number(month) - 1,
+            Number(day),
+            Number(hours),
+            Number(minutes),
+            Number(seconds)
+        );
     }
 
     const parsed = new Date(raw);
-    if (!Number.isNaN(parsed.getTime())) {
-        return formatDateForInput(parsed);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const normalizeDateValue = (value: unknown) => {
+    const parsed = parseReportDate(value);
+    return parsed ? formatDateForInput(parsed) : '';
+};
+
+const isWithinDateRange = (value: unknown, startDate: string, endDate: string) => {
+    const normalized = normalizeDateValue(value);
+    if (!normalized) return false;
+    if (startDate && normalized < startDate) return false;
+    if (endDate && normalized > endDate) return false;
+    return true;
+};
+
+const formatDateTime = (dateString: string | null) => {
+    const parsed = parseReportDate(dateString);
+    if (!parsed) return '-';
+
+    if (String(dateString).trim().length === 10) {
+        return parsed.toLocaleDateString('id-ID', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric'
+        });
     }
 
-    return raw;
+    return parsed.toLocaleString('id-ID', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
 };
 
 export function ReportsView({ sales: initialSales, returns: initialReturns, purchases: initialPurchases = [], purchaseReturns: initialPurchaseReturns = [], paymentMethods, storeSettings, branchId, branches }: ReportsViewProps) {
@@ -207,7 +254,16 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
         try {
             const targetBranch = selectedBranch === 'all' ? null : Number(selectedBranch);
             const pageSize = 1000;
-            
+
+            // Ambil jendela query yang sedikit lebih lebar agar data campuran UTC/local
+            // tetap terambil, lalu sempitkan lagi dengan filter tanggal lokal di frontend.
+            const queryStart = new Date(`${startDate}T00:00:00`);
+            queryStart.setDate(queryStart.getDate() - 1);
+            const queryEnd = new Date(`${endDate}T23:59:59.999`);
+            queryEnd.setDate(queryEnd.getDate() + 1);
+            const queryStartIso = queryStart.toISOString();
+            const queryEndIso = queryEnd.toISOString();
+
             // 1. Fetch Sales with Pagination
             let allSales: any[] = [];
             let from = 0;
@@ -217,8 +273,8 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
                 let query = supabase
                     .from('sales')
                     .select('*, items:sale_items(id, product_name, quantity, price, cost, product:product_id(category))')
-                    .gte('date', startDate + 'T00:00:00')
-                    .lte('date', endDate + 'T23:59:59')
+                    .gte('date', queryStartIso)
+                    .lte('date', queryEndIso)
                     .order('date', { ascending: false });
 
                 if (targetBranch) {
@@ -237,11 +293,12 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
                 }
             }
 
+            const inRangeSales = allSales.filter(s => isWithinDateRange(s.date, startDate, endDate));
             const hasLimit = permissions?.includes('limit_sales_view');
             const limitPercentage = Number(storeSettings?.sales_view_percentage ?? 70);
             const filteredSales = hasLimit
-                ? allSales.filter(s => (s.id % 100) < limitPercentage)
-                : allSales;
+                ? inRangeSales.filter(s => (s.id % 100) < limitPercentage)
+                : inRangeSales;
 
             const formattedSales = filteredSales.map(s => ({
                 ...s,
@@ -270,8 +327,8 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
                 let query = supabase
                     .from('sales_returns')
                     .select('*')
-                    .gte('date', startDate + 'T00:00:00')
-                    .lte('date', endDate + 'T23:59:59');
+                    .gte('date', queryStartIso)
+                    .lte('date', queryEndIso);
 
                 // sales_returns might not have branch_id, so we skip it to prevent 400 error
                 
@@ -287,9 +344,10 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
                     retHasMore = false;
                 }
             }
+            const inRangeReturns = allReturns.filter(r => isWithinDateRange(r.date, startDate, endDate));
             const filteredReturns = hasLimit
-                ? allReturns.filter(r => (Number(r.sale_id) % 100) < limitPercentage)
-                : allReturns;
+                ? inRangeReturns.filter(r => (Number(r.sale_id) % 100) < limitPercentage)
+                : inRangeReturns;
             setRealReturns(filteredReturns.map(r => ({
                 ...r,
                 refundAmount: Number(r.refund_amount || 0)
@@ -304,8 +362,8 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
                 let query = supabase
                     .from('purchases')
                     .select('*')
-                    .gte('date', startDate + 'T00:00:00')
-                    .lte('date', endDate + 'T23:59:59');
+                    .gte('date', queryStartIso)
+                    .lte('date', queryEndIso);
 
                 if (targetBranch) {
                     query = query.eq('branch_id', targetBranch);
@@ -323,7 +381,7 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
                     purHasMore = false;
                 }
             }
-            setRealPurchases(allPurchases);
+            setRealPurchases(allPurchases.filter(p => isWithinDateRange(p.date, startDate, endDate)));
 
         } catch (err) {
             console.error('Error fetching real data:', err);
@@ -532,7 +590,7 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
             if (reportType === 'sales') {
                 data = filteredSales.map(s => ({
                     'No. Invoice': s.orderNo,
-                    'Tanggal': s.date,
+                    'Tanggal': formatDateTime(s.date),
                     'Total Amount': s.totalAmount,
                     'HPP (Modal)': (s.productDetails || []).reduce((sum, item) => sum + ((item.cost || 0) * item.quantity), 0),
                     'Laba Kotor': s.totalAmount - (s.productDetails || []).reduce((sum, item) => sum + ((item.cost || 0) * item.quantity), 0),
@@ -552,7 +610,7 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
             } else {
                 data = filteredPurchases.map(p => ({
                     'No. PO': p.purchase_no,
-                    'Tanggal': p.date,
+                    'Tanggal': formatDateTime(p.date),
                     'Supplier': p.supplier_name,
                     'Total Belanja': p.total_amount,
                     'Items': p.items_count,
@@ -610,7 +668,7 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
                     const hpp = (s.productDetails || []).reduce((sum, item) => sum + ((item.cost || 0) * item.quantity), 0);
                     return [
                         s.orderNo,
-                        s.date.substring(0, 10),
+                        formatDateTime(s.date),
                         s.status === 'Returned' ? 'Retur' : 'Selesai',
                         formatCurrency(s.totalAmount),
                         formatCurrency(hpp),
@@ -631,7 +689,7 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
 
                 const tableData = filteredPurchases.map(p => [
                     p.purchase_no,
-                    p.date,
+                    formatDateTime(p.date),
                     p.supplier_name,
                     formatCurrency(p.total_amount)
                 ]);
@@ -957,7 +1015,7 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
                                     filteredSales.map((sale) => (
                                         <tr key={sale.id} className="hover:bg-gray-50/50 transition-colors">
                                             <td className="px-8 py-5 font-mono text-sm font-bold text-gray-700">{sale.orderNo}</td>
-                                            <td className="px-8 py-5 text-sm text-gray-500">{sale.date.substring(0, 16)}</td>
+                                            <td className="px-8 py-5 text-sm text-gray-500">{formatDateTime(sale.date)}</td>
                                             <td className="px-8 py-5">
                                                 <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider ${
                                                     sale.paymentMethod.toLowerCase().includes('tunai') || sale.paymentMethod.toLowerCase().includes('cash')
@@ -1004,7 +1062,7 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
                                     filteredPurchases.map((p) => (
                                         <tr key={p.id} className="hover:bg-gray-50/50 transition-colors">
                                             <td className="px-8 py-5 font-mono text-sm font-bold text-gray-700">{p.purchase_no}</td>
-                                            <td className="px-8 py-5 text-sm text-gray-500">{p.date}</td>
+                                            <td className="px-8 py-5 text-sm text-gray-500">{formatDateTime(p.date)}</td>
                                             <td className="px-8 py-5">
                                                 <span className="text-sm font-bold text-gray-700">{p.supplier_name}</span>
                                             </td>
@@ -1240,7 +1298,7 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
                             <div className="grid grid-cols-2 gap-6 mb-8 text-sm">
                                 <div>
                                     <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mb-1">Tanggal</p>
-                                    <p className="font-bold text-gray-700">{selectedSaleDetail.date.substring(0, 16).replace('T', ' ')}</p>
+                                    <p className="font-bold text-gray-700">{formatDateTime(selectedSaleDetail.date)}</p>
                                 </div>
                                 <div className="text-right">
                                     <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mb-1">Kasir</p>

@@ -788,6 +788,14 @@ export const SessionHistoryView = memo(function SessionHistoryView({ branchId, s
                                 <p className="text-lg font-bold text-green-600">{formatCurrency(selectedSession.total_sales)}</p>
                             </div>
                             <div className="space-y-2">
+                                <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Tunai</label>
+                                <p className="text-lg font-bold text-blue-600">{formatCurrency(selectedSession.cash_sales || 0)}</p>
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">QRIS / Non Tunai</label>
+                                <p className="text-lg font-bold text-indigo-600">{formatCurrency(selectedSession.qris_sales || 0)}</p>
+                            </div>
+                            <div className="space-y-2">
                                 <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Uang Akhir</label>
                                 <p className="text-lg font-bold text-gray-800 dark:text-white">{formatCurrency(selectedSession.actual_cash || 0)}</p>
                             </div>
