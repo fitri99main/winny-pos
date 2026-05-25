@@ -29,7 +29,8 @@ export default function ProductScreen() {
     var navigation = useNavigation();
     var session = useSession();
     var currentBranchId = session.currentBranchId;
-    var canSeeHpp = session.isAdmin || (session.permissions && session.permissions.indexOf('view_hpp_recipe') !== -1);
+    var canManageProducts = !!session.isAdmin;
+    var canSeeHpp = canManageProducts;
     
     var stateProducts = React.useState([]);
     var products = stateProducts[0];
@@ -132,6 +133,10 @@ export default function ProductScreen() {
     };
 
     var fetchProducts = function() {
+        if (!canManageProducts) {
+            setLoading(false);
+            return Promise.resolve();
+        }
         if (!currentBranchId) {
             setLoading(false);
             return;
@@ -205,6 +210,20 @@ export default function ProductScreen() {
         }
     }, [search, products, ingredients, activeTab]);
 
+    React.useEffect(function() {
+        if (!canManageProducts && activeTab !== 'produk') {
+            setActiveTab('produk');
+        }
+    }, [canManageProducts, activeTab]);
+
+    React.useEffect(function() {
+        if (!canManageProducts) {
+            Alert.alert('Akses Ditolak', 'Menu produk hanya untuk administrator.', [
+                { text: 'OK', onPress: function() { navigation.goBack(); } }
+            ]);
+        }
+    }, [canManageProducts, navigation]);
+
     var uploadImage = function(uri) {
         setUploading(true);
         var oldUrl = editingProduct ? editingProduct.image_url : null;
@@ -240,6 +259,10 @@ export default function ProductScreen() {
     };
 
     var handleSave = function() {
+        if (!canManageProducts) {
+            Alert.alert('Akses Ditolak', 'Hanya administrator yang dapat mengubah produk.');
+            return;
+        }
         if (!editingProduct.name || !editingProduct.code) {
             Alert.alert('Info', 'Nama dan Kode Produk wajib diisi');
             return;
@@ -320,6 +343,10 @@ export default function ProductScreen() {
     };
 
     var handleAddNew = function() {
+        if (!canManageProducts) {
+            Alert.alert('Akses Ditolak', 'Hanya administrator yang dapat menambah produk.');
+            return;
+        }
         setEditingProduct({
             name: '',
             code: 'P' + Date.now().toString().slice(-4),
@@ -394,6 +421,10 @@ export default function ProductScreen() {
     };
 
     var handleDelete = function() {
+        if (!canManageProducts) {
+            Alert.alert('Akses Ditolak', 'Hanya administrator yang dapat menghapus produk.');
+            return;
+        }
         if (!editingProduct || !editingProduct.id) return;
         
         Alert.alert(
@@ -479,6 +510,7 @@ export default function ProductScreen() {
         return React.createElement(TouchableOpacity, {
             style: styles.productCard,
             onPress: function() {
+                if (!canManageProducts) return;
                 setEditingProduct(normalizeProductForEdit(item));
                 setModalVisible(true);
             }
@@ -530,6 +562,7 @@ export default function ProductScreen() {
         return React.createElement(TouchableOpacity, {
             style: styles.productCard,
             onPress: function() {
+                if (!canManageProducts) return;
                 setEditingProduct(normalizeProductForEdit(item));
                 setModalVisible(true);
             }
@@ -581,18 +614,17 @@ export default function ProductScreen() {
                 React.createElement(ChevronLeft, { size: 32, color: "#1f2937" })
             ),
             React.createElement(View, { style: { flex: 1 } },
-                React.createElement(Text, { style: styles.headerTitle }, "Manajemen Produk")
+                React.createElement(Text, { style: styles.headerTitle }, canManageProducts ? "Manajemen Produk" : "Daftar Produk")
             ),
-            React.createElement(TouchableOpacity, { onPress: handleAddNew, style: styles.addButton },
+            canManageProducts ? React.createElement(TouchableOpacity, { onPress: handleAddNew, style: styles.addButton },
                 React.createElement(Lucide.Plus, { size: 24, color: "white" })
-            )
+            ) : React.createElement(View, { style: { width: 48, height: 48 } })
         ),
 
         React.createElement(View, { style: styles.tabContainer },
             [
-                { id: 'produk', label: 'Produk', icon: Lucide.LayoutGrid },
-                { id: 'bahan_baku', label: 'Bahan Baku', icon: Lucide.FlaskConical }
-            ].map(function(t) {
+                { id: 'produk', label: 'Produk', icon: Lucide.LayoutGrid }
+            ].concat(canManageProducts ? [{ id: 'bahan_baku', label: 'Bahan Baku', icon: Lucide.FlaskConical }] : []).map(function(t) {
                 var isActive = activeTab === t.id;
                 return React.createElement(TouchableOpacity, { 
                     key: t.id,
@@ -648,7 +680,7 @@ export default function ProductScreen() {
                                 React.createElement(TouchableOpacity, {
                                     style: styles.imagePicker,
                                     onPress: handlePickImage,
-                                    disabled: uploading
+                                    disabled: uploading || !canManageProducts
                                 },
                                     editingProduct && editingProduct.image_url ? React.createElement(Image, { source: { uri: editingProduct.image_url }, style: styles.uploadPreview }) : React.createElement(View, { style: styles.uploadPlaceholder },
                                         React.createElement(Text, { style: styles.uploadIcon }, "\uD83D\uDCF7"),
@@ -661,6 +693,7 @@ export default function ProductScreen() {
                                 
                                 editingProduct && editingProduct.image_url ? React.createElement(TouchableOpacity, {
                                     style: styles.removeImageOverlay,
+                                    disabled: !canManageProducts,
                                     onPress: function() {
                                         Alert.alert(
                                             'Hapus Gambar',
@@ -839,11 +872,11 @@ export default function ProductScreen() {
                             React.createElement(TouchableOpacity, {
                                 style: [styles.saveBtnCompact, { flex: 2 }],
                                 onPress: handleSave,
-                                disabled: loading
+                                disabled: loading || !canManageProducts
                             },
-                                loading ? React.createElement(ActivityIndicator, { color: "white" }) : React.createElement(Text, { style: styles.saveBtnTextCompact }, "Simpan")
+                                loading ? React.createElement(ActivityIndicator, { color: "white" }) : React.createElement(Text, { style: styles.saveBtnTextCompact }, canManageProducts ? "Simpan" : "Lihat")
                             ),
-                            (editingProduct && editingProduct.id) ? React.createElement(TouchableOpacity, {
+                            (editingProduct && editingProduct.id && canManageProducts) ? React.createElement(TouchableOpacity, {
                                 style: [styles.saveBtnCompact, { flex: 1, backgroundColor: '#fee2e2' }],
                                 onPress: handleDelete,
                                 disabled: loading

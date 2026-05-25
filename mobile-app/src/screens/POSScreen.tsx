@@ -66,6 +66,7 @@ var merge = function(target, source) {
 var CHECKOUT_RPC_TIMEOUT_MS = 15000;
 var TIMEOUT_VERIFY_DELAY_MS = 2000;
 var TIMEOUT_VERIFY_ATTEMPTS = 3;
+var REMOTE_ORDER_FETCH_THROTTLE_MS = 1200;
 
 var sleep = function(ms) {
     return new Promise(function(resolve) {
@@ -396,6 +397,7 @@ export default function POSScreen() {
     var lastFetchTime = React.useRef(0);
     var fetchInProgress = React.useRef(false);
     var fetchTimeoutRef = React.useRef(null);
+    var pendingRemoteFetchRef = React.useRef(false);
     var isFirstRender = React.useRef(true);
 
     var stateToastVisible = React.useState(false);
@@ -1249,9 +1251,31 @@ export default function POSScreen() {
         };
     }, [currentBranchId, route.params ? (route.params as any).orderId : null]);
 
+    var scheduleRemotePendingOrdersFetch = function(delayMs, force) {
+        if (delayMs === undefined) delayMs = REMOTE_ORDER_FETCH_THROTTLE_MS;
+        if (force === undefined) force = true;
+        if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current);
+        fetchTimeoutRef.current = setTimeout(function() {
+            fetchTimeoutRef.current = null;
+            fetchRemotePendingOrders(force);
+        }, Math.max(0, delayMs));
+    };
+
     var fetchRemotePendingOrders = function(force?: boolean) {
         if (force === undefined) force = false;
-        if (!currentBranchId || isDisplayOnly || fetchInProgress.current) return;
+        if (!currentBranchId || isDisplayOnly) return;
+
+        var now = Date.now();
+        var timeSinceLastFetch = now - lastFetchTime.current;
+        if (fetchInProgress.current) {
+            pendingRemoteFetchRef.current = pendingRemoteFetchRef.current || force;
+            return;
+        }
+
+        if (timeSinceLastFetch < REMOTE_ORDER_FETCH_THROTTLE_MS) {
+            scheduleRemotePendingOrdersFetch(REMOTE_ORDER_FETCH_THROTTLE_MS - timeSinceLastFetch, force);
+            return;
+        }
         
         fetchInProgress.current = true;
         setIsFetchingRemote(true);
@@ -1292,6 +1316,11 @@ export default function POSScreen() {
             .finally(function() {
                 setIsFetchingRemote(false);
                 fetchInProgress.current = false;
+                if (pendingRemoteFetchRef.current) {
+                    var shouldForceRefetch = pendingRemoteFetchRef.current;
+                    pendingRemoteFetchRef.current = false;
+                    scheduleRemotePendingOrdersFetch(250, shouldForceRefetch);
+                }
             });
     };
 
@@ -1331,27 +1360,21 @@ export default function POSScreen() {
                         }
                     }
                     
-                    if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current);
-                    fetchTimeoutRef.current = setTimeout(function() {
-                        fetchRemotePendingOrders(true);
-                    }, 500);
+                    scheduleRemotePendingOrdersFetch(500, true);
                 }
             )
             .on(
                 'postgres_changes',
                 { event: 'UPDATE', schema: 'public', table: 'sales', filter: 'branch_id=eq.' + branchIdInt },
                 function() {
-                    if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current);
-                    fetchTimeoutRef.current = setTimeout(function() {
-                        fetchRemotePendingOrders(true);
-                    }, 500);
+                    scheduleRemotePendingOrdersFetch(500, true);
                 }
             )
             .on(
                 'postgres_changes',
                 { event: 'DELETE', schema: 'public', table: 'sales', filter: 'branch_id=eq.' + branchIdInt },
                 function() {
-                    fetchRemotePendingOrders(true);
+                    scheduleRemotePendingOrdersFetch(200, true);
                 }
             )
             .subscribe();

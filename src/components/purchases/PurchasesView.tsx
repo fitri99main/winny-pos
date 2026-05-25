@@ -62,6 +62,7 @@ export function PurchasesView({
 }: PurchasesViewProps) {
     const [activeTab, setActiveTab] = useState<'history' | 'input' | 'returns'>('history');
     const [searchQuery, setSearchQuery] = useState('');
+    const [itemSearchQuery, setItemSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<'All' | 'Pending' | 'Completed' | 'Returned'>('All');
     const [returnSearchQuery, setReturnSearchQuery] = useState('');
     const [startDate, setStartDate] = useState(() => {
@@ -86,6 +87,42 @@ export function PurchasesView({
 
     const [isEditing, setIsEditing] = useState(false);
     const [editingId, setEditingId] = useState<number | null>(null);
+
+    const normalizePurchaseItems = (purchase: any): PurchaseItem[] => {
+        const rawItems = purchase?.items_list ?? purchase?.itemsList ?? [];
+        const parsedItems = Array.isArray(rawItems)
+            ? rawItems
+            : typeof rawItems === 'string'
+                ? (() => {
+                    try {
+                        const parsed = JSON.parse(rawItems);
+                        return Array.isArray(parsed)
+                            ? parsed
+                            : Array.isArray(parsed?.items)
+                                ? parsed.items
+                                : [];
+                    } catch {
+                        return [];
+                    }
+                })()
+                : Array.isArray(rawItems?.items)
+                    ? rawItems.items
+                    : [];
+
+        return parsedItems.map((item: any, idx: number) => ({
+            id: String(item?.id || item?.itemId || `legacy-item-${idx}`),
+            itemId: item?.itemId ?? item?.id ?? idx,
+            name: String(item?.name || item?.product_name || item?.item_name || item?.product?.name || ''),
+            quantity: Number(item?.quantity ?? item?.qty ?? 0),
+            price: Number(item?.price ?? item?.purchase_price ?? item?.cost ?? 0),
+            sellingPrice: item?.sellingPrice ?? item?.selling_price,
+            unit: item?.unit || item?.uom || '-',
+            type: item?.type || 'manual'
+        }));
+    };
+
+    const getPurchaseItemName = (item: any) =>
+        String(item?.name || item?.product_name || item?.item_name || item?.product?.name || '').trim();
 
 
     // Scanner Hook
@@ -296,7 +333,7 @@ export function PurchasesView({
             payment_method: po.payment_method || 'Tunai',
             adjustment: po.adjustment || 0
         });
-        setPurchaseItems(po.items_list || []);
+        setPurchaseItems(normalizePurchaseItems(po));
         setActiveTab('input');
     };
 
@@ -351,12 +388,16 @@ export function PurchasesView({
         const matchesSearch = (p.purchase_no || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                              (p.supplier_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                              (p.supplier_invoice_no || '').toLowerCase().includes(searchQuery.toLowerCase());
+        const normalizedItemSearch = itemSearchQuery.trim().toLowerCase();
+        const matchesItem = !normalizedItemSearch || normalizePurchaseItems(p).some((item: any) =>
+            getPurchaseItemName(item).toLowerCase().includes(normalizedItemSearch)
+        );
         
         const pDate = p.date ? String(p.date).split('T')[0] : '';
         const matchesDate = pDate >= startDate && pDate <= endDate;
         const matchesStatus = statusFilter === 'All' || p.status === statusFilter;
 
-        return matchesBranch && matchesSearch && matchesDate && matchesStatus;
+        return matchesBranch && matchesSearch && matchesItem && matchesDate && matchesStatus;
     }).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     const filteredReturns = returns.filter(r =>
@@ -368,9 +409,15 @@ export function PurchasesView({
 
     const flatPurchaseHistory = useMemo(() => {
         const rows: any[] = [];
+        const normalizedItemSearch = itemSearchQuery.trim().toLowerCase();
         filteredPurchases.forEach(po => {
-            const items = po.items_list || [];
-            if (items.length === 0) {
+            const items = normalizePurchaseItems(po);
+            const visibleItems = normalizedItemSearch
+                ? items.filter((item: any) =>
+                    getPurchaseItemName(item).toLowerCase().includes(normalizedItemSearch)
+                )
+                : items;
+            if (visibleItems.length === 0) {
                 rows.push({
                     ...po,
                     itemName: '-',
@@ -381,21 +428,21 @@ export function PurchasesView({
                     rowSpan: 1
                 });
             } else {
-                items.forEach((item: any, idx: number) => {
+                visibleItems.forEach((item: any, idx: number) => {
                     rows.push({
                         ...po,
-                        itemName: item.name,
-                        itemQty: item.quantity,
-                        itemPrice: item.price,
+                        itemName: getPurchaseItemName(item) || '-',
+                        itemQty: Number(item.quantity || 0),
+                        itemPrice: Number(item.price || 0),
                         itemUnit: item.unit || '-',
                         isFirst: idx === 0,
-                        rowSpan: items.length
+                        rowSpan: visibleItems.length
                     });
                 });
             }
         });
         return rows;
-    }, [filteredPurchases]);
+    }, [filteredPurchases, itemSearchQuery]);
 
     // --- Renderers ---
 
@@ -411,6 +458,17 @@ export function PurchasesView({
                                 placeholder="Cari No. PO atau Supplier..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none transition-all"
+                            />
+                        </div>
+
+                        <div className="relative max-w-xs w-full">
+                            <FileText className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input
+                                type="text"
+                                placeholder="Filter nama item..."
+                                value={itemSearchQuery}
+                                onChange={(e) => setItemSearchQuery(e.target.value)}
                                 className="w-full pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none transition-all"
                             />
                         </div>

@@ -29,6 +29,7 @@ export default function AppNavigator() {
     var session = useSession();
     var authSession = session.authSession;
     var loading = session.loading;
+    var isAdmin = session.isAdmin;
 
     if (loading) {
         return React.createElement(View, { style: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'white' } },
@@ -44,7 +45,9 @@ export default function AppNavigator() {
         screens.push(React.createElement(Stack.Screen, { key: "POS", name: "POS", component: POSScreen }));
         screens.push(React.createElement(Stack.Screen, { key: "History", name: "History", component: HistoryScreen }));
         screens.push(React.createElement(Stack.Screen, { key: "CashierSessionHistory", name: "CashierSessionHistory", component: CashierSessionHistoryScreen }));
-        screens.push(React.createElement(Stack.Screen, { key: "Products", name: "Products", component: ProductScreen }));
+        if (isAdmin) {
+            screens.push(React.createElement(Stack.Screen, { key: "Products", name: "Products", component: ProductScreen }));
+        }
         screens.push(React.createElement(Stack.Screen, { key: "Settings", name: "Settings", component: SettingsScreen }));
         screens.push(React.createElement(Stack.Screen, { key: "Accounting", name: "Accounting", component: AccountingScreen }));
         screens.push(React.createElement(Stack.Screen, { key: "StoreSettings", name: "StoreSettings", component: StoreSettingsScreen }));
