@@ -1,5 +1,21 @@
 import { supabase } from './supabase';
 
+const WIFI_VOUCHER_DELETE_BATCH_SIZE = 200;
+const WIFI_VOUCHER_RETRY_DELAY_MS = 500;
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const isRetryableVoucherError = (error: any) => {
+    const message = String(error?.message || error || '').toLowerCase();
+    return (
+        message.includes('timeout') ||
+        message.includes('upstream connect error') ||
+        message.includes('disconnect/reset') ||
+        message.includes('connection reset') ||
+        message.includes('fetch failed')
+    );
+};
+
 export interface WifiVoucher {
     id: number;
     code: string;
@@ -10,6 +26,60 @@ export interface WifiVoucher {
 }
 
 export class WifiVoucherService {
+    private static async deleteVoucherIds(ids: number[]): Promise<void> {
+        if (!ids.length) return;
+
+        let lastError: any = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            const { error } = await supabase
+                .from('wifi_vouchers')
+                .delete()
+                .in('id', ids);
+
+            if (!error) return;
+
+            lastError = error;
+            if (attempt < 3 && isRetryableVoucherError(error)) {
+                await sleep(attempt * WIFI_VOUCHER_RETRY_DELAY_MS);
+                continue;
+            }
+
+            break;
+        }
+
+        console.error('Error deleting voucher batch:', lastError);
+        throw lastError;
+    }
+
+    private static async deleteVouchersByUsage(branchId: string = 'default', isUsed: boolean): Promise<number> {
+        let deletedCount = 0;
+
+        while (true) {
+            const { data: batch, error: fetchError } = await supabase
+                .from('wifi_vouchers')
+                .select('id')
+                .eq('branch_id', branchId)
+                .eq('is_used', isUsed)
+                .order('id', { ascending: true })
+                .limit(WIFI_VOUCHER_DELETE_BATCH_SIZE);
+
+            if (fetchError) {
+                console.error('Error fetching vouchers for deletion:', fetchError);
+                throw fetchError;
+            }
+
+            const ids = (batch || []).map(v => Number(v.id)).filter(Boolean);
+            if (ids.length === 0) break;
+
+            await this.deleteVoucherIds(ids);
+            deletedCount += ids.length;
+
+            if (ids.length < WIFI_VOUCHER_DELETE_BATCH_SIZE) break;
+        }
+
+        return deletedCount;
+    }
+
     /**
      * Fetches one or more unused WiFi vouchers from the pool and marks them as used for the given sale.
      * Returns a comma-separated string of codes.
@@ -247,15 +317,7 @@ export class WifiVoucherService {
      * Delete a voucher
      */
     static async deleteVoucher(id: number): Promise<void> {
-        const { error } = await supabase
-            .from('wifi_vouchers')
-            .delete()
-            .eq('id', id);
-
-        if (error) {
-            console.error('Error deleting voucher:', error);
-            throw error;
-        }
+        await this.deleteVoucherIds([id]);
     }
 
     /**
@@ -263,19 +325,7 @@ export class WifiVoucherService {
      * Returns the number of deleted vouchers
      */
     static async deleteUnusedVouchers(branchId: string = 'default'): Promise<number> {
-        const { data, error } = await supabase
-            .from('wifi_vouchers')
-            .delete()
-            .eq('branch_id', branchId)
-            .eq('is_used', false)
-            .select();
-
-        if (error) {
-            console.error('Error deleting unused vouchers:', error);
-            throw error;
-        }
-
-        return data?.length || 0;
+        return this.deleteVouchersByUsage(branchId, false);
     }
 
     /**
@@ -283,18 +333,6 @@ export class WifiVoucherService {
      * Returns the number of deleted vouchers
      */
     static async deleteUsedVouchers(branchId: string = 'default'): Promise<number> {
-        const { data, error } = await supabase
-            .from('wifi_vouchers')
-            .delete()
-            .eq('branch_id', branchId)
-            .eq('is_used', true)
-            .select();
-
-        if (error) {
-            console.error('Error deleting used vouchers:', error);
-            throw error;
-        }
-
-        return data?.length || 0;
+        return this.deleteVouchersByUsage(branchId, true);
     }
 }

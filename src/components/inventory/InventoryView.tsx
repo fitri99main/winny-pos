@@ -1,4 +1,5 @@
 import React, { useState, Fragment } from 'react';
+import { supabase } from '../../lib/supabase';
 import {
     Package,
     Plus,
@@ -118,7 +119,35 @@ export function InventoryView({
         reason: ''
     });
 
-    const [stockCardDate, setStockCardDate] = useState('');
+    const [stockCardStartDate, setStockCardStartDate] = useState('');
+    const [stockCardEndDate, setStockCardEndDate] = useState('');
+    const [isFetchingStockCard, setIsFetchingStockCard] = useState(false);
+    const [directStockCardMovements, setDirectStockCardMovements] = useState<any[]>([]);
+
+    const fetchStockCardData = async (ingredient: Ingredient) => {
+        setIsFetchingStockCard(true);
+        setDirectStockCardMovements([]);
+        try {
+            // 1. Fetch manual & trigger stock movements
+            const { data: manualMovs } = await supabase
+                .from('stock_movements')
+                .select('*')
+                .eq('ingredient_id', ingredient.id)
+                .order('created_at', { ascending: false });
+
+            const all = (manualMovs || []).map((m: any) => ({
+                ...m,
+                _source: 'manual'
+            }));
+
+            setDirectStockCardMovements(all);
+        } catch (err) {
+            console.error('Error fetching stock card data:', err);
+        } finally {
+            setIsFetchingStockCard(false);
+        }
+    };
+
 
     const getUnitOptionValue = (unitOption: any) => {
         const abbreviation = String(unitOption?.abbreviation || '').trim();
@@ -260,8 +289,8 @@ export function InventoryView({
             const dateStr = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
 
             // Calculate Totals
-            const totalIn = filteredMovements.reduce((sum, m) => m.type === 'IN' ? sum + Number(m.quantity) : sum, 0);
-            const totalOut = filteredMovements.reduce((sum, m) => m.type === 'OUT' ? sum + Number(m.quantity) : sum, 0);
+            const totalIn = stockCardMovements.reduce((sum, m) => m.type === 'IN' ? sum + Number(m.quantity) : sum, 0);
+            const totalOut = stockCardMovements.reduce((sum, m) => m.type === 'OUT' ? sum + Number(m.quantity) : sum, 0);
 
             // Header
             doc.setFontSize(18);
@@ -274,7 +303,7 @@ export function InventoryView({
             doc.line(14, 43, 196, 43);
 
             // Table Data
-            const tableData = filteredMovements.map((mov, index) => [
+            const tableData = stockCardMovements.map((mov, index) => [
                 index + 1,
                 new Date(mov.date || mov.created_at || 0).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
                 mov.type === 'IN' ? 'Barang Masuk' : (mov.type === 'OUT' ? 'Barang Keluar' : 'Penyesuaian'),
@@ -374,6 +403,33 @@ export function InventoryView({
                reason.toLowerCase().includes(query) || 
                user.toLowerCase().includes(query);
     });
+
+    const stockCardMovements = (directStockCardMovements.length > 0 ? directStockCardMovements : (movements || []))
+        .filter(m => {
+            if (!selectedIngredient) return false;
+            const mId = m.ingredient_id || m.ingredientId;
+            const sId = selectedIngredient.id;
+            
+            const isMatch = mId != null && sId != null && String(mId) == String(sId);
+            if (!isMatch) return false;
+
+            const mDateObj = new Date(m.date || m.created_at || 0);
+            if (!isNaN(mDateObj.getTime())) {
+                const y = mDateObj.getFullYear();
+                const m_ = String(mDateObj.getMonth() + 1).padStart(2, '0');
+                const d = String(mDateObj.getDate()).padStart(2, '0');
+                const mDateStr = `${y}-${m_}-${d}`;
+                if (stockCardStartDate && mDateStr < stockCardStartDate) return false;
+                if (stockCardEndDate && mDateStr > stockCardEndDate) return false;
+            }
+            return true;
+        })
+        .sort((a, b) => {
+            const dateA = new Date(a.date || a.created_at || 0).getTime();
+            const dateB = new Date(b.date || b.created_at || 0).getTime();
+            return dateB - dateA;
+        });
+
 
     return (
         <div className="p-8 h-full bg-gray-50/50 flex flex-col space-y-8 overflow-hidden">
@@ -498,7 +554,14 @@ export function InventoryView({
                                                     <ArrowDownCircle className="w-5 h-5" />
                                                 </button>
                                                 <button
-                                                    onClick={() => { setSelectedIngredient(ing); setIsStockCardOpen(true); }}
+                                                    onClick={() => { 
+                                                        setSelectedIngredient(ing); 
+                                                        setStockCardStartDate('');
+                                                        setStockCardEndDate('');
+                                                        setDirectStockCardMovements([]);
+                                                        setIsStockCardOpen(true);
+                                                        fetchStockCardData(ing);
+                                                    }}
                                                     className="p-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors"
                                                     title="Lihat Kartu Stok"
                                                 >
@@ -955,17 +1018,26 @@ export function InventoryView({
                             <div className="flex items-center gap-3">
                                 <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-gray-200 shadow-sm">
                                     <Calendar className="w-3.5 h-3.5 text-blue-500" />
-                                    <span className="text-[10px] font-black text-gray-400 uppercase">Filter Tanggal</span>
+                                    <span className="text-[10px] font-black text-gray-400 uppercase">Dari Tanggal</span>
                                     <input 
                                         type="date" 
-                                        value={stockCardDate}
-                                        onChange={(e) => setStockCardDate(e.target.value)}
+                                        value={stockCardStartDate}
+                                        onChange={(e) => setStockCardStartDate(e.target.value)}
                                         className="text-xs font-bold text-gray-700 focus:outline-none"
                                     />
                                 </div>
-                                {stockCardDate && (
+                                <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-gray-200 shadow-sm">
+                                    <span className="text-[10px] font-black text-gray-400 uppercase">Sampai</span>
+                                    <input 
+                                        type="date" 
+                                        value={stockCardEndDate}
+                                        onChange={(e) => setStockCardEndDate(e.target.value)}
+                                        className="text-xs font-bold text-gray-700 focus:outline-none"
+                                    />
+                                </div>
+                                {(stockCardStartDate || stockCardEndDate) && (
                                     <button 
-                                        onClick={() => setStockCardDate('')}
+                                        onClick={() => { setStockCardStartDate(''); setStockCardEndDate(''); }}
                                         className="text-[10px] font-black text-red-500 hover:text-red-600 uppercase"
                                     >
                                         Tampilkan Semua
@@ -973,7 +1045,7 @@ export function InventoryView({
                                 )}
                             </div>
                             <div className="text-[10px] font-medium text-gray-400 italic">
-                                {stockCardDate ? `* Menampilkan mutasi untuk tanggal ${new Date(stockCardDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })}` : '* Menampilkan semua riwayat mutasi'}
+                                {(stockCardStartDate || stockCardEndDate) ? `* Menampilkan mutasi untuk rentang tanggal yang dipilih` : '* Menampilkan semua riwayat mutasi'}
                             </div>
                         </div>
 
@@ -1006,44 +1078,29 @@ export function InventoryView({
                                 <tbody className="divide-y divide-gray-50">
                                     {(() => {
                                         try {
-                                            const ingredientMovements = (movements || [])
-                                                .filter(m => {
-                                                    const mId = m.ingredient_id || m.ingredientId;
-                                                    const sId = selectedIngredient.id;
-                                                    
-                                                    // Match by ID (flexible string/number comparison)
-                                                    const isMatch = mId != null && sId != null && String(mId) == String(sId);
-                                                    if (!isMatch) return false;
-
-                                                    // Single date filter
-                                                    const mDateObj = new Date(m.date || m.created_at || 0);
-                                                    if (stockCardDate && !isNaN(mDateObj.getTime())) {
-                                                        const y = mDateObj.getFullYear();
-                                                        const m_ = String(mDateObj.getMonth() + 1).padStart(2, '0');
-                                                        const d = String(mDateObj.getDate()).padStart(2, '0');
-                                                        const mDateStr = `${y}-${m_}-${d}`;
-                                                        if (mDateStr !== stockCardDate) return false;
-                                                    }
-
-                                                    return true;
-                                                })
-                                                .sort((a, b) => {
-                                                    const dateA = new Date(a.date || a.created_at || 0).getTime();
-                                                    const dateB = new Date(b.date || b.created_at || 0).getTime();
-                                                    return dateB - dateA;
-                                                });
-
-                                            if (ingredientMovements.length === 0) {
+                                            if (isFetchingStockCard) {
                                                 return (
                                                     <tr>
-                                                        <td colSpan={7} className="px-8 py-20 text-center text-gray-400 italic">Belum ada riwayat mutasi untuk bahan ini.</td>
+                                                        <td colSpan={8} className="px-8 py-20 text-center text-blue-400">
+                                                            <div className="flex flex-col items-center gap-3">
+                                                                <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
+                                                                <p className="text-sm font-medium">Memuat riwayat mutasi...</p>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            }
+                                            if (stockCardMovements.length === 0) {
+                                                return (
+                                                    <tr>
+                                                        <td colSpan={8} className="px-8 py-20 text-center text-gray-400 italic">Belum ada riwayat mutasi untuk bahan ini.</td>
                                                     </tr>
                                                 );
                                             }
 
                                             // Group by date string (YYYY-MM-DD)
-                                            const groups: { [key: string]: { label: string, items: typeof ingredientMovements } } = {};
-                                            ingredientMovements.forEach(m => {
+                                            const groups: { [key: string]: { label: string, items: typeof stockCardMovements } } = {};
+                                            stockCardMovements.forEach(m => {
                                                 const d = new Date(m.date || m.created_at || Date.now());
                                                 const key = isNaN(d.getTime()) ? 'unknown' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
                                                 const label = isNaN(d.getTime()) ? 'Tanggal Tidak Diketahui' : d.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
@@ -1101,7 +1158,7 @@ export function InventoryView({
                                                                         />
                                                                     </td>
                                                                     <td className="px-6 py-4 text-center text-gray-400 font-medium text-xs">
-                                                                        {ingredientMovements.indexOf(mov) + 1}
+                                                                        {stockCardMovements.indexOf(mov) + 1}
                                                                     </td>
                                                                     <td className="px-8 py-4 text-gray-500 font-mono text-xs">
                                                                         {(() => {

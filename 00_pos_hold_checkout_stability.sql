@@ -196,14 +196,25 @@ BEGIN
   END IF;
 
   IF v_requires_final_order_no THEN
+    -- Ambil Mode dan Prefix dari Global Store Settings (TANPA LOCK)
     SELECT
-      invoice_mode, invoice_prefix, invoice_last_number,
-      hold_invoice_prefix, hold_invoice_last_number
+      invoice_mode, invoice_prefix,
+      hold_invoice_prefix
     INTO
-      v_inv_mode, v_inv_prefix, v_inv_last_no,
-      v_hold_prefix, v_hold_last_no
+      v_inv_mode, v_inv_prefix,
+      v_hold_prefix
     FROM public.store_settings
-    WHERE id = 1
+    WHERE id = 1;
+
+    -- LOCK BARIS CABANG INI SAJA (Mencegah contention antar cabang)
+    SELECT
+      invoice_last_number,
+      hold_invoice_last_number
+    INTO
+      v_inv_last_no,
+      v_hold_last_no
+    FROM public.branches
+    WHERE id = v_branch_id
     FOR UPDATE;
 
     IF LOWER(v_status) IN ('pending', 'unpaid') THEN
@@ -225,9 +236,9 @@ BEGIN
         v_hold_last_no := v_next_no;
       END LOOP;
 
-      UPDATE public.store_settings
+      UPDATE public.branches
       SET hold_invoice_last_number = v_next_no
-      WHERE id = 1;
+      WHERE id = v_branch_id;
     ELSE
       v_inv_mode := COALESCE(v_inv_mode, 'auto');
       v_inv_prefix := COALESCE(v_inv_prefix, 'WIN-26');
@@ -249,9 +260,9 @@ BEGIN
           v_inv_last_no := v_next_no;
         END LOOP;
 
-        UPDATE public.store_settings
+        UPDATE public.branches
         SET invoice_last_number = v_next_no
-        WHERE id = 1;
+        WHERE id = v_branch_id;
       ELSE
         v_order_no := v_inv_prefix || '-' || TO_CHAR(NOW(), 'YYYY') || '-' || TO_CHAR(NOW(), 'HH24MISS');
       END IF;

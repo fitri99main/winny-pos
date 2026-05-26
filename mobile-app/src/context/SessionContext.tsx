@@ -40,6 +40,10 @@ export var SessionProvider = function(props) {
     var isAdmin = stateIsAdmin[0];
     var setIsAdmin = stateIsAdmin[1];
 
+    var stateRole = useState('');
+    var role = stateRole[0];
+    var setRole = stateRole[1];
+
     var stateBranchName = useState('');
     var branchName = stateBranchName[0];
     var setBranchName = stateBranchName[1];
@@ -288,6 +292,7 @@ export var SessionProvider = function(props) {
                                         setRequireMandatorySession(isAdminVal ? false : (isDisplayOnlyVal ? false : (globalRequired || hasRolePermission)));
                                         setIsDisplayOnly(isDisplayOnlyVal);
                                         setIsAdmin(isAdminVal);
+                                        setRole(roleStr);
 
                                         setCurrentSession(cashierSessionRes.data);
                                         return 'SUCCESS';
@@ -414,6 +419,7 @@ export var SessionProvider = function(props) {
             permissions: permissions,
             isDisplayOnly: isDisplayOnly,
             isAdmin: isAdmin,
+            role: role,
             branchName: branchName,
             branchAddress: branchAddress,
             branchPhone: branchPhone,
@@ -429,6 +435,7 @@ export var SessionProvider = function(props) {
         permissions,
         isDisplayOnly,
         isAdmin,
+        role,
         branchName,
         branchAddress,
         branchPhone,

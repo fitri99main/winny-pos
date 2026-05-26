@@ -129,6 +129,7 @@ export default function HomeScreen() {
     var isAdmin = session.isAdmin;
     var storeSettings = session.storeSettings;
     var isDisplayOnly = session.isDisplayOnly;
+    var role = session.role;
 
     var stateTodayStats = React.useState({ revenue: 0, count: 0, average: 0 });
     var todayStats = stateTodayStats[0];
@@ -531,7 +532,7 @@ export default function HomeScreen() {
                         return isAdmin || (storeSettings && storeSettings.cashier_can_view_reports);
                     }
                     if (item.id === 'products') {
-                        return isAdmin;
+                        return role && role.toLowerCase() === 'administrator';
                     }
                     return true;
                 }).map(function(item) {

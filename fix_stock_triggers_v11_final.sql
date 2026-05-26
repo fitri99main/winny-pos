@@ -89,12 +89,39 @@ BEGIN
         FROM product_recipes pr
         WHERE pr.product_id = v_product_id AND i.id = pr.ingredient_id;
 
-        -- Ambil Nama Produk untuk Log
-        SELECT name INTO v_product_name FROM products WHERE id = v_product_id;
+        -- Ambil Nama Produk dan Branch untuk Log
+        SELECT branch_id, name INTO v_branch_id, v_product_name FROM products WHERE id = v_product_id;
 
         -- CATAT SEBAGAI "BARANG KELUAR"
-        INSERT INTO stock_movements (sale_item_id, product_id, type, quantity, reason)
-        VALUES (v_sale_item_id, v_product_id, 'OUT', v_quantity_diff, 'Penjualan: ' || v_product_name);
+        IF EXISTS (SELECT 1 FROM product_recipes WHERE product_id = v_product_id) THEN
+            -- Catat pengeluaran tiap bahan baku berdasarkan resep
+            INSERT INTO stock_movements (sale_item_id, ingredient_id, ingredient_name, branch_id, type, quantity, unit, reason)
+            SELECT 
+                v_sale_item_id, pr.ingredient_id, i.name, v_branch_id, 'OUT', pr.amount * v_quantity_diff, i.unit, 'Penjualan: ' || v_product_name
+            FROM product_recipes pr
+            JOIN ingredients i ON i.id = pr.ingredient_id
+            WHERE pr.product_id = v_product_id;
+        ELSE
+            -- Jika tidak ada resep, coba auto-match bahan baku dengan nama produk
+            DECLARE
+                v_match_id BIGINT; v_match_name TEXT; v_match_unit TEXT;
+            BEGIN
+                SELECT id, name, unit INTO v_match_id, v_match_name, v_match_unit FROM ingredients 
+                WHERE (LOWER(TRIM(name)) = LOWER(TRIM(v_product_name)))
+                  AND (branch_id = v_branch_id OR branch_id IS NULL) 
+                ORDER BY (branch_id = v_branch_id) DESC LIMIT 1;
+                
+                IF v_match_id IS NOT NULL THEN
+                    UPDATE ingredients SET current_stock = current_stock - v_quantity_diff WHERE id = v_match_id;
+                    INSERT INTO stock_movements (sale_item_id, ingredient_id, ingredient_name, branch_id, type, quantity, unit, reason)
+                    VALUES (v_sale_item_id, v_match_id, v_match_name, v_branch_id, 'OUT', v_quantity_diff, v_match_unit, 'Penjualan: ' || v_product_name);
+                ELSE
+                    -- Jika murni produk tanpa relasi ke bahan baku, catat sebagai product movement
+                    INSERT INTO stock_movements (sale_item_id, product_id, type, quantity, reason)
+                    VALUES (v_sale_item_id, v_product_id, 'OUT', v_quantity_diff, 'Penjualan: ' || v_product_name);
+                END IF;
+            END;
+        END IF;
     END IF;
 
     RETURN NEW;
@@ -139,10 +166,12 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 5. PASANG KEMBALI TRIGGER V11
+DROP TRIGGER IF EXISTS tr_stock_movement_v11 ON sale_items;
 CREATE TRIGGER tr_stock_movement_v11
 AFTER INSERT OR UPDATE OR DELETE ON sale_items
 FOR EACH ROW EXECUTE FUNCTION fn_handle_stock_movement_v11();
 
+DROP TRIGGER IF EXISTS tr_sale_status_v11 ON sales;
 CREATE TRIGGER tr_sale_status_v11
 AFTER UPDATE ON sales
 FOR EACH ROW EXECUTE FUNCTION fn_handle_sale_status_v11();

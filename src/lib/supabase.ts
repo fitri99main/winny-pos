@@ -13,6 +13,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: true,
-        storageKey: 'winpos-auth-token'
+        storageKey: 'winpos-auth-token',
+        storage: window.sessionStorage // Use sessionStorage so it clears when browser is closed
     }
 });

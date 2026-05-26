@@ -266,9 +266,132 @@ export const SalesView = memo(function SalesView({
         return () => clearTimeout(handler);
     }, [searchQuery]);
 
+    // [FIX 30-DAY FILTER] Historical Fetch Logic
+    const [historicalSales, setHistoricalSales] = useState<SalesOrder[]>([]);
+    const [isFetchingHistory, setIsFetchingHistory] = useState(false);
+    
+    const needsHistory = useMemo(() => {
+        const today = formatDateForInput(new Date());
+        return dateFilter.start !== today || dateFilter.end !== today;
+    }, [dateFilter]);
+
+    useEffect(() => {
+        if (!needsHistory || !currentBranchId) return;
+
+        const fetchHistory = async () => {
+            setIsFetchingHistory(true);
+            try {
+                const queryStart = new Date(`${dateFilter.start}T00:00:00`);
+                queryStart.setDate(queryStart.getDate() - 1);
+                const queryEnd = new Date(`${dateFilter.end}T23:59:59.999`);
+                queryEnd.setDate(queryEnd.getDate() + 1);
+
+                let allSales: any[] = [];
+                // 1. Get exact count first
+                const { count, error: countError } = await supabase
+                    .from('sales')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('branch_id', Number(currentBranchId))
+                    .gte('date', queryStart.toISOString())
+                    .lte('date', queryEnd.toISOString());
+
+                if (countError) throw countError;
+
+                const totalCount = count || 0;
+                const pageSize = 1000;
+                const totalPages = Math.ceil(totalCount / pageSize);
+
+                // 2. Fetch all pages concurrently
+                const promises = [];
+                for (let i = 0; i < totalPages; i++) {
+                    const from = i * pageSize;
+                    promises.push(
+                        supabase
+                            .from('sales')
+                            .select('*, items:sale_items(id, product_name, quantity, price, cost, product:product_id(category, target))')
+                            .eq('branch_id', Number(currentBranchId))
+                            .gte('date', queryStart.toISOString())
+                            .lte('date', queryEnd.toISOString())
+                            .order('date', { ascending: false })
+                            .range(from, from + pageSize - 1)
+                    );
+                }
+
+                const results = await Promise.all(promises);
+                for (const result of results) {
+                    if (result.error) throw result.error;
+                    if (result.data) {
+                        allSales = [...allSales, ...result.data];
+                    }
+                }
+
+                const formatted = allSales.map(s => ({
+                    ...s,
+                    id: s.id,
+                    orderNo: s.order_no,
+                    date: s.date,
+                    totalAmount: Number(s.total_amount || s.total || 0),
+                    paymentMethod: s.payment_method,
+                    status: s.status,
+                    waitingTime: (() => {
+                        if (s.waiting_time) return s.waiting_time;
+                        if (s.created_at && s.date && (s.status === 'Paid' || s.status === 'Completed')) {
+                            const diffMs = new Date(s.date).getTime() - new Date(s.created_at).getTime();
+                            if (diffMs > 0) {
+                                const mins = Math.floor(diffMs / 60000);
+                                const secs = Math.floor((diffMs % 60000) / 1000);
+                                if (mins === 0) return `${secs}d`;
+                                if (mins < 60) return `${mins}m ${secs}d`;
+                                const hours = Math.floor(mins / 60);
+                                return `${hours}j ${mins % 60}m`;
+                            }
+                        }
+                        return null;
+                    })(),
+                    customerName: s.customer_name,
+                    discount: Number(s.discount || 0),
+                    notes: s.notes,
+                    branchId: s.branch_id,
+                    waiterName: s.waiter_name,
+                    cashierName: s.cashier_name,
+                    tableNo: s.table_no,
+                    printCount: s.print_count || 0,
+                    lastPrintedAt: s.last_printed_at,
+                    items: (s.items || []).reduce((sum: number, i: any) => sum + Number(i.quantity || 1), 0),
+                    productDetails: (s.items || []).map((i: any) => ({
+                        product_id: i.product_id,
+                        name: i.product_name,
+                        quantity: i.quantity,
+                        price: i.price,
+                        target: i.target,
+                        status: i.status,
+                        category: i.product?.category,
+                        notes: i.notes,
+                        cost: i.cost || 0
+                    }))
+                }));
+                setHistoricalSales(formatted);
+            } catch (err) {
+                console.error("Error fetching history in SalesView:", err);
+            } finally {
+                setIsFetchingHistory(false);
+            }
+        };
+
+        fetchHistory();
+    }, [dateFilter, currentBranchId, needsHistory]);
+
+    const activeSalesSource = useMemo(() => {
+        if (!needsHistory) return sales || [];
+        const pending = (sales || []).filter(s => s.status === 'Pending' || s.status === 'Unpaid' || String(s.id).startsWith('HOLD'));
+        const historicalIds = new Set(historicalSales.map(s => String(s.id)));
+        const uniquePending = pending.filter(p => !historicalIds.has(String(p.id)));
+        return [...uniquePending, ...historicalSales];
+    }, [needsHistory, sales, historicalSales]);
+
     // 2. Pre-process sales for faster filtering
     const processedSales = useMemo(() => {
-        return (sales || []).map(sale => {
+        return (activeSalesSource || []).map(sale => {
             // Name Normalization
             let rawCashier = sale.cashierName || sale.waiterName || '';
             let normalizedCashier = rawCashier;
@@ -292,7 +415,7 @@ export const SalesView = memo(function SalesView({
                 })
             };
         });
-    }, [sales]);
+    }, [activeSalesSource]);
 
     const processedReturns = useMemo(() => {
         return (returns || []).map(ret => ({
@@ -385,7 +508,7 @@ export const SalesView = memo(function SalesView({
             return filteredSales.reduce((sum, sale) => sum + (sale.status !== 'Returned' ? sale.totalAmount : 0), 0);
         }
 
-        const targetSales = sales || [];
+        const targetSales = activeSalesSource || [];
         return targetSales.reduce((sum, sale) => {
             if (sale.status === 'Returned') return sum;
             if (currentBranchId && sale.branchId && String(sale.branchId) !== String(currentBranchId)) return sum;
@@ -402,7 +525,7 @@ export const SalesView = memo(function SalesView({
             }
             return sum + sale.totalAmount;
         }, 0);
-    }, [sales, filteredSales, statsPeriod, currentBranchId]);
+    }, [activeSalesSource, filteredSales, statsPeriod, currentBranchId]);
 
 
     const handlePaymentClick = (sale: SalesOrder) => {
@@ -499,16 +622,8 @@ export const SalesView = memo(function SalesView({
         setActiveTab(initialTab);
     }, [initialTab]);
 
-    useEffect(() => {
-        if (!initialDateFilter) return;
-
-        setDateFilter({
-            start: initialDateFilter.start,
-            end: initialDateFilter.end,
-        });
-    }, [initialDateFilter?.start, initialDateFilter?.end]);
-
-
+    // The date filter is initialized once from props, and then managed locally by the user.
+    // Removed the useEffect that overwrote dateFilter on every home.tsx re-render.
 
     // Keyboard Shortcuts
     useEffect(() => {
@@ -1255,6 +1370,7 @@ export const SalesView = memo(function SalesView({
                             endDate={dateFilter.end}
                             onChange={(range) => {
                                 setDateFilter({ start: range.startDate, end: range.endDate });
+                                setStatsPeriod('filtered');
                                 setVisibleCount(50);
                             }}
                         />
@@ -1337,6 +1453,7 @@ export const SalesView = memo(function SalesView({
                                 <span className="text-sm font-bold text-blue-800">
                                     Rp {statsTotal.toLocaleString()}
                                 </span>
+
                             </div>
                         </div>
                     </div>

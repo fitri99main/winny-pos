@@ -9,13 +9,14 @@ import { registerSW } from 'virtual:pwa-register';
 
 const basename = import.meta.env.BASE_URL;
 
+// Force cleanup of any legacy persistent tokens to guarantee session-only auth behavior
+localStorage.removeItem('winpos-auth-token');
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <BrowserRouter basename={basename}>
-      <App />
-      <Toaster position="top-right" richColors />
-    </BrowserRouter>
-  </React.StrictMode>,
+  <BrowserRouter basename={basename}>
+    <App />
+    <Toaster position="top-right" richColors />
+  </BrowserRouter>,
 );
 
 if (import.meta.env.DEV) {

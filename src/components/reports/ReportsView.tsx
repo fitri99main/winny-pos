@@ -210,11 +210,29 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
         }
     };
 
-    const handleViewDetails = (sale: SalesOrder) => {
-        setSelectedSaleDetail(sale);
+    const handleViewDetails = async (sale: SalesOrder) => {
+        // If productDetails is empty (not loaded yet), fetch on-demand
+        let saleWithItems = sale;
+        if (!sale.productDetails || sale.productDetails.length === 0) {
+            const { data: items } = await supabase
+                .from('sale_items')
+                .select('id, product_name, quantity, price, cost, product:product_id(category)')
+                .eq('sale_id', sale.id);
+            saleWithItems = {
+                ...sale,
+                productDetails: (items || []).map((i: any) => ({
+                    name: i.product_name,
+                    quantity: i.quantity,
+                    price: i.price,
+                    cost: i.cost || 0,
+                    category: i.product?.category
+                }))
+            };
+        }
+        setSelectedSaleDetail(saleWithItems);
         setShowDetailModal(true);
         setShowHPPInDetail(false);
-        fetchRecipesForOrder(sale);
+        fetchRecipesForOrder(saleWithItems);
     };
 
     const aggregatedIngredients = useMemo(() => {
@@ -247,60 +265,88 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
         return Object.values(summary).sort((a, b) => a.name.localeCompare(b.name));
     }, [selectedSaleDetail, selectedOrderRecipes]);
 
-    const fetchRealData = async () => {
+    const fetchRealData = async (fetchStart: string, fetchEnd: string) => {
         if (loading) return;
-        if (!startDate || !endDate) return;
+        if (!fetchStart || !fetchEnd) return;
         setIsLoadingRealData(true);
         try {
             const targetBranch = selectedBranch === 'all' ? null : Number(selectedBranch);
             const pageSize = 1000;
 
-            // Ambil jendela query yang sedikit lebih lebar agar data campuran UTC/local
-            // tetap terambil, lalu sempitkan lagi dengan filter tanggal lokal di frontend.
-            const queryStart = new Date(`${startDate}T00:00:00`);
+            const queryStart = new Date(`${fetchStart}T00:00:00`);
             queryStart.setDate(queryStart.getDate() - 1);
-            const queryEnd = new Date(`${endDate}T23:59:59.999`);
+            const queryEnd = new Date(`${fetchEnd}T23:59:59.999`);
             queryEnd.setDate(queryEnd.getDate() + 1);
             const queryStartIso = queryStart.toISOString();
             const queryEndIso = queryEnd.toISOString();
 
-            // 1. Fetch Sales with Pagination
+            // === 1. FETCH SALES (parallel pages) ===
             let allSales: any[] = [];
-            let from = 0;
-            let hasMore = true;
+            let countQuery = supabase
+                .from('sales')
+                .select('*', { count: 'exact', head: true })
+                .gte('date', queryStartIso)
+                .lte('date', queryEndIso);
+            if (targetBranch) countQuery = countQuery.eq('branch_id', targetBranch);
 
-            while (hasMore) {
-                let query = supabase
+            const { count: salesCount, error: countError } = await countQuery;
+            if (countError) throw countError;
+
+            const salesPages = Math.ceil((salesCount || 0) / pageSize);
+            const salesPromises = Array.from({ length: salesPages }, (_, i) => {
+                let q = supabase
                     .from('sales')
-                    .select('*, items:sale_items(id, product_name, quantity, price, cost, product:product_id(category))')
+                    .select('*')
                     .gte('date', queryStartIso)
                     .lte('date', queryEndIso)
-                    .order('date', { ascending: false });
+                    .order('date', { ascending: false })
+                    .range(i * pageSize, i * pageSize + pageSize - 1);
+                if (targetBranch) q = q.eq('branch_id', targetBranch);
+                return q;
+            });
 
-                if (targetBranch) {
-                    query = query.eq('branch_id', targetBranch);
-                }
+            // === 2. FETCH RETURNS (single query) ===
+            const returnsPromise = supabase
+                .from('sales_returns')
+                .select('*')
+                .gte('date', queryStartIso)
+                .lte('date', queryEndIso)
+                .range(0, 4999);
 
-                const { data, error } = await query.range(from, from + pageSize - 1);
+            // === 3. FETCH PURCHASES (single query) ===
+            let purchasesQuery = supabase
+                .from('purchases')
+                .select('*')
+                .gte('date', queryStartIso)
+                .lte('date', queryEndIso)
+                .range(0, 4999);
+            if (targetBranch) purchasesQuery = purchasesQuery.eq('branch_id', targetBranch);
 
-                if (error) throw error;
-                if (data && data.length > 0) {
-                    allSales = [...allSales, ...data];
-                    if (data.length < pageSize) hasMore = false;
-                    else from += pageSize;
-                } else {
-                    hasMore = false;
-                }
+            // Run ALL concurrently
+            const [salesResults, returnsResult, purchasesResult] = await Promise.all([
+                Promise.all(salesPromises),
+                returnsPromise,
+                purchasesQuery,
+            ]);
+
+            for (const result of salesResults) {
+                if (result.error) throw result.error;
+                if (result.data) allSales = [...allSales, ...result.data];
             }
+            if (returnsResult.error) throw returnsResult.error;
+            if (purchasesResult.error) throw purchasesResult.error;
 
-            const inRangeSales = allSales.filter(s => isWithinDateRange(s.date, startDate, endDate));
+            const allReturns = returnsResult.data || [];
+            const allPurchases = purchasesResult.data || [];
+
+            // --- Format Sales ---
+            const inRangeSales = allSales.filter(s => isWithinDateRange(s.date, fetchStart, fetchEnd));
             const hasLimit = permissions?.includes('limit_sales_view');
             const limitPercentage = Number(storeSettings?.sales_view_percentage ?? 70);
-            const filteredSales = hasLimit
+            const filteredSalesList = hasLimit
                 ? inRangeSales.filter(s => (s.id % 100) < limitPercentage)
                 : inRangeSales;
-
-            const formattedSales = filteredSales.map(s => ({
+            setRealSales(filteredSalesList.map(s => ({
                 ...s,
                 orderNo: s.order_no,
                 totalAmount: Number(s.total_amount || 0),
@@ -308,80 +354,21 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
                 customerName: s.customer_name,
                 cashierName: s.cashier_name,
                 waiterName: s.waiter_name,
-                productDetails: (s.items || []).map((i: any) => ({
-                    name: i.product_name,
-                    quantity: i.quantity,
-                    price: i.price,
-                    cost: i.cost || 0,
-                    category: i.product?.category
-                }))
-            }));
-            setRealSales(formattedSales);
+                productDetails: []
+            })));
 
-            // 2. Fetch Returns with Pagination
-            let allReturns: any[] = [];
-            let retFrom = 0;
-            let retHasMore = true;
-
-            while (retHasMore) {
-                let query = supabase
-                    .from('sales_returns')
-                    .select('*')
-                    .gte('date', queryStartIso)
-                    .lte('date', queryEndIso);
-
-                // sales_returns might not have branch_id, so we skip it to prevent 400 error
-                
-                const { data: retPage, error: retError } = await query.range(retFrom, retFrom + pageSize - 1);
-                
-                if (retError) throw retError;
-
-                if (retPage && retPage.length > 0) {
-                    allReturns = [...allReturns, ...retPage];
-                    if (retPage.length < pageSize) retHasMore = false;
-                    else retFrom += pageSize;
-                } else {
-                    retHasMore = false;
-                }
-            }
-            const inRangeReturns = allReturns.filter(r => isWithinDateRange(r.date, startDate, endDate));
-            const filteredReturns = hasLimit
+            // --- Format Returns ---
+            const inRangeReturns = allReturns.filter(r => isWithinDateRange(r.date, fetchStart, fetchEnd));
+            const filteredReturnsList = hasLimit
                 ? inRangeReturns.filter(r => (Number(r.sale_id) % 100) < limitPercentage)
                 : inRangeReturns;
-            setRealReturns(filteredReturns.map(r => ({
+            setRealReturns(filteredReturnsList.map(r => ({
                 ...r,
                 refundAmount: Number(r.refund_amount || 0)
             })));
 
-            // 3. Fetch Purchases with Pagination
-            let allPurchases: any[] = [];
-            let purFrom = 0;
-            let purHasMore = true;
-
-            while (purHasMore) {
-                let query = supabase
-                    .from('purchases')
-                    .select('*')
-                    .gte('date', queryStartIso)
-                    .lte('date', queryEndIso);
-
-                if (targetBranch) {
-                    query = query.eq('branch_id', targetBranch);
-                }
-                
-                const { data: purPage, error: purError } = await query.range(purFrom, purFrom + pageSize - 1);
-                
-                if (purError) throw purError;
-
-                if (purPage && purPage.length > 0) {
-                    allPurchases = [...allPurchases, ...purPage];
-                    if (purPage.length < pageSize) purHasMore = false;
-                    else purFrom += pageSize;
-                } else {
-                    purHasMore = false;
-                }
-            }
-            setRealPurchases(allPurchases.filter(p => isWithinDateRange(p.date, startDate, endDate)));
+            // --- Format Purchases ---
+            setRealPurchases(allPurchases.filter(p => isWithinDateRange(p.date, fetchStart, fetchEnd)));
 
         } catch (err) {
             console.error('Error fetching real data:', err);
@@ -390,6 +377,8 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
             setIsLoadingRealData(false);
         }
     };
+
+
 
     useEffect(() => {
         if (!loading && role !== null && !hasAppliedDefaultToday) {
@@ -408,9 +397,10 @@ export function ReportsView({ sales: initialSales, returns: initialReturns, purc
 
     useEffect(() => {
         if (hasAppliedDefaultToday) {
-            fetchRealData();
+            fetchRealData(startDate, endDate);
         }
     }, [startDate, endDate, selectedBranch, permissions, storeSettings?.sales_view_percentage, loading, hasAppliedDefaultToday]);
+
 
     const filteredSales = useMemo(() => {
         return realSales.filter(s => {

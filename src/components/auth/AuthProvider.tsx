@@ -303,9 +303,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                             Akun Anda telah digunakan untuk login di perangkat lain. Untuk keamanan, sesi ini telah dinonaktifkan.
                         </p>
                         <button
-                            onClick={() => {
+                            onClick={async () => {
                                 setSessionConflict(false);
-                                supabase.auth.signOut();
+                                try {
+                                    await supabase.auth.signOut();
+                                } finally {
+                                    localStorage.removeItem('winpos-auth-token');
+                                    window.location.href = '/login';
+                                }
                             }}
                             className="w-full py-4 bg-gray-900 text-white font-black rounded-2xl hover:bg-black transition-colors"
                         >

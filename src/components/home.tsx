@@ -64,6 +64,31 @@ function Home() {
       localStorage.setItem('winpos_active_module', activeModule);
     }
   }, [activeModule]);
+
+  // Auto-route based on permissions when module mounts or role changes
+  useEffect(() => {
+    if (!role || loading) return;
+
+    if (!hasPermission(activeModule)) {
+      const roleLower = role.toLowerCase();
+      let defaultModule: ModuleType = 'dashboard';
+      
+      if (roleLower === 'cashier' || roleLower === 'kasir' || roleLower === 'waiter' || roleLower === 'pelayan') {
+        defaultModule = 'pos';
+      } else if (roleLower === 'kitchen' || roleLower === 'dapur') {
+        defaultModule = 'kds';
+      }
+      
+      if (hasPermission(defaultModule)) {
+        setActiveModule(defaultModule);
+      } else {
+        // Fallback to first available permitted module
+        const allModules: ModuleType[] = ['dashboard', 'users', 'contacts', 'products', 'purchases', 'pos', 'kds', 'reports', 'accounting', 'settings', 'employees', 'attendance', 'payroll', 'branches', 'shifts', 'performance_indicators', 'inventory', 'session_history', 'promos'];
+        const firstPermitted = allModules.find(m => hasPermission(m));
+        if (firstPermitted) setActiveModule(firstPermitted);
+      }
+    }
+  }, [role, loading, activeModule, permissions]);
   const [returns, setReturns] = useState<SalesReturn[]>([]);
   // const [userRole, setUserRole] = useState<string>('Administrator'); // Replaced by useAuth
   const [isOnline, setIsOnline] = useState(() => {
@@ -3185,14 +3210,34 @@ function Home() {
 
   // Helper to check permission
   const hasPermission = (moduleId: string) => {
-    // Debug Access
-    // console.log(`Checking Access: Role=${role}, Module=${moduleId}`);
+    const roleLower = role ? role.toLowerCase() : '';
+    
+    // Administrator, Manager, Owner full access
+    if (roleLower === 'administrator' || roleLower === 'admin' || roleLower === 'manager' || roleLower === 'owner') {
+      return true;
+    }
 
-    if (moduleId === 'dashboard') return true;
-    if (role && role.toLowerCase() === 'administrator') return true;
+    // Explicitly hide products icon if not administrator
+    if (moduleId === 'products') return false;
 
-    // Special Permission: Cashier (or Kasir) can view KDS
-    if (role && (role.toLowerCase() === 'cashier' || role.toLowerCase() === 'kasir') && moduleId === 'kds') return true;
+    // Operational roles strict check
+    if (roleLower === 'cashier' || roleLower === 'kasir') {
+      return ['pos', 'kds', 'session_history', 'attendance'].includes(moduleId);
+    }
+    
+    if (roleLower === 'kitchen' || roleLower === 'dapur') {
+      return ['kds', 'attendance'].includes(moduleId);
+    }
+    
+    if (roleLower === 'waiter' || roleLower === 'pelayan') {
+      return ['pos', 'kds', 'attendance'].includes(moduleId);
+    }
+
+    // Default for any other roles (including explicit permissions if set)
+    // Removed the "if (moduleId === 'dashboard') return true;" so dashboard is NO LONGER public.
+    if (moduleId === 'dashboard') {
+      return ['administrator', 'manager', 'owner', 'supervisor', 'spv'].includes(roleLower);
+    }
 
     return permissions.includes(moduleId);
   };
@@ -4259,7 +4304,7 @@ function Home() {
                 </Button>
                 <Button
                   className="flex-1 h-12 bg-red-600 hover:bg-red-700 text-white rounded-xl shadow-lg shadow-red-100"
-                  onClick={() => {
+                  onClick={async () => {
                     // Check if session guard prevents logout
                     if (!canLogout()) {
                       setShowLogoutConfirm(false);
@@ -4269,7 +4314,12 @@ function Home() {
                       });
                       return;
                     }
-                    supabase.auth.signOut();
+                    try {
+                      await supabase.auth.signOut();
+                    } finally {
+                      localStorage.removeItem('winpos-auth-token');
+                      window.location.href = '/login';
+                    }
                   }}
                 >
                   Keluar
