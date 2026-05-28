@@ -1014,39 +1014,68 @@ export function InventoryView({
                             </div>
                         </div>
 
-                        <div className="px-8 py-4 bg-gray-50/50 border-b border-gray-100 flex items-center justify-between gap-4">
-                            <div className="flex items-center gap-3">
-                                <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-gray-200 shadow-sm">
-                                    <Calendar className="w-3.5 h-3.5 text-blue-500" />
-                                    <span className="text-[10px] font-black text-gray-400 uppercase">Dari Tanggal</span>
-                                    <input 
-                                        type="date" 
-                                        value={stockCardStartDate}
-                                        onChange={(e) => setStockCardStartDate(e.target.value)}
-                                        className="text-xs font-bold text-gray-700 focus:outline-none"
-                                    />
+                        <div className="px-8 py-4 bg-gray-50/50 border-b border-gray-100 flex flex-col gap-4">
+                            <div className="flex items-center justify-between gap-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-gray-200 shadow-sm">
+                                        <Calendar className="w-3.5 h-3.5 text-blue-500" />
+                                        <span className="text-[10px] font-black text-gray-400 uppercase">Dari Tanggal</span>
+                                        <input 
+                                            type="date" 
+                                            value={stockCardStartDate}
+                                            onChange={(e) => setStockCardStartDate(e.target.value)}
+                                            className="text-xs font-bold text-gray-700 focus:outline-none"
+                                        />
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-gray-200 shadow-sm">
+                                        <span className="text-[10px] font-black text-gray-400 uppercase">Sampai</span>
+                                        <input 
+                                            type="date" 
+                                            value={stockCardEndDate}
+                                            onChange={(e) => setStockCardEndDate(e.target.value)}
+                                            className="text-xs font-bold text-gray-700 focus:outline-none"
+                                        />
+                                    </div>
+                                    {(stockCardStartDate || stockCardEndDate) && (
+                                        <button 
+                                            onClick={() => { setStockCardStartDate(''); setStockCardEndDate(''); }}
+                                            className="text-[10px] font-black text-red-500 hover:text-red-600 uppercase"
+                                        >
+                                            Tampilkan Semua
+                                        </button>
+                                    )}
                                 </div>
-                                <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-gray-200 shadow-sm">
-                                    <span className="text-[10px] font-black text-gray-400 uppercase">Sampai</span>
-                                    <input 
-                                        type="date" 
-                                        value={stockCardEndDate}
-                                        onChange={(e) => setStockCardEndDate(e.target.value)}
-                                        className="text-xs font-bold text-gray-700 focus:outline-none"
-                                    />
+                                <div className="text-[10px] font-medium text-gray-400 italic">
+                                    {(stockCardStartDate || stockCardEndDate) ? `* Menampilkan mutasi untuk rentang tanggal yang dipilih` : '* Menampilkan semua riwayat mutasi'}
                                 </div>
-                                {(stockCardStartDate || stockCardEndDate) && (
-                                    <button 
-                                        onClick={() => { setStockCardStartDate(''); setStockCardEndDate(''); }}
-                                        className="text-[10px] font-black text-red-500 hover:text-red-600 uppercase"
-                                    >
-                                        Tampilkan Semua
-                                    </button>
-                                )}
                             </div>
-                            <div className="text-[10px] font-medium text-gray-400 italic">
-                                {(stockCardStartDate || stockCardEndDate) ? `* Menampilkan mutasi untuk rentang tanggal yang dipilih` : '* Menampilkan semua riwayat mutasi'}
-                            </div>
+
+                            {stockCardMovements.length > 0 && (() => {
+                                const grandTotalIn = stockCardMovements.reduce((sum, m) => {
+                                    const type = (m.type || 'ADJUSTMENT').toUpperCase();
+                                    const isIn = type === 'IN' || (type === 'ADJUSTMENT' && (m.reason || '').toLowerCase().includes('mutasi'));
+                                    return isIn ? sum + Number(m.quantity) : sum;
+                                }, 0);
+                                const grandTotalOut = stockCardMovements.reduce((sum, m) => {
+                                    const type = (m.type || 'ADJUSTMENT').toUpperCase();
+                                    const isOut = type === 'OUT' || type.includes('KELUAR');
+                                    return isOut ? sum + Number(m.quantity) : sum;
+                                }, 0);
+                                
+                                return (
+                                    <div className="flex items-center gap-6 p-4 bg-white border border-gray-200 rounded-2xl shadow-sm">
+                                        <div className="flex-1">
+                                            <div className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1 flex items-center gap-1.5"><ArrowUpCircle className="w-4 h-4"/> Total Pemasukan</div>
+                                            <div className="text-2xl font-black text-gray-800">{grandTotalIn.toLocaleString()} <span className="text-sm font-medium text-gray-400">{selectedIngredient.unit}</span></div>
+                                        </div>
+                                        <div className="w-px h-12 bg-gray-200"></div>
+                                        <div className="flex-1">
+                                            <div className="text-[10px] font-black text-red-600 uppercase tracking-widest mb-1 flex items-center gap-1.5"><ArrowDownCircle className="w-4 h-4"/> Total Pengeluaran</div>
+                                            <div className="text-2xl font-black text-gray-800">{grandTotalOut.toLocaleString()} <span className="text-sm font-medium text-gray-400">{selectedIngredient.unit}</span></div>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                         </div>
 
                         <div className="flex-1 overflow-auto p-0">

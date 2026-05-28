@@ -629,25 +629,81 @@ function JournalTab({ transactions, accounts, onAddTransaction, onDeleteTransact
     searchQuery?: string;
     onSearchChange?: (val: string) => void;
 }) {
-    const [formData, setFormData] = useState({ date: new Date().toISOString().split('T')[0] || '', desc: '', debit: '', credit: '', amount: '' });
+    const [journalDate, setJournalDate] = useState(new Date().toISOString().split('T')[0] || '');
+    const [journalDesc, setJournalDesc] = useState('');
+    const [rows, setRows] = useState([
+        { id: Date.now(), account: '', debit: '', credit: '' },
+        { id: Date.now() + 1, account: '', debit: '', credit: '' }
+    ]);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleAddRow = () => {
+        setRows([...rows, { id: Date.now(), account: '', debit: '', credit: '' }]);
+    };
+
+    const handleRowChange = (id: number, field: string, value: string) => {
+        setRows(rows.map(r => r.id === id ? { ...r, [field]: value } : r));
+    };
+
+    const handleRemoveRow = (id: number) => {
+        setRows(rows.filter(r => r.id !== id));
+    };
+
+    const totalDebit = rows.reduce((sum, r) => sum + (Number(r.debit) || 0), 0);
+    const totalCredit = rows.reduce((sum, r) => sum + (Number(r.credit) || 0), 0);
+    const isBalanced = totalDebit === totalCredit && totalDebit > 0;
+
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!formData.debit || !formData.credit || !formData.amount) {
-            toast.error('Mohon lengkapi data jurnal');
+        if (!journalDate || !journalDesc) {
+            toast.error('Mohon isi tanggal dan keterangan jurnal');
             return;
         }
-        const newTx: JournalEntry = {
-            id: Date.now(),
-            date: formData.date,
-            description: formData.desc,
-            debitAccount: formData.debit,
-            creditAccount: formData.credit,
-            amount: parseInt(formData.amount),
-        };
-        onAddTransaction(newTx);
-        setFormData({ ...formData, desc: '', amount: '' });
-        toast.success('Jurnal berhasil disimpan');
+        if (!isBalanced) {
+            toast.error('Jurnal belum seimbang atau masih kosong!');
+            return;
+        }
+        if (rows.some(r => !r.account && (Number(r.debit) > 0 || Number(r.credit) > 0))) {
+            toast.error('Semua baris yang memiliki nominal harus memilih akun');
+            return;
+        }
+
+        const debits = rows.filter(r => Number(r.debit) > 0).map(r => ({ account: r.account, amount: Number(r.debit) }));
+        const credits = rows.filter(r => Number(r.credit) > 0).map(r => ({ account: r.account, amount: Number(r.credit) }));
+
+        let i = 0, j = 0;
+        let success = false;
+        while (i < debits.length && j < credits.length) {
+            const d = debits[i];
+            const c = credits[j];
+            const amount = Math.min(d.amount, c.amount);
+
+            const newTx: JournalEntry = {
+                id: Date.now() + Math.floor(Math.random() * 1000),
+                date: journalDate,
+                description: journalDesc,
+                debitAccount: d.account,
+                creditAccount: c.account,
+                amount: amount,
+            };
+
+            onAddTransaction(newTx);
+            success = true;
+
+            d.amount -= amount;
+            c.amount -= amount;
+
+            if (d.amount === 0) i++;
+            if (c.amount === 0) j++;
+        }
+        
+        if (success) {
+            setRows([
+                { id: Date.now(), account: '', debit: '', credit: '' },
+                { id: Date.now() + 1, account: '', debit: '', credit: '' }
+            ]);
+            setJournalDesc('');
+            toast.success('Jurnal berhasil disimpan');
+        }
     };
 
     const handleDelete = (id: number) => {
@@ -666,47 +722,120 @@ function JournalTab({ transactions, accounts, onAddTransaction, onDeleteTransact
     };
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in">
+        <div className="flex flex-col gap-8 animate-in fade-in">
             {/* Input Form */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-fit">
-                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2">
                     <Plus className="w-5 h-5 text-primary" /> Input Jurnal Baru
                 </h3>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Tanggal</label>
-                        <input type="date" className="w-full p-2 border rounded-lg" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Keterangan</label>
-                        <input type="text" className="w-full p-2 border rounded-lg" placeholder="Contoh: Bayar Listrik" value={formData.desc} onChange={e => setFormData({ ...formData, desc: e.target.value })} />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
+                <form onSubmit={handleSubmit} className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                            <label className="block text-sm font-medium text-green-700 mb-1">Akun Debit</label>
-                            <select className="w-full p-2 border rounded-lg" value={formData.debit} onChange={e => setFormData({ ...formData, debit: e.target.value })}>
-                                <option value="">Pilih Akun</option>
-                                {accounts.map(acc => <option key={acc.code} value={acc.code}>{acc.code} - {acc.name}</option>)}
-                            </select>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Tanggal</label>
+                            <input type="date" className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white transition-colors" value={journalDate} onChange={e => setJournalDate(e.target.value)} />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-red-700 mb-1">Akun Kredit</label>
-                            <select className="w-full p-2 border rounded-lg" value={formData.credit} onChange={e => setFormData({ ...formData, credit: e.target.value })}>
-                                <option value="">Pilih Akun</option>
-                                {accounts.map(acc => <option key={acc.code} value={acc.code}>{acc.code} - {acc.name}</option>)}
-                            </select>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Keterangan</label>
+                            <input type="text" className="w-full p-2 border rounded-lg bg-gray-50 focus:bg-white transition-colors" placeholder="Contoh: Pembayaran Gaji" value={journalDesc} onChange={e => setJournalDesc(e.target.value)} />
                         </div>
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Nominal (Rp)</label>
-                        <input type="number" className="w-full p-2 border rounded-lg" placeholder="0" value={formData.amount} onChange={e => setFormData({ ...formData, amount: e.target.value })} />
+                    
+                    <div className="border rounded-xl overflow-hidden">
+                        <table className="w-full text-sm">
+                            <thead className="bg-gray-50 text-gray-700">
+                                <tr>
+                                    <th className="px-4 py-3 text-left w-1/2">Akun</th>
+                                    <th className="px-4 py-3 text-right w-1/4">Debit</th>
+                                    <th className="px-4 py-3 text-right w-1/4">Kredit</th>
+                                    <th className="px-4 py-3 text-center w-12"></th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y">
+                                {rows.map((row, idx) => (
+                                    <tr key={row.id}>
+                                        <td className="p-2">
+                                            <select 
+                                                className="w-full p-2 border-0 bg-transparent outline-none focus:ring-0" 
+                                                value={row.account} 
+                                                onChange={e => handleRowChange(row.id, 'account', e.target.value)}
+                                            >
+                                                <option value="" disabled>Pilih akun...</option>
+                                                {accounts.map(acc => <option key={acc.code} value={acc.code}>{acc.code} - {acc.name}</option>)}
+                                            </select>
+                                        </td>
+                                        <td className="p-2">
+                                            <input 
+                                                type="number" 
+                                                className="w-full p-2 border-0 bg-transparent outline-none focus:ring-0 text-right" 
+                                                placeholder="0"
+                                                value={row.debit} 
+                                                onChange={e => {
+                                                    handleRowChange(row.id, 'debit', e.target.value);
+                                                    if (e.target.value) handleRowChange(row.id, 'credit', '');
+                                                }} 
+                                            />
+                                        </td>
+                                        <td className="p-2">
+                                            <input 
+                                                type="number" 
+                                                className="w-full p-2 border-0 bg-transparent outline-none focus:ring-0 text-right" 
+                                                placeholder="0"
+                                                value={row.credit} 
+                                                onChange={e => {
+                                                    handleRowChange(row.id, 'credit', e.target.value);
+                                                    if (e.target.value) handleRowChange(row.id, 'debit', '');
+                                                }} 
+                                            />
+                                        </td>
+                                        <td className="p-2 text-center">
+                                            <button type="button" onClick={() => handleRemoveRow(row.id)} className="p-2 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50">
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                            <tfoot className="bg-gray-50 font-bold">
+                                <tr>
+                                    <td className="px-4 py-4 text-center">TOTAL</td>
+                                    <td className="px-4 py-4 text-right">Rp {totalDebit.toLocaleString()}</td>
+                                    <td className="px-4 py-4 text-right">Rp {totalCredit.toLocaleString()}</td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
                     </div>
-                    <Button type="submit" className="w-full">Simpan Transaksi</Button>
+
+                    <div className="flex items-center justify-between pt-2">
+                        <button 
+                            type="button" 
+                            onClick={handleAddRow}
+                            className="px-4 py-2 border rounded-lg text-sm font-medium hover:bg-gray-50 flex items-center gap-2"
+                        >
+                            <Plus className="w-4 h-4" /> Tambah Baris
+                        </button>
+                        
+                        <div className="flex items-center gap-4">
+                            {!isBalanced && (
+                                <span className="px-4 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium">
+                                    Belum Seimbang
+                                </span>
+                            )}
+                            {isBalanced && (
+                                <span className="px-4 py-2 bg-green-50 text-green-600 rounded-lg text-sm font-medium">
+                                    Seimbang
+                                </span>
+                            )}
+                            <Button type="submit" disabled={!isBalanced} className="bg-emerald-500 hover:bg-emerald-600 text-white flex items-center gap-2">
+                                <FileText className="w-4 h-4" /> Simpan Jurnal
+                            </Button>
+                        </div>
+                    </div>
                 </form>
             </div>
 
             {/* Journal Table */}
-            <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="p-4 bg-gray-50 border-b border-gray-100 flex flex-col md:flex-row justify-between items-center gap-4">
                     <div className="flex items-center gap-4 w-full md:w-auto">
                         <h3 className="font-bold text-gray-800 whitespace-nowrap">Riwayat Jurnal Umum</h3>

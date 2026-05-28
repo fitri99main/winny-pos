@@ -432,21 +432,18 @@ export function CashierSessionModal({
                 }
                 onOpenChange(v);
             }}>
-                <DialogContent className="max-w-md p-6 bg-white rounded-3xl shadow-2xl border-none">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-3 text-2xl font-bold text-gray-800 tracking-tight">
-                            <div className={`p-2 rounded-xl text-white shadow-lg ${mode === 'open' ? 'bg-green-500 shadow-green-100' : 'bg-blue-600 shadow-blue-100'}`}>
-                                {mode === 'open' ? <LogIn className="w-6 h-6" /> : <LogOut className="w-6 h-6" />}
-                            </div>
-                            {mode === 'open' ? 'Buka Shift Kasir' : (mode === 'force_close' ? 'Tutup Paksa Shift' : 'Tutup Shift Kasir')}
-                        </DialogTitle>
-                        <DialogDescription className="text-gray-500 mt-1 font-medium">
-                            {mode === 'open' 
-                                ? 'Silakan masukkan modal awal di laci kasir untuk hari ini.' 
-                                : 'Cek total kas lalu masukkan hitungan fisik kasir.'
-                            }
-                        </DialogDescription>
-                    </DialogHeader>
+                <DialogContent className="w-full h-full sm:max-w-md sm:h-auto sm:rounded-3xl sm:shadow-2xl bg-white/95 backdrop-blur-md p-6 sm:p-8 border-none flex flex-col">
+    <DialogHeader>
+        <DialogTitle className="flex items-center gap-3 text-2xl font-bold text-gray-800 tracking-tight">
+            <div className={`p-2 rounded-xl text-white shadow-lg ${mode === 'open' ? 'bg-green-500' : 'bg-blue-600'}`}>
+                <Eye className="w-6 h-6" />
+            </div>
+            {mode === 'open' ? 'Buka Shift Kasir' : (mode === 'force_close' ? 'Tutup Paksa Shift' : 'Tutup Shift Kasir')}
+        </DialogTitle>
+        <DialogDescription className="text-gray-500 mt-1 font-medium text-sm">
+            {mode === 'open' ? 'Silakan masukkan modal awal di laci kasir untuk hari ini.' : 'Cek total kas lalu masukkan hitungan fisik kasir.'}
+        </DialogDescription>
+    </DialogHeader>
 
                     {mode === 'open' && (
                         <div className="space-y-6 py-6">
@@ -467,9 +464,67 @@ export function CashierSessionModal({
                         </div>
                     )}
 
+
                     {(mode === 'close' || mode === 'force_close') && (
-                        <div className="space-y-6 py-4">
-                            {loading && !closingData ? (
+                        <div className="space-y-4 py-4">
+                            {closingData && (
+                                <>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div className="p-3 bg-green-100 rounded-lg">
+                                            <span className="text-sm font-medium text-gray-700">Total Penjualan</span>
+                                            <div className="text-xl font-bold">{formatPrice(closingData?.total_sales)}</div>
+                                        </div>
+                                        <div className="p-3 bg-blue-100 rounded-lg">
+                                            <span className="text-sm font-medium text-gray-700">Penjualan Tunai</span>
+                                            <div className="text-xl font-bold">{formatPrice(closingData?.cash_sales)}</div>
+                                        </div>
+                                        <div className="p-3 bg-purple-100 rounded-lg">
+                                            <span className="text-sm font-medium text-gray-700">Non‑Tunai</span>
+                                            <div className="text-xl font-bold">{formatPrice(closingData?.non_cash_sales)}</div>
+                                        </div>
+                                        <div className="p-3 bg-yellow-100 rounded-lg">
+                                            <span className="text-sm font-medium text-gray-700">Uang Harusnya</span>
+                                            <div className="text-xl font-bold">{formatPrice(closingData?.expected_cash)}</div>
+                                        </div>
+                                        <div className="p-3 bg-red-100 rounded-lg col-span-2">
+                                            <span className="text-sm font-medium text-gray-700">Retur &amp; Pengeluaran</span>
+                                            <div className="text-xl font-bold">{formatPrice((closingData?.cash_refunds || 0) + (closingData?.cash_expenses || 0))}</div>
+                                        </div>
+                                    </div>
+
+                                    {/* Detailed table */}
+                                    <div className="border rounded-xl overflow-hidden overflow-x-auto">
+                                        <table className="w-full text-xs">
+                                            <thead className="bg-gray-50 border-b">
+                                                <tr>
+                                                    <th className="px-3 py-2 text-left">Invoice</th>
+                                                    <th className="px-3 py-2 text-left">Waktu</th>
+                                                    <th className="px-3 py-2 text-left">Metode</th>
+                                                    <th className="px-3 py-2 text-right">Total</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y">
+                                                {closingData.sales_list?.slice(0, 50).map((s: any) => (
+                                                    <tr key={s.id} className="hover:bg-gray-50">
+                                                        <td className="px-3 py-2 font-mono text-blue-600">{s.order_no}</td>
+                                                        <td className="px-3 py-2 text-gray-500">{new Date(s.date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</td>
+                                                        <td className="px-3 py-2">{s.payment_method}</td>
+                                                        <td className="px-3 py-2 text-right font-medium">Rp {(s.paid_amount || s.total_amount || 0).toLocaleString()}</td>
+                                                    </tr>
+                                                ))}
+                                                {closingData.sales_list?.length > 50 && (
+                                                    <tr>
+                                                        <td colSpan={4} className="px-3 py-2 text-center text-gray-400 italic">
+                                                            ...dan {closingData.sales_list.length - 50} transaksi lainnya (Cetak laporan untuk detail lengkap)
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </>
+                            )}
+                    {loading && !closingData ? (
                                 <div className="flex justify-center p-8"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
                             ) : (
                                 <>
@@ -498,58 +553,65 @@ export function CashierSessionModal({
                                     </div>
                                 </div>
                                 <div className="border rounded-xl overflow-hidden overflow-x-auto">
-                                    <table className="w-full text-xs">
-                                        <thead className="bg-gray-50 border-b">
-                                            <tr>
-                                                <th className="px-3 py-2 text-left">Invoice</th>
-                                                <th className="px-3 py-2 text-left">Waktu</th>
-                                                <th className="px-3 py-2 text-left">Metode</th>
-                                                <th className="px-3 py-2 text-right">Total</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y">
-                                            {closingData.sales_list?.slice(0, 50).map((s: any) => (
-                                                <tr key={s.id} className="hover:bg-gray-50">
-                                                    <td className="px-3 py-2 font-mono text-blue-600">{s.order_no}</td>
-                                                    <td className="px-3 py-2 text-gray-500">
-                                                        {new Date(s.date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
-                                                    </td>
-                                                    <td className="px-3 py-2">{s.payment_method}</td>
-                                                    <td className="px-3 py-2 text-right font-medium">
-                                                        Rp {(s.paid_amount || s.total_amount || 0).toLocaleString()}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                            {closingData.sales_list?.length > 50 && (
-                                                <tr>
-                                                    <td colSpan={4} className="px-3 py-2 text-center text-gray-400 italic">
-                                                        ...dan {closingData.sales_list.length - 50} transaksi lainnya (Cetak laporan untuk detail lengkap)
-                                                    </td>
-                                                </tr>
-                                            )}
-                                        </tbody>
-                                    </table>
+                                  <table className="w-full text-xs">
+                                    <thead className="bg-gray-50 border-b">
+                                      <tr>
+                                        <th className="px-3 py-2 text-left">Invoice</th>
+                                        <th className="px-3 py-2 text-left">Waktu</th>
+                                        <th className="px-3 py-2 text-left">Metode</th>
+                                        <th className="px-3 py-2 text-right">Total</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y">
+                                      {closingData.sales_list?.slice(0, 50).map((s: any) => (
+                                        <tr key={s.id} className="hover:bg-gray-50">
+                                          <td className="px-3 py-2 font-mono text-blue-600">{s.order_no}</td>
+                                          <td className="px-3 py-2 text-gray-500">{new Date(s.date).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</td>
+                                          <td className="px-3 py-2">{s.payment_method}</td>
+                                          <td className="px-3 py-2 text-right font-medium">Rp {(s.paid_amount || s.total_amount || 0).toLocaleString()}</td>
+                                        </tr>
+                                      ))}
+                                      {closingData.sales_list?.length > 50 && (
+                                        <tr>
+                                          <td colSpan={4} className="px-3 py-2 text-center text-gray-400 italic">
+                                            ...dan {closingData.sales_list.length - 50} transaksi lainnya (Cetak laporan untuk detail lengkap)
+                                          </td>
+                                        </tr>
+                                      )}
+                                    </tbody>
+                                  </table>
                                 </div>
-                            </div>
-                        )}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px]">
-                                            <div className="rounded-xl bg-white/80 border border-blue-100 px-3 py-2">
-                                                <span className="text-blue-500/90 block font-bold uppercase tracking-wide">Penjualan Tunai</span>
-                                                <span className="font-bold text-blue-950">{formatPrice(closingData?.cash_sales)}</span>
-                                            </div>
-                                            <div className="rounded-xl bg-white/80 border border-blue-100 px-3 py-2">
-                                                <span className="text-blue-500/90 block font-bold uppercase tracking-wide">Penjualan Non-Tunai</span>
-                                                <span className="font-bold text-blue-950">{formatPrice(closingData?.non_cash_sales)}</span>
-                                            </div>
-                                            <div className="rounded-xl bg-white/80 border border-red-100 px-3 py-2">
-                                                <span className="text-red-500/90 block font-bold uppercase tracking-wide">Retur & Pengeluaran</span>
-                                                <span className="font-bold text-red-950">{formatPrice((closingData?.cash_refunds || 0) + (closingData?.cash_expenses || 0))}</span>
-                                            </div>
-                                            <div className="rounded-xl bg-white/80 border border-green-100 px-3 py-2">
-                                                <span className="text-green-500/90 block font-bold uppercase tracking-wide">Uang Tunai Seharusnya</span>
-                                                <span className="font-bold text-green-950">{formatPrice(closingData?.expected_cash)}</span>
-                                            </div>
-                                        </div>
+                                {/* Summary grids */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px]">
+                                  <div className="rounded-xl bg-white/80 border border-blue-100 px-3 py-2">
+                                    <span className="text-blue-500/90 block font-bold uppercase tracking-wide">Penjualan Tunai</span>
+                                    <span className="font-bold text-blue-950">{formatPrice(closingData?.cash_sales)}</span>
+                                  </div>
+                                  <div className="rounded-xl bg-white/80 border border-blue-100 px-3 py-2">
+                                    <span className="text-blue-500/90 block font-bold uppercase tracking-wide">Penjualan Non-Tunai</span>
+                                    <span className="font-bold text-blue-950">{formatPrice(closingData?.non_cash_sales)}</span>
+                                  </div>
+                                  <div className="rounded-xl bg-white/80 border border-red-100 px-3 py-2">
+                                    <span className="text-red-500/90 block font-bold uppercase tracking-wide">Retur & Pengeluaran</span>
+                                    <span className="font-bold text-red-950">{formatPrice((closingData?.cash_refunds || 0) + (closingData?.cash_expenses || 0))}</span>
+                                  </div>
+                                  <div className="rounded-xl bg-white/80 border border-green-100 px-3 py-2">
+                                    <span className="text-green-500/90 block font-bold uppercase tracking-wide">Uang Tunai Seharusnya</span>
+                                    <span className="font-bold text-green-950">{formatPrice(closingData?.expected_cash)}</span>
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-3 mb-4">
+                                  <div className="rounded-xl bg-white/80 border border-green-100 px-3 py-2">
+                                    <span className="text-green-500/90 block font-bold uppercase">Uang Tunai Seharusnya</span>
+                                    <span className="font-bold text-green-950">{formatPrice(closingData?.expected_cash)}</span>
+                                  </div>
+                                  <div className="rounded-xl bg-white/80 border border-red-100 px-3 py-2">
+                                    <span className="text-red-500/90 block font-bold uppercase">Selisih Kas</span>
+                                    <span className="font-bold text-red-950">{formatPrice(cashDifference)}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                                         <div className="grid grid-cols-2 gap-3 text-[11px] mt-2">
                                             <div className="rounded-xl bg-white/80 border border-gray-100 px-3 py-2">
                                                 <span className="text-gray-500 block font-bold uppercase tracking-wide">Modal</span>
@@ -567,20 +629,21 @@ export function CashierSessionModal({
                                         </div>
                                     )}
 
-                                    <div className="space-y-3">
-                                        <Label className="text-sm font-bold text-gray-700">Kas Fisik di Laci</Label>
-                                        <div className="relative">
-                                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">Rp</span>
-                                            <Input
-                                                type="number"
-                                                className="pl-12 h-14 text-xl font-bold rounded-2xl focus:ring-blue-500"
-                                                placeholder="0"
-                                                value={actualCash}
-                                                onChange={e => setActualCash(e.target.value)}
-                                                autoFocus
-                                            />
-                                        </div>
-                                    </div>
+
+<div className="space-y-3">
+  <Label className="text-sm font-bold text-gray-700">Kas Fisik di Laci</Label>
+  <div className="relative">
+    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">Rp</span>
+    <Input
+      type="number"
+      className="pl-12 h-14 text-xl font-bold rounded-2xl focus:ring-blue-500"
+      placeholder="0"
+      value={actualCash}
+      onChange={e => setActualCash(e.target.value)}
+      autoFocus
+    />
+  </div>
+</div>
 
                                     {!settings?.require_blind_close && hasActualCash && (
                                         <div className={`p-4 rounded-2xl border flex items-center justify-between ${
@@ -599,11 +662,16 @@ export function CashierSessionModal({
 
                     <DialogFooter className="gap-3 pt-6">
                         <Button variant="ghost" onClick={() => onOpenChange(false)} className="rounded-xl text-gray-500">Batal</Button>
-                        <div className="flex-1 flex gap-2">
+                            <div className="flex gap-2">
                             {(mode === 'close' || mode === 'force_close') && closingData && (
                                 <>
-                                    <Button variant="outline" onClick={() => setIsReportPreviewOpen(true)} className="flex-1 h-12 rounded-xl border-blue-200 text-blue-700 font-bold">
-                                        <Eye className="w-4 h-4 mr-2" /> Pratinjau
+                                    <Button
+                                      variant="ghost"
+                                      onClick={() => setIsReportPreviewOpen(true)}
+                                      className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-white hover:bg-primary/80"
+                                      aria-label="Pratinjau laporan"
+                                    >
+                                      <Eye className="w-5 h-5" />
                                     </Button>
                                     <Button variant="outline" onClick={handlePrintSalesReport} className="flex-1 h-12 rounded-xl border-gray-200 text-gray-700 font-bold">
                                         <Printer className="w-4 h-4 mr-2" /> Cetak
