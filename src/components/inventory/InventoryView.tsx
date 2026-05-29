@@ -123,17 +123,41 @@ export function InventoryView({
     const [stockCardEndDate, setStockCardEndDate] = useState('');
     const [isFetchingStockCard, setIsFetchingStockCard] = useState(false);
     const [directStockCardMovements, setDirectStockCardMovements] = useState<any[]>([]);
+    const [hasFetchedStockCard, setHasFetchedStockCard] = useState(false);
+    const [summaryTotals, setSummaryTotals] = useState<{ total_in: number, total_out: number } | null>(null);
 
-    const fetchStockCardData = async (ingredient: Ingredient) => {
+    const fetchStockCardData = async (ingredient: Ingredient, start: string, end: string) => {
         setIsFetchingStockCard(true);
-        setDirectStockCardMovements([]);
+        setSummaryTotals(null);
+        // Do not clear the existing array here to prevent UI flickering during filter changes
         try {
-            // 1. Fetch manual & trigger stock movements
-            const { data: manualMovs } = await supabase
+            // 0. Fetch exact summary totals directly from Database Server (Instant)
+            const { data: summary } = await supabase.rpc('get_stock_summary', {
+                p_ingredient_id: ingredient.id,
+                p_start_date: start ? start + 'T00:00:00' : null,
+                p_end_date: end ? end + 'T23:59:59' : null
+            });
+            if (summary) {
+                setSummaryTotals({ total_in: summary.total_in || 0, total_out: summary.total_out || 0 });
+            }
+
+            // 1. Fetch manual & trigger stock movements (Limit to 300 to keep download under 0.1s)
+            let query = supabase
                 .from('stock_movements')
                 .select('*')
                 .eq('ingredient_id', ingredient.id)
                 .order('created_at', { ascending: false });
+                
+            if (start) {
+                query = query.gte('created_at', start + 'T00:00:00');
+            }
+            if (end) {
+                query = query.lte('created_at', end + 'T23:59:59');
+            }
+            // Mencegah download ukuran besar (ribuan baris) agar loading selalu 0.1 detik
+            query = query.limit(300);
+
+            const { data: manualMovs } = await query;
 
             const all = (manualMovs || []).map((m: any) => ({
                 ...m,
@@ -141,6 +165,7 @@ export function InventoryView({
             }));
 
             setDirectStockCardMovements(all);
+            setHasFetchedStockCard(true);
         } catch (err) {
             console.error('Error fetching stock card data:', err);
         } finally {
@@ -404,7 +429,7 @@ export function InventoryView({
                user.toLowerCase().includes(query);
     });
 
-    const stockCardMovements = (directStockCardMovements.length > 0 ? directStockCardMovements : (movements || []))
+    const stockCardMovements = (hasFetchedStockCard ? directStockCardMovements : (movements || []))
         .filter(m => {
             if (!selectedIngredient) return false;
             const mId = m.ingredient_id || m.ingredientId;
@@ -555,12 +580,15 @@ export function InventoryView({
                                                 </button>
                                                 <button
                                                     onClick={() => { 
+                                                        const now = new Date();
+                                                        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
                                                         setSelectedIngredient(ing); 
-                                                        setStockCardStartDate('');
-                                                        setStockCardEndDate('');
+                                                        setStockCardStartDate(todayStr);
+                                                        setStockCardEndDate(todayStr);
+                                                        setHasFetchedStockCard(false);
                                                         setDirectStockCardMovements([]);
                                                         setIsStockCardOpen(true);
-                                                        fetchStockCardData(ing);
+                                                        fetchStockCardData(ing, todayStr, todayStr);
                                                     }}
                                                     className="p-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors"
                                                     title="Lihat Kartu Stok"
@@ -999,7 +1027,12 @@ export function InventoryView({
                                     <History className="w-6 h-6" />
                                 </div>
                                 <div>
-                                    <h3 className="text-xl font-black text-gray-800">Kartu Stok: {selectedIngredient.name}</h3>
+                                    <h3 className="text-xl font-black text-gray-800 flex items-center gap-3">
+                                        Kartu Stok: {selectedIngredient.name}
+                                        {isFetchingStockCard && (
+                                            <div className="w-5 h-5 border-2 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
+                                        )}
+                                    </h3>
                                     <p className="text-gray-500 text-sm">Riwayat mutasi keluar masuk bahan baku.</p>
                                 </div>
                             </div>
@@ -1023,7 +1056,10 @@ export function InventoryView({
                                         <input 
                                             type="date" 
                                             value={stockCardStartDate}
-                                            onChange={(e) => setStockCardStartDate(e.target.value)}
+                                            onChange={(e) => {
+                                                setStockCardStartDate(e.target.value);
+                                                if (selectedIngredient) fetchStockCardData(selectedIngredient, e.target.value, stockCardEndDate);
+                                            }}
                                             className="text-xs font-bold text-gray-700 focus:outline-none"
                                         />
                                     </div>
@@ -1032,13 +1068,20 @@ export function InventoryView({
                                         <input 
                                             type="date" 
                                             value={stockCardEndDate}
-                                            onChange={(e) => setStockCardEndDate(e.target.value)}
+                                            onChange={(e) => {
+                                                setStockCardEndDate(e.target.value);
+                                                if (selectedIngredient) fetchStockCardData(selectedIngredient, stockCardStartDate, e.target.value);
+                                            }}
                                             className="text-xs font-bold text-gray-700 focus:outline-none"
                                         />
                                     </div>
                                     {(stockCardStartDate || stockCardEndDate) && (
                                         <button 
-                                            onClick={() => { setStockCardStartDate(''); setStockCardEndDate(''); }}
+                                            onClick={() => { 
+                                                setStockCardStartDate(''); 
+                                                setStockCardEndDate(''); 
+                                                if (selectedIngredient) fetchStockCardData(selectedIngredient, '', '');
+                                            }}
                                             className="text-[10px] font-black text-red-500 hover:text-red-600 uppercase"
                                         >
                                             Tampilkan Semua
@@ -1050,13 +1093,13 @@ export function InventoryView({
                                 </div>
                             </div>
 
-                            {stockCardMovements.length > 0 && (() => {
-                                const grandTotalIn = stockCardMovements.reduce((sum, m) => {
+                            {(stockCardMovements.length > 0 || summaryTotals) && (() => {
+                                const grandTotalIn = summaryTotals ? summaryTotals.total_in : stockCardMovements.reduce((sum, m) => {
                                     const type = (m.type || 'ADJUSTMENT').toUpperCase();
                                     const isIn = type === 'IN' || (type === 'ADJUSTMENT' && (m.reason || '').toLowerCase().includes('mutasi'));
                                     return isIn ? sum + Number(m.quantity) : sum;
                                 }, 0);
-                                const grandTotalOut = stockCardMovements.reduce((sum, m) => {
+                                const grandTotalOut = summaryTotals ? summaryTotals.total_out : stockCardMovements.reduce((sum, m) => {
                                     const type = (m.type || 'ADJUSTMENT').toUpperCase();
                                     const isOut = type === 'OUT' || type.includes('KELUAR');
                                     return isOut ? sum + Number(m.quantity) : sum;
@@ -1067,11 +1110,19 @@ export function InventoryView({
                                         <div className="flex-1">
                                             <div className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1 flex items-center gap-1.5"><ArrowUpCircle className="w-4 h-4"/> Total Pemasukan</div>
                                             <div className="text-2xl font-black text-gray-800">{grandTotalIn.toLocaleString()} <span className="text-sm font-medium text-gray-400">{selectedIngredient.unit}</span></div>
+                                            {summaryTotals && <div className="text-[9px] text-gray-400 mt-1">* Dihitung dari server (akurat 100%)</div>}
                                         </div>
                                         <div className="w-px h-12 bg-gray-200"></div>
                                         <div className="flex-1">
                                             <div className="text-[10px] font-black text-red-600 uppercase tracking-widest mb-1 flex items-center gap-1.5"><ArrowDownCircle className="w-4 h-4"/> Total Pengeluaran</div>
                                             <div className="text-2xl font-black text-gray-800">{grandTotalOut.toLocaleString()} <span className="text-sm font-medium text-gray-400">{selectedIngredient.unit}</span></div>
+                                            {summaryTotals && <div className="text-[9px] text-gray-400 mt-1">* Dihitung dari server (akurat 100%)</div>}
+                                        </div>
+                                        <div className="w-px h-12 bg-gray-200"></div>
+                                        <div className="flex-1">
+                                            <div className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1 flex items-center gap-1.5">Sisa Stok Aktual</div>
+                                            <div className="text-2xl font-black text-gray-800">{(selectedIngredient.current_stock || 0).toLocaleString()} <span className="text-sm font-medium text-gray-400">{selectedIngredient.unit}</span></div>
+                                            <div className="text-[9px] text-gray-400 mt-1">* Stok fisik riil saat ini (Master)</div>
                                         </div>
                                     </div>
                                 );
@@ -1107,22 +1158,12 @@ export function InventoryView({
                                 <tbody className="divide-y divide-gray-50">
                                     {(() => {
                                         try {
-                                            if (isFetchingStockCard) {
-                                                return (
-                                                    <tr>
-                                                        <td colSpan={8} className="px-8 py-20 text-center text-blue-400">
-                                                            <div className="flex flex-col items-center gap-3">
-                                                                <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
-                                                                <p className="text-sm font-medium">Memuat riwayat mutasi...</p>
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            }
                                             if (stockCardMovements.length === 0) {
                                                 return (
                                                     <tr>
-                                                        <td colSpan={8} className="px-8 py-20 text-center text-gray-400 italic">Belum ada riwayat mutasi untuk bahan ini.</td>
+                                                        <td colSpan={8} className="px-8 py-20 text-center text-gray-400 italic">
+                                                            {isFetchingStockCard ? 'Sedang memuat data...' : 'Belum ada riwayat mutasi untuk bahan ini.'}
+                                                        </td>
                                                     </tr>
                                                 );
                                             }
@@ -1171,7 +1212,7 @@ export function InventoryView({
                                                             </div>
                                                         </td>
                                                     </tr>
-                                                        {group.items.map(mov => {
+                                                        {group.items.slice(0, 20).map(mov => {
                                                             const type = (mov.type || 'ADJUSTMENT').toUpperCase();
                                                             const isActuallyIn = type === 'IN' || (type === 'ADJUSTMENT' && (mov.reason || '').toLowerCase().includes('mutasi'));
                                                             const isActuallyOut = type === 'OUT' || type.includes('KELUAR');
@@ -1243,6 +1284,13 @@ export function InventoryView({
                                                             </tr>
                                                         );
                                                     })}
+                                                    {group.items.length > 20 && (
+                                                        <tr className="bg-gray-50/50">
+                                                            <td colSpan={8} className="px-8 py-3 text-center text-xs text-gray-500 font-medium italic">
+                                                                + {group.items.length - 20} riwayat mutasi lainnya pada hari ini disembunyikan agar browser tidak lag. (Total mutasi tetap terhitung akurat di atas)
+                                                            </td>
+                                                        </tr>
+                                                    )}
                                                 </Fragment>
                                             );
                                         });

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { ProductCategory, OrderItem, Product, Promo, PromoProduct } from '@/types/pos';
 // import { mockProducts } from '@/data/products'; // REMOVED
 import { SearchBar } from './SearchBar';
@@ -559,7 +559,7 @@ export function CashierInterface({
   }
 
   // Add to cart
-  const handleAddToCart = (product: Product) => {
+  const handleAddToCart = useCallback((product: Product) => {
     if (product.stock === 0 && product.is_stock_ready === false) {
       toast.error('Produk kehabisan stok');
       return;
@@ -572,29 +572,29 @@ export function CashierInterface({
       return;
     }
 
-    const existingItem = orderItems.find((item) => item.product.id === product.id && (!item.selectedAddons || item.selectedAddons.length === 0));
+    setOrderItems((prev) => {
+      const existingItem = prev.find((item) => item.product.id === product.id && (!item.selectedAddons || item.selectedAddons.length === 0));
 
-    if (existingItem) {
-      setOrderItems((prev) =>
-        prev.map((item) =>
+      if (existingItem) {
+        return prev.map((item) =>
           (item.product.id === product.id && (!item.selectedAddons || item.selectedAddons.length === 0))
             ? { ...item, quantity: item.quantity + 1 }
             : item
-        )
-      );
-    } else {
-      const newItem: OrderItem = {
-        id: `${product.id}-${Date.now()}`,
-        product,
-        quantity: 1,
-      };
-      setOrderItems((prev) => [...prev, newItem]);
-    }
+        );
+      } else {
+        const newItem: OrderItem = {
+          id: `${product.id}-${Date.now()}`,
+          product,
+          quantity: 1,
+        };
+        return [...prev, newItem];
+      }
+    });
 
     toast.success(`${product.name} telah masuk keranjang`);
-  };
+  }, [setOrderItems]);
 
-  const handleConfirmAddons = () => {
+  const handleConfirmAddons = useCallback(() => {
     if (!addonPendingProduct) return;
 
     const newItem: OrderItem = {
@@ -609,10 +609,10 @@ export function CashierInterface({
     setAddonPendingProduct(null);
     setTempSelectedAddons([]);
     toast.success(`${addonPendingProduct.name} dengan toping telah masuk keranjang`);
-  };
+  }, [addonPendingProduct, tempSelectedAddons, setOrderItems]);
 
   // Add manual item
-  const handleAddManualItem = (item: { name: string; price: number }) => {
+  const handleAddManualItem = useCallback((item: { name: string; price: number }) => {
     const manualProduct: Product = {
       id: `manual-${Date.now()}`,
       name: item.name,
@@ -632,29 +632,29 @@ export function CashierInterface({
     toast.success(`Berhasil menambahkan: ${item.name}`, {
       description: `Harga: ${new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(item.price)}`
     });
-  };
+  }, [setOrderItems]);
+
+  // Remove item
+  const handleRemoveItem = useCallback((itemId: string) => {
+    setOrderItems((prev) => prev.filter((item) => item.id !== itemId));
+    // Also remove from initial items if it was never printed? 
+    // Actually better to keep initialItems as "what was already on the server"
+    toast.info('Item dihapus dari keranjang');
+  }, [setOrderItems]);
 
   // Update quantity
-  const handleQuantityChange = (itemId: string, newQuantity: number) => {
+  const handleQuantityChange = useCallback((itemId: string, newQuantity: number) => {
     if (newQuantity === 0) {
       handleRemoveItem(itemId);
       return;
     }
 
-    setOrderItems(
-      orderItems.map((item) =>
+    setOrderItems((prev) =>
+      prev.map((item) =>
         item.id === itemId ? { ...item, quantity: newQuantity } : item
       )
     );
-  };
-
-  // Remove item
-  const handleRemoveItem = (itemId: string) => {
-    setOrderItems(orderItems.filter((item) => item.id !== itemId));
-    // Also remove from initial items if it was never printed? 
-    // Actually better to keep initialItems as "what was already on the server"
-    toast.info('Item dihapus dari keranjang');
-  };
+  }, [handleRemoveItem, setOrderItems]);
 
   // --- SMART PRINTING LOGIC ---
   const executeSmartPrint = async (saleData: any, currentCart: OrderItem[]) => {

@@ -1667,14 +1667,23 @@ export default function POSScreen() {
         return result.sort(function(a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
     }, [products, searchQuery, selectedCategory]);
 
+    // Initialize formatter once to avoid severe performance issues in React Native Hermes
+    var currencyFormatter = React.useMemo(function() {
+        try {
+            if (typeof Intl !== 'undefined' && Intl.NumberFormat) {
+                return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 });
+            }
+        } catch(e) {}
+        return null;
+    }, []);
 
     var formatCurrency = React.useCallback(function(value) {
-        if (typeof Intl !== 'undefined' && Intl.NumberFormat) {
-            return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(value);
+        if (currencyFormatter) {
+            return currencyFormatter.format(value);
         }
         var valNum = Math.floor(Number(value));
         return 'Rp ' + valNum.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-    }, []);
+    }, [currencyFormatter]);
 
     var checkMember = function() {
         if (!memberPhone.trim()) { Alert.alert('Info', 'Masukkan nomor HP'); return; }
@@ -1818,11 +1827,11 @@ export default function POSScreen() {
         // Bersihkan draft di storage ditangani oleh useEffect
     }, []);
 
-    var calculateSubtotal = function() { return cart.reduce(function(total, item) { return total + (item.price * item.quantity); }, 0); };
-    var calculateTaxableSubtotal = function() { return cart.reduce(function(sum, item) { return item.is_taxed === false ? sum : sum + (item.price * item.quantity); }, 0); };
-    var calculateTaxAmount = function() { return (calculateTaxableSubtotal() * (storeSettings && storeSettings.tax_rate || 0)) / 100; };
-    var calculateServiceAmount = function() { return (calculateTaxableSubtotal() * (storeSettings && storeSettings.service_rate || 0)) / 100; };
-    var calculateTotal = function() { return Math.max(0, (calculateSubtotal() - orderDiscount) + calculateTaxAmount() + calculateServiceAmount()); };
+    var calculateSubtotal = React.useCallback(function() { return cart.reduce(function(total, item) { return total + (item.price * item.quantity); }, 0); }, [cart]);
+    var calculateTaxableSubtotal = React.useCallback(function() { return cart.reduce(function(sum, item) { return item.is_taxed === false ? sum : sum + (item.price * item.quantity); }, 0); }, [cart]);
+    var calculateTaxAmount = React.useCallback(function() { return (calculateTaxableSubtotal() * (storeSettings && storeSettings.tax_rate || 0)) / 100; }, [calculateTaxableSubtotal, storeSettings]);
+    var calculateServiceAmount = React.useCallback(function() { return (calculateTaxableSubtotal() * (storeSettings && storeSettings.service_rate || 0)) / 100; }, [calculateTaxableSubtotal, storeSettings]);
+    var calculateTotal = React.useCallback(function() { return Math.max(0, (calculateSubtotal() - orderDiscount) + calculateTaxAmount() + calculateServiceAmount()); }, [calculateSubtotal, orderDiscount, calculateTaxAmount, calculateServiceAmount]);
 
     var calculateActiveBreakdown = React.useCallback(function() {
         if (!isSplitPayment) {

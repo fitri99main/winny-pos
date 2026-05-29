@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, memo } from 'react';
 import { motion } from 'framer-motion';
 import { Coffee } from 'lucide-react';
 import { Product } from '@/types/pos';
@@ -9,7 +9,7 @@ interface ProductTileProps {
   onAddToCart: (product: Product) => void;
 }
 
-export function ProductTile({ product, onAddToCart }: ProductTileProps) {
+export const ProductTile = memo(function ProductTile({ product, onAddToCart }: ProductTileProps) {
   const imageSources = useMemo(
     () => [product.image_url, product.image].filter((source): source is string => Boolean(source && source.trim())),
     [product.image_url, product.image]
@@ -78,4 +78,4 @@ export function ProductTile({ product, onAddToCart }: ProductTileProps) {
       )}
     </motion.button>
   );
-}
+});
