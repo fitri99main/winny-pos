@@ -3494,14 +3494,14 @@ export function AccountingView({
 
     const tabs = [
         { id: 'overview', label: 'Ringkasan', icon: LayoutDashboard },
-        { id: 'accounts', label: 'Daftar Akun', icon: Settings },
-        { id: 'ledger', label: 'Buku Besar', icon: BookOpen },
-        { id: 'balance', label: 'Neraca', icon: FileText },
-        { id: 'journal', label: 'Jurnal Umum', icon: Plus },
-        { id: 'purchase_history', label: 'Riwayat Pembelian', icon: ShoppingCart },
-        { id: 'pettycash', label: 'Kas Kecil', icon: Wallet },
-        { id: 'hpp', label: 'Laporan HPP', icon: TrendingDown },
         { id: 'income', label: 'Laba Rugi', icon: TrendingUp },
+        { id: 'balance', label: 'Neraca', icon: FileText },
+        { id: 'hpp', label: 'Laporan HPP', icon: TrendingDown },
+        { id: 'journal', label: 'Jurnal Umum', icon: Plus },
+        { id: 'ledger', label: 'Buku Besar', icon: BookOpen },
+        { id: 'pettycash', label: 'Kas Kecil', icon: Wallet },
+        { id: 'purchase_history', label: 'Riwayat Pembelian', icon: ShoppingCart },
+        { id: 'accounts', label: 'Daftar Akun', icon: Settings },
     ];
 
     return (
@@ -3723,7 +3723,7 @@ export function AccountingView({
 
             {/* Navigation Tabs & Date Filters */}
             <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 p-4 md:p-8 bg-white border-b sticky top-0 z-30 shadow-sm">
-                <div className="flex space-x-1 bg-gray-100 p-1 rounded-xl overflow-x-auto no-scrollbar max-w-full">
+                <div className="flex flex-wrap gap-2 bg-gray-100 p-2 rounded-xl max-w-full">
                     {tabs.map((tab) => (
                         <button
                             key={tab.id}

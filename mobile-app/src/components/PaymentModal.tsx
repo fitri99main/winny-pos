@@ -132,30 +132,41 @@ export default function PaymentModal(props) {
             return;
         }
 
+        if (loading) return; // Prevent double-tap
+
         setLoading(true);
+        setError(null);
 
         var timeoutId = setTimeout(function() {
             setLoading(false);
-            setError('Koneksi lambat: Transaksi sedang diproses di server. Harap tunggu sebentar atau cek riwayat pesanan jika tombol tetap macet.');
-        }, 30000);
+            setError('Koneksi lambat: Transaksi sedang diproses di server. Harap tunggu sebentar atau cek riwayat pesanan.');
+        }, 18000);
 
-        var promise = onConfirm({
+        var paymentData = {
             method: selectedObj ? selectedObj.name : 'Tunai',
             amount: paid || total,
             change: isCashType ? change : 0
-        });
+        };
 
-        if (promise && typeof promise.then === 'function') {
-            promise.then(function() {
+        try {
+            var promise = onConfirm(paymentData);
+
+            if (promise && typeof promise.then === 'function') {
+                promise.then(function() {
+                    clearTimeout(timeoutId);
+                    setLoading(false);
+                })['catch'](function(err) {
+                    clearTimeout(timeoutId);
+                    setError(err && err.message ? err.message : 'Gagal memproses pembayaran');
+                    setLoading(false);
+                });
+            } else {
                 clearTimeout(timeoutId);
                 setLoading(false);
-            })['catch'](function(err) {
-                clearTimeout(timeoutId);
-                setError(err.message || 'Gagal memproses pembayaran');
-                setLoading(false);
-            });
-        } else {
+            }
+        } catch (syncErr) {
             clearTimeout(timeoutId);
+            setError(syncErr && syncErr.message ? syncErr.message : 'Terjadi kesalahan sinkron');
             setLoading(false);
         }
     };
@@ -282,7 +293,13 @@ export default function PaymentModal(props) {
                     isCashType ? React.createElement(View, { style: [styles.numberPad, isSmallDevice ? { padding: 12 } : null] }, renderedNumberPad) : null
                 ),
                 error ? React.createElement(View, { style: [styles.errorBanner, { marginHorizontal: 16, marginBottom: 8 }] },
-                    React.createElement(Text, { style: styles.errorText }, "\u26A0\uFE0F " + error)
+                    React.createElement(Text, { style: styles.errorText }, "\u26A0\uFE0F " + error),
+                    React.createElement(TouchableOpacity, { 
+                        style: { marginTop: 8, paddingVertical: 6, paddingHorizontal: 16, backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: '#fca5a5' },
+                        onPress: function() { setError(null); setLoading(false); }
+                    },
+                        React.createElement(Text, { style: { fontSize: 12, fontWeight: 'bold', color: '#dc2626' } }, "Coba Lagi")
+                    )
                 ) : null,
                 React.createElement(TouchableOpacity, {
                     style: [

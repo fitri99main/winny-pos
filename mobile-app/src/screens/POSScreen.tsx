@@ -2242,7 +2242,12 @@ export default function POSScreen() {
         })['catch'](function(err) {
             console.error('[POSScreen] Payment Confirm Error:', err);
             if (isRpcTimeoutError(err)) {
-                throw new Error('Status transaksi belum terkonfirmasi. Jangan tekan bayar ulang dengan transaksi baru. Tunggu beberapa detik lalu cek riwayat atau daftar pesanan.');
+                Alert.alert(
+                    'Transaksi Sedang Diverifikasi',
+                    'Status transaksi belum terkonfirmasi. Jangan tekan bayar ulang. Tunggu beberapa detik lalu cek riwayat atau daftar pesanan.'
+                );
+                // Don't re-throw: let PaymentModal's loading state reset cleanly
+                return;
             }
             var errorMsg = err.message || (typeof err === 'string' ? err : 'Database sibuk');
             
@@ -2259,8 +2264,7 @@ export default function POSScreen() {
                     }
                 ]
             );
-            
-            throw err;
+            // Don't re-throw: the Alert handles the error display, and .finally() will reset isSubmitting
         })['finally'](function() {
             setIsSubmitting(false);
         });
@@ -2371,7 +2375,6 @@ export default function POSScreen() {
                 return;
             }
             Alert.alert('Gagal', 'Server tidak merespon. Silakan coba lagi.');
-            throw err;
         })['finally'](function() {
             setIsSubmitting(false);
         });
