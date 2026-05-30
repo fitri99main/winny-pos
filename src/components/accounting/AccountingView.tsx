@@ -2587,7 +2587,8 @@ export function AccountingView({
 
     const handleUpdateJournal = async (tx: JournalEntry) => {
         try {
-            const { error } = await supabase
+            console.log("Updating journal:", tx);
+            const { error, data } = await supabase
                 .from('journal_entries')
                 .update({
                     date: tx.date,
@@ -2596,9 +2597,17 @@ export function AccountingView({
                     credit_account: tx.creditAccount,
                     amount: tx.amount
                 })
-                .eq('id', tx.id);
+                .eq('id', tx.id)
+                .select();
+
+            console.log("Supabase response:", { error, data });
 
             if (error) throw error;
+            if (!data || data.length === 0) {
+                toast.error('Gagal memperbarui: ID tidak ditemukan di database.');
+                return;
+            }
+            
             toast.success('Jurnal berhasil diperbarui');
             if (onRefresh) onRefresh();
             setIsJournalModalOpen(false);
@@ -2625,7 +2634,18 @@ export function AccountingView({
     };
 
     const getDisplayBalance = (code: string, isCumulative: boolean = false) => {
-        const raw = getBalance(code, isCumulative);
+        let raw = getBalance(code, isCumulative);
+        
+        // [NEW] Sinkronisasi otomatis: Gunakan posRevenueTotal jika jurnal masih 0 / lebih kecil
+        if (code === '401') {
+            const posRevNeg = -posRevenueTotal;
+            // Ingat: Pendapatan adalah saldo normal kredit (nilainya negatif di raw)
+            // Jadi jika raw > posRevNeg (misal 0 > -50000), kita gunakan posRevNeg (-50000)
+            if (raw > posRevNeg) {
+                raw = posRevNeg;
+            }
+        }
+
         const type = accounts.find(a => a.code === code)?.type;
         if (type === 'Asset' || type === 'Expense') return raw;
         return -raw; // Flip for Credit-normal accounts
@@ -3592,16 +3612,6 @@ export function AccountingView({
                                          placeholder="Contoh: Pembelian Bahan Spanduk - via Tunai"
                                          defaultValue={editingJournal?.description}
                                          className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 outline-none" 
-                                         onChange={(e) => {
-                                             const val = e.target.value.toLowerCase();
-                                             const creditSelect = document.getElementById('credit_acc_select') as HTMLSelectElement;
-                                             if (!creditSelect) return;
-                                             
-                                             if (val.includes('tunai') || val.includes('cash')) creditSelect.value = '101';
-                                             else if (val.includes('bank') || val.includes('transfer')) creditSelect.value = '102';
-                                             else if (val.includes('kas kecil') || val.includes('petty cash')) creditSelect.value = '105';
-                                             else if (val.includes('hutang') || val.includes('utang')) creditSelect.value = '201';
-                                         }}
                                      />
                                  </div>
 
@@ -3619,36 +3629,6 @@ export function AccountingView({
                                          </div>
                                      </div>
                                  )}
-
-                                 <div className="space-y-2">
-                                     <label className="text-xs font-black uppercase text-blue-600 tracking-wider">Pilih Metode Pembayaran (Otomatis Pilih Akun)</label>
-                                     <div className="grid grid-cols-4 gap-2">
-                                         {[
-                                             { label: 'TUNAI', code: '101', icon: <Wallet className="w-3 h-3" /> },
-                                             { label: 'BANK', code: '102', icon: <RefreshCw className="w-3 h-3" /> },
-                                             { label: 'KAS KECIL', code: '105', icon: <DollarSign className="w-3 h-3" /> },
-                                             { label: 'HUTANG', code: '201', icon: <History className="w-3 h-3" /> }
-                                         ].map(m => (
-                                             <button
-                                                 key={m.code}
-                                                 type="button"
-                                                 onClick={() => {
-                                                     const creditSelect = document.getElementById('credit_acc_select') as HTMLSelectElement;
-                                                     if (creditSelect) {
-                                                         creditSelect.value = m.code;
-                                                         // Visual feedback
-                                                         creditSelect.classList.add('ring-2', 'ring-blue-500');
-                                                         setTimeout(() => creditSelect.classList.remove('ring-2', 'ring-blue-500'), 1000);
-                                                     }
-                                                 }}
-                                                 className="flex flex-col items-center justify-center p-2 rounded-xl border border-blue-100 bg-blue-50/50 hover:bg-blue-100 text-blue-700 transition-all shadow-sm active:scale-95"
-                                             >
-                                                 {m.icon}
-                                                 <span className="text-[9px] font-black mt-1">{m.label}</span>
-                                             </button>
-                                         ))}
-                                     </div>
-                                 </div>
                              </div>
 
                             <div className="grid grid-cols-2 gap-4">
@@ -3978,12 +3958,7 @@ export function AccountingView({
                                                     {rows.map((row, idx) => {
                                                         const isPurchase = row.description.includes('Pembelian Bahan:');
                                                         // Find the original transaction ID for CRUD
-                                                        const originalTx = transactions.find(t => 
-                                                            t.date === row.date && 
-                                                            t.description === row.description && 
-                                                            t.amount === (row.debit || row.credit) &&
-                                                            (t.debitAccount === acc.code || t.creditAccount === acc.code)
-                                                        );
+                                                        const originalTx = transactions.find(t => t.id === row.id);
 
                                                         return (
                                                             <tr key={idx} className="hover:bg-gray-50/80 transition-colors group">

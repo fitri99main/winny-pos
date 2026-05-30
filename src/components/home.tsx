@@ -1707,13 +1707,17 @@ function Home() {
   // Generic CRUD Handler
   const syncPurchaseWithAccounting = async (po: any) => {
     // 1. Journal Entry
-    let creditAcc = '101'; // Default Kas
+    let creditAcc = po.credit_account;
+    let debitAcc = po.debit_account || '501'; // Default Pembelian Bahan Baku
     const method = (po.payment_method || '').toLowerCase();
     
-    if (method.includes('transfer') || method.includes('bank')) creditAcc = '102';
-    else if (method.includes('hutang') || method.includes('credit') || method.includes('utang')) creditAcc = '201';
-    else if (method.includes('kecil') || method.includes('petty')) creditAcc = '105';
-    else creditAcc = '101';
+    // Fallback logic ONLY if credit account wasn't passed by the frontend
+    if (!creditAcc) {
+      if (method.includes('transfer') || method.includes('bank')) creditAcc = '102';
+      else if (method.includes('hutang') || method.includes('credit') || method.includes('utang')) creditAcc = '201';
+      else if (method.includes('kecil') || method.includes('petty')) creditAcc = '105';
+      else creditAcc = '101';
+    }
 
     // Avoid duplicates
     const { data: existing } = await supabase.from('journal_entries')
@@ -1725,7 +1729,7 @@ function Home() {
       await supabase.from('journal_entries').insert([{
         date: po.date || formatLocalDateForInput(new Date()),
         description: `Pembelian Bahan: ${po.purchase_no || ''} (${po.supplier_name || ''}) - ${po.payment_method || 'Tunai'}`,
-        debit_account: '501', // Pembelian Bahan Baku
+        debit_account: debitAcc,
         credit_account: creditAcc,
         amount: po.total_amount,
         reference_id: String(po.id),
@@ -1875,6 +1879,10 @@ function Home() {
       if (action === 'create') {
         const { id, ...payload } = data; // Strip ID for auto-generation
 
+        // [CLEANUP] Remove UI fields that should not go to DB
+        const uiFields = ['custom_journal', 'debit_account', 'credit_account'];
+        uiFields.forEach(f => delete (payload as any)[f]);
+
         // Inject branch_id for branch-specific tables managed by this generic handler
         if (table === 'purchases') {
           (payload as any).branch_id = currentBranchId;
@@ -1887,7 +1895,8 @@ function Home() {
         // [NEW] Accounting & Stock Integration for New Purchases
         if (table === 'purchases' && insertedData?.status === 'Completed' && !insertedData?.is_synced) {
           console.log('[MasterCRUD] New Completed Purchase detected, syncing...');
-          await syncPurchaseWithAccounting(insertedData);
+          const poDataForSync = { ...insertedData, custom_journal: data.custom_journal, debit_account: data.debit_account, credit_account: data.credit_account };
+          await syncPurchaseWithAccounting(poDataForSync);
           await syncPurchaseWithStock(insertedData);
         }
         return insertedData;
@@ -1895,7 +1904,7 @@ function Home() {
         const { id, ...payload } = data;
 
         // [CLEANUP] Remove any UI-only fields that might have leaked from the frontend
-        const uiFields = ['isFirst', 'rowSpan', 'itemName', 'itemQty', 'itemPrice', 'itemUnit'];
+        const uiFields = ['isFirst', 'rowSpan', 'itemName', 'itemQty', 'itemPrice', 'itemUnit', 'custom_journal', 'debit_account', 'credit_account'];
         uiFields.forEach(f => delete (payload as any)[f]);
 
         // [NEW] Bulk Sync Logic for Accounting
@@ -3687,6 +3696,7 @@ function Home() {
           contacts={contacts}
           products={products}
           ingredients={inventoryIngredients}
+          accounts={accounts}
         />
       );
       case 'kds': return <KDSView orders={pendingOrders} onUpdateStatus={handleKDSUpdate} />;

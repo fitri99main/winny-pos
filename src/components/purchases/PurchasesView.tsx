@@ -49,6 +49,7 @@ interface PurchasesViewProps {
     contacts?: any[];
     products?: any[];
     ingredients?: any[];
+    accounts?: any[];
 }
 
 export function PurchasesView({
@@ -58,7 +59,8 @@ export function PurchasesView({
     currentBranchId,
     contacts = [],
     products = [],
-    ingredients = []
+    ingredients = [],
+    accounts = []
 }: PurchasesViewProps) {
     const [activeTab, setActiveTab] = useState<'history' | 'input' | 'returns'>('history');
     const [searchQuery, setSearchQuery] = useState('');
@@ -78,7 +80,10 @@ export function PurchasesView({
         supplierInvoiceNo: '',
         purchaseNo: '',
         payment_method: 'Tunai',
-        adjustment: 0
+        adjustment: 0,
+        customJournal: false,
+        debitAccount: '501',
+        creditAccount: ''
     });
     const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([]);
     const [returnForm, setReturnForm] = useState<Partial<PurchaseReturn>>({ date: new Date().toISOString().split('T')[0] });
@@ -225,7 +230,10 @@ export function PurchasesView({
             payment_method: inputForm.payment_method || 'Tunai',
             branch_id: currentBranchId,
             items_list: purchaseItems,
-            supplier_invoice_no: inputForm.supplierInvoiceNo || ''
+            items_list: purchaseItems,
+            supplier_invoice_no: inputForm.supplierInvoiceNo || '',
+            debit_account: inputForm.debitAccount,
+            credit_account: inputForm.creditAccount
         };
 
         try {
@@ -241,7 +249,9 @@ export function PurchasesView({
                     payment_method: inputForm.payment_method || 'Tunai',
                     branch_id: currentBranchId,
                     items_list: purchaseItems,
-                    supplier_invoice_no: inputForm.supplierInvoiceNo || ''
+                    supplier_invoice_no: inputForm.supplierInvoiceNo || '',
+                    debit_account: inputForm.debitAccount,
+                    credit_account: inputForm.creditAccount
                 };
                 await onCRUD('purchases', 'update', { id: editingId, ...updatePayload });
             } else {
@@ -271,14 +281,16 @@ export function PurchasesView({
                 }
             }
 
-            // Reset only on success
             setInputForm({ 
                 date: new Date().toISOString().split('T')[0], 
                 supplierName: '', 
                 supplierInvoiceNo: '',
                 purchaseNo: '',
                 payment_method: 'Tunai',
-                adjustment: 0
+                adjustment: 0,
+                customJournal: false,
+                debitAccount: '501',
+                creditAccount: ''
             });
             setPurchaseItems([]);
             setIsEditing(false);
@@ -331,7 +343,10 @@ export function PurchasesView({
             supplierInvoiceNo: po.supplier_invoice_no || '',
             status: po.status,
             payment_method: po.payment_method || 'Tunai',
-            adjustment: po.adjustment || 0
+            adjustment: po.adjustment || 0,
+            customJournal: po.custom_journal || false,
+            debitAccount: po.debit_account || '501',
+            creditAccount: po.credit_account || ''
         });
         setPurchaseItems(normalizePurchaseItems(po));
         setActiveTab('input');
@@ -762,6 +777,44 @@ export function PurchasesView({
                                         value={inputForm.supplierInvoiceNo}
                                         onChange={e => setInputForm({ ...inputForm, supplierInvoiceNo: e.target.value })}
                                     />
+                                </div>
+                            </div>
+
+                            {/* [NEW] Manual Journal Integration */}
+                            <div className="mt-4 pt-4 border-t border-gray-100">
+                                <span className="text-[10px] font-black text-gray-500 uppercase tracking-wider mb-3 block">Akun Jurnal Pembelian</span>
+                                
+                                <div className="grid grid-cols-2 gap-3 p-3 bg-orange-50/50 border border-orange-100 rounded-xl">
+                                    <div>
+                                        <label className="text-[9px] font-black text-orange-600 uppercase tracking-wider mb-1 block">Akun Debit</label>
+                                        <select
+                                            className="w-full p-2 border border-orange-200 rounded text-xs bg-white focus:ring-1 focus:ring-orange-400 outline-none"
+                                            value={inputForm.debitAccount}
+                                            onChange={e => setInputForm({...inputForm, debitAccount: e.target.value})}
+                                        >
+                                            {accounts.map(acc => (
+                                                <option key={acc.code} value={acc.code}>{acc.code} - {acc.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-[9px] font-black text-orange-600 uppercase tracking-wider mb-1 block">Akun Kredit</label>
+                                        <select
+                                            className="w-full p-2 border border-orange-200 rounded text-xs bg-white focus:ring-1 focus:ring-orange-400 outline-none"
+                                            value={inputForm.creditAccount || (() => {
+                                                const method = (inputForm.payment_method || '').toLowerCase();
+                                                if (method.includes('transfer') || method.includes('bank')) return '102';
+                                                if (method.includes('hutang') || method.includes('credit') || method.includes('utang')) return '201';
+                                                if (method.includes('kecil') || method.includes('petty')) return '105';
+                                                return '101';
+                                            })()}
+                                            onChange={e => setInputForm({...inputForm, creditAccount: e.target.value})}
+                                        >
+                                            {accounts.map(acc => (
+                                                <option key={acc.code} value={acc.code}>{acc.code} - {acc.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
                                 </div>
                             </div>
 
