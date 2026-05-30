@@ -104,7 +104,7 @@ class PrinterService {
 
         try {
             console.log(`[PrinterService] Requesting Bluetooth device for ${type}...`);
-            const device = await (navigator as any).bluetooth.requestDevice({
+            const requestDevicePromise = (navigator as any).bluetooth.requestDevice({
                 filters: [
                     { namePrefix: 'TP' },
                     { namePrefix: 'Printer' },
@@ -116,6 +116,15 @@ class PrinterService {
                 ],
                 optionalServices: this.SERVICE_UUIDS
             });
+            
+            // Add a timeout to prevent freezing in unsupported WebViews
+            const timeoutPromise = new Promise<never>((_, reject) => {
+                setTimeout(() => {
+                    reject(new Error('Koneksi timeout. Pastikan Anda menggunakan Google Chrome dan memberi izin Bluetooth & Lokasi, atau aplikasi ini tidak mendukung Web Bluetooth.'));
+                }, 15000); // 15 seconds timeout
+            });
+
+            const device = await Promise.race([requestDevicePromise, timeoutPromise]);
 
             console.log(`[PrinterService] Device selected: ${device.name}. Connecting to GATT...`);
             if (!device.gatt) throw new Error('GATT not supported on this device');
