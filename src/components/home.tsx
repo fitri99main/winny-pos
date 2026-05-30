@@ -1713,7 +1713,7 @@ function Home() {
     
     // Fallback logic ONLY if credit account wasn't passed by the frontend
     if (!creditAcc) {
-      if (method.includes('transfer') || method.includes('bank')) creditAcc = '102';
+      if (method.includes('transfer') || method.includes('bank')) creditAcc = '101';
       else if (method.includes('hutang') || method.includes('credit') || method.includes('utang')) creditAcc = '201';
       else if (method.includes('kecil') || method.includes('petty')) creditAcc = '101';
       else creditAcc = '101';

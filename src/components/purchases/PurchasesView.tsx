@@ -856,7 +856,7 @@ export function PurchasesView({
                                             onClick={() => {
                                                 let newCreditAcc = '101';
                                                 const methodStr = m.toLowerCase();
-                                                if (methodStr.includes('transfer') || methodStr.includes('bank')) newCreditAcc = '102';
+                                                if (methodStr.includes('transfer') || methodStr.includes('bank')) newCreditAcc = '101';
                                                 else if (methodStr.includes('hutang') || methodStr.includes('credit')) newCreditAcc = '201';
                                                 else if (methodStr.includes('kecil') || methodStr.includes('petty')) newCreditAcc = '101';
                                                 
