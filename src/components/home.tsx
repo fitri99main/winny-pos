@@ -1715,7 +1715,7 @@ function Home() {
     if (!creditAcc) {
       if (method.includes('transfer') || method.includes('bank')) creditAcc = '102';
       else if (method.includes('hutang') || method.includes('credit') || method.includes('utang')) creditAcc = '201';
-      else if (method.includes('kecil') || method.includes('petty')) creditAcc = '105';
+      else if (method.includes('kecil') || method.includes('petty')) creditAcc = '101';
       else creditAcc = '101';
     }
 
