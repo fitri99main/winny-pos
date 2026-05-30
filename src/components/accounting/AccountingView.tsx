@@ -4119,6 +4119,53 @@ export function AccountingView({
                                 </Button>
                             </div>
                         )}
+                        <div className="flex justify-end mt-4 mb-4">
+                            <Button 
+                                onClick={async () => {
+                                    const toastId = toast.loading('Mensinkronkan penjualan ke akuntansi...');
+                                    try {
+                                        const { data: salesData, error: salesError } = await supabase.from('sales').select('id, date, order_no, total_amount, status').in('status', ['paid', 'completed', 'selesai', 'settlement', 'served', 'capture', 'success', 'ready']);
+                                        if (salesError) throw salesError;
+
+                                        const { data: journalData, error: journalError } = await supabase.from('journal_entries').select('reference_id').eq('source_type', 'sale');
+                                        if (journalError) throw journalError;
+
+                                        const existingIds = new Set(journalData?.map(j => j.reference_id) || []);
+                                        const missingSales = salesData?.filter(s => !existingIds.has(String(s.id))) || [];
+
+                                        if (missingSales.length === 0) {
+                                            toast.success('Semua data penjualan POS sudah tersinkron dengan akuntansi!', { id: toastId });
+                                            return;
+                                        }
+
+                                        const entries = missingSales.map(s => ({
+                                            date: s.date ? String(s.date).split('T')[0] : new Date().toISOString().split('T')[0],
+                                            description: `Penjualan POS #${s.order_no}`,
+                                            debit_account: '101', 
+                                            credit_account: '401', 
+                                            amount: Math.round(Number(s.total_amount)),
+                                            reference_id: String(s.id),
+                                            source_type: 'sale'
+                                        }));
+
+                                        for (let i = 0; i < entries.length; i += 100) {
+                                            const batch = entries.slice(i, i + 100);
+                                            const { error: insertError } = await supabase.from('journal_entries').insert(batch);
+                                            if (insertError) throw insertError;
+                                        }
+
+                                        toast.success(`Berhasil mensinkronkan ${missingSales.length} data penjualan lama ke akuntansi!`, { id: toastId });
+                                        if (onRefresh) await onRefresh();
+                                    } catch (err: any) {
+                                        toast.error('Gagal sinkronisasi: ' + err.message, { id: toastId });
+                                    }
+                                }}
+                                className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2 px-4 py-2 rounded-xl"
+                            >
+                                <RefreshCw className="w-4 h-4" />
+                                Sinkronkan POS Penjualan ke Akuntansi
+                            </Button>
+                        </div>
                         <AccountManagementTab
                             accounts={accounts}
                             getBalance={(code) => getDisplayBalance(code, true)}
