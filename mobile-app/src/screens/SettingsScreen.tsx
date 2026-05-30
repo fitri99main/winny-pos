@@ -61,7 +61,7 @@ import SalesReportModal from '../components/SalesReportModal';
 import * as OfflineLib from '../lib/OfflineService';
 var OfflineService = OfflineLib.OfflineService;
 
-var SettingItem = React.memo(function(props) {
+var SettingItem = React.memo(function(props: any) {
     var Icon = props.icon;
     var label = props.label;
     var subtitle = props.subtitle;
@@ -254,7 +254,7 @@ export default function SettingsScreen() {
     var statusModal = stateStatusModal[0];
     var setStatusModal = stateStatusModal[1];
 
-    var stateToast = React.useState({ visible: false, message: '', type: 'success' });
+    var stateToast = React.useState<{visible: boolean, message: string, type: string, submessage?: string}>({ visible: false, message: '', type: 'success' });
     var toast = stateToast[0];
     var setToast = stateToast[1];
 
@@ -268,7 +268,7 @@ export default function SettingsScreen() {
         ]).start(function() { setToast(function(prev) { return Object.assign({}, prev, { visible: false }); }); });
     };
 
-    var showToast = function(message, submessage, type) {
+    var showToast = function(message: string, submessage?: string, type?: string) {
         if (!type) type = 'success';
         setToast({ visible: true, message: message, submessage: submessage, type: type });
         Animated.parallel([
@@ -441,27 +441,21 @@ export default function SettingsScreen() {
         return PrinterManager.getPairedPrinters().then(function(paired) {
             if (paired && paired.length > 0) {
                 var formattedPaired = paired.map(function(p) {
-                    var id = p.address || (p as any).id || (p as any).inner_mac_address || (p as any).macAddress || String(Math.random());
+                    var id = (p as any).address || (p as any).id || (p as any).inner_mac_address || (p as any).macAddress || String(Math.random());
                     return {
                         id: id,
-                        name: (p.name || 'Unknown') + ((p.name || '').indexOf('(Paired)') === -1 ? ' (Paired)' : '')
+                        name: ((p as any).name || 'Unknown') + (((p as any).name || '').indexOf('(Paired)') === -1 ? ' (Paired)' : '')
                     };
                 });
                 setDiscoveredDevices(formattedPaired);
+            } else {
+                setDiscoveredDevices([]);
             }
-
-            return PrinterManager.scanPrinters(function(device) {
-                setDiscoveredDevices(function(prev) {
-                    var found = false;
-                    for (var j = 0; j < prev.length; j++) {
-                        if (prev[j].id === device.id) { found = true; break; }
-                    }
-                    if (found) return prev;
-                    return prev.concat([{ id: device.id, name: device.name || device.localName || 'Unknown Device' }]);
-                });
-            });
-        }).then(function() {
-            setTimeout(function() { setIsScanning(false); }, 15000);
+            
+            // Do NOT use ble-plx (BLE scanner) because connecting to a BLE MAC address
+            // using Classic Bluetooth SPP (BLEPrinter.connectPrinter) completely freezes
+            // the Android OS Bluetooth Adapter. Users MUST pair the printer in Android Settings.
+            setIsScanning(false);
         })['catch'](function(e) {
             console.log('Scan error:', e.message);
             setIsScanning(false);
@@ -469,32 +463,47 @@ export default function SettingsScreen() {
     };
 
     var selectPrinter = function(device) {
-        return PrinterManager.saveSelectedPrinter(device.id, configuringPrinterType).then(function() {
+        PrinterManager.stopScan();
+        setShowScanModal(false);
+        setIsScanning(false);
+        
+        // Wait 1.5 seconds for the Android Bluetooth Adapter to fully stop scanning
+        // before saving and attempting to connect. Concurrent scanning and connecting 
+        // causes a complete OS Bluetooth deadlock/freeze on Android.
+        return new Promise(function(resolve) { setTimeout(resolve, 1500); }).then(function() {
+            return PrinterManager.saveSelectedPrinter(device.id, configuringPrinterType as any);
+        }).then(function() {
             setSelectedPrinters(function(prev) {
                 var next = Object.assign({}, prev);
                 next[configuringPrinterType] = device.id;
                 return next;
             });
             
-            setDiscoveredDevices([]);
-            var typeLabel = 'Kasir';
-            if (configuringPrinterType === 'report') typeLabel = 'Laporan';
-            if (configuringPrinterType === 'kitchen') typeLabel = 'Dapur';
-            if (configuringPrinterType === 'bar') typeLabel = 'Bar';
+            // Wait for the ScanModal to completely close and unmount from Android's view hierarchy
+            // before showing the StatusModal. Multiple Modals in React Native Android cause freezes.
+            setTimeout(function() {
+                setDiscoveredDevices([]);
+                var typeLabel = 'Kasir';
+                if (configuringPrinterType === 'report') typeLabel = 'Laporan';
+                if (configuringPrinterType === 'kitchen') typeLabel = 'Dapur';
+                if (configuringPrinterType === 'bar') typeLabel = 'Bar';
 
-            setStatusModal({
-                visible: true,
-                title: 'Printer Terpilih',
-                message: 'Printer ' + typeLabel + ': ' + (device.name || device.id) + ' berhasil dipilih.',
-                type: 'success'
-            });
+                setStatusModal({
+                    visible: true,
+                    title: 'Printer Terpilih',
+                    message: 'Printer ' + typeLabel + ': ' + (device.name || device.id) + ' berhasil dipilih.',
+                    type: 'success'
+                });
+            }, 600);
         })['catch'](function(e) {
-            setStatusModal({
-                visible: true,
-                title: 'Error',
-                message: 'Gagal memilih printer: ' + e.message,
-                type: 'warning'
-            });
+            setTimeout(function() {
+                setStatusModal({
+                    visible: true,
+                    title: 'Error',
+                    message: 'Gagal memilih printer: ' + e.message,
+                    type: 'warning'
+                });
+            }, 600);
         });
     };
 
@@ -518,7 +527,7 @@ export default function SettingsScreen() {
     var handleManualSave = function() {
         if (!manualAddress.trim()) return;
         var cleanMAC = manualAddress.trim().toUpperCase();
-        return PrinterManager.saveSelectedPrinter(cleanMAC, manualType).then(function() {
+        return PrinterManager.saveSelectedPrinter(cleanMAC, manualType as any).then(function() {
             setSelectedPrinters(function(prev) {
                 var next = Object.assign({}, prev);
                 next[manualType] = cleanMAC;
@@ -753,12 +762,12 @@ export default function SettingsScreen() {
                     React.createElement(View, { style: styles.card },
                         React.createElement(SettingItem, { 
                             icon: Store, label: "Pengaturan Toko", subtitle: "Nama, alamat & telp outlet",
-                            onPress: function() { navigation.navigate('StoreSettings'); }, isSmallDevice: isSmallDevice
+                            onPress: function() { navigation.navigate('StoreSettings' as never); }, isSmallDevice: isSmallDevice
                         }),
                         React.createElement(View, { style: styles.divider }),
                         React.createElement(SettingItem, { 
                             icon: Users, label: "Daftar Pelayan", subtitle: "Kelola data karyawan & pelayan",
-                            onPress: function() { navigation.navigate('EmployeeSettings'); }, isSmallDevice: isSmallDevice
+                            onPress: function() { navigation.navigate('EmployeeSettings' as never); }, isSmallDevice: isSmallDevice
                         })
                     )
                 ),
@@ -822,7 +831,7 @@ export default function SettingsScreen() {
                             isSyncing ? React.createElement(ActivityIndicator, { size: "small", color: "#ea580c" }) : React.createElement(TouchableOpacity, { 
                                 style: [styles.scanBtnSmall, { backgroundColor: offlineQueueCount > 0 ? '#ea580c' : '#94a3b8' }],
                                 onPress: handleSyncOffline, disabled: offlineQueueCount === 0
-                            }, React.createElement(Text, { style: styles.scanBtnTextSmall }, "Sinkron")),
+                            }, React.createElement(Text, { style: { color: 'white', fontSize: 11, fontWeight: 'bold' } }, "Sinkron")),
                         )
                     )
                 ),
@@ -952,7 +961,7 @@ export default function SettingsScreen() {
                             },
                                 React.createElement(RefreshCw, { size: 20, color: "#ea580c" })
                             ),
-                            React.createElement(TouchableOpacity, { onPress: function() { setShowScanModal(false); setIsScanning(false); setDiscoveredDevices([]); } },
+                            React.createElement(TouchableOpacity, { onPress: function() { PrinterManager.stopScan(); setShowScanModal(false); setIsScanning(false); setDiscoveredDevices([]); } },
                                 React.createElement(X, { size: 24, color: "#9ca3af" })
                             )
                         )
@@ -989,14 +998,14 @@ export default function SettingsScreen() {
                                 "Atau masukkan alamat MAC secara manual:"
                             ),
                             React.createElement(TouchableOpacity, { 
-                                style: [styles.checkoutButton, { marginTop: 15, paddingHorizontal: 30 }],
+                                style: [{ backgroundColor: '#ea580c', paddingVertical: 12, borderRadius: 8, alignItems: 'center' }, { marginTop: 15, paddingHorizontal: 30 }],
                                 onPress: function() { 
                                     setShowScanModal(false);
                                     setManualType(configuringPrinterType);
                                     setShowManualModal(true);
                                 }
                             },
-                                React.createElement(Text, { style: styles.checkoutButtonText }, "Input MAC Manual")
+                                React.createElement(Text, { style: { color: 'white', fontWeight: 'bold' } }, "Input MAC Manual")
                             )
                         )
                     ),

@@ -149,10 +149,12 @@ export function InventoryView({
                 .order('created_at', { ascending: false });
                 
             if (start) {
-                query = query.gte('created_at', start + 'T00:00:00');
+                const startDate = new Date(start + 'T00:00:00');
+                query = query.gte('created_at', startDate.toISOString());
             }
             if (end) {
-                query = query.lte('created_at', end + 'T23:59:59');
+                const endDate = new Date(end + 'T23:59:59');
+                query = query.lte('created_at', endDate.toISOString());
             }
             // Mencegah download ukuran besar (ribuan baris) agar loading selalu 0.1 detik
             query = query.limit(300);
@@ -1269,9 +1271,10 @@ export function InventoryView({
                                                                             <Edit className="w-4 h-4" />
                                                                         </button>
                                                                         <button 
-                                                                            onClick={() => {
+                                                                            onClick={async () => {
                                                                                 if (window.confirm('Yakin ingin menghapus mutasi ini? Stok akan dikembalikan otomatis.')) {
-                                                                                    onIngredientAction('delete_movement', { id: mov.id });
+                                                                                    await onIngredientAction('delete_movement', { id: mov.id });
+                                                                                    setDirectStockCardMovements(prev => prev.filter(m => m.id !== mov.id));
                                                                                 }
                                                                             }}
                                                                             className="p-2 hover:bg-red-50 text-red-400 hover:text-red-600 rounded-lg transition-colors"

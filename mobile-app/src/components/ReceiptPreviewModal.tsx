@@ -32,9 +32,10 @@ export default function ReceiptPreviewModal(props) {
     var renderLine = function(line, index) {
         if (line.trim().toUpperCase().indexOf('[LOGO]') !== -1) {
             if (show_logo === false) return null;
+            var finalLogoUrl = receipt_logo_url ? 'https://wsrv.nl/?url=' + encodeURIComponent(receipt_logo_url) + '&w=200&fit=contain&bg=white&output=png' : null;
             return React.createElement(View, { key: index, style: styles.logoContainer },
-                receipt_logo_url ? React.createElement(Image, {
-                    source: { uri: receipt_logo_url },
+                finalLogoUrl ? React.createElement(Image, {
+                    source: { uri: finalLogoUrl },
                     style: styles.receiptLogo,
                     resizeMode: "contain",
                     onError: function(e) { console.warn('Logo preview error:', e.nativeEvent.error); }
@@ -187,7 +188,7 @@ var styles = StyleSheet.create({
     },
     paperWrapper: {
         padding: 20,
-        backgroundColor: '#f1f5f9',
+        backgroundColor: '#f8fafc',
         alignItems: 'center',
     },
     previewScroll: {
@@ -198,52 +199,49 @@ var styles = StyleSheet.create({
         paddingBottom: 20,
     },
     receiptPaper: {
-        backgroundColor: 'white',
-        padding: 20,
+        backgroundColor: '#f8fafc',
+        padding: 16,
         width: '100%',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 2,
+        borderWidth: 1.5,
+        borderColor: '#cbd5e1',
+        borderStyle: 'dashed',
+        borderRadius: 4,
     },
     lineWrapper: {
         flexDirection: 'row',
-        minHeight: 20,
+        minHeight: 18,
         alignItems: 'center',
         marginBottom: 2,
     },
     receiptText: {
         fontFamily: 'monospace',
-        fontSize: 12,
-        color: '#334155',
+        fontSize: 10,
+        color: '#475569',
     },
     boldText: {
         fontWeight: 'bold',
-        color: '#0f172a',
+        color: '#1e293b',
     },
     bigText: {
-        fontSize: 20,
+        fontSize: 18,
         fontWeight: '900',
-        color: '#000',
-        lineHeight: 28,
+        color: '#0f172a',
+        lineHeight: 24,
         marginVertical: 4,
     },
     tallText: {
-        fontSize: 16,
+        fontSize: 14,
         fontWeight: 'bold',
-        color: '#000',
-        lineHeight: 22,
+        color: '#0f172a',
+        lineHeight: 20,
     },
     noteText: {
         color: '#ea580c',
         fontStyle: 'italic',
-        fontSize: 10,
+        fontSize: 9,
     },
     jaggedEdge: {
-        height: 10,
-        backgroundColor: 'white',
-        marginTop: -1,
+        height: 0,
     },
     logoContainer: {
         alignItems: 'center',
@@ -251,14 +249,14 @@ var styles = StyleSheet.create({
         width: '100%',
     },
     receiptLogo: {
-        width: 100,
-        height: 50,
+        width: 120,
+        height: 60,
     },
     logoPlaceholder: {
-        width: 80,
-        height: 80,
-        backgroundColor: '#f1f5f9',
-        borderRadius: 10,
+        width: 60,
+        height: 60,
+        backgroundColor: '#e2e8f0',
+        borderRadius: 30,
     },
     footer: {
         flexDirection: 'row',

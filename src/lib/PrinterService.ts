@@ -105,22 +105,11 @@ class PrinterService {
         try {
             console.log(`[PrinterService] Requesting Bluetooth device for ${type}...`);
             
-            // Detect if running inside an Android WebView (which doesn't support Web Bluetooth dialogs)
-            const isWebView = /(iPhone|iPod|iPad).*AppleWebKit(?!.*Safari)|android.*(wv|\.0\.0\.0)/i.test(navigator.userAgent);
-            if (isWebView) {
-                throw new Error('Aplikasi versi APK (WebView) tidak mendukung Bluetooth. Harap buka sistem Kasir ini langsung melalui peramban Google Chrome di HP Anda.');
-            }
+            // Note: We no longer block WebViews explicitly, to allow custom Android wrappers
+            // that implement the Web Bluetooth API polyfill to connect to printers.
 
             const device = await (navigator as any).bluetooth.requestDevice({
-                filters: [
-                    { namePrefix: 'TP' },
-                    { namePrefix: 'Printer' },
-                    { namePrefix: 'BT' },
-                    { namePrefix: 'MPT' },
-                    { namePrefix: 'RPP' },
-                    { namePrefix: 'P58' },
-                    { namePrefix: 'Inner' }
-                ],
+                acceptAllDevices: true,
                 optionalServices: this.SERVICE_UUIDS
             });
 

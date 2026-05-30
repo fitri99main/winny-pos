@@ -276,6 +276,12 @@ export default function HomeScreen() {
                         var bucket = Math.floor(hour / 2) * 2;
                         if (groups[bucket]) groups[bucket].value += s.total_amount;
                     });
+                    
+                    var runningTotal = 0;
+                    for (var h = 0; h < 24; h += 2) {
+                        runningTotal += groups[h].value;
+                        groups[h].value = runningTotal;
+                    }
                 } else {
                     for (var i = 0; i < days; i++) {
                         var d = new Date(chartStart);
@@ -592,6 +598,12 @@ export default function HomeScreen() {
                         var maxV = 1;
                         for (var i = 0; i < weeklySales.length; i++) {
                             if (weeklySales[i].value > maxV) maxV = weeklySales[i].value;
+                        }
+                        
+                        if (chartFilter === 'today' && todayStats.revenue > maxV) {
+                            maxV = todayStats.revenue;
+                        } else {
+                            maxV = maxV * 1.15; // Beri sedikit ruang kosong di atas kurva
                         }
 
                         var yAxisValues = [1, 0.75, 0.5, 0.25, 0].map(function(ratio) {

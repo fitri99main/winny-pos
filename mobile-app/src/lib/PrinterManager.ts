@@ -93,11 +93,19 @@ export class PrinterManager {
             if (device && (device.name || device.localName)) onDeviceFound(device);
         });
         setTimeout(() => {
-            if (this.isScanning) {
-                this.bleManager?.stopDeviceScan();
-                this.isScanning = false;
-            }
+            this.stopScan();
         }, 15000);
+    }
+
+    static stopScan() {
+        if (this.isScanning && this.bleManager) {
+            try {
+                this.bleManager.stopDeviceScan();
+            } catch (e) {
+                console.warn('Error stopping scan:', e);
+            }
+            this.isScanning = false;
+        }
     }
 
     static async saveSelectedPrinter(macAddress: string, type: PrinterType = 'receipt') {
@@ -138,22 +146,23 @@ export class PrinterManager {
         return true;
     }
 
-    private static async closeCurrentConnectionIfNeeded(nextMac: string) {
+    private static async closeCurrentConnectionIfNeeded(newMac: string) {
         if (isExpoGo || Platform.OS === 'web') return;
-        const normalizedNextMac = (nextMac || '').toUpperCase();
-        if (!this.currentConnectedMac || this.currentConnectedMac === normalizedNextMac) return;
-
-        try {
-            console.log(`[PrinterManager] Closing previous printer connection: ${this.currentConnectedMac} before switching to ${normalizedNextMac}`);
-            await (BLEPrinter as any).closeConn();
-        } catch (error) {
-            console.warn('[PrinterManager] Failed to close previous printer connection cleanly:', error);
-        } finally {
-            if (this.currentConnectedMac) {
-                this.connectionStatus[this.currentConnectedMac] = 'disconnected';
-            }
+        if (this.currentConnectedMac && this.currentConnectedMac !== newMac) {
+            try {
+                await Promise.race([
+                    (BLEPrinter as any).closeConn(),
+                    new Promise((resolve) => setTimeout(resolve, 2000))
+                ]);
+            } catch (e) { }
+            
+            // Note: We DO NOT set connectionStatus to disconnected here. 
+            // We want the UI to still show it as green (reachable) because we can 
+            // switch back to it dynamically when printing.
+            
             this.currentConnectedMac = null;
-            await new Promise(resolve => setTimeout(resolve, 400));
+            // Delay to allow Android Bluetooth Adapter to free the radio resources
+            await new Promise(resolve => setTimeout(resolve, 500));
         }
     }
 
@@ -166,13 +175,14 @@ export class PrinterManager {
         try {
             let cleanUrl = url.trim();
             
-            // Determine canvas width based on paper type
+            // Determine canvas width based on paper type (Dikurangi ukurannya menjadi sangat kecil agar pas di struk)
             const is80mm = paperWidth.toLowerCase() === '80mm';
-            const canvasWidth = is80mm ? 576 : 384;
+            const canvasWidth = is80mm ? 150 : 100;
 
             // Use Weserv (wsrv.nl) to create a canvas that matches the printer width
             const encodedUrl = encodeURIComponent(cleanUrl);
-            cleanUrl = `https://wsrv.nl/?url=${encodedUrl}&w=${canvasWidth}&h=50&fit=contain&bg=white&output=png&filt=greyscale&trim=10`;
+            // Removed h=50 to allow proportional scaling, just set target width
+            cleanUrl = `https://wsrv.nl/?url=${encodedUrl}&w=${canvasWidth}&fit=contain&bg=white&output=png&filt=greyscale`;
 
             const response = await fetch(cleanUrl);
             if (!response.ok) {
@@ -195,17 +205,51 @@ export class PrinterManager {
         return this.connectionStatus[macAddress.toUpperCase()] || 'disconnected';
     }
 
+    static isConnecting: boolean = false;
+
     static async checkConnection(macAddress: string): Promise<boolean> {
         if (isExpoGo || Platform.OS === 'web') return true;
+        const mac = macAddress.toUpperCase();
+        
+        if (this.currentConnectedMac === mac && this.connectionStatus[mac] === 'connected') {
+            return true;
+        }
+
+        // Wait strictly if any connection is in progress
+        let retries = 0;
+        while (this.isConnecting && retries < 20) {
+            await new Promise(r => setTimeout(r, 500));
+            retries++;
+        }
+        
+        if (this.isConnecting) {
+            // Still connecting to something else, abort this request
+            return false;
+        }
+        
+        // Double check after waiting just in case it was another request for the same MAC
+        if (this.currentConnectedMac === mac && this.connectionStatus[mac] === 'connected') {
+            return true;
+        }
+        
         try {
-            await this.initPrinter();
-            const mac = macAddress.toUpperCase();
+            this.isConnecting = true;
             this.connectionStatus[mac] = 'connecting';
-            await BLEPrinter.connectPrinter(mac);
+            await this.initPrinter();
+            await this.closeCurrentConnectionIfNeeded(mac);
+            
+            await Promise.race([
+                BLEPrinter.connectPrinter(mac),
+                new Promise((_, reject) => setTimeout(() => reject(new Error("Connection timeout")), 6000))
+            ]);
+            
             this.connectionStatus[mac] = 'connected';
+            this.currentConnectedMac = mac;
+            this.isConnecting = false;
             return true;
         } catch (e) {
-            if (macAddress) this.connectionStatus[macAddress.toUpperCase()] = 'disconnected';
+            this.connectionStatus[mac] = 'disconnected';
+            this.isConnecting = false;
             return false;
         }
     }
@@ -268,10 +312,10 @@ export class PrinterManager {
             const LEFT = isPreview ? '[L]' : COMMANDS.TEXT_FORMAT.TXT_ALIGN_LT;
             const BOLD_ON = isPreview ? '<b>' : COMMANDS.TEXT_FORMAT.TXT_BOLD_ON;
             const BOLD_OFF = isPreview ? '</b>' : COMMANDS.TEXT_FORMAT.TXT_BOLD_OFF;
-            const DOUBLE_ON = isPreview ? '' : COMMANDS.TEXT_FORMAT.TXT_2HEIGHT;
-            const DOUBLE_OFF = isPreview ? '' : COMMANDS.TEXT_FORMAT.TXT_NORMAL;
-            const BIG_ON = isPreview ? '' : COMMANDS.TEXT_FORMAT.TXT_4SQUARE;
-            const BIG_OFF = isPreview ? '' : COMMANDS.TEXT_FORMAT.TXT_NORMAL;
+            const DOUBLE_ON = isPreview ? '[TALL]' : COMMANDS.TEXT_FORMAT.TXT_2HEIGHT;
+            const DOUBLE_OFF = isPreview ? '[/TALL]' : COMMANDS.TEXT_FORMAT.TXT_NORMAL;
+            const BIG_ON = isPreview ? '[BIG]' : COMMANDS.TEXT_FORMAT.TXT_4SQUARE;
+            const BIG_OFF = isPreview ? '[/BIG]' : COMMANDS.TEXT_FORMAT.TXT_NORMAL;
 
             let receiptText = '';
             
@@ -533,7 +577,10 @@ export class PrinterManager {
             if (this.connectionStatus[mac] !== 'connected' || this.currentConnectedMac !== mac) {
                 await this.closeCurrentConnectionIfNeeded(mac);
                 console.log(`[PrinterManager] SWITCHING PRINTER to ${type.toUpperCase()}: ${mac} (Previous: ${this.currentConnectedMac})`);
-                await BLEPrinter.connectPrinter(mac);
+                await Promise.race([
+                    BLEPrinter.connectPrinter(mac),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error("Connection timeout")), 8000))
+                ]);
                 this.connectionStatus[mac] = 'connected';
                 this.currentConnectedMac = mac;
                 // Jeda lebih lama setelah ganti printer fisik agar buffer siap
@@ -603,18 +650,29 @@ export class PrinterManager {
             if (this.connectionStatus[mac] !== 'connected' || this.currentConnectedMac !== mac) {
                 await this.closeCurrentConnectionIfNeeded(mac);
                 console.log(`[PrinterManager] Connecting to printer for receipt at ${mac}...`);
-                await BLEPrinter.connectPrinter(mac);
+                await Promise.race([
+                    BLEPrinter.connectPrinter(mac),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error("Connection timeout")), 8000))
+                ]);
                 this.connectionStatus[mac] = 'connected';
                 this.currentConnectedMac = mac;
                 await new Promise(resolve => setTimeout(resolve, 300));
             }
             
             // Logo (Opsional, jangan biarkan logo menggagalkan struk)
-            if (orderData.show_logo && orderData.receipt_logo_url) {
+            // Logo (Opsional, jangan biarkan logo menggagalkan struk)
+            if (orderData.show_logo !== false && orderData.receipt_logo_url) {
                 try {
-                    const encodedUrl = encodeURIComponent(orderData.receipt_logo_url.trim());
-                    const logoUrl = `https://wsrv.nl/?url=${encodedUrl}&w=140&fit=contain&filt=greyscale&trim=10`;
-                    await BLEPrinter.printImage(logoUrl, { imageWidth: 140, imageAlignment: 'center' });
+                    const is80mm = (orderData.receipt_paper_width || '').toLowerCase() === '80mm';
+                    const targetWidth = is80mm ? 400 : 250;
+                    const base64 = await this.getBase64FromUrl(orderData.receipt_logo_url, orderData.receipt_paper_width);
+                    if (base64) {
+                        if ((BLEPrinter as any).printImageBase64) {
+                            await (BLEPrinter as any).printImageBase64(base64, { imageWidth: targetWidth, imageAlignment: 'center' });
+                        } else {
+                            await BLEPrinter.printImage(base64, { imageWidth: targetWidth, imageAlignment: 'center' });
+                        }
+                    }
                 } catch (e) {
                     console.warn("Logo print skipped:", e);
                 }
@@ -751,23 +809,31 @@ export class PrinterManager {
             const mac = macAddress.toUpperCase();
             if (this.connectionStatus[mac] !== 'connected' || this.currentConnectedMac !== mac) {
                 console.log(`[PrinterManager] Switching/Connecting to report printer at ${mac}...`);
-                await BLEPrinter.connectPrinter(mac);
+                await Promise.race([
+                    BLEPrinter.connectPrinter(mac),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error("Connection timeout")), 8000))
+                ]);
                 this.connectionStatus[mac] = 'connected';
                 this.currentConnectedMac = mac;
                 await new Promise(resolve => setTimeout(resolve, 200));
             }
             
             // Cetak Logo di laporan jika diinginkan
-            if (reportData.receipt_logo_url) {
-                const encodedUrl = encodeURIComponent(reportData.receipt_logo_url.trim());
-                const logoUrl = `https://wsrv.nl/?url=${encodedUrl}&w=140&fit=contain&filt=greyscale&trim=10`;
-                
-                // No delay needed here
-                await BLEPrinter.printImage(logoUrl, { 
-                    imageWidth: 140, 
-                    imageAlignment: 'center' 
-                });
-                // No delay needed here
+            if (reportData.show_logo !== false && reportData.receipt_logo_url) {
+                try {
+                    const is80mm = (reportData.receipt_paper_width || '').toLowerCase() === '80mm';
+                    const targetWidth = is80mm ? 400 : 250;
+                    const base64 = await this.getBase64FromUrl(reportData.receipt_logo_url, reportData.receipt_paper_width);
+                    if (base64) {
+                        if ((BLEPrinter as any).printImageBase64) {
+                            await (BLEPrinter as any).printImageBase64(base64, { imageWidth: targetWidth, imageAlignment: 'center' });
+                        } else {
+                            await BLEPrinter.printImage(base64, { imageWidth: targetWidth, imageAlignment: 'center' });
+                        }
+                    }
+                } catch (e) {
+                    console.warn("Logo print skipped:", e);
+                }
             }
 
             await BLEPrinter.printBill(reportText);
@@ -818,7 +884,10 @@ export class PrinterManager {
             
             if (this.connectionStatus[mac] !== 'connected' || this.currentConnectedMac !== mac) {
                 console.log(`[PrinterManager] Switching/Connecting for test print at ${mac}...`);
-                await BLEPrinter.connectPrinter(mac);
+                await Promise.race([
+                    BLEPrinter.connectPrinter(mac),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error("Connection timeout")), 8000))
+                ]);
                 this.connectionStatus[mac] = 'connected';
                 this.currentConnectedMac = mac;
                 await new Promise(resolve => setTimeout(resolve, 200));

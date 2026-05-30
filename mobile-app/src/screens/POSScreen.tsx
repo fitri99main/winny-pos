@@ -290,6 +290,10 @@ export default function POSScreen() {
     var existingSaleId = stateExistingSaleId[0];
     var setExistingSaleId = stateExistingSaleId[1];
 
+    var stateExistingOrderNo = React.useState('');
+    var existingOrderNo = stateExistingOrderNo[0];
+    var setExistingOrderNo = stateExistingOrderNo[1];
+
     var stateShowManualItemModal = React.useState(false);
     var showManualItemModal = stateShowManualItemModal[0];
     var setShowManualItemModal = stateShowManualItemModal[1];
@@ -867,7 +871,19 @@ export default function POSScreen() {
         if (!lastSaleId && !lastOrderNo) return;
         
         fetchOrderDataForReceipt(lastSaleId || lastOrderNo).then(function(orderData) {
-            if (orderData) {
+            if (orderData && orderData.enable_wifi_vouchers && !orderData.wifi_voucher) {
+                console.log('[POSScreen] Preview: Wifi enabled but no voucher found, retrying in 1.5s...');
+                return new Promise(function(resolve) {
+                    setTimeout(function() {
+                        fetchOrderDataForReceipt(lastSaleId || lastOrderNo).then(resolve);
+                    }, 1500);
+                }).then(function(refreshedData: any) {
+                    if (refreshedData) {
+                        setPreviewOrderData(refreshedData);
+                        setShowReceiptPreview(true);
+                    }
+                });
+            } else if (orderData) {
                 setPreviewOrderData(orderData);
                 setShowReceiptPreview(true);
             }
@@ -992,24 +1008,13 @@ export default function POSScreen() {
 
             var fetchWifi = function() {
                 if (storeSettings && storeSettings.enable_wifi_vouchers) {
-                    var minAmount = Number(storeSettings.wifi_voucher_min_amount) || 0;
-                    var multiplier = Number(storeSettings.wifi_voucher_multiplier) || 0;
-                    var totalAmount = Number(sale.total_amount) || 0;
-                    
-                    if (totalAmount >= minAmount) {
-                        // Jika multiplier tidak diatur (0), gunakan minAmount sebagai pembagi
-                        var divisor = multiplier > 0 ? multiplier : minAmount;
-                        var count = divisor > 0 ? Math.floor(totalAmount / divisor) : 1;
-                        if (count < 1) count = 1; // Pastikan minimal 1 voucher jika minAmount tercapai
-                        
-                        if (count > 0) {
-                            return WifiVoucherService.getVoucherForSale(sale.id, currentBranchId || '1', count).then(function(v) {
-                                wifiVoucher = v;
-                            })['catch'](function(e) {
-                                console.error('[POSScreen] WiFi fetch error:', e);
-                            });
-                        }
-                    }
+                    // Selalu coba ambil voucher untuk struk yang sudah ada, tanpa mengecek ulang minAmount.
+                    // Jika voucher ada, akan direturn oleh service.
+                    return WifiVoucherService.getVoucherForSale(sale.id, currentBranchId || '1', 1).then(function(v) {
+                        wifiVoucher = v;
+                    })['catch'](function(e) {
+                        console.error('[POSScreen] WiFi fetch error:', e);
+                    });
                 }
                 return Promise.resolve();
             };
@@ -1125,6 +1130,7 @@ export default function POSScreen() {
                     AsyncStorage.getItem('pos_discount_draft'),
                     AsyncStorage.getItem('pos_waiter_draft'),
                     AsyncStorage.getItem('pos_existing_sale_id_draft'),
+                    AsyncStorage.getItem('pos_existing_order_no_draft'),
                     AsyncStorage.getItem('cached_customers')
                 ]);
             }).then(function(saved) {
@@ -1137,7 +1143,8 @@ export default function POSScreen() {
                 var savedDiscount = saved[6];
                 var savedWaiter = saved[7];
                 var savedExistingId = saved[8];
-                var savedCustomers = saved[9];
+                var savedExistingOrderNo = saved[9];
+                var savedCustomers = saved[10];
 
                 if (isMounted) {
                     if (savedHeldStr || savedLocalHeldStr) {
@@ -1201,6 +1208,9 @@ export default function POSScreen() {
                         if (savedExistingId) {
                             var isExistingUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(savedExistingId);
                             setExistingSaleId(savedExistingId === 'null' ? null : (isExistingUuid ? savedExistingId : parseInt(savedExistingId)));
+                        }
+                        if (savedExistingOrderNo) {
+                            setExistingOrderNo(savedExistingOrderNo === 'null' ? '' : savedExistingOrderNo);
                         }
                     }
                 }
@@ -1458,6 +1468,7 @@ export default function POSScreen() {
 
                 if (sale) {
                     setExistingSaleId(sale.id);
+                    setExistingOrderNo(sale.order_no || '');
                     setCustomerName(sale.customer_name || 'Guest');
                     setSelectedCustomerId(sale.customer_id);
                     setSelectedWaiter(sale.waiter_name || '');
@@ -1543,7 +1554,8 @@ export default function POSScreen() {
                         ['pos_table_draft', selectedTable],
                         ['pos_discount_draft', String(orderDiscount)],
                         ['pos_waiter_draft', selectedWaiter],
-                        ['pos_existing_sale_id_draft', String(existingSaleId)]
+                        ['pos_existing_sale_id_draft', String(existingSaleId)],
+                        ['pos_existing_order_no_draft', existingOrderNo]
                     ]).catch(function(e) { console.error('Error saving cart draft:', e); });
                 });
             }, 1000);
@@ -1816,6 +1828,7 @@ export default function POSScreen() {
         setCart([]);
         setInitialItems([]);
         setExistingSaleId(null);
+        setExistingOrderNo('');
         setOrderDiscount(0);
         setDiscountReason('');
         setSelectedTable('-');
@@ -2008,6 +2021,7 @@ export default function POSScreen() {
 
         if (isOnline) {
             var pSaleData = {
+                order_no: existingOrderNo || undefined,
                 branch_id: Number(currentBranchId),
                 customer_name: customerName || 'Guest',
                 customer_id: selectedCustomerId ? Number(selectedCustomerId) : null,
@@ -2141,6 +2155,7 @@ export default function POSScreen() {
             var breakdown = activeBreakdown;
             isExistingOrder = !!existingSaleId;
             saleData = {
+                order_no: existingOrderNo || undefined,
                 branch_id: Number(currentBranchId),
                 customer_name: customerName || 'Guest',
                 customer_id: selectedCustomerId ? Number(selectedCustomerId) : null,
@@ -2308,6 +2323,7 @@ export default function POSScreen() {
         var pSaleData, targetId;
         try {
             pSaleData = {
+                order_no: existingOrderNo || undefined,
                 branch_id: Number(currentBranchId),
                 customer_name: customerName || 'Guest',
                 customer_id: selectedCustomerId ? Number(selectedCustomerId) : null,

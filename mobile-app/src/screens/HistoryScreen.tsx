@@ -332,22 +332,36 @@ export default function HistoryScreen() {
         setSelectedSale(sale);
         setShowDetailModal(true);
         
-        // LAZY LOAD: Ambil sale_items jika belum ada
+        // LAZY LOAD: Ambil sale_items dan wifi_voucher jika belum ada
         if (!sale.sale_items || sale.sale_items.length === 0) {
             setIsLoadingDetail(true);
-            supabase
+            
+            var itemsPromise = supabase
                 .from('sale_items')
                 .select('*, product:product_id (name, category)')
-                .eq('sale_id', sale.id)
-                .then(function(res) {
+                .eq('sale_id', sale.id);
+                
+            var wifiPromise = storeSettings && storeSettings.enable_wifi_vouchers 
+                ? WifiVoucherService.getVoucherForSale(sale.id, currentBranchId || '1', 1) 
+                : Promise.resolve(null);
+                
+            Promise.all([itemsPromise, wifiPromise])
+                .then(function(results) {
+                    var res = results[0];
+                    var wifiVoucher = results[1];
+                    
                     if (res.error) throw res.error;
                     var items = res.data || [];
+                    
                     setSelectedSale(function(prev) {
                         if (!prev || prev.id !== sale.id) return prev;
-                        return Object.assign({}, prev, { sale_items: items });
+                        return Object.assign({}, prev, { 
+                            sale_items: items,
+                            wifi_voucher: wifiVoucher
+                        });
                     });
                 })['catch'](function(err) {
-                    console.error('[HistoryScreen] Lazy load items error:', err);
+                    console.error('[HistoryScreen] Lazy load error:', err);
                 })
                 .finally(function() {
                     setIsLoadingDetail(false);
@@ -364,6 +378,11 @@ export default function HistoryScreen() {
             receipt_paper_width: (storeSettings && storeSettings.receipt_paper_width) || '58mm',
             shop_address: branchAddress || '',
             shop_phone: branchPhone || '',
+            show_logo: (storeSettings && storeSettings.show_logo) !== false,
+            receipt_logo_url: (storeSettings && storeSettings.receipt_logo_url) || '',
+            enable_wifi_vouchers: storeSettings ? storeSettings.enable_wifi_vouchers : false,
+            wifi_voucher: selectedSale.wifi_voucher,
+            wifi_voucher_notice: storeSettings ? storeSettings.wifi_voucher_notice : '',
             items: (selectedSale.sale_items || []).map(function(it) {
                 return {
                     name: it.product_name || (it.product && it.product.name) || 'Produk',
@@ -865,6 +884,11 @@ export default function HistoryScreen() {
                 receipt_paper_width: (storeSettings && storeSettings.receipt_paper_width) || '58mm',
                 shop_address: branchAddress || '',
                 shop_phone: branchPhone || '',
+                show_logo: (storeSettings && storeSettings.show_logo) !== false,
+                receipt_logo_url: (storeSettings && storeSettings.receipt_logo_url) || '',
+                enable_wifi_vouchers: storeSettings ? storeSettings.enable_wifi_vouchers : false,
+                wifi_voucher: selectedSale.wifi_voucher,
+                wifi_voucher_notice: storeSettings ? storeSettings.wifi_voucher_notice : '',
                 items: (selectedSale.sale_items || []).map(function(it) {
                     return {
                         name: it.product_name || (it.product && it.product.name) || 'Produk',
@@ -873,7 +897,11 @@ export default function HistoryScreen() {
                         notes: it.notes
                     };
                 })
-            })
+            }),
+            onPrint: function() { 
+                setShowPreviewModal(false); 
+                setTimeout(handlePrintReceipt, 300); 
+            }
         }),
 
         React.createElement(ManagerAuthModal, {
