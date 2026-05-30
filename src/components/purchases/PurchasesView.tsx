@@ -230,7 +230,6 @@ export function PurchasesView({
             payment_method: inputForm.payment_method || 'Tunai',
             branch_id: currentBranchId,
             items_list: purchaseItems,
-            items_list: purchaseItems,
             supplier_invoice_no: inputForm.supplierInvoiceNo || '',
             debit_account: inputForm.debitAccount,
             credit_account: inputForm.creditAccount
