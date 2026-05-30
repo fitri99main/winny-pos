@@ -1708,7 +1708,7 @@ function Home() {
   const syncPurchaseWithAccounting = async (po: any) => {
     // 1. Journal Entry
     let creditAcc = po.credit_account;
-    let debitAcc = po.debit_account || '501'; // Default Pembelian Bahan Baku
+    let debitAcc = po.debit_account || '102'; // Default Persediaan Bahan Baku
     const method = (po.payment_method || '').toLowerCase();
     
     // Fallback logic ONLY if credit account wasn't passed by the frontend

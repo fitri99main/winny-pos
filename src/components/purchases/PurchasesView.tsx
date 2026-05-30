@@ -82,8 +82,8 @@ export function PurchasesView({
         payment_method: 'Tunai',
         adjustment: 0,
         customJournal: false,
-        debitAccount: '501',
-        creditAccount: ''
+        debitAccount: '102',
+        creditAccount: '101'
     });
     const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([]);
     const [returnForm, setReturnForm] = useState<Partial<PurchaseReturn>>({ date: new Date().toISOString().split('T')[0] });
@@ -289,8 +289,8 @@ export function PurchasesView({
                 payment_method: 'Tunai',
                 adjustment: 0,
                 customJournal: false,
-                debitAccount: '501',
-                creditAccount: ''
+                debitAccount: '102',
+                creditAccount: '101'
             });
             setPurchaseItems([]);
             setIsEditing(false);
@@ -345,8 +345,8 @@ export function PurchasesView({
             payment_method: po.payment_method || 'Tunai',
             adjustment: po.adjustment || 0,
             customJournal: po.custom_journal || false,
-            debitAccount: po.debit_account || '501',
-            creditAccount: po.credit_account || ''
+            debitAccount: po.debit_account || '102',
+            creditAccount: po.credit_account || '101'
         });
         setPurchaseItems(normalizePurchaseItems(po));
         setActiveTab('input');
@@ -801,13 +801,7 @@ export function PurchasesView({
                                         <label className="text-[9px] font-black text-orange-600 uppercase tracking-wider mb-1 block">Akun Kredit</label>
                                         <select
                                             className="w-full p-2 border border-orange-200 rounded text-xs bg-white focus:ring-1 focus:ring-orange-400 outline-none"
-                                            value={inputForm.creditAccount || (() => {
-                                                const method = (inputForm.payment_method || '').toLowerCase();
-                                                if (method.includes('transfer') || method.includes('bank')) return '102';
-                                                if (method.includes('hutang') || method.includes('credit') || method.includes('utang')) return '201';
-                                                if (method.includes('kecil') || method.includes('petty')) return '105';
-                                                return '101';
-                                            })()}
+                                            value={inputForm.creditAccount}
                                             onChange={e => setInputForm({...inputForm, creditAccount: e.target.value})}
                                         >
                                             {accounts.map(acc => (
