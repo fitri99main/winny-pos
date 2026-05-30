@@ -1719,7 +1719,7 @@ function Home() {
       else creditAcc = '101';
     }
 
-    // Avoid duplicates
+    // Avoid duplicates or update existing
     const { data: existing } = await supabase.from('journal_entries')
       .select('id')
       .ilike('description', `Pembelian%${po.purchase_no}%`)
@@ -1735,6 +1735,14 @@ function Home() {
         reference_id: String(po.id),
         source_type: 'purchase'
       }]);
+    } else {
+      console.log('Journal already exists for PO, updating accounts...', po.purchase_no);
+      await supabase.from('journal_entries').update({
+        debit_account: debitAcc,
+        credit_account: creditAcc,
+        amount: po.total_amount,
+        description: `Pembelian Bahan: ${po.purchase_no || ''} (${po.supplier_name || ''}) - ${po.payment_method || 'Tunai'}`
+      }).eq('id', existing.id);
     }
 
     // 2. Petty Cash Integration
@@ -1908,7 +1916,25 @@ function Home() {
         uiFields.forEach(f => delete (payload as any)[f]);
 
         // [NEW] Bulk Sync Logic for Accounting
-        if (table === 'purchases' && id === 'SYNC_ALL') {
+        if (table === 'purchases' && payload.status === 'Completed') {
+          const { data: existingPO } = await supabase.from('purchases').select('is_synced').eq('id', id).single();
+          if (!existingPO?.is_synced) {
+            console.log(`[MasterCRUD] Manual sync triggered for PO ${payload.purchase_no}`);
+            const poDataForSync = { ...payload, id, debit_account: data.debit_account, credit_account: data.credit_account };
+            await syncPurchaseWithAccounting(poDataForSync);
+            await syncPurchaseWithStock({ id, ...payload });
+          } else {
+            // Already synced, but maybe they want to update the journal entry?
+            const { data: existingJournal } = await supabase.from('journal_entries').select('id').ilike('description', `Pembelian%${payload.purchase_no}%`).maybeSingle();
+            if (existingJournal && (data.debit_account || data.credit_account)) {
+                await supabase.from('journal_entries').update({
+                    debit_account: data.debit_account || '102',
+                    credit_account: data.credit_account || '101',
+                    amount: payload.total_amount
+                }).eq('id', existingJournal.id);
+            }
+          }
+        } else if (table === 'purchases' && id === 'SYNC_ALL') {
           console.log('[MasterCRUD] Aggressive Global Sync Initiated...');
           const { data: allPurchases, error: fetchErr } = await supabase
             .from('purchases')
@@ -1982,7 +2008,8 @@ function Home() {
               try {
                 // If it was already synced, we might want to warn, but for now let's just re-sync 
                 // to catch any newly added items from the edit.
-                await syncPurchaseWithAccounting(po);
+                const poDataForSync = { ...po, debit_account: data.debit_account, credit_account: data.credit_account };
+                await syncPurchaseWithAccounting(poDataForSync);
                 await syncPurchaseWithStock(po);
                 toast.success(`PO ${po.purchase_no} berhasil disinkronkan ke Stok & Akuntansi`, { id: syncToastId });
               } catch (syncErr: any) {
