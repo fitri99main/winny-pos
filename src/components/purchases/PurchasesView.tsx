@@ -853,7 +853,19 @@ export function PurchasesView({
                                         <button
                                             key={m}
                                             type="button"
-                                            onClick={() => setInputForm({ ...inputForm, payment_method: m })}
+                                            onClick={() => {
+                                                let newCreditAcc = '101';
+                                                const methodStr = m.toLowerCase();
+                                                if (methodStr.includes('transfer') || methodStr.includes('bank')) newCreditAcc = '102';
+                                                else if (methodStr.includes('hutang') || methodStr.includes('credit')) newCreditAcc = '201';
+                                                else if (methodStr.includes('kecil') || methodStr.includes('petty')) newCreditAcc = '105';
+                                                
+                                                setInputForm({ 
+                                                    ...inputForm, 
+                                                    payment_method: m,
+                                                    creditAccount: newCreditAcc
+                                                });
+                                            }}
                                             className={`py-1.5 px-3 rounded-lg text-[10px] font-black transition-all border ${
                                                 inputForm.payment_method === m 
                                                 ? 'bg-blue-600 text-white border-blue-600' 
