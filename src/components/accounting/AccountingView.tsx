@@ -641,7 +641,7 @@ function JournalTab({ transactions, accounts, onAddTransaction, onDeleteTransact
     };
 
     const handleRowChange = (id: number, field: string, value: string) => {
-        setRows(rows.map(r => r.id === id ? { ...r, [field]: value } : r));
+        setRows(prevRows => prevRows.map(r => r.id === id ? { ...r, [field]: value } : r));
     };
 
     const handleRemoveRow = (id: number) => {

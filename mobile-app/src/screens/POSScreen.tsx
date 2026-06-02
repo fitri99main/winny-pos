@@ -2256,28 +2256,14 @@ export default function POSScreen() {
             }, 800);
         })['catch'](function(err) {
             console.error('[POSScreen] Payment Confirm Error:', err);
-            if (isRpcTimeoutError(err)) {
-                Alert.alert(
-                    'Transaksi Sedang Diverifikasi',
-                    'Status transaksi belum terkonfirmasi. Jangan tekan bayar ulang. Tunggu beberapa detik lalu cek riwayat atau daftar pesanan.'
-                );
-                // Don't re-throw: let PaymentModal's loading state reset cleanly
-                return;
-            }
-            var errorMsg = err.message || (typeof err === 'string' ? err : 'Database sibuk');
+            var errorMsg = err.message || (typeof err === 'string' ? err : 'Database sibuk/Jaringan putus');
+            
+            // Otomatis simpan ke offline queue
+            saveOfflineSaleAndComplete(saleData, itemsToProc, paymentData, breakdown, isExistingOrder);
             
             Alert.alert(
-                'Gagal Pembayaran Online',
-                'Gagal menghubungi server (' + errorMsg + ').\n\nApakah Anda ingin menyimpan transaksi ini secara OFFLINE (Lokal) agar struk tetap bisa dicetak?',
-                [
-                    { text: 'Batal', style: 'cancel' },
-                    { 
-                        text: 'Simpan Offline', 
-                        onPress: function() {
-                            saveOfflineSaleAndComplete(saleData, itemsToProc, paymentData, breakdown, isExistingOrder);
-                        }
-                    }
-                ]
+                'Koneksi Internet Tidak Stabil',
+                'Gagal menghubungi server (' + errorMsg + ').\n\nSistem telah mengalihkan pesanan ini secara OTOMATIS ke antrean OFFLINE (Lokal). Struk akan tetap dicetak dan pesanan aman.\n\nPastikan untuk TIDAK me-restart/menutup aplikasi sampai notifikasi sinkronisasi berhasil muncul di lain waktu.'
             );
             // Don't re-throw: the Alert handles the error display, and .finally() will reset isSubmitting
         })['finally'](function() {
