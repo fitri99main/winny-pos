@@ -2190,9 +2190,10 @@ export default function POSScreen() {
             return Promise.reject(syncErr);
         }
 
-        if (!isOnline) {
-            return saveOfflineSaleAndComplete(saleData, itemsToProc, paymentData, breakdown, isExistingOrder);
-        }
+        // Bypass offline check to always attempt online transaction
+        // if (!isOnline) {
+        //     return saveOfflineSaleAndComplete(saleData, itemsToProc, paymentData, breakdown, isExistingOrder);
+        // }
 
         var paymentRequestId = getOrCreateRequestId(paymentRequestIdRef, 'pay');
         saleData.client_transaction_id = paymentRequestId;
@@ -2258,14 +2259,10 @@ export default function POSScreen() {
             console.error('[POSScreen] Payment Confirm Error:', err);
             var errorMsg = err.message || (typeof err === 'string' ? err : 'Database sibuk/Jaringan putus');
             
-            // Otomatis simpan ke offline queue
-            saveOfflineSaleAndComplete(saleData, itemsToProc, paymentData, breakdown, isExistingOrder);
-            
             Alert.alert(
-                'Koneksi Internet Tidak Stabil',
-                'Gagal menghubungi server (' + errorMsg + ').\n\nSistem telah mengalihkan pesanan ini secara OTOMATIS ke antrean OFFLINE (Lokal). Struk akan tetap dicetak dan pesanan aman.\n\nPastikan untuk TIDAK me-restart/menutup aplikasi sampai notifikasi sinkronisasi berhasil muncul di lain waktu.'
+                'Gagal Menyimpan Transaksi',
+                'Gagal menghubungi server (' + errorMsg + ').\n\nPastikan koneksi internet Anda lancar dan coba tekan tombol Bayar sekali lagi.'
             );
-            // Don't re-throw: the Alert handles the error display, and .finally() will reset isSubmitting
         })['finally'](function() {
             setIsSubmitting(false);
         });

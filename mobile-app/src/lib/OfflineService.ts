@@ -59,16 +59,16 @@ export var OfflineService = {
         return OfflineService.getOfflineQueue()
             .then(function(q) {
                 queue = q;
-                return supabase.from('store_settings').select('offline_invoice_prefix, offline_invoice_last_number').eq('id', 1).single();
+                return AsyncStorage.getItem('local_offline_seq');
             })
-            .then(function(settingsRes) {
-                var prefix = (settingsRes.data && settingsRes.data.offline_invoice_prefix) || 'OFF-WIN-26';
-                var lastNo = (settingsRes.data && settingsRes.data.offline_invoice_last_number) || 0;
-                var nextNo = lastNo + (queue.length + 1);
+            .then(function(seqStr) {
+                var seq = seqStr ? parseInt(seqStr, 10) : 0;
+                if (isNaN(seq)) seq = 0;
+                var nextNo = seq + 1;
                 
                 var nextNoStr = nextNo.toString();
                 while (nextNoStr.length < 5) { nextNoStr = '0' + nextNoStr; }
-                var order_no = prefix + '-' + nextNoStr;
+                var order_no = 'OFF-WIN-26-' + nextNoStr;
                 var id = 'off-' + Date.now();
 
                 var newOfflineSale = {};
@@ -80,9 +80,13 @@ export var OfflineService = {
                 newOfflineSale.date = new Date().toISOString();
                 
                 queue.push(newOfflineSale);
-                return AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue)).then(function() {
-                    return { id: id, order_no: order_no };
-                });
+                return AsyncStorage.setItem('local_offline_seq', nextNo.toString())
+                    .then(function() {
+                        return AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+                    })
+                    .then(function() {
+                        return { id: id, order_no: order_no };
+                    });
             })['catch'](function(e) {
                 console.error('[OfflineService] Error saving sale:', e);
                 var fallbackNo = 'OFF-WIN-26-FALLBACK-' + Date.now();
@@ -217,14 +221,31 @@ export var OfflineService = {
     },
 
     checkConnectivity: function() {
-        return fetch('https://www.google.com', { 
-            method: 'HEAD',
-            cache: 'no-cache'
-        }).then(function(response) {
-            return response.ok;
-        })['catch'](function() {
-            return false;
-        });
+        var url = (supabase && supabase.supabaseUrl) ? supabase.supabaseUrl : 'https://www.google.com';
+        if (typeof AbortController !== 'undefined') {
+            var controller = new AbortController();
+            var timeoutId = setTimeout(function() {
+                controller.abort();
+            }, 3000);
+            return fetch(url, { 
+                method: 'HEAD',
+                signal: controller.signal
+            }).then(function() {
+                clearTimeout(timeoutId);
+                return true;
+            })['catch'](function() {
+                clearTimeout(timeoutId);
+                return false;
+            });
+        } else {
+            return fetch(url, { 
+                method: 'HEAD'
+            }).then(function() {
+                return true;
+            })['catch'](function() {
+                return false;
+            });
+        }
     },
 
     getForcedOfflineMode: function() {

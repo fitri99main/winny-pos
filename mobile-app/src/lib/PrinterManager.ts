@@ -558,14 +558,19 @@ export class PrinterManager {
             return { success: true, count: 0 };
         }
 
-        const macAddress = await this.getSelectedPrinter(type);
+        let macAddress = await this.getSelectedPrinter(type);
+        let isFallback = false;
+        if (!macAddress) {
+            macAddress = await this.getSelectedPrinter('receipt');
+            isFallback = !!macAddress;
+        }
 
         if (!macAddress) {
-            console.warn(`[PrinterManager] No printer configured for ${type}. Target print skipped to avoid misrouting to receipt printer.`);
+            console.warn(`[PrinterManager] No printer configured for ${type} or fallback receipt.`);
             return { success: false, count: filteredItems.length };
         }
         
-        console.log(`[PrinterManager] Target: ${type}, MAC: ${macAddress}, Items: ${filteredItems.length}`);
+        console.log(`[PrinterManager] Target: ${type}, MAC: ${macAddress}${isFallback ? ' (FALLBACK)' : ''}, Items: ${filteredItems.length}`);
         const ticketText = this.formatKitchenTicket(filteredItems, orderData, type === 'kitchen' ? 'Dapur' : 'Bar');
         
         try {

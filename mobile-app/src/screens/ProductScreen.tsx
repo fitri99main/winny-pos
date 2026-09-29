@@ -24,6 +24,7 @@ import * as ImageStorageLib from '../lib/ImageStorageService';
 var ImageStorageService = ImageStorageLib.ImageStorageService;
 import * as Lucide from 'lucide-react-native';
 var ChevronLeft = Lucide.ChevronLeft;
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function ProductScreen() {
     var navigation = useNavigation();
@@ -132,7 +133,7 @@ export default function ProductScreen() {
         return "Rp " + Number(value || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
     };
 
-    var fetchProducts = function() {
+    var fetchProducts = function(isBackground) {
         if (!canManageProducts) {
             setLoading(false);
             return Promise.resolve();
@@ -141,7 +142,9 @@ export default function ProductScreen() {
             setLoading(false);
             return;
         }
-        setLoading(true);
+        if (!isBackground) {
+            setLoading(true);
+        }
         
         // Fetch products and master data in parallel
         return Promise.all([
@@ -172,21 +175,94 @@ export default function ProductScreen() {
             if (resC.data) setCategories(resC.data);
             if (resU.data) setUnits(resU.data);
             if (resB.data) setBrands(resB.data);
+
+            // Cache locally
+            AsyncStorage.setItem('cached_products_full_' + currentBranchId, JSON.stringify(normalizedProducts));
+            if (resI.data) AsyncStorage.setItem('cached_ingredients_full_' + currentBranchId, JSON.stringify(resI.data));
+            if (resC.data) AsyncStorage.setItem('cached_categories_full', JSON.stringify(resC.data));
+            if (resU.data) AsyncStorage.setItem('cached_units_full', JSON.stringify(resU.data));
+            if (resB.data) AsyncStorage.setItem('cached_brands_full', JSON.stringify(resB.data));
         })['catch'](function(error) {
             console.error('Error fetching data:', error);
-            Alert.alert('Error', 'Gagal mengambil data produk/master');
+            if (!isBackground) {
+                Alert.alert('Error', 'Gagal mengambil data produk/master');
+            }
         }).finally(function() {
             setLoading(false);
         });
     };
 
     React.useEffect(function() {
-        if (currentBranchId) {
-            fetchProducts();
-        } else {
-            // Ensure loading stops even if branch ID is not yet available
+        if (!currentBranchId) {
             setLoading(false);
+            return;
         }
+
+        // Coba load dari cache AsyncStorage terlebih dahulu
+        Promise.all([
+            AsyncStorage.getItem('cached_products_full_' + currentBranchId),
+            AsyncStorage.getItem('cached_ingredients_full_' + currentBranchId),
+            AsyncStorage.getItem('cached_categories_full'),
+            AsyncStorage.getItem('cached_units_full'),
+            AsyncStorage.getItem('cached_brands_full')
+        ]).then(function(caches) {
+            var cachedP = caches[0];
+            var cachedI = caches[1];
+            var cachedC = caches[2];
+            var cachedU = caches[3];
+            var cachedB = caches[4];
+
+            var hasCache = false;
+
+            if (cachedP) {
+                try {
+                    var parsedP = JSON.parse(cachedP);
+                    if (Array.isArray(parsedP) && parsedP.length > 0) {
+                        setProducts(parsedP);
+                        setFilteredProducts(parsedP);
+                        hasCache = true;
+                    }
+                } catch(e) {}
+            }
+            if (cachedI) {
+                try {
+                    var parsedI = JSON.parse(cachedI);
+                    if (Array.isArray(parsedI)) {
+                        setIngredients(parsedI);
+                        setFilteredIngredients(parsedI);
+                    }
+                } catch(e) {}
+            }
+            if (cachedC) {
+                try {
+                    var parsedC = JSON.parse(cachedC);
+                    if (Array.isArray(parsedC)) setCategories(parsedC);
+                } catch(e) {}
+            }
+            if (cachedU) {
+                try {
+                    var parsedU = JSON.parse(cachedU);
+                    if (Array.isArray(parsedU)) setUnits(parsedU);
+                } catch(e) {}
+            }
+            if (cachedB) {
+                try {
+                    var parsedB = JSON.parse(cachedB);
+                    if (Array.isArray(parsedB)) setBrands(parsedB);
+                } catch(e) {}
+            }
+
+            if (hasCache) {
+                // Halaman langsung bisa dibuka (loading disetop), lalu lakukan fetch di latar belakang
+                setLoading(false);
+                fetchProducts(true);
+            } else {
+                // Tidak ada cache, lakukan fetch normal (dengan spinner loading penuh)
+                fetchProducts(false);
+            }
+        }).catch(function() {
+            fetchProducts(false);
+        });
     }, [currentBranchId]);
 
     React.useEffect(function() {
@@ -291,14 +367,15 @@ export default function ProductScreen() {
             branch_id: editingProduct.branch_id || currentBranchId
         };
 
+        var savedProductData = null;
         var query = isNew 
             ? supabase.from('products').insert([payload]).select().single() 
             : supabase.from('products').update(payload).eq('id', editingProduct.id).select().single();
 
         return query.then(function(res) {
             if (res.error) throw res.error;
-            var savedProduct = res.data;
-            var productId = (editingProduct && editingProduct.id) || (savedProduct && savedProduct.id);
+            savedProductData = res.data;
+            var productId = (editingProduct && editingProduct.id) || (savedProductData && savedProductData.id);
             if (!productId) throw new Error("Product ID not found after save");
 
             // Perform separate writes for recipe and addons
@@ -331,9 +408,41 @@ export default function ProductScreen() {
 
             return Promise.all([recipePromise, addonsPromise]);
         }).then(function() {
+            var productId = (editingProduct && editingProduct.id) || (savedProductData && savedProductData.id);
+            
+            // Build the local updated product object
+            var localProductObj = Object.assign({}, payload, {
+                id: productId,
+                recipe: normalizedRecipe,
+                addons: editingProduct.addons || []
+            });
+
+            // Update state optimistically
+            setProducts(function(prev) {
+                var next = [];
+                var replaced = false;
+                for (var i = 0; i < prev.length; i++) {
+                    if (prev[i].id === productId) {
+                        next.push(localProductObj);
+                        replaced = true;
+                    } else {
+                        next.push(prev[i]);
+                    }
+                }
+                if (!replaced) {
+                    next.push(localProductObj);
+                }
+                // Save updated array to AsyncStorage cache
+                AsyncStorage.setItem('cached_products_full_' + currentBranchId, JSON.stringify(next))['catch'](function(e) {
+                    console.error('Error caching products after save:', e);
+                });
+                return next;
+            });
+
             Alert.alert('Sukses', 'Produk berhasil ' + (isNew ? 'ditambahkan' : 'diperbarui'));
             setModalVisible(false);
-            return fetchProducts();
+            // Run fetchProducts in the background to ensure exact synchronization
+            fetchProducts(true);
         })['catch'](function(error) {
             console.error('Save error:', error);
             Alert.alert('Error', 'Gagal menyimpan produk: ' + ((error && error.message) || 'Error tidak dikenal'));
@@ -451,17 +560,36 @@ export default function ProductScreen() {
                                             .then(function(arcRes) {
                                                 if (arcRes.error) throw arcRes.error;
                                                 Alert.alert('Arsip Berhasil', 'Produk memiliki riwayat transaksi, sehingga diarsipkan secara otomatis.');
+                                                return { status: 'archived' };
                                             });
                                     } else {
                                         throw delRes.error;
                                     }
                                 } else {
                                     Alert.alert('Sukses', 'Produk berhasil dihapus');
+                                    return { status: 'deleted' };
                                 }
                             })
-                            .then(function() {
+                            .then(function(actionRes) {
+                                setProducts(function(prev) {
+                                    var next;
+                                    if (actionRes && actionRes.status === 'archived') {
+                                        next = prev.map(function(p) {
+                                            if (p.id === editingProduct.id) {
+                                                return Object.assign({}, p, { is_sellable: false });
+                                            }
+                                            return p;
+                                        });
+                                    } else {
+                                        next = prev.filter(function(p) { return p.id !== editingProduct.id; });
+                                    }
+                                    AsyncStorage.setItem('cached_products_full_' + currentBranchId, JSON.stringify(next))['catch'](function(e) {
+                                        console.error('Error caching products after delete:', e);
+                                    });
+                                    return next;
+                                });
                                 setModalVisible(false);
-                                return fetchProducts();
+                                fetchProducts(true);
                             })['catch'](function(error) {
                                 Alert.alert('Error', 'Gagal menghapus: ' + ((error && error.message) || 'Error tidak dikenal'));
                             })
