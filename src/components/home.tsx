@@ -3,8 +3,9 @@ import {
   LayoutDashboard, Users, ShoppingCart, Settings, Coffee, FileText,
   LogOut, Bell, Search, Menu, Calculator, ChefHat, MonitorCheck,
   Contact, Archive, MapPin, CalendarCheck, History as ClockHistory, Wallet, Award, Target,
-  Store, ChevronLeft, ChevronRight, CheckCircle, Package, RefreshCw, ShieldCheck, Clock, Percent, Fingerprint, RotateCcw
+  Store, ChevronLeft, ChevronRight, CheckCircle, Package, RefreshCw, ShieldCheck, Clock, Percent, Fingerprint, RotateCcw, X
 } from 'lucide-react';
+import { useIsMobile } from '../hooks/use-mobile';
 import { printerService } from '../lib/PrinterService';
 import { WifiVoucherService } from '../lib/WifiVoucherService';
 import { Button } from './ui/button';
@@ -3192,6 +3193,8 @@ function Home() {
   */
   // const { user, role, permissions } = useAuth(); // Duplicate removed
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const isMobile = useIsMobile();
 
 
 
@@ -3986,7 +3989,122 @@ function Home() {
   return (
     <div translate="no" className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden font-sans relative transition-colors duration-300">
       <div className="absolute top-0 left-0 w-full h-96 bg-gradient-to-b from-blue-50/50 to-transparent dark:from-blue-900/20 pointer-events-none" />
-      <aside className={`${isSidebarCollapsed ? 'w-20' : 'w-56'} bg-white/70 dark:bg-gray-900/70 backdrop-blur-xl border-r border-white/20 dark:border-gray-800 flex flex-col py-8 shadow-[4px_0_24px_-4px_rgba(0,0,0,0.05)] z-20 transition-all duration-300 relative`}>
+      {/* Mobile Drawer Backdrop */}
+      {isMobileMenuOpen && (
+        <div
+          onClick={() => setIsMobileMenuOpen(false)}
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 md:hidden animate-in fade-in duration-200"
+        />
+      )}
+
+      {/* Mobile Drawer */}
+      <aside
+        className={`fixed inset-y-0 left-0 w-72 max-w-[85vw] bg-white dark:bg-gray-900 z-50 md:hidden flex flex-col py-6 shadow-2xl transition-transform duration-300 ease-in-out ${
+          isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full pointer-events-none'
+        }`}
+      >
+        <div className="px-5 pb-4 flex items-center justify-between border-b border-gray-100 dark:border-gray-800">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-white dark:bg-gray-800 flex items-center justify-center shadow-md border border-gray-100 dark:border-gray-700 overflow-hidden">
+              {storeSettings?.receipt_logo_url ? (
+                <img src={storeSettings.receipt_logo_url} alt="Logo" className="w-full h-full object-contain p-1" />
+              ) : (
+                <div className="bg-gradient-to-br from-blue-500 to-indigo-600 w-full h-full flex items-center justify-center">
+                  <span className="font-black text-[10px] text-white">POS</span>
+                </div>
+              )}
+            </div>
+            <div>
+              <span className="font-bold text-gray-800 dark:text-gray-100 text-sm">WinPOS</span>
+              <p className="text-[10px] text-gray-400 font-medium">Enterprise Management</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            aria-label="Tutup Menu"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-4">
+          {menuGroups.map((group, groupIdx) => {
+            const visibleModules = group.modules.filter(m => hasPermission(m.id));
+            if (visibleModules.length === 0) return null;
+            return (
+              <div key={groupIdx}>
+                <div className="px-3 mb-2 flex items-center gap-2">
+                  <div className="w-1 h-3 bg-blue-500 rounded-full" />
+                  <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-wider">{group.title}</h3>
+                </div>
+                <div className="space-y-1">
+                  {visibleModules.map((module) => {
+                    const IconComponent = module.icon as any;
+                    const isActive = activeModule === module.id;
+                    return (
+                      <button
+                        key={module.id}
+                        onClick={() => {
+                          setActiveModule(module.id as ModuleType);
+                          setIsMobileMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-left ${
+                          isActive
+                            ? 'bg-blue-50 text-blue-700 shadow-sm font-bold ring-1 ring-blue-100'
+                            : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
+                        }`}
+                      >
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg shrink-0 ${isActive ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-800'}`}>
+                          {typeof module.icon === 'string' ? (
+                            <span>{module.icon}</span>
+                          ) : (
+                            IconComponent && <IconComponent className="w-5 h-5" />
+                          )}
+                        </div>
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-xs uppercase font-extrabold truncate">{module.label}</span>
+                          <span className="text-[9px] text-gray-400 truncate">{group.title}</span>
+                        </div>
+                        {isActive && (
+                          <div className="ml-auto w-1.5 h-4 rounded-full bg-blue-500 shrink-0" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </nav>
+
+        <div className="p-3 border-t border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50">
+          <div className="flex items-center gap-3 p-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
+            <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-primary to-blue-500 flex items-center justify-center text-white font-bold text-sm shrink-0">
+              {(profileName || user?.user_metadata?.name || 'U').charAt(0).toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-gray-800 dark:text-gray-200 truncate">
+                {profileName || user?.user_metadata?.name || 'User'}
+              </p>
+              <p className="text-[10px] text-gray-400 truncate uppercase">{role || 'Staff'}</p>
+            </div>
+            <button
+              onClick={() => {
+                setIsMobileMenuOpen(false);
+                setShowLogoutConfirm(true);
+              }}
+              className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0"
+              title="Keluar"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Desktop Sidebar */}
+      <aside className={`hidden md:flex ${isSidebarCollapsed ? 'w-20' : 'w-56'} bg-white/70 dark:bg-gray-900/70 backdrop-blur-xl border-r border-white/20 dark:border-gray-800 flex-col py-8 shadow-[4px_0_24px_-4px_rgba(0,0,0,0.05)] z-20 transition-all duration-300 relative`}>
 
         {/* Toggle Button */}
         <button
@@ -4157,23 +4275,34 @@ function Home() {
 
       <main className="flex-1 h-screen flex flex-col overflow-hidden bg-gray-50/50 dark:bg-gray-900/50 relative">
         {/* Header - Fixed Height, Flex None */}
-        <header className="h-20 flex-none bg-white/90 dark:bg-gray-900/90 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-800 px-6 flex items-center justify-between shadow-sm z-50">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800 dark:text-white tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-400 flex items-center gap-2">
-              {menuGroups.flatMap(g => g.modules).find(m => m.id === activeModule)?.label || 'WinPOS'}
-              <span className="text-[10px] bg-red-500 text-white px-2 py-0.5 rounded-full animate-bounce">V2.2</span>
-            </h1>
-            <p className="text-[10px] text-gray-500 font-medium mt-0.5 tracking-wide uppercase opacity-80">Sistem Terintegrasi</p>
+        <header className="h-16 md:h-20 flex-none bg-white/90 dark:bg-gray-900/90 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-800 px-3 md:px-6 flex items-center justify-between shadow-sm z-30">
+          <div className="flex items-center gap-2 md:gap-3 min-w-0">
+            {/* Mobile Hamburger Button */}
+            <button
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="md:hidden p-2 -ml-1 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors shrink-0"
+              aria-label="Buka Menu"
+            >
+              <Menu className="w-6 h-6" />
+            </button>
+
+            <div className="min-w-0">
+              <h1 className="text-base md:text-2xl font-bold text-gray-800 dark:text-white tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-400 flex items-center gap-1.5 md:gap-2 truncate">
+                <span className="truncate">{menuGroups.flatMap(g => g.modules).find(m => m.id === activeModule)?.label || 'WinPOS'}</span>
+                <span className="text-[9px] md:text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full shrink-0 font-bold">V2.2</span>
+              </h1>
+              <p className="text-[9px] md:text-[10px] text-gray-500 font-medium tracking-wide uppercase opacity-80 hidden sm:block">Sistem Terintegrasi</p>
+            </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 md:gap-4 shrink-0">
             {/* Branch Selector */}
-            <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-800 px-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700">
-              <Store className="w-3.5 h-3.5 text-primary" />
+            <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-800 px-2 md:px-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 max-w-[130px] sm:max-w-none">
+              <Store className="w-3.5 h-3.5 text-primary shrink-0" />
               <select
                 value={currentBranchId}
                 onChange={(e) => setCurrentBranchId(e.target.value)}
-                className="bg-transparent text-xs font-bold text-gray-700 dark:text-gray-200 outline-none cursor-pointer"
+                className="bg-transparent text-[11px] md:text-xs font-bold text-gray-700 dark:text-gray-200 outline-none cursor-pointer truncate"
               >
                 {branches.map(branch => (
                   <option key={branch.id} value={branch.id}>{branch.name}</option>
@@ -4242,21 +4371,15 @@ function Home() {
 
             <div className="h-6 w-[1px] bg-gray-200 hidden lg:block" />
 
-
-
             <button
               onClick={() => setIsCashierOpen(true)}
-              className="flex items-center gap-2 p-1.5 rounded-2xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-all group"
+              className="flex items-center gap-2 p-1 rounded-2xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-all group shrink-0"
               title="Buka Kasir"
             >
-              <div className="relative w-11 h-11 rounded-2xl bg-gradient-to-br from-rose-400 via-pink-500 to-rose-600 flex items-center justify-center text-white shadow-[0_8px_16px_-4px_rgba(244,63,94,0.4)] group-hover:scale-110 group-hover:rotate-3 transition-all duration-500">
-                {/* 3D Glossy Effect */}
-                <div className="absolute inset-[1px] rounded-[14px] bg-gradient-to-br from-white/30 to-transparent pointer-events-none z-20" />
-                
-                <span className="text-xl relative z-10 drop-shadow-[0_4px_6px_rgba(0,0,0,0.3)]">🛒</span>
-                
+              <div className="relative w-9 h-9 md:w-11 md:h-11 rounded-xl md:rounded-2xl bg-gradient-to-br from-rose-400 via-pink-500 to-rose-600 flex items-center justify-center text-white shadow-md group-hover:scale-105 transition-all">
+                <span className="text-base md:text-xl relative z-10">🛒</span>
                 {pendingCount > 0 && (
-                  <div className="absolute -top-2 -right-2 min-w-[22px] h-[22px] bg-red-600 rounded-full flex items-center justify-center text-[10px] font-black border-2 border-white shadow-lg animate-bounce z-30 px-1">
+                  <div className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] md:min-w-[22px] md:h-[22px] bg-red-600 rounded-full flex items-center justify-center text-[9px] md:text-[10px] font-black border-2 border-white shadow-md text-white px-1">
                     {pendingCount}
                   </div>
                 )}
@@ -4266,7 +4389,7 @@ function Home() {
         </header >
 
         {/* Main Content Area - Scrollable */}
-        <div className="flex-1 overflow-auto relative w-full">
+        <div className="flex-1 overflow-auto relative w-full pb-16 md:pb-0">
           <div className="h-full w-full">
             {renderActiveModule()}
           </div>
@@ -4276,6 +4399,62 @@ function Home() {
             <h1 className="text-[20vw] font-bold text-gray-900 rotate-[-15deg]">WinPOS</h1>
           </div>
         </div>
+
+        {/* Mobile Bottom Navigation Bar */}
+        <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 dark:bg-gray-900/95 backdrop-blur-lg border-t border-gray-200/80 dark:border-gray-800 px-2 py-1.5 flex items-center justify-around shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
+          <button
+            onClick={() => setActiveModule('dashboard')}
+            className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl transition-all ${
+              activeModule === 'dashboard' ? 'text-blue-600 font-bold' : 'text-gray-400 hover:text-gray-600'
+            }`}
+          >
+            <LayoutDashboard className="w-5 h-5" />
+            <span className="text-[10px]">Dashboard</span>
+          </button>
+
+          <button
+            onClick={() => setIsCashierOpen(true)}
+            className="flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl text-rose-500 font-bold relative"
+          >
+            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-rose-400 to-rose-600 text-white flex items-center justify-center shadow-md -mt-4 ring-4 ring-white dark:ring-gray-900">
+              <ShoppingCart className="w-4 h-4" />
+            </div>
+            <span className="text-[10px]">Kasir</span>
+            {pendingCount > 0 && (
+              <span className="absolute top-0 right-2 w-4 h-4 rounded-full bg-red-600 text-white text-[9px] font-bold flex items-center justify-center">
+                {pendingCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveModule('kds')}
+            className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl transition-all ${
+              activeModule === 'kds' ? 'text-orange-500 font-bold' : 'text-gray-400 hover:text-gray-600'
+            }`}
+          >
+            <ChefHat className="w-5 h-5" />
+            <span className="text-[10px]">Dapur</span>
+          </button>
+
+          <button
+            onClick={() => setActiveModule('pos')}
+            className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl transition-all ${
+              activeModule === 'pos' ? 'text-blue-600 font-bold' : 'text-gray-400 hover:text-gray-600'
+            }`}
+          >
+            <ClockHistory className="w-5 h-5" />
+            <span className="text-[10px]">Riwayat</span>
+          </button>
+
+          <button
+            onClick={() => setIsMobileMenuOpen(true)}
+            className="flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl text-gray-400 hover:text-gray-600"
+          >
+            <Menu className="w-5 h-5" />
+            <span className="text-[10px]">Menu</span>
+          </button>
+        </nav>
       </main >
 
       {isCashierOpen && (
@@ -4371,16 +4550,16 @@ function Home() {
       {activeModule !== 'attendance' && !isCashierOpen && storeSettings?.show_attendance_fab !== false && (
         <button
           onClick={() => setActiveModule('attendance')}
-          className="fixed bottom-8 right-8 z-[60] flex items-center gap-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-4 rounded-full shadow-2xl shadow-blue-500/40 hover:scale-110 hover:-translate-y-1 active:scale-95 transition-all group animate-in slide-in-from-bottom-10 duration-500"
+          className="fixed bottom-20 right-4 md:bottom-8 md:right-8 z-[60] flex items-center gap-2 md:gap-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-3.5 py-3 md:px-6 md:py-4 rounded-full shadow-2xl shadow-blue-500/40 hover:scale-110 hover:-translate-y-1 active:scale-95 transition-all group animate-in slide-in-from-bottom-10 duration-500"
         >
           <div className="relative">
-            <Fingerprint className="w-6 h-6" />
+            <Fingerprint className="w-5 h-5 md:w-6 md:h-6" />
             <div className="absolute inset-0 bg-white/20 rounded-full animate-ping"></div>
           </div>
-          <span className="font-black text-sm uppercase tracking-widest">Absensi</span>
+          <span className="font-black text-xs md:text-sm uppercase tracking-wider md:tracking-widest hidden sm:inline">Absensi</span>
           
           {/* Tooltip-like decorative pulse */}
-          <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-bounce"></div>
+          <div className="absolute -top-1 -right-1 w-2.5 h-2.5 md:w-3 md:h-3 bg-red-500 rounded-full border-2 border-white animate-bounce"></div>
         </button>
       )}
     </div >

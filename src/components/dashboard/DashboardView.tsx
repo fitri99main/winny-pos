@@ -585,14 +585,14 @@ export function DashboardView({
     ];
 
     return (
-        <div className="p-4 h-full flex flex-col gap-3 overflow-hidden">
-            {/* 1. Header Section - Fixed Height */}
-            <div className="flex items-center justify-between shrink-0">
+        <div className="p-3 sm:p-4 h-full flex flex-col gap-3 overflow-y-auto md:overflow-hidden">
+            {/* 1. Header Section - Adaptive */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 shrink-0">
                 <div>
-                    <h2 className="text-xl font-bold text-gray-800">Ringkasan</h2>
+                    <h2 className="text-lg sm:text-xl font-bold text-gray-800">Ringkasan</h2>
                     <p className="text-xs text-gray-500">Overview Toko</p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto justify-between sm:justify-end">
                     <Button
                         onClick={() => setShowDailyReceipt(true)}
                         onMouseEnter={() => {
@@ -600,12 +600,12 @@ export function DashboardView({
                                 void loadCashierSessions();
                             }
                         }}
-                        className="bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold px-4 h-9 rounded-xl shadow-lg shadow-orange-200 flex items-center gap-2 transition-all active:scale-95"
+                        className="bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold px-3 sm:px-4 h-9 rounded-xl shadow-lg shadow-orange-200 flex items-center gap-1.5 sm:gap-2 transition-all active:scale-95"
                     >
-                        <Printer className="w-4 h-4" />
-                        Cetak Laporan Hari Ini
+                        <Printer className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                        <span>Cetak Laporan Hari Ini</span>
                     </Button>
-                    <div className="flex items-center gap-2 px-3 py-1 bg-white rounded-full shadow-sm border border-gray-100 text-[10px] font-bold text-gray-600">
+                    <div className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 bg-white rounded-full shadow-sm border border-gray-100 text-[10px] font-bold text-gray-600">
                         <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
                         LIVE
                     </div>
@@ -618,21 +618,21 @@ export function DashboardView({
             </div>
 
 
-            {/* 2. Stats Grid - Compact & Precise */}
-            <div className="grid grid-cols-4 gap-3 shrink-0">
+            {/* 2. Stats Grid - Responsive 2 cols on mobile, 4 on desktop */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3 shrink-0">
                 {stats.map((stat, index) => (
                     <div 
                         key={index} 
                         onClick={() => stat.module && onNavigate(stat.module, stat.tab)}
-                        className="bg-white p-2.5 rounded-xl shadow-sm border border-gray-100 flex items-center gap-2.5 cursor-pointer hover:shadow-md hover:border-blue-200 transition-all group"
+                        className="bg-white p-2.5 sm:p-3 rounded-xl shadow-sm border border-gray-100 flex items-center gap-2 sm:gap-2.5 cursor-pointer hover:shadow-md hover:border-blue-200 transition-all group active:scale-[0.99]"
                     >
-                        <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${stat.gradient} flex items-center justify-center text-white shadow-sm shrink-0 group-hover:scale-105 transition-transform`}>
-                            <stat.icon className="w-4.5 h-4.5" />
+                        <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-gradient-to-br ${stat.gradient} flex items-center justify-center text-white shadow-sm shrink-0 group-hover:scale-105 transition-transform`}>
+                            <stat.icon className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
                         </div>
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                             <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider truncate">{stat.label}</p>
-                            <h3 className="text-base font-bold text-gray-800 leading-tight">{stat.value}</h3>
-                            <span className={`text-[9px] font-bold ${stat.trendUp ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'} px-1 py-0.5 rounded inline-block mt-0.5`}>
+                            <h3 className="text-sm sm:text-base font-bold text-gray-800 leading-tight truncate">{stat.value}</h3>
+                            <span className={`text-[8px] sm:text-[9px] font-bold ${stat.trendUp ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'} px-1 py-0.5 rounded inline-block mt-0.5 truncate`}>
                                 {stat.trend}
                             </span>
                         </div>
@@ -640,10 +640,10 @@ export function DashboardView({
                 ))}
             </div>
 
-            {/* 3. Middle Section: Charts - FLEX GROW (Takes all remaining space) */}
-            <div className="grid grid-cols-3 gap-3 min-h-0 flex-1">
+            {/* 3. Middle Section: Charts - Stacks vertically on mobile */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 min-h-0 md:flex-1 shrink-0 lg:shrink">
                 {/* Main Chart */}
-                <div className="col-span-2 bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col h-full">
+                <div className="col-span-1 lg:col-span-2 bg-white p-3 sm:p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col h-64 sm:h-72 lg:h-full">
                     <div className="flex items-center justify-between mb-2 shrink-0">
                         <h3 className="text-sm font-bold text-gray-800">Analitik Penjualan</h3>
                         <Activity className="w-4 h-4 text-gray-300" />
@@ -779,15 +779,15 @@ export function DashboardView({
                 </div>
             </div>
 
-            {/* 4. Bottom Section: Transactions - Fixed Height */}
-            <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-100 shrink-0 h-[130px] flex flex-col">
+            {/* 4. Bottom Section: Transactions - Responsive */}
+            <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-100 shrink-0 min-h-[130px] md:h-[130px] flex flex-col">
                 <div className="flex items-center justify-between mb-2 shrink-0">
                     <h3 className="text-sm font-bold text-gray-800">Transaksi Terkini</h3>
                     <button onClick={() => onNavigate('pos', 'history')} className="text-xs font-bold text-primary flex items-center gap-1 hover:underline">
                         Lihat Semua <ChevronRight className="w-3 h-3" />
                     </button>
                 </div>
-                <div className="grid grid-cols-4 gap-3 overflow-hidden">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
                     {sales.filter(s => s && s.date && s.date.startsWith(todayStr)).slice(0, 4).map((sale) => (
                         <div key={sale.id} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded-lg border border-transparent hover:border-gray-100 transition-colors">
                             <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center shrink-0">

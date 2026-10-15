@@ -1157,10 +1157,10 @@ export function PurchasesView({
     );
 
     return (
-        <div className="flex h-full bg-gray-50/50 relative">
-            {/* Sidebar */}
-            <div className="w-56 bg-white border-r border-gray-200 p-6 flex flex-col gap-2">
-                <h2 className="text-xl font-bold text-gray-800 mb-6 px-2">Modul Pembelian</h2>
+        <div className="flex flex-col md:flex-row h-full bg-gray-50/50 relative overflow-hidden">
+            {/* Nav / Tabs */}
+            <div className="w-full md:w-56 bg-white border-b md:border-b-0 md:border-r border-gray-200 p-3 md:p-6 flex flex-row md:flex-col gap-1.5 md:gap-2 shrink-0 overflow-x-auto no-scrollbar">
+                <h2 className="text-xl font-bold text-gray-800 mb-6 px-2 hidden md:block">Modul Pembelian</h2>
                 {[
                     { id: 'history', label: 'Riwayat Pembelian', icon: History },
                     { id: 'input', label: 'Input Pembelian', icon: Plus },
@@ -1169,24 +1169,24 @@ export function PurchasesView({
                     <button
                         key={item.id}
                         onClick={() => setActiveTab(item.id as any)}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === item.id ? 'bg-orange-50 text-orange-700' : 'text-gray-500 hover:bg-gray-50'
+                        className={`flex items-center gap-2 md:gap-3 px-3 md:px-4 py-2 md:py-3 rounded-xl text-xs md:text-sm font-medium transition-all whitespace-nowrap ${activeTab === item.id ? 'bg-orange-50 text-orange-700 font-bold' : 'text-gray-500 hover:bg-gray-50'
                             }`}
                     >
-                        <item.icon className={`w-5 h-5 ${activeTab === item.id ? 'text-orange-600' : 'text-gray-400'}`} />
+                        <item.icon className={`w-4 h-4 md:w-5 md:h-5 ${activeTab === item.id ? 'text-orange-600' : 'text-gray-400'}`} />
                         <span>{item.label}</span>
                     </button>
                 ))}
             </div>
 
             {/* Content */}
-            <div className="flex-1 p-8 overflow-y-auto">
-                <div className="flex justify-between items-center mb-6">
+            <div className="flex-1 p-3 sm:p-6 md:p-8 overflow-y-auto">
+                <div className="flex justify-between items-center mb-4 sm:mb-6">
                     <div>
-                        <h2 className="text-2xl font-bold text-gray-800 capitalize">
+                        <h2 className="text-lg sm:text-2xl font-bold text-gray-800 capitalize">
                             {activeTab === 'history' ? 'Riwayat Pembelian' :
                                 activeTab === 'input' ? 'Buat Pembelian Baru' : 'Retur Pembelian'}
                         </h2>
-                        <p className="text-gray-500 text-sm">
+                        <p className="text-gray-500 text-xs sm:text-sm">
                             {activeTab === 'history' ? 'Pantau semua transaksi pembelian ke supplier.' :
                                 activeTab === 'input' ? 'Input PO untuk stok baru.' : 'Kelola pengembalian barang rusak/salah.'}
                         </p>

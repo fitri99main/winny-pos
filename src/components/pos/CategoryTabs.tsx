@@ -19,7 +19,7 @@ export function CategoryTabs({
           key={category}
           whileTap={{ scale: 0.95 }}
           onClick={() => onCategoryChange(category)}
-          className={`px-6 py-2.5 rounded-full font-medium text-sm whitespace-nowrap transition-all duration-200 ${
+          className={`px-4 sm:px-6 py-2 sm:py-2.5 rounded-full font-medium text-xs sm:text-sm whitespace-nowrap transition-all duration-200 active:scale-95 ${
             activeCategory === category
               ? 'bg-pos-coral text-white shadow-md'
               : 'bg-white text-pos-charcoal hover:bg-gray-50'

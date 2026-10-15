@@ -103,28 +103,29 @@ export function OrderPanel({
                     </div>
                     <button
                       onClick={() => onRemoveItem(item.id)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-50 rounded-lg"
+                      className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity p-1.5 hover:bg-red-50 text-red-500 rounded-lg shrink-0"
+                      aria-label="Hapus item"
                     >
                       <X className="w-4 h-4 text-red-500" />
                     </button>
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-1">
+                    <div className="flex items-center gap-1.5 bg-gray-50 rounded-lg p-1">
                       <button
                         onClick={() =>
                           onQuantityChange(item.id, Math.max(1, item.quantity - 1))
                         }
-                        className="w-7 h-7 flex items-center justify-center hover:bg-white rounded-md transition-colors"
+                        className="w-8 h-8 md:w-7 md:h-7 flex items-center justify-center hover:bg-white rounded-md transition-colors active:scale-95"
                       >
                         <Minus className="w-4 h-4 text-pos-charcoal" />
                       </button>
-                      <span className="font-mono font-semibold text-pos-charcoal w-8 text-center">
+                      <span className="font-mono font-semibold text-pos-charcoal w-8 text-center text-sm">
                         {item.quantity}
                       </span>
                       <button
                         onClick={() => onQuantityChange(item.id, item.quantity + 1)}
-                        className="w-7 h-7 flex items-center justify-center hover:bg-white rounded-md transition-colors"
+                        className="w-8 h-8 md:w-7 md:h-7 flex items-center justify-center hover:bg-white rounded-md transition-colors active:scale-95"
                       >
                         <Plus className="w-4 h-4 text-pos-charcoal" />
                       </button>

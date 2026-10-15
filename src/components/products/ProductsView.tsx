@@ -479,19 +479,19 @@ export function ProductsView({
     // --- Renderers ---
 
     const renderProductsTable = () => (
-        <div className="bg-white rounded-[32px] shadow-sm border border-gray-100 overflow-hidden">
-            <div className="p-6 border-b border-gray-100 bg-gray-50/30 flex gap-4">
-                <div className="relative flex-1 max-w-xs">
+        <div className="bg-white rounded-2xl sm:rounded-[32px] shadow-sm border border-gray-100 overflow-hidden">
+            <div className="p-3 sm:p-6 border-b border-gray-100 bg-gray-50/30 flex flex-col sm:flex-row gap-3 sm:gap-4">
+                <div className="relative flex-1 w-full sm:max-w-xs">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <input 
                         type="text" 
                         placeholder="Cari Produk atau Kode..." 
-                        className="w-full pl-12 pr-4 py-3 text-sm bg-white border border-gray-200 rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all" 
+                        className="w-full pl-11 pr-4 py-2.5 sm:py-3 text-xs sm:text-sm bg-white border border-gray-200 rounded-xl sm:rounded-2xl outline-none focus:ring-4 focus:ring-primary/5 transition-all" 
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                     />
                 </div>
-                <Button onClick={() => handleOpenForm()} className="gap-2 h-12 rounded-2xl px-6"><Plus className="w-4 h-4" /> Tambah</Button>
+                <Button onClick={() => handleOpenForm()} className="gap-2 h-10 sm:h-12 rounded-xl sm:rounded-2xl px-4 sm:px-6 text-xs sm:text-sm w-full sm:w-auto justify-center"><Plus className="w-4 h-4" /> Tambah</Button>
             </div>
             <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -707,7 +707,7 @@ export function ProductsView({
                                 </div>
                             </td>
                             <td className="px-8 py-5 text-gray-500 text-xs italic">{type === 'unit' ? item.abbreviation : item.description}</td>
-                            <td className="px-8 py-5 flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <td className="px-3 sm:px-8 py-4 sm:py-5 flex justify-center gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                                 <button onClick={() => handleOpenForm(item)} className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors"><Edit className="w-4 h-4" /></button>
                                 <button onClick={() => handleDelete(item.id, type)} className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button>
                             </td>
@@ -828,13 +828,13 @@ export function ProductsView({
     return (
         <div className="flex flex-col h-full bg-gray-50/50 relative overflow-hidden">
             {/* Top Navigation Header */}
-            <div className="w-full bg-white border-b border-gray-100 px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 z-20 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] flex-shrink-0">
+            <div className="w-full bg-white border-b border-gray-100 px-3 sm:px-6 py-3 sm:py-4 flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 z-20 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] flex-shrink-0">
                 <div>
-                    <h2 className="text-xl font-black text-gray-800 tracking-tight">Master Data</h2>
+                    <h2 className="text-lg sm:text-xl font-black text-gray-800 tracking-tight">Master Data</h2>
                     <p className="text-[10px] text-gray-400 font-medium tracking-wide">Katalog Produk & Inventaris</p>
                 </div>
 
-                <div className="flex items-center gap-1 bg-gray-50 p-1.5 rounded-2xl overflow-x-auto no-scrollbar border border-gray-100">
+                <div className="flex items-center gap-1 bg-gray-50 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl overflow-x-auto no-scrollbar border border-gray-100 max-w-full">
                     {[
                         { id: 'products', label: 'Daftar Produk', icon: Package },
                         { id: 'recipes', label: 'Resep & HPP', icon: ChefHat, adminOnly: true, isNew: true },
@@ -845,15 +845,15 @@ export function ProductsView({
                         <button
                             key={item.id}
                             onClick={() => setActiveTab(item.id as any)}
-                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all font-bold text-xs whitespace-nowrap relative ${activeTab === item.id
+                            className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl transition-all font-bold text-xs whitespace-nowrap relative ${activeTab === item.id
                                 ? 'bg-white text-primary shadow-sm ring-1 ring-gray-100'
                                 : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
                                 }`}
                         >
-                            <item.icon className={`w-4 h-4 ${activeTab === item.id ? 'text-primary' : 'text-gray-400'}`} />
-                            {item.label}
+                            <item.icon className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${activeTab === item.id ? 'text-primary' : 'text-gray-400'}`} />
+                            <span>{item.label}</span>
                             {(item as any).isNew && (
-                                <span className="absolute -top-1 -right-1 flex h-4 w-8 items-center justify-center rounded-full bg-emerald-500 text-[8px] text-white font-black animate-pulse">
+                                <span className="absolute -top-1 -right-1 flex h-4 w-7 sm:w-8 items-center justify-center rounded-full bg-emerald-500 text-[8px] text-white font-black animate-pulse">
                                     NEW
                                 </span>
                             )}
@@ -863,7 +863,7 @@ export function ProductsView({
             </div>
 
             {/* Content */}
-            <div className="flex-1 p-6 overflow-y-auto">
+            <div className="flex-1 p-2.5 sm:p-6 overflow-y-auto">
                 {activeTab === 'products' && renderProductsTable()}
                 {activeTab === 'recipes' && renderRecipeHppTable()}
                 {activeTab === 'categories' && renderSimpleTable(categories, 'category', 'Kategori')}

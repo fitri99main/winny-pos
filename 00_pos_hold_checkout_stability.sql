@@ -196,25 +196,19 @@ BEGIN
   END IF;
 
   IF v_requires_final_order_no THEN
-    -- Ambil Mode dan Prefix dari Global Store Settings (TANPA LOCK)
+    -- MENGUNCI STORE_SETTINGS AGAR SINKRON DENGAN VERSI WEB
     SELECT
       invoice_mode, invoice_prefix,
-      hold_invoice_prefix
-    INTO
-      v_inv_mode, v_inv_prefix,
-      v_hold_prefix
-    FROM public.store_settings
-    WHERE id = 1;
-
-    -- LOCK BARIS CABANG INI SAJA (Mencegah contention antar cabang)
-    SELECT
       invoice_last_number,
+      hold_invoice_prefix,
       hold_invoice_last_number
     INTO
+      v_inv_mode, v_inv_prefix,
       v_inv_last_no,
+      v_hold_prefix,
       v_hold_last_no
-    FROM public.branches
-    WHERE id = v_branch_id
+    FROM public.store_settings
+    WHERE id = 1
     FOR UPDATE;
 
     IF LOWER(v_status) IN ('pending', 'unpaid') THEN
@@ -228,17 +222,16 @@ BEGIN
         SELECT EXISTS(
           SELECT 1
           FROM public.sales
-          WHERE branch_id = v_branch_id
-            AND order_no = v_order_no
+          WHERE order_no = v_order_no
         ) INTO v_exists;
 
         EXIT WHEN NOT v_exists;
         v_hold_last_no := v_next_no;
       END LOOP;
 
-      UPDATE public.branches
+      UPDATE public.store_settings
       SET hold_invoice_last_number = v_next_no
-      WHERE id = v_branch_id;
+      WHERE id = 1;
     ELSE
       v_inv_mode := COALESCE(v_inv_mode, 'auto');
       v_inv_prefix := COALESCE(v_inv_prefix, 'WIN-26');
@@ -247,22 +240,21 @@ BEGIN
       IF v_inv_mode = 'auto' THEN
         LOOP
           v_next_no := v_inv_last_no + 1;
-          v_order_no := v_inv_prefix || '-' || LPAD(v_next_no::TEXT, 4, '0');
+          v_order_no := v_inv_prefix || '-' || LPAD(v_next_no::TEXT, GREATEST(5, LENGTH(v_next_no::TEXT)), '0');
 
           SELECT EXISTS(
             SELECT 1
             FROM public.sales
-            WHERE branch_id = v_branch_id
-              AND order_no = v_order_no
+            WHERE order_no = v_order_no
           ) INTO v_exists;
 
           EXIT WHEN NOT v_exists;
           v_inv_last_no := v_next_no;
         END LOOP;
 
-        UPDATE public.branches
+        UPDATE public.store_settings
         SET invoice_last_number = v_next_no
-        WHERE id = v_branch_id;
+        WHERE id = 1;
       ELSE
         v_order_no := v_inv_prefix || '-' || TO_CHAR(NOW(), 'YYYY') || '-' || TO_CHAR(NOW(), 'HH24MISS');
       END IF;

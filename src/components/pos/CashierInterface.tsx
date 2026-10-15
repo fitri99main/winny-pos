@@ -105,6 +105,7 @@ export function CashierInterface({
   ingredients = []
 }: CashierInterfaceProps) {
   const isMobile = useIsMobile();
+  const [mobileTab, setMobileTab] = useState<'catalog' | 'cart'>('catalog');
   // console.log('CashierInterface Props:', { productsLength: products?.length, categoriesLength: categories?.length }); 
   // Removed verbose log to prevent crash on undefined properties
   const [viewMode, setViewMode] = useState<'tables' | 'pos'>(
@@ -1013,54 +1014,89 @@ export function CashierInterface({
     <div className="h-full flex flex-col bg-pos-cream noise-texture overflow-hidden relative">
       {/* Main Content */}
       <div
-        className="grid flex-1 min-w-0 overflow-hidden pb-6 md:pb-8"
-        style={{
+        className={`flex-1 min-w-0 overflow-hidden ${
+          isMobile 
+            ? 'flex flex-col' 
+            : 'grid pb-6 md:pb-8'
+        }`}
+        style={!isMobile ? {
           direction: 'ltr',
-          gridTemplateColumns: isMobile
-            ? 'minmax(0, 1fr) minmax(164px, 42vw)'
-            : 'minmax(0, 1fr) clamp(220px, 36vw, 420px)'
-        }}
+          gridTemplateColumns: 'minmax(0, 1fr) clamp(260px, 32vw, 420px)'
+        } : undefined}
       >
-        {/* Left: Product Grid (75%) */}
-        <div className="order-1 min-w-0 flex flex-col overflow-hidden rounded-r-[28px] border-r border-orange-100 bg-white/35 p-2 md:p-4 lg:p-5">
+        {/* Left: Product Grid (Shown on desktop OR on mobile when mobileTab === 'catalog') */}
+        <div className={`order-1 min-w-0 flex flex-col overflow-hidden ${
+          isMobile
+            ? (mobileTab === 'catalog' ? 'flex flex-1 p-2 pb-20' : 'hidden')
+            : 'rounded-r-[28px] border-r border-orange-100 bg-white/35 p-2 md:p-4 lg:p-5'
+        }`}>
           {/* Header */}
-          <div className="flex items-center gap-3 mb-4">
-            {onBack && (
-              <button
-                onClick={() => {
-                  if (settings?.enable_table_management === false) {
-                    onBack();
-                  } else {
-                    setViewMode('tables');
-                  }
-                }}
-                className="p-2 hover:bg-white/50 rounded-lg transition-colors"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-            )}
-            <div className="shrink-0 ml-2">
-              <h1 className="text-2xl font-bold text-pos-charcoal leading-none">WinPOS</h1>
-              <button
-                onClick={() => {
-                  setSessionMode(currentSession ? 'close' : 'open');
-                  setSessionModalOpen(true);
-                }}
-                className={`text-[10px] font-bold transition-colors flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full border ${currentSession
-                  ? 'text-green-600 border-green-200 bg-green-50 hover:bg-green-100'
-                  : 'text-red-500 border-red-200 bg-red-50 hover:bg-red-100'
-                  }`}
-              >
-                {currentSession ? '🟢 Shift Aktif' : '🔴 Shift Tutup'}
-              </button>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2">
+              {onBack && (
+                <button
+                  onClick={() => {
+                    if (settings?.enable_table_management === false) {
+                      onBack();
+                    } else {
+                      setViewMode('tables');
+                    }
+                  }}
+                  className="p-2 hover:bg-white/50 rounded-lg transition-colors shrink-0"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+              )}
+              <div className="shrink-0">
+                <h1 className="text-xl md:text-2xl font-bold text-pos-charcoal leading-none">WinPOS</h1>
+                <button
+                  onClick={() => {
+                    setSessionMode(currentSession ? 'close' : 'open');
+                    setSessionModalOpen(true);
+                  }}
+                  className={`text-[10px] font-bold transition-colors flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full border ${currentSession
+                    ? 'text-green-600 border-green-200 bg-green-50 hover:bg-green-100'
+                    : 'text-red-500 border-red-200 bg-red-50 hover:bg-red-100'
+                    }`}
+                >
+                  {currentSession ? '🟢 Shift Aktif' : '🔴 Shift Tutup'}
+                </button>
+              </div>
+
+              {/* Mobile Tab Switcher in Header */}
+              {isMobile && (
+                <div className="flex bg-orange-100/80 p-0.5 rounded-xl ml-auto shrink-0">
+                  <button
+                    onClick={() => setMobileTab('catalog')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      mobileTab === 'catalog' ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-600'
+                    }`}
+                  >
+                    Menu
+                  </button>
+                  <button
+                    onClick={() => setMobileTab('cart')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                      mobileTab === 'cart' ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-600'
+                    }`}
+                  >
+                    <span>Pesanan</span>
+                    {orderItems.length > 0 && (
+                      <span className="px-1.5 py-0.2 bg-red-500 text-white text-[10px] rounded-full font-bold">
+                        {orderItems.reduce((sum, item) => sum + item.quantity, 0)}
+                      </span>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* NEW: Horizontal Info Bar */}
-            <div className="flex-1 flex items-center gap-2 ml-6 pl-6 border-l border-gray-200 overflow-x-auto">
+            <div className="flex items-center gap-2 overflow-x-auto py-1 sm:ml-4 sm:pl-4 sm:border-l sm:border-gray-200 no-scrollbar">
 
               {/* Table Selector */}
               {settings?.enable_table_management !== false && (
-                <div className="flex items-center gap-2 bg-white/60 px-2 py-1.5 rounded-xl border border-white/50 shadow-sm shrink-0">
+                <div className="flex items-center gap-1.5 bg-white/70 px-2 py-1.5 rounded-xl border border-white/60 shadow-sm shrink-0">
                   <div className="w-6 h-6 rounded-md bg-orange-100 flex items-center justify-center text-orange-600 shrink-0">
                     <Store className="w-3.5 h-3.5" />
                   </div>
@@ -1078,7 +1114,7 @@ export function CashierInterface({
                             setSelectedTable(val);
                           }
                         }}
-                        className="bg-transparent border-none p-0 pr-6 text-xs font-bold text-gray-700 focus:ring-0 cursor-pointer appearance-none min-w-[60px]"
+                        className="bg-transparent border-none p-0 pr-5 text-xs font-bold text-gray-700 focus:ring-0 cursor-pointer appearance-none min-w-[50px]"
                       >
                         <option value="">Pilih</option>
                         {Array.from(new Set([...(tables || []).map(t => t.number), selectedTable])).filter(Boolean).map(no => (
@@ -1093,7 +1129,7 @@ export function CashierInterface({
               )}
 
               {/* Customer Selector */}
-              <div className="flex items-center gap-2 bg-white/60 px-2 py-1.5 rounded-xl border border-white/50 shadow-sm shrink-0">
+              <div className="flex items-center gap-1.5 bg-white/70 px-2 py-1.5 rounded-xl border border-white/60 shadow-sm shrink-0">
                 <div className="w-6 h-6 rounded-md bg-blue-100 flex items-center justify-center text-blue-600 shrink-0">
                   <Users className="w-3.5 h-3.5" />
                 </div>
@@ -1103,7 +1139,7 @@ export function CashierInterface({
                     <select
                       value={customerName}
                       onChange={(e) => setCustomerName(e.target.value)}
-                      className="bg-transparent font-bold text-pos-charcoal text-xs appearance-none pr-4 focus:outline-none cursor-pointer min-w-[80px]"
+                      className="bg-transparent font-bold text-pos-charcoal text-xs appearance-none pr-4 focus:outline-none cursor-pointer min-w-[70px]"
                     >
                       <option value="Guest">Guest</option>
                       {(contacts || []).filter(c => c && c.type === 'Customer').map(c => (
@@ -1116,7 +1152,7 @@ export function CashierInterface({
               </div>
 
               {/* Waiter Selector */}
-              <div className="flex items-center gap-2 bg-white/60 px-2 py-1.5 rounded-xl border border-white/50 shadow-sm shrink-0">
+              <div className="flex items-center gap-1.5 bg-white/70 px-2 py-1.5 rounded-xl border border-white/60 shadow-sm shrink-0">
                 <div className="w-6 h-6 rounded-md bg-purple-100 flex items-center justify-center text-purple-600 shrink-0">
                   <User className="w-3.5 h-3.5" />
                 </div>
@@ -1126,7 +1162,7 @@ export function CashierInterface({
                     <select
                       value={waiterName}
                       onChange={(e) => setWaiterName(e.target.value)}
-                      className="bg-transparent font-bold text-pos-charcoal text-xs appearance-none pr-4 focus:outline-none cursor-pointer min-w-[80px]"
+                      className="bg-transparent font-bold text-pos-charcoal text-xs appearance-none pr-4 focus:outline-none cursor-pointer min-w-[70px]"
                     >
                       <option value="">Pilih</option>
                       {(employees || []).map(emp => (
@@ -1141,9 +1177,7 @@ export function CashierInterface({
             </div>
           </div>
 
-
-
-          <div className="mb-4">
+          <div className="mb-3">
             <SearchBar
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
@@ -1152,7 +1186,7 @@ export function CashierInterface({
           </div>
 
           {/* Category Tabs */}
-          <div className="mb-4">
+          <div className="mb-3">
             <CategoryTabs
               categories={['Semua', ...(categories || []).filter(c => c && c.name).map(c => c.name)]}
               activeCategory={activeCategory}
@@ -1166,8 +1200,8 @@ export function CashierInterface({
               className="grid gap-2 pb-6 md:gap-3"
               style={{
                 gridTemplateColumns: isMobile
-                  ? 'repeat(auto-fill, minmax(104px, 1fr))'
-                  : 'repeat(auto-fill, minmax(128px, 1fr))'
+                  ? 'repeat(auto-fill, minmax(130px, 1fr))'
+                  : 'repeat(auto-fill, minmax(135px, 1fr))'
               }}
             >
               {filteredProducts.filter(p => p && p.id).map((product) => (
@@ -1188,15 +1222,31 @@ export function CashierInterface({
               </div>
             )}
           </div>
-
-
         </div>
 
-        {/* Right: Order Panel (25%) */}
+        {/* Right: Order Panel (Shown on desktop OR on mobile when mobileTab === 'cart') */}
         <div
-          className="order-2 min-w-0 flex flex-col gap-2 overflow-hidden border-l-2 border-orange-200 bg-orange-50/60 p-2 pl-2 md:p-3 md:pl-3"
-          style={isMobile ? { minWidth: '164px' } : undefined}
+          className={`order-2 min-w-0 flex flex-col gap-2 overflow-hidden border-orange-200 bg-orange-50/60 p-2 md:p-3 ${
+            isMobile
+              ? (mobileTab === 'cart' ? 'flex flex-1 w-full h-full' : 'hidden')
+              : 'border-l-2'
+          }`}
         >
+          {/* Mobile Back-to-Menu Bar */}
+          {isMobile && (
+            <div className="flex items-center justify-between pb-2 mb-1 border-b border-orange-200">
+              <button
+                onClick={() => setMobileTab('catalog')}
+                className="flex items-center gap-1.5 text-xs font-bold text-orange-600 hover:text-orange-700 bg-white px-3 py-1.5 rounded-xl border border-orange-200 shadow-sm active:scale-95 transition-all"
+              >
+                <ArrowLeft className="w-4 h-4" /> Tambah Menu Lain
+              </button>
+              <span className="text-xs font-bold text-gray-700">
+                Total: Rp {total.toLocaleString()}
+              </span>
+            </div>
+          )}
+
           <QuickActionsBar
             embedded
             hasItems={orderItems.length > 0}
@@ -1241,6 +1291,33 @@ export function CashierInterface({
           </div>
         </div>
       </div>
+
+      {/* Floating Bottom Cart Bar on Mobile when browsing catalog */}
+      {isMobile && mobileTab === 'catalog' && orderItems.length > 0 && (
+        <div className="fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-orange-200 px-4 py-2.5 shadow-[0_-4px_24px_rgba(0,0,0,0.12)] flex items-center justify-between animate-in slide-in-from-bottom duration-200">
+          <button
+            onClick={() => setMobileTab('cart')}
+            className="flex items-center gap-3 text-left min-w-0"
+          >
+            <div className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 text-white flex items-center justify-center shadow-md font-bold shrink-0">
+              <ShoppingCart className="w-5 h-5" />
+              <span className="absolute -top-1.5 -right-1.5 bg-red-600 text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center font-black">
+                {orderItems.reduce((sum, item) => sum + item.quantity, 0)}
+              </span>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[11px] text-gray-500 font-semibold truncate">{orderItems.length} menu dipilih</div>
+              <div className="text-sm font-black text-gray-900 font-mono">Rp {total.toLocaleString()}</div>
+            </div>
+          </button>
+          <Button
+            onClick={() => setMobileTab('cart')}
+            className="bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs h-10 px-4 rounded-xl shadow-md shrink-0"
+          >
+            Lihat Pesanan &rarr;
+          </Button>
+        </div>
+      )}
 
       {/* Modals */}
       <ManualItemModal
